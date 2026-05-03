@@ -420,7 +420,9 @@ function setTopicTool(toolsCtx: McpToolsContext) {
         const trimmedTopic = topic.trim();
         const displayName = setSessionTopic(sessionKey, trimmedTopic);
 
-        await rateLimitedSetMyName(toolsCtx.telegramCtx.api, (n) => toolsCtx.telegramCtx.api.setMyName(n), displayName);
+        if (isBotNameEnabled(sessionKey)) {
+          await rateLimitedSetMyName(toolsCtx.telegramCtx.api, (n) => toolsCtx.telegramCtx.api.setMyName(n), displayName);
+        }
 
         return {
           content: [{

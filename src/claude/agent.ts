@@ -24,7 +24,6 @@ import { config } from '../config.js';
 import { AgentWatchdog } from './agent-watchdog.js';
 import { createClaudegramMcpServer } from './mcp-tools.js';
 import { getSessionTopic, getMsSinceTopicSet } from '../bot/handlers/command.handler.js';
-import { isBotNameEnabled } from '../telegram/botname-settings.js';
 import {
   createAgentTimer,
   recordMessage,
@@ -509,7 +508,7 @@ export async function sendToAgent(
     // set (within the cooldown window) to avoid wasted tokens on follow-ups.
     const TOPIC_REMINDER_COOLDOWN_MS = 90_000;
     const autoTopicHook: Partial<Record<HookEvent, HookCallbackMatcher[]>> =
-      config.DYNAMIC_BOT_NAME && isBotNameEnabled(sessionKey)
+      config.DYNAMIC_BOT_NAME
         ? {
           UserPromptSubmit: [{
             hooks: [async () => {
