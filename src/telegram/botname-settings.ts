@@ -101,41 +101,67 @@ export function isBotNameEnabled(sessionKey: string): boolean {
 // ---------------------------------------------------------------------------
 
 const MIN_NAME_UPDATE_INTERVAL_MS = 60_000; // 1 minute
-let lastNameUpdateTime = 0;
-let pendingName: string | null = null;
-let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+
+interface NameRateState {
+  lastUpdateTime: number;
+  pendingName: string | null;
+  pendingApiCall: ((name: string) => Promise<unknown>) | null;
+  pendingTimer: ReturnType<typeof setTimeout> | null;
+}
+
+// Per-bot rate-limit state. Keyed by the bot's `api` object (stable per bot)
+// so multiple bots running in the same process don't collide on a shared
+// throttle slot. WeakMap lets state get GC'd if a bot is torn down.
+const nameRateStates: WeakMap<object, NameRateState> = new WeakMap();
+
+function getRateState(key: object): NameRateState {
+  let state = nameRateStates.get(key);
+  if (!state) {
+    state = { lastUpdateTime: 0, pendingName: null, pendingApiCall: null, pendingTimer: null };
+    nameRateStates.set(key, state);
+  }
+  return state;
+}
 
 /**
  * Rate-limited wrapper around `bot.api.setMyName()`.
- * At most one call per minute; if called more frequently the latest name is
- * queued and applied when the cooldown expires.
+ * At most one call per minute *per bot*; if called more frequently the latest
+ * name is queued and applied when the cooldown expires.
+ *
+ * `botKey` must be a stable object identifying the bot (typically `ctx.api`
+ * or `bot.api`). State is tracked per-key so multiple bots in the same
+ * process don't share a throttle slot.
  */
 export async function rateLimitedSetMyName(
+  botKey: object,
   apiCall: (name: string) => Promise<unknown>,
   name: string,
 ): Promise<void> {
+  const state = getRateState(botKey);
   const now = Date.now();
-  const elapsed = now - lastNameUpdateTime;
+  const elapsed = now - state.lastUpdateTime;
 
   if (elapsed >= MIN_NAME_UPDATE_INTERVAL_MS) {
-    // Cooldown expired — apply immediately
-    lastNameUpdateTime = now;
-    pendingName = null;
-    if (pendingTimer) { clearTimeout(pendingTimer); pendingTimer = null; }
+    state.lastUpdateTime = now;
+    state.pendingName = null;
+    state.pendingApiCall = null;
+    if (state.pendingTimer) { clearTimeout(state.pendingTimer); state.pendingTimer = null; }
     await apiCall(name);
   } else {
-    // Still in cooldown — queue the latest name
-    pendingName = name;
-    if (!pendingTimer) {
+    state.pendingName = name;
+    state.pendingApiCall = apiCall;
+    if (!state.pendingTimer) {
       const delay = MIN_NAME_UPDATE_INTERVAL_MS - elapsed;
-      pendingTimer = setTimeout(async () => {
-        pendingTimer = null;
-        if (pendingName !== null) {
-          const queuedName = pendingName;
-          pendingName = null;
-          lastNameUpdateTime = Date.now();
+      state.pendingTimer = setTimeout(async () => {
+        state.pendingTimer = null;
+        const queuedName = state.pendingName;
+        const queuedCall = state.pendingApiCall;
+        state.pendingName = null;
+        state.pendingApiCall = null;
+        if (queuedName !== null && queuedCall) {
+          state.lastUpdateTime = Date.now();
           try {
-            await apiCall(queuedName);
+            await queuedCall(queuedName);
           } catch (err) {
             console.error('[BotName] Deferred name update failed:', err instanceof Error ? err.message : err);
           }

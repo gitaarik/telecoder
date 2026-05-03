@@ -141,7 +141,7 @@ async function autoResumeAfterReload(bot: Bot): Promise<void> {
       if (entry.topic && isBotNameEnabled(sessionKey)) {
         const displayName = setSessionTopic(sessionKey, entry.topic);
         try {
-          await rateLimitedSetMyName((n) => bot.api.setMyName(n), displayName);
+          await rateLimitedSetMyName(bot.api, (n) => bot.api.setMyName(n), displayName);
         } catch (e) {
           console.debug('[AutoResume] Failed to update bot name:', e instanceof Error ? e.message : e);
         }

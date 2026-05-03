@@ -420,7 +420,7 @@ function setTopicTool(toolsCtx: McpToolsContext) {
         const trimmedTopic = topic.trim();
         const displayName = setSessionTopic(sessionKey, trimmedTopic);
 
-        await rateLimitedSetMyName((n) => toolsCtx.telegramCtx.api.setMyName(n), displayName);
+        await rateLimitedSetMyName(toolsCtx.telegramCtx.api, (n) => toolsCtx.telegramCtx.api.setMyName(n), displayName);
 
         return {
           content: [{

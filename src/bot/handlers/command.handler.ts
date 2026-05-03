@@ -107,7 +107,7 @@ function buildBotDisplayName(sessionKey: string): string {
 async function updateBotName(ctx: Context, sessionKey: string, projectPath: string): Promise<void> {
   if (!isBotNameEnabled(sessionKey)) return;
   try {
-    await rateLimitedSetMyName((n) => ctx.api.setMyName(n), buildBotDisplayName(sessionKey));
+    await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), buildBotDisplayName(sessionKey));
   } catch (err) {
     console.error('[Bot] Failed to update bot name:', err);
   }
@@ -151,7 +151,7 @@ export async function handleTopic(ctx: Context): Promise<void> {
   const displayName = setSessionTopic(sessionKey, topic);
   if (isBotNameEnabled(sessionKey)) {
     try {
-      await rateLimitedSetMyName((n) => ctx.api.setMyName(n), displayName);
+      await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), displayName);
     } catch (err) {
       console.error('[Bot] Failed to update bot name:', err);
     }
@@ -218,7 +218,7 @@ export async function handleBotNameCallback(ctx: Context): Promise<void> {
   // Reset bot name to base when disabling
   if (!newState) {
     try {
-      await rateLimitedSetMyName((n) => ctx.api.setMyName(n), config.BOT_NAME);
+      await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), config.BOT_NAME);
     } catch (err) {
       console.error('[Bot] Failed to reset bot name:', err);
     }
@@ -1556,7 +1556,7 @@ export async function handleReset(ctx: Context): Promise<void> {
   setSessionTopic(sessionKey, '');
   if (isBotNameEnabled(sessionKey)) {
     try {
-      await rateLimitedSetMyName((n) => ctx.api.setMyName(n), buildBotDisplayName(sessionKey));
+      await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), buildBotDisplayName(sessionKey));
     } catch (err) {
       console.debug('[Reset] Failed to reset bot name:', err instanceof Error ? err.message : err);
     }
