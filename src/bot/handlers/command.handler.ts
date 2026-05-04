@@ -1476,10 +1476,9 @@ export async function handleRestartCallback(ctx: Context): Promise<void> {
   }
 }
 
-export async function handleRebuild(ctx: Context): Promise<void> {
-  const args = ctx.message?.text?.split(/\s+/).slice(1).join(' ').trim();
-  const reloadAll = args?.toLowerCase() === 'all';
+type RebuildScope = 'one' | 'all';
 
+async function performRebuild(ctx: Context, scope: RebuildScope): Promise<void> {
   // Step 1: Build
   await ctx.reply('🔨 Building...');
 
@@ -1496,14 +1495,14 @@ export async function handleRebuild(ctx: Context): Promise<void> {
     return;
   }
 
-  // Step 2: Write auto-resume marker or send manual buttons
+  // Step 2: Write auto-resume marker
   if (config.AUTO_RESTORE_SESSION) {
     writeReloadMarker();
   }
 
   // Step 3: Restart
   if (!isMainThread) {
-    if (reloadAll) {
+    if (scope === 'all') {
       await ctx.reply('✅ Build succeeded. Restarting all instances...');
       const { requestRestartAll } = await import('../../index.js');
       requestRestartAll();
@@ -1516,7 +1515,7 @@ export async function handleRebuild(ctx: Context): Promise<void> {
     return;
   }
 
-  // Single-instance mode
+  // Single-instance mode (scope is moot — only one process)
   await ctx.reply('✅ Build succeeded. Restarting...');
   if (!config.AUTO_RESTORE_SESSION) await sendRestoreButtons(ctx);
 
@@ -1534,6 +1533,76 @@ export async function handleRebuild(ctx: Context): Promise<void> {
     child.unref();
   } catch (error) {
     console.error('[Reload] Failed to restart via botctl:', sanitizeError(error));
+  }
+}
+
+export async function handleRebuild(ctx: Context): Promise<void> {
+  const args = ctx.message?.text?.split(/\s+/).slice(1).join(' ').trim();
+
+  // Legacy direct invocation: /rebuild all
+  if (args?.toLowerCase() === 'all') {
+    await performRebuild(ctx, 'all');
+    return;
+  }
+  if (args?.toLowerCase() === 'one' || args?.toLowerCase() === 'this') {
+    await performRebuild(ctx, 'one');
+    return;
+  }
+
+  // Single-instance mode: only one process exists, so skip the this-vs-all
+  // distinction and just confirm.
+  if (isMainThread) {
+    await ctx.reply('🔄 Rebuild and restart the bot?', {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: '✅ Rebuild', callback_data: 'rebuild:one' },
+            { text: '❌ Cancel', callback_data: 'rebuild:cancel' },
+          ],
+        ],
+      },
+    });
+    return;
+  }
+
+  // Multi-instance (worker) mode: offer this/all/cancel
+  await ctx.reply('🔄 Rebuild and restart which?', {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '🔧 This instance only', callback_data: 'rebuild:one' }],
+        [{ text: '🌐 All instances', callback_data: 'rebuild:all' }],
+        [{ text: '❌ Cancel', callback_data: 'rebuild:cancel' }],
+      ],
+    },
+  });
+}
+
+export async function handleRebuildCallback(ctx: Context): Promise<void> {
+  const data = ctx.callbackQuery?.data;
+  if (!data) return;
+
+  await ctx.answerCallbackQuery();
+
+  // Remove the menu keyboard so it can't be tapped twice
+  try {
+    await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } });
+  } catch {
+    // ignore — message may have been edited or deleted
+  }
+
+  if (data === 'rebuild:cancel') {
+    await ctx.reply('❌ Rebuild cancelled.');
+    return;
+  }
+
+  if (data === 'rebuild:all') {
+    await performRebuild(ctx, 'all');
+    return;
+  }
+
+  if (data === 'rebuild:one') {
+    await performRebuild(ctx, 'one');
+    return;
   }
 }
 

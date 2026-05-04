@@ -12,7 +12,7 @@ import { clearConversation } from './providers/provider-router.js';
 import { parseSessionKey } from './utils/session-key.js';
 import { setSessionTopic, getEffortLabel } from './bot/handlers/command.handler.js';
 import { isBotNameEnabled, rateLimitedSetMyName } from './telegram/botname-settings.js';
-import { splitMessage } from './telegram/markdown.js';
+import { splitMessage, escapeMarkdownV2, processMessageForTelegram } from './telegram/markdown.js';
 import type { Bot } from 'grammy';
 
 // When running as a worker thread (multi-instance mode), prefix all console
@@ -148,27 +148,50 @@ async function autoResumeAfterReload(bot: Bot): Promise<void> {
       }
 
       const projectName = path.basename(session.workingDirectory);
-      let msg = `✅ Reloaded and session restored: ${projectName}`;
+      const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};
+
+      // Header: plain status text — escape for MarkdownV2 so any special chars
+      // in topic/project names don't break the parser.
+      let header = `✅ Reloaded and session restored: ${escapeMarkdownV2(projectName)}`;
       if (entry.topic) {
-        msg += ` (topic: ${entry.topic})`;
+        header += ` \\(topic: ${escapeMarkdownV2(entry.topic)}\\)`;
       }
       const effortLabel = getEffortLabel(chatId);
       if (effortLabel) {
-        msg += `\nEffort: ${effortLabel}`;
+        header += `\nEffort: ${escapeMarkdownV2(effortLabel)}`;
       }
       if (entry.lastMessagePreview) {
-        msg += `\n\n📝 Last prompt:\n${entry.lastMessagePreview}`;
+        header += `\n\n📝 Last prompt:\n${escapeMarkdownV2(entry.lastMessagePreview)}`;
       }
+      try {
+        await bot.api.sendMessage(chatId, header, { parse_mode: 'MarkdownV2', ...threadOpts });
+      } catch {
+        // Markdown parser rejected — fall back to plain text without escapes.
+        const plain = header.replace(/\\(.)/g, '$1');
+        for (const chunk of splitMessage(plain)) {
+          await bot.api.sendMessage(chatId, chunk, threadOpts);
+        }
+      }
+
+      // Assistant preview: re-render with full MarkdownV2 formatting (mirrors
+      // how messageSender.sendMessage delivers normal responses) so bold/code/
+      // links survive the resume.
       if (entry.lastAssistantPreview) {
-        msg += `\n\n💬 Last response:\n${entry.lastAssistantPreview}`;
-      }
-      // The last response can span multiple Telegram messages — chunk so
-      // it survives the 4096-char per-message limit instead of getting cut off.
-      const chunks = splitMessage(msg);
-      for (const chunk of chunks) {
-        await bot.api.sendMessage(chatId, chunk, {
-          ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
-        });
+        await bot.api.sendMessage(chatId, '💬 Last response:', threadOpts);
+        const parts = processMessageForTelegram(entry.lastAssistantPreview);
+        let mdFailed = false;
+        for (const part of parts) {
+          if (mdFailed) break;
+          try {
+            await bot.api.sendMessage(chatId, part, { parse_mode: 'MarkdownV2', ...threadOpts });
+          } catch (error) {
+            console.error('[AutoResume] MarkdownV2 send failed, falling back to plain text:', error);
+            mdFailed = true;
+            for (const chunk of splitMessage(entry.lastAssistantPreview)) {
+              await bot.api.sendMessage(chatId, chunk, threadOpts);
+            }
+          }
+        }
       }
       resumed++;
     } catch (err) {

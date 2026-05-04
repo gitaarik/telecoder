@@ -57,6 +57,7 @@ import {
   handleBotNameCallback,
   handleTopic,
   handleRebuild,
+  handleRebuildCallback,
   handleBtw,
   handleEffort,
   handleEffortCallback,
@@ -310,6 +311,8 @@ export async function createBot(): Promise<Bot> {
       await handleRedditActionCallback(ctx);
     } else if (data.startsWith('restart:')) {
       await handleRestartCallback(ctx);
+    } else if (data.startsWith('rebuild:')) {
+      await handleRebuildCallback(ctx);
     } else if (data.startsWith('reset:')) {
       await handleResetCallback(ctx);
     } else if (data.startsWith('effort:')) {
