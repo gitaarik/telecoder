@@ -21,6 +21,14 @@
 
 ---
 
+> **Active fork** maintained by [@gitaarik](https://github.com/gitaarik) since
+> February 2026. Substantially extended from the [original by @NachoSEO](https://github.com/NachoSEO/claudegram)
+> with auto-topic, multi-instance launcher, /effort + /tasks commands,
+> background task lifecycle, Skills + TodoWrite support, agent watchdog,
+> plan-mode surfacing, and more. See [Credits](#credits) for full attribution.
+
+---
+
 ## What is this?
 
 Claudegram bridges Telegram to a **full Claude Code agent** running locally on your machine. Send a message in Telegram — Claude reads your files, runs commands, writes code, browses Reddit, fetches Medium articles, transcribes voice notes, and speaks responses back. All from your phone.
@@ -116,7 +124,7 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 ### Setup
 
 ```bash
-git clone https://github.com/NachoSEO/claudegram.git
+git clone https://github.com/gitaarik/claudegram.git
 cd claudegram
 cp .env.example .env
 ```
@@ -422,7 +430,33 @@ Then `/continue` or `/resume` in Telegram to restore your session.
 
 ## Credits
 
-Original project by [NachoSEO](https://github.com/NachoSEO/claudegram). Extended with Reddit video downloads, voice transcription, TTS, Medium integration, Telegraph output, image uploads, and session continuity.
+Originally created by [@NachoSEO](https://github.com/NachoSEO/claudegram).
+This active fork by [@gitaarik](https://github.com/gitaarik) extends it with:
+
+- **Auto-topic & dynamic bot name** — bot display name reflects current
+  work topic, derived via parallel Haiku side-call; per-chat /topic and
+  /botname controls
+- **Multi-instance launcher** — run multiple bots from one process with
+  per-bot session scoping
+- **Background task lifecycle** — surface SDK task lifecycle (started,
+  progress, notifications) in the streaming UI; /tasks command to inspect
+- **Monitor events** — separate Telegram messages for streaming Monitor
+  tool output
+- **Reasoning effort control** — /effort command (low/medium/high/xhigh/
+  max) with icon prefix in bot name; /btw side-question command
+- **Plan mode surfacing** — extract plan content from spontaneous plan
+  mode and inject into chat
+- **Skills + TodoWrite** — full SDK skill discovery; live-updating
+  per-turn checklist for TodoWrite calls
+- **send_file MCP tool** — Claude can deliver files directly via Telegram
+- **Session resilience** — auto-restore on restart (/rebuild), persistent
+  topic + preview across restarts, last-response display on resume
+- **Agent watchdog** — silence/stuck-tool detection, force-abort on stuck
+  queries, /cancel works during hangs
+- **Message batching middleware** — combines rapid split pastes into one
+  prompt
+- **SDK isolation** — bot runs in a clean SDK env to avoid user-level
+  plugin tool-deferral interfering with proactive MCP calls
 
 ## License
 
