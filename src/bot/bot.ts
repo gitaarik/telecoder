@@ -21,6 +21,7 @@ import {
   handleTelegraphCallback,
   handleBotStatus,
   handleRestartBot,
+  handleRestartBotCallback,
   handleRestartCallback,
   handleContext,
   handlePing,
@@ -155,7 +156,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'continue', description: '▶️ Continue last session' },
     { command: 'botstatus', description: '🩺 Show bot process status' },
     { command: 'restartbot', description: '🔁 Restart the bot' },
-    { command: 'rebuild', description: '🔄 Rebuild and restart with session restore' },
+    { command: 'rebuildbot', description: '🔄 Rebuild and restart with session restore' },
     { command: 'context', description: '🧠 Show Claude context usage' },
     { command: 'plan', description: '📋 Start planning mode' },
     { command: 'explore', description: '🔍 Explore codebase' },
@@ -199,7 +200,7 @@ export async function createBot(): Promise<Bot> {
   bot.command('ping', handlePing);
   bot.command('status', handleStatus);
   bot.command('restartbot', handleRestartBot);
-  bot.command('rebuild', handleRebuild);
+  bot.command('rebuildbot', handleRebuild);
   bot.command('btw', handleBtw); // Side question — must bypass queue to work mid-task
   bot.command('tasks', handleTasks); // Read-only; must bypass queue so it works mid-stream
   // /tasks inline-keyboard buttons (view/back/refresh) also need to bypass
@@ -309,6 +310,8 @@ export async function createBot(): Promise<Bot> {
       await handleExtractCallback(ctx);
     } else if (data.startsWith('reddit_action:')) {
       await handleRedditActionCallback(ctx);
+    } else if (data.startsWith('restartbot:')) {
+      await handleRestartBotCallback(ctx);
     } else if (data.startsWith('restart:')) {
       await handleRestartCallback(ctx);
     } else if (data.startsWith('rebuild:')) {

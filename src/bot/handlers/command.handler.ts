@@ -1404,24 +1404,24 @@ export async function handleBotStatus(ctx: Context): Promise<void> {
   await replyMd(ctx, msg);
 }
 
-export async function handleRestartBot(ctx: Context): Promise<void> {
+type RestartScope = 'one' | 'all';
+
+async function performRestart(ctx: Context, scope: RestartScope): Promise<void> {
   // Multi-instance mode (worker thread) — restart via launcher, not shell script
   if (!isMainThread) {
-    const args = ctx.message?.text?.split(/\s+/).slice(1).join(' ').trim();
-
-    // Cross-bot restart: /restartbot <name>
-    if (args) {
-      const { requestSiblingRestart } = await import('../../index.js');
-      const result = await requestSiblingRestart(args);
-      if (result.success) {
-        await replyMd(ctx, `🔁 Restarting *${esc(result.name ?? args)}*\\.\\.\\. it should be back in ~10 seconds\\.`);
+    if (scope === 'all') {
+      if (config.AUTO_RESTORE_SESSION) {
+        await replyMd(ctx, '🔁 Restarting all bot instances\\.\n\n⏳ Sessions will be restored automatically\\.');
+        writeReloadMarker();
       } else {
-        await replyMd(ctx, `❌ Could not restart *${esc(args)}*: ${esc(result.reason ?? 'unknown error')}`);
+        await replyMd(ctx, '🔁 Restarting all bot instances\\.\n\n⏳ Please wait ~10 seconds\\.');
+        await sendRestoreButtons(ctx);
       }
+      const { requestRestartAll } = await import('../../index.js');
+      requestRestartAll();
       return;
     }
 
-    // Self-restart
     if (config.AUTO_RESTORE_SESSION) {
       await replyMd(ctx, '🔁 Restarting this bot instance\\.\n\n⏳ Session will be restored automatically\\.');
       writeReloadMarker();
@@ -1458,6 +1458,87 @@ export async function handleRestartBot(ctx: Context): Promise<void> {
     child.unref();
   } catch (error) {
     console.error('[BotCtl] Failed to restart:', sanitizeError(error));
+  }
+}
+
+export async function handleRestartBot(ctx: Context): Promise<void> {
+  const args = ctx.message?.text?.split(/\s+/).slice(1).join(' ').trim();
+
+  // Cross-bot restart: /restartbot <name> — direct, no menu
+  if (args && !isMainThread && args.toLowerCase() !== 'all' && args.toLowerCase() !== 'one' && args.toLowerCase() !== 'this') {
+    const { requestSiblingRestart } = await import('../../index.js');
+    const result = await requestSiblingRestart(args);
+    if (result.success) {
+      await replyMd(ctx, `🔁 Restarting *${esc(result.name ?? args)}*\\.\\.\\. it should be back in ~10 seconds\\.`);
+    } else {
+      await replyMd(ctx, `❌ Could not restart *${esc(args)}*: ${esc(result.reason ?? 'unknown error')}`);
+    }
+    return;
+  }
+
+  // Legacy direct invocations: /restartbot all | /restartbot one | /restartbot this
+  if (args?.toLowerCase() === 'all') {
+    await performRestart(ctx, 'all');
+    return;
+  }
+  if (args?.toLowerCase() === 'one' || args?.toLowerCase() === 'this') {
+    await performRestart(ctx, 'one');
+    return;
+  }
+
+  // Single-instance mode: only one process exists, so just confirm.
+  if (isMainThread) {
+    await ctx.reply('🔁 Restart the bot?', {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: '✅ Restart', callback_data: 'restartbot:one' },
+            { text: '❌ Cancel', callback_data: 'restartbot:cancel' },
+          ],
+        ],
+      },
+    });
+    return;
+  }
+
+  // Multi-instance (worker) mode: offer this/all/cancel
+  await ctx.reply('🔁 Restart which?', {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '🔧 This instance only', callback_data: 'restartbot:one' }],
+        [{ text: '🌐 All instances', callback_data: 'restartbot:all' }],
+        [{ text: '❌ Cancel', callback_data: 'restartbot:cancel' }],
+      ],
+    },
+  });
+}
+
+export async function handleRestartBotCallback(ctx: Context): Promise<void> {
+  const data = ctx.callbackQuery?.data;
+  if (!data) return;
+
+  await ctx.answerCallbackQuery();
+
+  // Remove the menu keyboard so it can't be tapped twice
+  try {
+    await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } });
+  } catch {
+    // ignore — message may have been edited or deleted
+  }
+
+  if (data === 'restartbot:cancel') {
+    await ctx.reply('❌ Restart cancelled.');
+    return;
+  }
+
+  if (data === 'restartbot:all') {
+    await performRestart(ctx, 'all');
+    return;
+  }
+
+  if (data === 'restartbot:one') {
+    await performRestart(ctx, 'one');
+    return;
   }
 }
 
@@ -1539,7 +1620,7 @@ async function performRebuild(ctx: Context, scope: RebuildScope): Promise<void> 
 export async function handleRebuild(ctx: Context): Promise<void> {
   const args = ctx.message?.text?.split(/\s+/).slice(1).join(' ').trim();
 
-  // Legacy direct invocation: /rebuild all
+  // Legacy direct invocation: /rebuildbot all
   if (args?.toLowerCase() === 'all') {
     await performRebuild(ctx, 'all');
     return;

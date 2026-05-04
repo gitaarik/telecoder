@@ -112,7 +112,7 @@ export function getAvailableCommands(): string {
       '• `/context` \\- Show Claude context usage',
       '• `/botstatus` \\- Show bot process status',
       '• `/restartbot` \\- Restart the bot process',
-      '• `/rebuild` \\- Rebuild and restart with auto\\-resume',
+      '• `/rebuildbot` \\- Rebuild and restart with auto\\-resume',
       '• `/ping` \\- Check if bot is responsive',
       '• `/cancel` \\- Cancel current request',
       '• `/mode` \\- Toggle streaming mode',

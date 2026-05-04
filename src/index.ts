@@ -81,7 +81,7 @@ export function requestRestartAll(): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Auto-resume after /rebuild or /restartbot
+// Auto-resume after /rebuildbot or /restartbot
 // ---------------------------------------------------------------------------
 
 const RELOAD_MARKER_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
@@ -227,7 +227,7 @@ async function main() {
   // This lets /cancel bypass the per-chat queue and interrupt running queries.
   const runner = run(bot);
 
-  // Auto-resume sessions after /rebuild or /restartbot
+  // Auto-resume sessions after /rebuildbot or /restartbot
   try {
     await autoResumeAfterReload(bot);
   } catch (err) {

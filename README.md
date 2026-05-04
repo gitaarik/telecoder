@@ -449,7 +449,7 @@ This active fork by [@gitaarik](https://github.com/gitaarik) extends it with:
 - **Skills + TodoWrite** — full SDK skill discovery; live-updating
   per-turn checklist for TodoWrite calls
 - **send_file MCP tool** — Claude can deliver files directly via Telegram
-- **Session resilience** — auto-restore on restart (/rebuild), persistent
+- **Session resilience** — auto-restore on restart (/rebuildbot), persistent
   topic + preview across restarts, last-response display on resume
 - **Agent watchdog** — silence/stuck-tool detection, force-abort on stuck
   queries, /cancel works during hangs
