@@ -1412,13 +1412,14 @@ async function performRestart(ctx: Context, scope: RestartScope): Promise<void> 
     if (scope === 'all') {
       if (config.AUTO_RESTORE_SESSION) {
         await replyMd(ctx, '🔁 Restarting all bot instances\\.\n\n⏳ Sessions will be restored automatically\\.');
-        writeReloadMarker();
       } else {
         await replyMd(ctx, '🔁 Restarting all bot instances\\.\n\n⏳ Please wait ~10 seconds\\.');
         await sendRestoreButtons(ctx);
       }
+      // Marker writing for sibling bots happens in the launcher — it has the
+      // tokens to derive each bot's marker path. We can't write them here.
       const { requestRestartAll } = await import('../../index.js');
-      requestRestartAll();
+      requestRestartAll(config.AUTO_RESTORE_SESSION);
       return;
     }
 
@@ -1467,7 +1468,7 @@ export async function handleRestartBot(ctx: Context): Promise<void> {
   // Cross-bot restart: /restartbot <name> — direct, no menu
   if (args && !isMainThread && args.toLowerCase() !== 'all' && args.toLowerCase() !== 'one' && args.toLowerCase() !== 'this') {
     const { requestSiblingRestart } = await import('../../index.js');
-    const result = await requestSiblingRestart(args);
+    const result = await requestSiblingRestart(args, config.AUTO_RESTORE_SESSION);
     if (result.success) {
       await replyMd(ctx, `🔁 Restarting *${esc(result.name ?? args)}*\\.\\.\\. it should be back in ~10 seconds\\.`);
     } else {
@@ -1576,18 +1577,16 @@ async function performRebuild(ctx: Context, scope: RebuildScope): Promise<void> 
     return;
   }
 
-  // Step 2: Write auto-resume marker
-  if (config.AUTO_RESTORE_SESSION) {
-    writeReloadMarker();
-  }
-
-  // Step 3: Restart
+  // Step 2: Restart. For 'all', the launcher writes markers for every sibling
+  // (we can't — markers live at per-bot paths keyed by each bot's token). For
+  // 'one' and single-instance, write the local marker now.
   if (!isMainThread) {
     if (scope === 'all') {
       await ctx.reply('✅ Build succeeded. Restarting all instances...');
       const { requestRestartAll } = await import('../../index.js');
-      requestRestartAll();
+      requestRestartAll(config.AUTO_RESTORE_SESSION);
     } else {
+      if (config.AUTO_RESTORE_SESSION) writeReloadMarker();
       await ctx.reply('✅ Build succeeded. Restarting this instance...');
       if (!config.AUTO_RESTORE_SESSION) await sendRestoreButtons(ctx);
       const { requestRestart } = await import('../../index.js');
@@ -1595,6 +1594,8 @@ async function performRebuild(ctx: Context, scope: RebuildScope): Promise<void> 
     }
     return;
   }
+
+  if (config.AUTO_RESTORE_SESSION) writeReloadMarker();
 
   // Single-instance mode (scope is moot — only one process)
   await ctx.reply('✅ Build succeeded. Restarting...');

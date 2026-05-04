@@ -284,5 +284,12 @@ const CLAUDEGRAM_DIR = path.join(os.homedir(), '.claudegram');
 
 /** Per-bot reload marker file path so multi-instance setups don't cross-restore. */
 export function getReloadMarkerPath(): string {
-  return path.join(CLAUDEGRAM_DIR, `pending-reload-${BOT_ID}.json`);
+  return getReloadMarkerPathForBotId(BOT_ID);
+}
+
+/** Same as getReloadMarkerPath, but for an arbitrary bot ID — used by the
+ * launcher when it needs to write markers for sibling bots on /restartbot all
+ * and /rebuildbot all. */
+export function getReloadMarkerPathForBotId(botId: string): string {
+  return path.join(CLAUDEGRAM_DIR, `pending-reload-${botId}.json`);
 }

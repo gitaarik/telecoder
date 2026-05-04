@@ -10,9 +10,10 @@
  */
 
 import { Worker, isMainThread } from 'worker_threads';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'fs';
 import { config as loadEnv } from 'dotenv';
 import * as path from 'path';
+import * as os from 'os';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -156,6 +157,24 @@ const lastHeartbeat = new Map<string, number>();
 interface WorkerMessage {
   type: string;
   name?: string;
+  autoResume?: boolean;
+}
+
+// Mirrors getReloadMarkerPathForBotId in src/config.ts. We can't import config
+// here because the launcher process has no TELEGRAM_BOT_TOKEN env var (only
+// workers do), and config.ts validates it at import time.
+const CLAUDEGRAM_DIR = path.join(os.homedir(), '.claudegram');
+
+function writeReloadMarkerForToken(token: string): void {
+  try {
+    const botId = token.split(':')[0];
+    if (!botId) return;
+    const markerPath = path.join(CLAUDEGRAM_DIR, `pending-reload-${botId}.json`);
+    mkdirSync(CLAUDEGRAM_DIR, { recursive: true });
+    writeFileSync(markerPath, JSON.stringify({ timestamp: new Date().toISOString() }));
+  } catch (err) {
+    console.error('[Launcher] Failed to write reload marker:', err);
+  }
 }
 
 function buildWorkerEnv(inst: ResolvedInstance): Record<string, string> {
@@ -210,15 +229,24 @@ function spawnWorker(inst: ResolvedInstance): Worker {
         worker.postMessage({ type: 'restart_sibling_result', success: false, name: targetName, reason: 'no name provided' });
         return;
       }
+
+      const restartTarget = (resolvedName: string) => {
+        const targetInst = instances.find(i => i.name === resolvedName);
+        if (msg.autoResume && targetInst) {
+          writeReloadMarkerForToken(targetInst.token);
+        }
+        const w = workers.get(resolvedName)!;
+        pendingRestarts.add(resolvedName);
+        w.terminate();
+      };
+
       const sibling = workers.get(targetName);
       if (!sibling) {
         // Try case-insensitive match
         const match = [...workers.keys()].find(k => k.toLowerCase() === targetName.toLowerCase());
         if (match) {
-          const siblingWorker = workers.get(match)!;
           console.log(`[Launcher] ${inst.name} requested restart of sibling ${match}`);
-          pendingRestarts.add(match);
-          siblingWorker.terminate();
+          restartTarget(match);
           worker.postMessage({ type: 'restart_sibling_result', success: true, name: match });
         } else {
           const available = [...workers.keys()].filter(k => k !== inst.name);
@@ -231,14 +259,16 @@ function spawnWorker(inst: ResolvedInstance): Worker {
         worker.postMessage({ type: 'restart_sibling_result', success: false, name: targetName, reason: 'use /restartbot without arguments to restart yourself' });
       } else {
         console.log(`[Launcher] ${inst.name} requested restart of sibling ${targetName}`);
-        pendingRestarts.add(targetName);
-        sibling.terminate();
+        restartTarget(targetName);
         worker.postMessage({ type: 'restart_sibling_result', success: true, name: targetName });
       }
     } else if (msg?.type === 'restart_all') {
-      console.log(`[Launcher] ${inst.name} requested restart of ALL instances`);
+      console.log(`[Launcher] ${inst.name} requested restart of ALL instances${msg.autoResume ? ' (with auto-resume)' : ''}`);
       for (const i of instances) {
         pendingRestarts.add(i.name);
+        if (msg.autoResume) {
+          writeReloadMarkerForToken(i.token);
+        }
       }
       // Stagger terminations to avoid port conflicts on respawn
       let delay = 0;

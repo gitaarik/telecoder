@@ -47,8 +47,11 @@ export function requestRestart(): boolean {
   return false;
 }
 
-/** Ask the launcher to restart a sibling worker by name. */
-export function requestSiblingRestart(name: string): Promise<{ success: boolean; name?: string; reason?: string }> {
+/** Ask the launcher to restart a sibling worker by name. When autoResume is
+ * true, the launcher writes a reload marker for the sibling so it auto-
+ * restores its sessions on respawn (the requesting worker can't write the
+ * marker itself — it lives at a per-bot path keyed by the sibling's token). */
+export function requestSiblingRestart(name: string, autoResume = false): Promise<{ success: boolean; name?: string; reason?: string }> {
   return new Promise((resolve) => {
     if (isMainThread || !parentPort) {
       return resolve({ success: false, reason: 'not in multi-instance mode' });
@@ -62,7 +65,7 @@ export function requestSiblingRestart(name: string): Promise<{ success: boolean;
       }
     };
     pp.on('message', handler);
-    pp.postMessage({ type: 'restart_sibling', name });
+    pp.postMessage({ type: 'restart_sibling', name, autoResume });
     // Timeout in case the launcher never responds
     const timer = setTimeout(() => {
       pp.off('message', handler);
@@ -71,10 +74,12 @@ export function requestSiblingRestart(name: string): Promise<{ success: boolean;
   });
 }
 
-/** Ask the launcher to restart ALL workers. Returns false if not in worker mode. */
-export function requestRestartAll(): boolean {
+/** Ask the launcher to restart ALL workers. When autoResume is true, the
+ * launcher writes reload markers for every instance so all of them — not just
+ * the one that initiated the command — restore their sessions on respawn. */
+export function requestRestartAll(autoResume = false): boolean {
   if (!isMainThread && parentPort) {
-    parentPort.postMessage({ type: 'restart_all' });
+    parentPort.postMessage({ type: 'restart_all', autoResume });
     return true;
   }
   return false;
