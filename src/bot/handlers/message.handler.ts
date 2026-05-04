@@ -16,7 +16,7 @@ import {
 import { isClaudeCommand } from '../../claude/command-parser.js';
 import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
 import { createTelegraphFromFile } from '../../telegram/telegraph.js';
-import { getStreamingMode, executeRedditFetch, executeMediumFetch, showExtractMenu, projectStatusSuffix, resumeCommandMessage, setSessionTopic } from './command.handler.js';
+import { getStreamingMode, executeRedditFetch, executeMediumFetch, showExtractMenu, projectStatusSuffix, resumeCommandMessage, setSessionTopic, clearTopicAndRefreshBotName } from './command.handler.js';
 import { isBotNameEnabled, rateLimitedSetMyName } from '../../telegram/botname-settings.js';
 import { summarizeTopicWithHaiku } from '../../claude/auto-topic-haiku.js';
 import { executeVReddit } from '../../reddit/vreddit.js';
@@ -367,6 +367,7 @@ async function handleProjectReply(ctx: Context, sessionKey: string, projectPath:
   // Set the project
   sessionManager.setWorkingDirectory(sessionKey, resolvedPath);
   clearConversation(sessionKey);
+  await clearTopicAndRefreshBotName(ctx, sessionKey);
 
   const projectName = path.basename(resolvedPath);
   await ctx.reply(

@@ -132,6 +132,34 @@ async function updateBotName(ctx: Context, sessionKey: string, projectPath: stri
 }
 
 /**
+ * Clear the session topic and refresh the bot display name accordingly.
+ * Called whenever the conversation context is wiped (clear, reset, project switch).
+ */
+export async function clearTopicAndRefreshBotName(ctx: Context, sessionKey: string): Promise<void> {
+  setSessionTopic(sessionKey, '');
+  if (!isBotNameEnabled(sessionKey)) return;
+  try {
+    await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), buildBotDisplayName(sessionKey));
+  } catch (err) {
+    console.debug('[Topic] Failed to refresh bot name after topic clear:', err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * Restore the session topic from the saved value (or clear if absent) and refresh
+ * the bot display name. Called when resuming/continuing a previous conversation.
+ */
+export async function restoreTopicAndRefreshBotName(ctx: Context, sessionKey: string, topic: string | undefined): Promise<void> {
+  setSessionTopic(sessionKey, topic || '');
+  if (!isBotNameEnabled(sessionKey)) return;
+  try {
+    await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), buildBotDisplayName(sessionKey));
+  } catch (err) {
+    console.debug('[Topic] Failed to refresh bot name after topic restore:', err instanceof Error ? err.message : err);
+  }
+}
+
+/**
  * Set the session topic programmatically (used by MCP tool and auto-resume).
  * Returns the new display name string.
  */
@@ -572,7 +600,7 @@ export async function handleClear(ctx: Context): Promise<void> {
   const projectName = session ? path.basename(session.workingDirectory) : 'current session';
 
   await ctx.reply(
-    `⚠️ *Clear Session?*\n\nThis will clear *${esc(projectName)}* and all conversation history\\.\n\n_This cannot be undone\\._`,
+    `⚠️ *Clear conversation?*\n\nThis wipes the conversation history for *${esc(projectName)}*\\. The project stays selected\\.\n\n_This cannot be undone\\._`,
     {
       parse_mode: 'MarkdownV2',
       reply_markup: {
@@ -598,14 +626,19 @@ export async function handleClearCallback(ctx: Context): Promise<void> {
   const action = data.replace('clear:', '');
 
   if (action === 'confirm') {
-    sessionManager.clearSession(sessionKey);
+    // Preserve the working directory (project) — only wipe the conversation,
+    // matching Claude Code's /clear semantics. Use /reset for a full nuke.
     clearConversation(sessionKey);
+    await clearTopicAndRefreshBotName(ctx, sessionKey);
 
-    await ctx.answerCallbackQuery({ text: 'Session cleared!' });
-    await ctx.editMessageText(
-      '🔄 Session cleared\\.\n\nUse /project to set a new working directory\\.',
-      { parse_mode: 'MarkdownV2' }
-    );
+    const session = sessionManager.getSession(sessionKey);
+    const projectName = session ? path.basename(session.workingDirectory) : null;
+
+    await ctx.answerCallbackQuery({ text: 'Conversation cleared!' });
+    const msg = projectName
+      ? `🔄 Conversation cleared\\. Project *${esc(projectName)}* is still selected\\.`
+      : '🔄 Conversation cleared\\.';
+    await ctx.editMessageText(msg, { parse_mode: 'MarkdownV2' });
   } else {
     await ctx.answerCallbackQuery({ text: 'Cancelled' });
     await ctx.editMessageText('👍 Clear cancelled\\. Your session is intact\\.', { parse_mode: 'MarkdownV2' });
@@ -631,7 +664,7 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
   if (action === 'use') {
     sessionManager.setWorkingDirectory(sessionKey, state.current);
     clearConversation(sessionKey);
-    await updateBotName(ctx, sessionKey, state.current);
+    await clearTopicAndRefreshBotName(ctx, sessionKey);
 
     await ctx.answerCallbackQuery({ text: 'Project set' });
     await ctx.editMessageText(
@@ -905,7 +938,7 @@ export async function handleProject(ctx: Context): Promise<void> {
 
   sessionManager.setWorkingDirectory(sessionKey, projectPath);
   clearConversation(sessionKey);
-  await updateBotName(ctx, sessionKey, projectPath);
+  await clearTopicAndRefreshBotName(ctx, sessionKey);
 
   await replyMd(ctx, `✅ Project: *${esc(args)}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`);
 
@@ -943,7 +976,7 @@ export async function handleNewProject(ctx: Context): Promise<void> {
   fs.mkdirSync(projectPath, { recursive: true, mode: 0o700 });
   sessionManager.setWorkingDirectory(sessionKey, projectPath);
   clearConversation(sessionKey);
-  await updateBotName(ctx, sessionKey, projectPath);
+  await clearTopicAndRefreshBotName(ctx, sessionKey);
 
   await replyMd(ctx, `✅ Created and opened: *${esc(args)}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`);
 
@@ -1721,15 +1754,7 @@ export async function handleReset(ctx: Context): Promise<void> {
   clearConversation(sessionKey);
   sessionManager.clearSession(sessionKey);
 
-  // Clear topic and reset bot name
-  setSessionTopic(sessionKey, '');
-  if (isBotNameEnabled(sessionKey)) {
-    try {
-      await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), buildBotDisplayName(sessionKey));
-    } catch (err) {
-      console.debug('[Reset] Failed to reset bot name:', err instanceof Error ? err.message : err);
-    }
-  }
+  await clearTopicAndRefreshBotName(ctx, sessionKey);
 
   if (wasProcessing || reset) {
     await replyMd(ctx, '🔄 Session reset\\. Current request cancelled and session cleared\\.');
@@ -2067,6 +2092,8 @@ export async function handleResumeCallback(ctx: Context): Promise<void> {
   }
 
   clearConversation(sessionKey);
+  const entry = sessionHistory.getSessionByConversationId(sessionKey, conversationId);
+  await restoreTopicAndRefreshBotName(ctx, sessionKey, entry?.topic);
 
   await ctx.answerCallbackQuery({ text: 'Session resumed!' });
   await ctx.editMessageText(
@@ -2094,6 +2121,8 @@ export async function handleContinue(ctx: Context): Promise<void> {
   }
 
   clearConversation(sessionKey);
+  const entry = sessionHistory.getLastSession(sessionKey);
+  await restoreTopicAndRefreshBotName(ctx, sessionKey, entry?.topic);
 
   await replyMd(ctx,
     `✅ Continuing *${esc(path.basename(session.workingDirectory))}*\n\n` +

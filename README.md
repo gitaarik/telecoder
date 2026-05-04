@@ -155,7 +155,7 @@ Open your bot in Telegram → `/start`
 | `/start` | Welcome message |
 | `/project` | Set working directory (interactive picker) |
 | `/newproject <name>` | Create and switch to a new project |
-| `/clear` | Clear conversation + session |
+| `/clear` | Clear conversation history (project stays selected) |
 | `/status` | Current session info |
 | `/sessions` | List saved sessions |
 | `/resume` | Pick from recent sessions |
