@@ -236,6 +236,19 @@ Use it after creating or generating files (SVGs, images, PDFs, reports, code bun
 The file must be within the current working directory or /tmp. Maximum size: 50MB.
 When you generate a file and the user would benefit from receiving it, proactively send it — no need to ask.`;
 
+const ASK_USER_TOOL_PROMPT = `
+
+Ask User Tool:
+You have a claudegram_ask_user MCP tool that pops up a Telegram inline keyboard with multiple-choice options and pauses the agent loop until the user taps a button.
+Use it when:
+- You need a clear decision and free-text would be ambiguous (picking between 2–8 distinct approaches, confirming a destructive action, choosing among detected variants).
+- The user's instruction is genuinely ambiguous and asking for free-text would feel like more friction than tapping a button.
+Do NOT use it for:
+- Open-ended questions where the answer needs to be free-text.
+- Trivial confirmations where reasonable defaults exist (just proceed and note the assumption).
+- Yes/no questions that the conversation context already implies the answer to.
+Keep button labels ≤ 60 chars and prefer 2–4 options. Add an optional one-line description per option only when the label alone is unclear.`;
+
 const SET_TOPIC_TOOL_PROMPT = `
 
 Auto-Topic Tool (IMPORTANT — call this often):
@@ -273,6 +286,7 @@ Reasoning Summary (required when enabled):
 
 const TOOL_PROMPTS = [
   SEND_FILE_TOOL_PROMPT,
+  ASK_USER_TOOL_PROMPT,
   config.DYNAMIC_BOT_NAME && !config.AUTO_TOPIC_HAIKU ? SET_TOPIC_TOOL_PROMPT : '',
   config.REDDIT_ENABLED ? REDDIT_TOOL_PROMPT : '',
   config.VREDDIT_ENABLED ? REDDIT_VIDEO_TOOL_PROMPT : '',
@@ -447,11 +461,11 @@ export async function sendToAgent(
 
     const toolsOption = config.DANGEROUS_MODE
       ? { type: 'preset' as const, preset: 'claude_code' as const }
-      : ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Task', 'Skill', 'TodoWrite'];
+      : ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Task', 'Skill', 'TodoWrite', 'WebFetch', 'WebSearch', 'NotebookEdit'];
 
     const allowedToolsOption = config.DANGEROUS_MODE
       ? undefined
-      : ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Task', 'Skill', 'TodoWrite'];
+      : ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Task', 'Skill', 'TodoWrite', 'WebFetch', 'WebSearch', 'NotebookEdit'];
 
     // PreCompact hook always registered (logging only — notification sent from compact_boundary message)
     const preCompactHook: Partial<Record<HookEvent, HookCallbackMatcher[]>> = {

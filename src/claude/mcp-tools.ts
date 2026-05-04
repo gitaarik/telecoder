@@ -16,6 +16,7 @@ import { sessionManager } from './session-manager.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../utils/workspace-guard.js';
 import { isBotNameEnabled, rateLimitedSetMyName } from '../telegram/botname-settings.js';
 import { setSessionTopic } from '../bot/handlers/command.handler.js';
+import { createPendingQuestion } from './ask-user.js';
 
 // Lazy imports to avoid circular deps and unnecessary module loading
 async function importReddit() {
@@ -65,6 +66,7 @@ function buildToolList(toolsCtx: McpToolsContext) {
     listProjectsTool(toolsCtx),
     switchProjectTool(toolsCtx),
     sendFileTool(toolsCtx),
+    askUserTool(toolsCtx),
   ];
 
   if (config.DYNAMIC_BOT_NAME) {
@@ -478,3 +480,77 @@ function publishTelegraphTool(_toolsCtx: McpToolsContext) {
   );
 }
 
+
+function askUserTool(toolsCtx: McpToolsContext) {
+  return tool(
+    'claudegram_ask_user',
+    'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or 10 minutes pass. Keep the question short and the options crisp — labels must be ≤ 60 chars.',
+    {
+      question: z.string().describe('The question to display to the user. Keep concise (1-2 sentences).'),
+      options: z
+        .array(
+          z.object({
+            label: z.string().describe('Short button label shown in Telegram. Must be ≤ 60 chars.'),
+            description: z.string().optional().describe('Optional one-line context shown in the question body.'),
+          })
+        )
+        .min(2)
+        .max(8)
+        .describe('Between 2 and 8 options for the user to choose from.'),
+    },
+    async ({ question, options }) => {
+      try {
+        const ctx = toolsCtx.telegramCtx;
+        if (!ctx?.chat?.id) {
+          return {
+            content: [{ type: 'text' as const, text: 'Error: no Telegram context available to ask the user.' }],
+            isError: true,
+          };
+        }
+
+        const optionLabels = options.map((o) => o.label);
+        const { id, promise } = createPendingQuestion(optionLabels);
+
+        const lines: string[] = [`❓ ${question}`];
+        const annotated = options.filter((o) => o.description);
+        if (annotated.length > 0) {
+          lines.push('');
+          for (const o of options) {
+            if (o.description) {
+              lines.push(`• *${o.label}* — ${o.description}`);
+            }
+          }
+        }
+
+        const keyboard = options.map((o, idx) => [{
+          text: o.label.length > 60 ? o.label.slice(0, 57) + '…' : o.label,
+          callback_data: `q:${id}:${idx}`,
+        }]);
+
+        const threadId = ctx.message?.is_topic_message ? ctx.message?.message_thread_id : undefined;
+        await ctx.api.sendMessage(ctx.chat.id, lines.join('\n'), {
+          parse_mode: 'Markdown',
+          reply_markup: { inline_keyboard: keyboard },
+          ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
+        });
+
+        const answer = await promise;
+        if (!answer) {
+          return {
+            content: [{ type: 'text' as const, text: 'User did not respond within 10 minutes. Proceed using your best judgment or ask again.' }],
+            isError: false,
+          };
+        }
+
+        return {
+          content: [{ type: 'text' as const, text: `User selected: ${answer.label}` }],
+        };
+      } catch (error) {
+        return {
+          content: [{ type: 'text' as const, text: `Ask-user error: ${error instanceof Error ? error.message : String(error)}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+}

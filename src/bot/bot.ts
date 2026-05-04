@@ -67,9 +67,38 @@ import { handleMessage } from './handlers/message.handler.js';
 import { handleVoice } from './handlers/voice.handler.js';
 import { handlePhoto, handleImageDocument } from './handlers/photo.handler.js';
 import { createBatchMiddleware } from './middleware/message-batcher.js';
+import { resolvePendingQuestion } from '../claude/ask-user.js';
 
 // Resolve sequentialize constraint: same-chat updates are ordered,
 // but /cancel is registered BEFORE this middleware so it bypasses it.
+async function handleAskUserCallback(ctx: Context): Promise<void> {
+  const data = ctx.callbackQuery?.data;
+  if (!data) return;
+  const parts = data.split(':');
+  if (parts.length !== 3) return;
+  const [, id, idxStr] = parts;
+  const idx = parseInt(idxStr, 10);
+  if (Number.isNaN(idx)) return;
+
+  const resolved = resolvePendingQuestion(id, idx);
+  if (!resolved) {
+    await ctx.answerCallbackQuery({ text: 'This question already expired.' });
+    return;
+  }
+
+  await ctx.answerCallbackQuery();
+  // Strip the keyboard so the user can't tap again, leave the question text
+  // visible with a footer showing what they picked.
+  try {
+    const original = (ctx.callbackQuery?.message as { text?: string } | undefined)?.text ?? '';
+    const buttonText = (ctx.callbackQuery?.message as { reply_markup?: { inline_keyboard?: Array<Array<{ text?: string }>> } } | undefined)
+      ?.reply_markup?.inline_keyboard?.[idx]?.[0]?.text ?? `option ${idx + 1}`;
+    await ctx.editMessageText(`${original}\n\n✅ You picked: *${buttonText}*`, { parse_mode: 'Markdown' });
+  } catch {
+    // Edit may fail if message changed shape — non-fatal.
+  }
+}
+
 function getSequentializeKey(ctx: Context): string | undefined {
   const chatId = ctx.chat?.id;
   if (!chatId) return undefined;
@@ -175,6 +204,11 @@ export async function createBot(): Promise<Bot> {
   // /tasks inline-keyboard buttons (view/back/refresh) also need to bypass
   // sequentialize so they're responsive while a stream is active.
   bot.callbackQuery(/^tasks:/, handleTasksCallback);
+  // claudegram_ask_user button taps MUST bypass sequentialize: the agent
+  // query is mid-flight and waiting on this exact tap to complete the tool
+  // call. If the callback got queued, it'd deadlock behind the query that's
+  // waiting for it.
+  bot.callbackQuery(/^q:/, handleAskUserCallback);
 
   // Batch consecutive text messages BEFORE sequentialize.
   // When Telegram splits a long paste into multiple messages, this combines
