@@ -30,6 +30,18 @@ export const TOOL_ICONS: Record<string, string> = {
   // Notebook
   NotebookEdit: '📓',
 
+  // Claudegram MCP tools — keys are the SDK-reported full names so
+  // updateToolOperation/getToolIcon match without any extra normalization.
+  'mcp__claudegram-tools__claudegram_ask_user': '❓',
+  'mcp__claudegram-tools__claudegram_set_topic': '🏷️',
+  'mcp__claudegram-tools__claudegram_send_file': '📎',
+  'mcp__claudegram-tools__claudegram_fetch_reddit': '🔴',
+  'mcp__claudegram-tools__claudegram_fetch_medium': '📰',
+  'mcp__claudegram-tools__claudegram_extract_media': '🎬',
+  'mcp__claudegram-tools__claudegram_list_projects': '📂',
+  'mcp__claudegram-tools__claudegram_switch_project': '🔀',
+  'mcp__claudegram-tools__publish_telegraph': '📄',
+
   // Status indicators
   thinking: '💭',
   complete: '✅',
@@ -37,6 +49,17 @@ export const TOOL_ICONS: Record<string, string> = {
   warning: '⚠️',
   info: 'ℹ️',
 };
+
+/**
+ * Strip the `mcp__<server>__` prefix from a tool name so it can be displayed
+ * concisely (e.g. `mcp__claudegram-tools__claudegram_ask_user` → `claudegram_ask_user`).
+ * Returns the original name when no prefix is present.
+ */
+function stripMcpPrefix(toolName: string): string {
+  if (!toolName.startsWith('mcp__')) return toolName;
+  const lastSep = toolName.lastIndexOf('__');
+  return lastSep > 0 ? toolName.slice(lastSep + 2) : toolName;
+}
 
 // Spinner frames. Telegram throttles edits to ~5/min, so a fast-cycling braille
 // spinner just looks static. An hourglass is clearer at slow refresh rates.
@@ -50,10 +73,14 @@ export const PROGRESS = {
 };
 
 /**
- * Get icon for a tool name
+ * Get icon for a tool name. MCP tools without an explicit entry fall back
+ * to a generic 🛠️ so they're visually distinct from built-in tools (🔹).
  */
 export function getToolIcon(toolName: string): string {
-  return TOOL_ICONS[toolName] || '🔹';
+  const explicit = TOOL_ICONS[toolName];
+  if (explicit) return explicit;
+  if (toolName.startsWith('mcp__')) return '🛠️';
+  return '🔹';
 }
 
 /**
@@ -76,7 +103,7 @@ export function renderStatusLine(
   pausedMs?: number
 ): string {
   const spinner = getSpinnerFrame(spinnerIndex);
-  const detailStr = detail ? ` ${detail}` : '';
+  const detailStr = detail ? ` → ${detail}` : '';
   const timerStr = elapsedMs !== undefined && elapsedMs >= 5000
     ? ` [${formatDuration(elapsedMs)}]`
     : '';
@@ -113,22 +140,38 @@ export function renderToolOperation(toolName: string, detail?: string): string {
 }
 
 /**
- * Get human-readable action name for a tool
+ * Get human-readable action name for a tool.
+ * For MCP tools: explicit map first, then fall back to the de-prefixed
+ * name (e.g. `mcp__foo__bar_baz` → `bar_baz`) so the rendered status line
+ * stays short instead of dumping the full server-prefixed identifier.
  */
-function getToolAction(toolName: string): string {
+export function getToolAction(toolName: string): string {
   const actions: Record<string, string> = {
     Read: 'Reading',
     Write: 'Writing',
     Edit: 'Editing',
     Bash: 'Running',
     Grep: 'Searching',
-    Glob: 'Finding',
-    Task: 'Task',
+    Glob: 'Finding files',
+    Task: 'Running task',
+    Skill: 'Running skill',
+    TodoWrite: 'Todos',
     WebFetch: 'Fetching',
-    WebSearch: 'Searching',
+    WebSearch: 'Searching web',
     NotebookEdit: 'Editing notebook',
+    'mcp__claudegram-tools__claudegram_ask_user': 'Asking',
+    'mcp__claudegram-tools__claudegram_set_topic': 'Setting topic',
+    'mcp__claudegram-tools__claudegram_send_file': 'Sending file',
+    'mcp__claudegram-tools__claudegram_fetch_reddit': 'Fetching Reddit',
+    'mcp__claudegram-tools__claudegram_fetch_medium': 'Fetching Medium',
+    'mcp__claudegram-tools__claudegram_extract_media': 'Extracting media',
+    'mcp__claudegram-tools__claudegram_list_projects': 'Listing projects',
+    'mcp__claudegram-tools__claudegram_switch_project': 'Switching project',
+    'mcp__claudegram-tools__publish_telegraph': 'Publishing Telegraph',
   };
-  return actions[toolName] || toolName;
+  if (actions[toolName]) return actions[toolName];
+  if (toolName.startsWith('mcp__')) return stripMcpPrefix(toolName);
+  return toolName;
 }
 
 /**
@@ -159,6 +202,22 @@ export function extractToolDetail(toolName: string, input: Record<string, unknow
       return verbose ? (str('url') || str('query')) : truncateUrl(str('url') || str('query'));
     case 'Task':
       return verbose ? str('description') : truncateCommand(str('description'));
+    case 'mcp__claudegram-tools__claudegram_ask_user':
+      return verbose ? str('question') : truncateCommand(str('question'));
+    case 'mcp__claudegram-tools__claudegram_set_topic':
+      return str('topic');
+    case 'mcp__claudegram-tools__claudegram_send_file':
+      return verbose ? str('file_path') : truncatePath(str('file_path'));
+    case 'mcp__claudegram-tools__claudegram_fetch_reddit':
+      return str('target');
+    case 'mcp__claudegram-tools__claudegram_fetch_medium':
+      return verbose ? str('url') : truncateUrl(str('url'));
+    case 'mcp__claudegram-tools__claudegram_extract_media':
+      return verbose ? str('url') : truncateUrl(str('url'));
+    case 'mcp__claudegram-tools__claudegram_switch_project':
+      return str('project_name');
+    case 'mcp__claudegram-tools__publish_telegraph':
+      return str('title');
     default:
       return undefined;
   }

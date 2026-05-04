@@ -6,6 +6,7 @@ import { isTerminalUIEnabled } from './terminal-settings.js';
 import {
   getSpinnerFrame,
   getToolIcon,
+  getToolAction,
   renderStatusLine,
   renderBackgroundFooter,
   extractToolDetail,
@@ -505,7 +506,7 @@ export class MessageSender {
     // Add status line if there's a current operation
     if (state.currentOperation) {
       const icon = getToolIcon(state.currentOperation.name);
-      const action = this.getToolAction(state.currentOperation.name);
+      const action = getToolAction(state.currentOperation.name);
       const detail = state.currentOperation.detail ? ` ${state.currentOperation.detail}` : '';
       const elapsedMs = now - state.operationStartTime;
       const pausedMs = state.lastRateLimitDurationMs > 0 ? state.lastRateLimitDurationMs : undefined;
@@ -554,22 +555,6 @@ export class MessageSender {
         }
       }
     }
-  }
-
-  private getToolAction(toolName: string): string {
-    const actions: Record<string, string> = {
-      Read: 'Reading',
-      Write: 'Writing',
-      Edit: 'Editing',
-      Bash: 'Running',
-      Grep: 'Searching',
-      Glob: 'Finding files',
-      Task: 'Running task',
-      WebFetch: 'Fetching',
-      WebSearch: 'Searching web',
-      NotebookEdit: 'Editing notebook',
-    };
-    return actions[toolName] || toolName;
   }
 
   /**
