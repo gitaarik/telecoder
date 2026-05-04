@@ -10,7 +10,7 @@ import { sessionManager } from './claude/session-manager.js';
 import { sessionHistory } from './claude/session-history.js';
 import { clearConversation } from './providers/provider-router.js';
 import { parseSessionKey } from './utils/session-key.js';
-import { setSessionTopic } from './bot/handlers/command.handler.js';
+import { setSessionTopic, getEffortLabel } from './bot/handlers/command.handler.js';
 import { isBotNameEnabled, rateLimitedSetMyName } from './telegram/botname-settings.js';
 import { splitMessage } from './telegram/markdown.js';
 import type { Bot } from 'grammy';
@@ -151,6 +151,10 @@ async function autoResumeAfterReload(bot: Bot): Promise<void> {
       let msg = `✅ Reloaded and session restored: ${projectName}`;
       if (entry.topic) {
         msg += ` (topic: ${entry.topic})`;
+      }
+      const effortLabel = getEffortLabel(chatId);
+      if (effortLabel) {
+        msg += `\nEffort: ${effortLabel}`;
       }
       if (entry.lastMessagePreview) {
         msg += `\n\n📝 Last prompt:\n${entry.lastMessagePreview}`;

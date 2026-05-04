@@ -1726,6 +1726,16 @@
             <p>Switch between Claude models (Opus, Sonnet, Haiku) with /model. Default: Opus for best results.</p>
           </div>
           <div class="feature-card" data-category="core">
+            <div class="feature-icon">🛠️</div>
+            <h3>Skills Support</h3>
+            <p>Claude can invoke project-level skills from <code>.claude/skills/</code> via the Skill tool. User-level skills load when CLAUDE_SDK_LOAD_USER_SETTINGS=true.</p>
+          </div>
+          <div class="feature-card" data-category="core">
+            <div class="feature-icon">📝</div>
+            <h3>Todo Tracking</h3>
+            <p>Claude can plan multi-step work with the TodoWrite tool, posting and updating a checklist as it progresses.</p>
+          </div>
+          <div class="feature-card" data-category="core">
             <div class="feature-icon">🔌</div>
             <h3>Provider Switching</h3>
             <p>Switch between Claude and OpenCode with /provider. Access 75+ LLM providers when Claude is unavailable.</p>
@@ -1891,7 +1901,7 @@
             </div>
             <div class="command-row">
               <code class="command-code">/effort &lt;level&gt;</code>
-              <span class="command-desc">Set reasoning effort (low/medium/high/xhigh/max/auto)</span>
+              <span class="command-desc">Set reasoning effort (low/medium/high/xhigh/max/auto). When dynamic bot name is on, the level's icon (🐇/⚖️/🧠/🔬/🚀) is prepended to the bot name.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/btw &lt;question&gt;</code>

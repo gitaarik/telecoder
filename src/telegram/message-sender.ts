@@ -39,11 +39,36 @@ interface StreamState {
   operationStartTime: number;
   rateLimitedUntil: number;
   lastRateLimitDurationMs: number;
+  // TodoWrite live-checklist rendering: id of the per-turn message we
+  // edit on every TodoWrite call. Reset to null at the start of each turn
+  // so the next TodoWrite posts a fresh checklist below the prior one.
+  todoMessageId: number | null;
+  todoLastRendered: string;
+}
+
+interface TodoItem {
+  content: string;
+  activeForm?: string;
+  status: 'pending' | 'in_progress' | 'completed' | string;
 }
 
 const TYPING_INTERVAL_MS = 4000; // Send typing every 4 seconds
 const MIN_EDIT_INTERVAL_MS = 10000; // Minimum time between message edits (~5 edits/min safe zone)
 const MONITOR_TASK_TYPE = 'monitor_mcp';
+
+function formatTodoList(todos: TodoItem[]): string {
+  const lines = ['📝 Todos'];
+  for (const todo of todos) {
+    if (todo.status === 'completed') {
+      lines.push(`✅ ${todo.content}`);
+    } else if (todo.status === 'in_progress') {
+      lines.push(`⏳ ${todo.activeForm || todo.content}`);
+    } else {
+      lines.push(`☐ ${todo.content}`);
+    }
+  }
+  return lines.join('\n');
+}
 
 export class MessageSender {
   private streamStates: Map<string, StreamState> = new Map();
@@ -203,6 +228,8 @@ export class MessageSender {
       operationStartTime: now,
       rateLimitedUntil: 0,
       lastRateLimitDurationMs: 0,
+      todoMessageId: null,
+      todoLastRendered: '',
     };
 
     // Periodic refresh so the elapsed timer and spinner update even during long tool runs
@@ -254,7 +281,18 @@ export class MessageSender {
    */
   updateToolOperation(sessionKey: string, toolName: string, input?: Record<string, unknown>, ctx?: Context): void {
     const state = this.streamStates.get(sessionKey);
-    if (!state || !state.terminalMode) return;
+    if (!state) return;
+
+    // TodoWrite gets a dedicated live-checklist message instead of the
+    // generic terminal-UI status bubble — render and skip the normal path.
+    if (toolName === 'TodoWrite' && ctx && Array.isArray((input as { todos?: unknown })?.todos)) {
+      this.renderTodoWrite(ctx, state, (input as { todos: TodoItem[] }).todos).catch((err) => {
+        console.error('[TodoWrite] Render failed:', err);
+      });
+      return;
+    }
+
+    if (!state.terminalMode) return;
 
     const detail = input ? extractToolDetail(toolName, input) : undefined;
     state.currentOperation = { name: toolName, detail };
@@ -263,6 +301,39 @@ export class MessageSender {
 
     if (ctx) {
       this.flushTerminalUpdate(ctx, state).catch(() => {});
+    }
+  }
+
+  /**
+   * Render TodoWrite as a single Telegram message that we edit in place
+   * for every subsequent TodoWrite call in the same turn.
+   */
+  private async renderTodoWrite(ctx: Context, state: StreamState, todos: TodoItem[]): Promise<void> {
+    const text = formatTodoList(todos);
+    if (text === state.todoLastRendered) return;
+
+    const sendOpts = state.threadId !== undefined ? { message_thread_id: state.threadId } : {};
+
+    if (state.todoMessageId === null) {
+      const sent = await ctx.api.sendMessage(state.chatId, text, sendOpts);
+      state.todoMessageId = sent.message_id;
+      state.todoLastRendered = text;
+      return;
+    }
+
+    try {
+      await ctx.api.editMessageText(state.chatId, state.todoMessageId, text);
+      state.todoLastRendered = text;
+    } catch (err) {
+      const description = err instanceof GrammyError ? err.description : '';
+      if (description.includes('message is not modified')) {
+        state.todoLastRendered = text;
+        return;
+      }
+      // Message gone or unreachable — fall back to posting a fresh one.
+      const sent = await ctx.api.sendMessage(state.chatId, text, sendOpts);
+      state.todoMessageId = sent.message_id;
+      state.todoLastRendered = text;
     }
   }
 

@@ -273,7 +273,7 @@ Reasoning Summary (required when enabled):
 
 const TOOL_PROMPTS = [
   SEND_FILE_TOOL_PROMPT,
-  config.DYNAMIC_BOT_NAME ? SET_TOPIC_TOOL_PROMPT : '',
+  config.DYNAMIC_BOT_NAME && !config.AUTO_TOPIC_HAIKU ? SET_TOPIC_TOOL_PROMPT : '',
   config.REDDIT_ENABLED ? REDDIT_TOOL_PROMPT : '',
   config.VREDDIT_ENABLED ? REDDIT_VIDEO_TOOL_PROMPT : '',
   config.MEDIUM_ENABLED ? MEDIUM_TOOL_PROMPT : '',
@@ -447,11 +447,11 @@ export async function sendToAgent(
 
     const toolsOption = config.DANGEROUS_MODE
       ? { type: 'preset' as const, preset: 'claude_code' as const }
-      : ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Task'];
+      : ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Task', 'Skill', 'TodoWrite'];
 
     const allowedToolsOption = config.DANGEROUS_MODE
       ? undefined
-      : ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Task'];
+      : ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Task', 'Skill', 'TodoWrite'];
 
     // PreCompact hook always registered (logging only — notification sent from compact_boundary message)
     const preCompactHook: Partial<Record<HookEvent, HookCallbackMatcher[]>> = {
@@ -506,9 +506,11 @@ export async function sendToAgent(
     // Auto-topic reminder: inject a per-turn nudge so the model considers
     // updating the topic on every user message. Skip when the topic was just
     // set (within the cooldown window) to avoid wasted tokens on follow-ups.
+    // Also skipped entirely when AUTO_TOPIC_HAIKU is on — the parallel Haiku
+    // side-call owns topic updates, making the model-driven nudge redundant.
     const TOPIC_REMINDER_COOLDOWN_MS = 90_000;
     const autoTopicHook: Partial<Record<HookEvent, HookCallbackMatcher[]>> =
-      config.DYNAMIC_BOT_NAME
+      config.DYNAMIC_BOT_NAME && !config.AUTO_TOPIC_HAIKU
         ? {
           UserPromptSubmit: [{
             hooks: [async () => {

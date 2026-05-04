@@ -16,7 +16,9 @@ import {
 import { isClaudeCommand } from '../../claude/command-parser.js';
 import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
 import { createTelegraphFromFile } from '../../telegram/telegraph.js';
-import { getStreamingMode, executeRedditFetch, executeMediumFetch, showExtractMenu, projectStatusSuffix, resumeCommandMessage } from './command.handler.js';
+import { getStreamingMode, executeRedditFetch, executeMediumFetch, showExtractMenu, projectStatusSuffix, resumeCommandMessage, setSessionTopic } from './command.handler.js';
+import { isBotNameEnabled, rateLimitedSetMyName } from '../../telegram/botname-settings.js';
+import { summarizeTopicWithHaiku } from '../../claude/auto-topic-haiku.js';
 import { executeVReddit } from '../../reddit/vreddit.js';
 import { detectPlatform, isValidUrl } from '../../media/extract.js';
 import { maybeSendVoiceReply } from '../../tts/voice-reply.js';
@@ -27,6 +29,27 @@ import { getSessionKeyFromCtx } from '../../utils/session-key.js';
 
 async function replyFeatureDisabled(ctx: Context, feature: string): Promise<void> {
   await ctx.reply(`⚠️ ${feature} feature is disabled in configuration.`, { parse_mode: undefined });
+}
+
+/**
+ * Fire-and-forget topic update via a parallel Haiku call. Runs alongside
+ * the main agent turn so the bot name reflects the new topic almost
+ * immediately, without depending on the main agent calling claudegram_set_topic.
+ */
+function fireAutoTopic(ctx: Context, sessionKey: string, userMessage: string): void {
+  if (!config.AUTO_TOPIC_HAIKU || !isBotNameEnabled(sessionKey)) return;
+  void (async () => {
+    try {
+      const topic = await summarizeTopicWithHaiku(userMessage);
+      if (!topic) return;
+      const displayName = setSessionTopic(sessionKey, topic);
+      if (isBotNameEnabled(sessionKey)) {
+        await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), displayName);
+      }
+    } catch (err) {
+      console.debug('[AutoTopic] Side-call update failed:', err instanceof Error ? err.message : err);
+    }
+  })();
 }
 
 
@@ -281,6 +304,8 @@ export async function handleMessage(ctx: Context): Promise<void> {
     }
   }
 
+  fireAutoTopic(ctx, sessionKey, text);
+
   try {
     // Queue the request - process one at a time per session
     await queueRequest(sessionKey, text, async () => {
@@ -431,6 +456,8 @@ async function handleAgentReply(
     );
     return;
   }
+
+  fireAutoTopic(ctx, sessionKey, trimmedInput);
 
   try {
     await queueRequest(sessionKey, trimmedInput, async () => {

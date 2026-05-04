@@ -51,6 +51,14 @@ const envSchema = z.object({
     .string()
     .default('false')
     .transform((val) => val.toLowerCase() === 'true'),
+  // Fire a parallel Haiku side-call on every user message to derive a topic
+  // label, independent of the main agent's tool calls. Deferral-immune because
+  // it bypasses settingSources and tools entirely. Only takes effect when
+  // dynamic bot name is enabled for the chat.
+  AUTO_TOPIC_HAIKU: z
+    .string()
+    .default('true')
+    .transform((val) => val.toLowerCase() === 'true'),
   BOT_MODE: z.enum(['dev', 'prod']).default('dev'),
   STREAMING_MODE: z.enum(['streaming', 'wait']).default('streaming'),
   STREAMING_DEBOUNCE_MS: z

@@ -20,6 +20,8 @@ export const TOOL_ICONS: Record<string, string> = {
   // Execution
   Bash: '💻',
   Task: '📋',
+  Skill: '🛠️',
+  TodoWrite: '📝',
 
   // Web
   WebFetch: '🌐',

@@ -83,11 +83,28 @@ const sessionTopics: Map<string, string> = new Map();
 // reminder hook to skip the per-turn nudge when the topic was just updated.
 const lastTopicSetAt: Map<string, number> = new Map();
 
+/** Get the emoji icon for a chat's current effort level (undefined when unset). */
+export function getEffortIcon(chatId: number): string | undefined {
+  const effort = getEffort(chatId);
+  if (!effort) return undefined;
+  return EFFORT_LEVELS.find((l) => l.id === effort)?.label.split(' ')[0];
+}
+
+/** Get the full label (e.g. "🐇 Low") for a chat's current effort level. */
+export function getEffortLabel(chatId: number): string | undefined {
+  const effort = getEffort(chatId);
+  if (!effort) return undefined;
+  return EFFORT_LEVELS.find((l) => l.id === effort)?.label;
+}
+
 /** Build the full bot display name from base name, project, and topic. */
 function buildBotDisplayName(sessionKey: string): string {
   const session = sessionManager.getSession(sessionKey);
   const topic = sessionTopics.get(sessionKey);
   const project = session?.workingDirectory ? path.basename(session.workingDirectory) : '';
+
+  const { chatId } = parseSessionKey(sessionKey);
+  const effortIcon = getEffortIcon(chatId);
 
   const parts: string[] = [];
   if (topic) {
@@ -100,7 +117,8 @@ function buildBotDisplayName(sessionKey: string): string {
     parts.push(config.BOT_NAME);
     if (project) parts.push(project);
   }
-  return parts.join(' — ').slice(0, 64);
+  const base = parts.join(' — ');
+  return (effortIcon ? `${effortIcon} ${base}` : base).slice(0, 64);
 }
 
 /** Update the Telegram bot display name to reflect the active project and topic. */
@@ -3472,7 +3490,7 @@ const EFFORT_LEVELS: { id: EffortLevel; label: string; description: string }[] =
 export async function handleEffort(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
-  const { chatId } = keyInfo;
+  const { chatId, sessionKey } = keyInfo;
 
   const text = ctx.message?.text || '';
   const args = text.split(' ').slice(1).join(' ').trim().toLowerCase();
@@ -3504,6 +3522,7 @@ export async function handleEffort(ctx: Context): Promise<void> {
 
   if (args === 'auto' || args === 'default' || args === 'reset') {
     clearEffort(chatId);
+    await refreshBotNameForEffort(ctx, sessionKey);
     await replyMd(ctx, '✅ Effort reset to *auto* \\(SDK default\\)');
     return;
   }
@@ -3514,14 +3533,24 @@ export async function handleEffort(ctx: Context): Promise<void> {
   }
 
   setEffort(chatId, args);
+  await refreshBotNameForEffort(ctx, sessionKey);
   const info = EFFORT_LEVELS.find(l => l.id === args);
   await replyMd(ctx, `✅ Effort set to *${esc(info?.label || args)}*`);
+}
+
+async function refreshBotNameForEffort(ctx: Context, sessionKey: string): Promise<void> {
+  if (!isBotNameEnabled(sessionKey)) return;
+  try {
+    await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), buildBotDisplayName(sessionKey));
+  } catch (err) {
+    console.error('[Bot] Failed to update bot name after effort change:', err);
+  }
 }
 
 export async function handleEffortCallback(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
-  const { chatId } = keyInfo;
+  const { chatId, sessionKey } = keyInfo;
 
   const data = ctx.callbackQuery?.data;
   if (!data || !data.startsWith('effort:')) return;
@@ -3530,6 +3559,7 @@ export async function handleEffortCallback(ctx: Context): Promise<void> {
 
   if (level === 'auto') {
     clearEffort(chatId);
+    await refreshBotNameForEffort(ctx, sessionKey);
     await ctx.answerCallbackQuery({ text: 'Effort reset to auto!' });
     await ctx.editMessageText('✅ Effort reset to *auto* \\(SDK default\\)', { parse_mode: 'MarkdownV2' });
     return;
@@ -3541,6 +3571,7 @@ export async function handleEffortCallback(ctx: Context): Promise<void> {
   }
 
   setEffort(chatId, level);
+  await refreshBotNameForEffort(ctx, sessionKey);
 
   const info = EFFORT_LEVELS.find(l => l.id === level);
   const displayName = info?.label || level;
