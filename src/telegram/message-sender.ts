@@ -73,10 +73,22 @@ function formatTodoList(todos: TodoItem[]): string {
 
 export class MessageSender {
   private streamStates: Map<string, StreamState> = new Map();
-  // Per-stream counter of task-completion messages posted. When > 0, the
-  // generic long-task `✅ Done` notification is suppressed to avoid pinging
-  // the user twice for the same long task. Reset on startStreaming.
-  private taskCompletionsPostedThisStream: Map<string, number> = new Map();
+  // Per-stream counter of new chat messages posted during the turn (TodoWrite
+  // first render, monitor armed/events, sub-turn echoes, backgrounded task
+  // completions). Drives two behaviors when > 0:
+  //   - finishStreaming posts the final response as a fresh bottom message
+  //     and reduces the original "Processing..." bubble to a pointer, so the
+  //     final answer isn't buried above the intervening messages.
+  //   - sendCompletionNotification suppresses the generic "✅ Done" ping —
+  //     the bottom-posted final message is itself a notification.
+  // Reset on startStreaming.
+  private interveningPostsThisStream: Map<string, number> = new Map();
+
+  private noteInterveningPost(sessionKey: string | undefined): void {
+    if (!sessionKey) return;
+    const prev = this.interveningPostsThisStream.get(sessionKey) ?? 0;
+    this.interveningPostsThisStream.set(sessionKey, prev + 1);
+  }
 
   /**
    * Send a message with hybrid approach:
@@ -244,7 +256,7 @@ export class MessageSender {
     }
 
     this.streamStates.set(sessionKey, state);
-    this.taskCompletionsPostedThisStream.set(sessionKey, 0);
+    this.interveningPostsThisStream.set(sessionKey, 0);
   }
 
   private stopSpinnerAnimation(state: StreamState): void {
@@ -319,6 +331,7 @@ export class MessageSender {
       const sent = await ctx.api.sendMessage(state.chatId, text, sendOpts);
       state.todoMessageId = sent.message_id;
       state.todoLastRendered = text;
+      this.noteInterveningPost(state.sessionKey);
       return;
     }
 
@@ -335,6 +348,7 @@ export class MessageSender {
       const sent = await ctx.api.sendMessage(state.chatId, text, sendOpts);
       state.todoMessageId = sent.message_id;
       state.todoLastRendered = text;
+      this.noteInterveningPost(state.sessionKey);
     }
   }
 
@@ -380,14 +394,18 @@ export class MessageSender {
       ? task.description.substring(0, 97) + '...'
       : task.description;
     const text = `📡 Monitor "${escapeMarkdownV2(description)}" armed`;
+    let posted = false;
     try {
       await ctx.reply(text, { parse_mode: 'MarkdownV2' });
+      posted = true;
     } catch (error) {
       console.error('[Task] Failed to post monitor armed:', error instanceof Error ? error.message : error);
       try {
         await ctx.reply(`📡 Monitor "${task.description}" armed`);
+        posted = true;
       } catch { /* ignore */ }
     }
+    if (posted) this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
   }
 
   private async postMonitorEvent(ctx: Context, task: TaskState, eventText: string): Promise<void> {
@@ -396,14 +414,18 @@ export class MessageSender {
       ? eventText.substring(0, 997) + '...'
       : eventText;
     const text = `📡 Monitor event: ${escapeMarkdownV2(truncated)}`;
+    let posted = false;
     try {
       await ctx.reply(text, { parse_mode: 'MarkdownV2' });
+      posted = true;
     } catch (error) {
       console.error('[Task] Failed to post monitor event:', error instanceof Error ? error.message : error);
       try {
         await ctx.reply(`📡 Monitor event: ${eventText.substring(0, 1000)}`);
+        posted = true;
       } catch { /* ignore */ }
     }
+    if (posted) this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
   }
 
   /**
@@ -418,6 +440,7 @@ export class MessageSender {
     const trimmed = text.trim();
     if (!trimmed) return;
     const parts = processMessageForTelegram(trimmed, config.MAX_MESSAGE_LENGTH);
+    const sessionKey = getSessionKeyFromCtx(ctx)?.sessionKey;
     for (const part of parts) {
       try {
         await ctx.reply(part, { parse_mode: 'MarkdownV2' });
@@ -431,9 +454,11 @@ export class MessageSender {
             console.error('[Task] Plain-text sub-turn send failed:', plainError instanceof Error ? plainError.message : plainError);
           }
         }
+        this.noteInterveningPost(sessionKey);
         return;
       }
     }
+    this.noteInterveningPost(sessionKey);
   }
 
   private async postTaskCompletion(ctx: Context, task: TaskState): Promise<void> {
@@ -486,13 +511,7 @@ export class MessageSender {
         posted = true;
       } catch { /* ignore */ }
     }
-    if (posted) {
-      const sessionKey = getSessionKeyFromCtx(ctx)?.sessionKey;
-      if (sessionKey) {
-        const prev = this.taskCompletionsPostedThisStream.get(sessionKey) ?? 0;
-        this.taskCompletionsPostedThisStream.set(sessionKey, prev + 1);
-      }
-    }
+    if (posted) this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
   }
 
   private async flushTerminalUpdate(ctx: Context, state: StreamState): Promise<void> {
@@ -598,6 +617,37 @@ export class MessageSender {
       state.currentOperation = null;
 
       if (state.messageId) {
+        const intervening = this.interveningPostsThisStream.get(sessionKey) ?? 0;
+        if (intervening > 0) {
+          const trimmedFinal = finalContent.trim();
+          if (!trimmedFinal) {
+            // Nothing to bottom-post — just close out the streaming bubble.
+            try {
+              await ctx.api.editMessageText(chatId, state.messageId, '✅ Done', { parse_mode: undefined });
+            } catch (err) {
+              console.debug('[Stream] Done edit failed:', err instanceof Error ? err.message : err);
+            }
+            this.streamStates.delete(sessionKey);
+            return;
+          }
+          // Sub-events posted during the turn pushed the streaming bubble out
+          // of view. Reduce it to a pointer and post the final response as a
+          // fresh bottom message so the user doesn't have to scroll up.
+          try {
+            await ctx.api.editMessageText(
+              chatId,
+              state.messageId,
+              '✅ Done — full response below ↓',
+              { parse_mode: undefined },
+            );
+          } catch (err) {
+            console.debug('[Stream] Pointer edit failed:', err instanceof Error ? err.message : err);
+          }
+          this.streamStates.delete(sessionKey);
+          await this.sendMessage(ctx, finalContent);
+          return;
+        }
+
         // Check if we should use Telegraph for final content
         if (shouldUseTelegraph(finalContent, sessionKey)) {
           const pageUrl = await createTelegraphPage('Claude Response', finalContent);
@@ -717,8 +767,8 @@ export class MessageSender {
 
     const sessionKey = getSessionKeyFromCtx(ctx)?.sessionKey;
     if (sessionKey) {
-      const taskCompletions = this.taskCompletionsPostedThisStream.get(sessionKey) ?? 0;
-      if (taskCompletions > 0) return;
+      const intervening = this.interveningPostsThisStream.get(sessionKey) ?? 0;
+      if (intervening > 0) return;
     }
 
     try {
