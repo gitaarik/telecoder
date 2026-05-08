@@ -409,17 +409,30 @@ export class MessageSender {
   /**
    * Post the model's text response from an SDK-driven sub-turn (monitor
    * event echoes, post-task_notification commentary) as its own Telegram
-   * message. Sent as plain text (no MarkdownV2 parsing — log lines often
-   * contain unescaped `_*[]`).
+   * message. Routed through the MarkdownV2 formatter so the model's
+   * intended formatting renders, with a per-part fallback to plain text
+   * for chunks that fail to parse (raw log content can contain unescaped
+   * `_*[]`).
    */
   async postSubTurnResponse(ctx: Context, text: string): Promise<void> {
     const trimmed = text.trim();
     if (!trimmed) return;
-    const truncated = trimmed.length > 3500 ? trimmed.substring(0, 3497) + '...' : trimmed;
-    try {
-      await ctx.reply(truncated, { parse_mode: undefined });
-    } catch (error) {
-      console.error('[Task] Failed to post sub-turn response:', error instanceof Error ? error.message : error);
+    const parts = processMessageForTelegram(trimmed, config.MAX_MESSAGE_LENGTH);
+    for (const part of parts) {
+      try {
+        await ctx.reply(part, { parse_mode: 'MarkdownV2' });
+      } catch (error) {
+        console.error('[Task] MarkdownV2 sub-turn send failed, falling back to plain text:', error instanceof Error ? error.message : error);
+        const plainChunks = splitMessage(trimmed);
+        for (const chunk of plainChunks) {
+          try {
+            await ctx.reply(chunk, { parse_mode: undefined });
+          } catch (plainError) {
+            console.error('[Task] Plain-text sub-turn send failed:', plainError instanceof Error ? plainError.message : plainError);
+          }
+        }
+        return;
+      }
     }
   }
 
