@@ -9,6 +9,7 @@ const userPreferencesSchema = z.object({
   provider: z.enum(['claude', 'opencode']).optional(),
   model: z.string().optional(),
   effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
+  showStatusLine: z.boolean().optional(),
   lastUpdated: z.string(),
 });
 
@@ -118,6 +119,19 @@ class UserPreferencesManager {
       this.data[chatId].lastUpdated = new Date().toISOString();
       this.save();
     }
+  }
+
+  getShowStatusLine(chatId: number): boolean {
+    return this.data[chatId]?.showStatusLine === true;
+  }
+
+  setShowStatusLine(chatId: number, enabled: boolean): void {
+    if (!this.data[chatId]) {
+      this.data[chatId] = { lastUpdated: new Date().toISOString() };
+    }
+    this.data[chatId].showStatusLine = enabled;
+    this.data[chatId].lastUpdated = new Date().toISOString();
+    this.save();
   }
 
   clearPreferences(chatId: number): void {

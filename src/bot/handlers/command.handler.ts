@@ -21,6 +21,7 @@ import {
   type ProviderName,
   type ModelInfo,
   type EffortLevel,
+  type AgentUsage,
 } from '../../providers/provider-router.js';
 import { config, getReloadMarkerPath } from '../../config.js';
 import { messageSender } from '../../telegram/message-sender.js';
@@ -42,6 +43,7 @@ import { getTTSSettings, setTTSEnabled, setTTSVoice, setTTSAutoplay } from '../.
 import { getTerminalUISettings, setTerminalUIEnabled } from '../../telegram/terminal-settings.js';
 import { getBotNameSettings, setBotNameEnabled, isBotNameEnabled, rateLimitedSetMyName } from '../../telegram/botname-settings.js';
 import { getTelegraphSettings, setTelegraphEnabled } from '../../telegram/telegraph-settings.js';
+import { userPreferences } from '../../providers/user-preferences.js';
 import { maybeSendVoiceReply } from '../../tts/voice-reply.js';
 import { transcribeFile, downloadTelegramAudio } from '../../audio/transcribe.js';
 import { executeVReddit } from '../../reddit/vreddit.js';
@@ -83,13 +85,6 @@ const sessionTopics: Map<string, string> = new Map();
 // reminder hook to skip the per-turn nudge when the topic was just updated.
 const lastTopicSetAt: Map<string, number> = new Map();
 
-/** Get the emoji icon for a chat's current effort level (undefined when unset). */
-export function getEffortIcon(chatId: number): string | undefined {
-  const effort = getEffort(chatId);
-  if (!effort) return undefined;
-  return EFFORT_LEVELS.find((l) => l.id === effort)?.label.split(' ')[0];
-}
-
 /** Get the full label (e.g. "🐇 Low") for a chat's current effort level. */
 export function getEffortLabel(chatId: number): string | undefined {
   const effort = getEffort(chatId);
@@ -103,9 +98,6 @@ function buildBotDisplayName(sessionKey: string): string {
   const topic = sessionTopics.get(sessionKey);
   const project = session?.workingDirectory ? path.basename(session.workingDirectory) : '';
 
-  const { chatId } = parseSessionKey(sessionKey);
-  const effortIcon = getEffortIcon(chatId);
-
   const parts: string[] = [];
   if (topic) {
     // Topic first: "dark mode — myproject — Claudegram"
@@ -117,8 +109,7 @@ function buildBotDisplayName(sessionKey: string): string {
     parts.push(config.BOT_NAME);
     if (project) parts.push(project);
   }
-  const base = parts.join(' — ');
-  return (effortIcon ? `${effortIcon} ${base}` : base).slice(0, 64);
+  return parts.join(' — ').slice(0, 64);
 }
 
 /** Update the Telegram bot display name to reflect the active project and topic. */
@@ -3672,7 +3663,7 @@ const EFFORT_LEVELS: { id: EffortLevel; label: string; description: string }[] =
 export async function handleEffort(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
-  const { chatId, sessionKey } = keyInfo;
+  const { chatId } = keyInfo;
 
   const text = ctx.message?.text || '';
   const args = text.split(' ').slice(1).join(' ').trim().toLowerCase();
@@ -3704,7 +3695,6 @@ export async function handleEffort(ctx: Context): Promise<void> {
 
   if (args === 'auto' || args === 'default' || args === 'reset') {
     clearEffort(chatId);
-    await refreshBotNameForEffort(ctx, sessionKey);
     await replyMd(ctx, '✅ Effort reset to *auto* \\(SDK default\\)');
     return;
   }
@@ -3715,24 +3705,14 @@ export async function handleEffort(ctx: Context): Promise<void> {
   }
 
   setEffort(chatId, args);
-  await refreshBotNameForEffort(ctx, sessionKey);
   const info = EFFORT_LEVELS.find(l => l.id === args);
   await replyMd(ctx, `✅ Effort set to *${esc(info?.label || args)}*`);
-}
-
-async function refreshBotNameForEffort(ctx: Context, sessionKey: string): Promise<void> {
-  if (!isBotNameEnabled(sessionKey)) return;
-  try {
-    await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), buildBotDisplayName(sessionKey));
-  } catch (err) {
-    console.error('[Bot] Failed to update bot name after effort change:', err);
-  }
 }
 
 export async function handleEffortCallback(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
-  const { chatId, sessionKey } = keyInfo;
+  const { chatId } = keyInfo;
 
   const data = ctx.callbackQuery?.data;
   if (!data || !data.startsWith('effort:')) return;
@@ -3741,7 +3721,6 @@ export async function handleEffortCallback(ctx: Context): Promise<void> {
 
   if (level === 'auto') {
     clearEffort(chatId);
-    await refreshBotNameForEffort(ctx, sessionKey);
     await ctx.answerCallbackQuery({ text: 'Effort reset to auto!' });
     await ctx.editMessageText('✅ Effort reset to *auto* \\(SDK default\\)', { parse_mode: 'MarkdownV2' });
     return;
@@ -3753,13 +3732,91 @@ export async function handleEffortCallback(ctx: Context): Promise<void> {
   }
 
   setEffort(chatId, level);
-  await refreshBotNameForEffort(ctx, sessionKey);
 
   const info = EFFORT_LEVELS.find(l => l.id === level);
   const displayName = info?.label || level;
 
   await ctx.answerCallbackQuery({ text: `Effort set to ${displayName}!` });
   await ctx.editMessageText(`✅ Effort set to *${esc(displayName)}*`, { parse_mode: 'MarkdownV2' });
+}
+
+// ── /statusline ─────────────────────────────────────────────────
+// A small italic message sent after each turn so the user can always see
+// the current effort (and, in future, more stats) right above the compose
+// box without scrolling. Off by default; opt-in via /statusline.
+
+function shortenModelName(model: string): string {
+  // claude-opus-4-7 → opus-4-7, gpt-4o-mini → gpt-4o-mini
+  return model.replace(/^claude-/, '');
+}
+
+function buildStatusLineText(chatId: number, usage?: AgentUsage): string {
+  const parts: string[] = [];
+  const label = getEffortLabel(chatId);
+  parts.push(label ? label.toLowerCase() : '🧠 auto');
+
+  if (usage) {
+    if (usage.model) parts.push(`🤖 ${shortenModelName(usage.model)}`);
+    if (usage.contextWindow > 0) {
+      const used = usage.inputTokens + usage.outputTokens + usage.cacheReadTokens;
+      const pct = Math.round((used / usage.contextWindow) * 100);
+      parts.push(`📊 ${pct}%`);
+    }
+    parts.push(`💰 $${usage.totalCostUsd.toFixed(2)}`);
+  }
+
+  return parts.join(' · ');
+}
+
+export async function sendStatusLine(ctx: Context, chatId: number, usage?: AgentUsage): Promise<void> {
+  if (!userPreferences.getShowStatusLine(chatId)) return;
+  try {
+    const text = buildStatusLineText(chatId, usage);
+    await ctx.reply(`_${esc(text)}_`, { parse_mode: 'MarkdownV2' });
+  } catch (err) {
+    console.debug('[StatusLine] Failed to send:', err instanceof Error ? err.message : err);
+  }
+}
+
+export async function handleStatusLine(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { chatId } = keyInfo;
+
+  const enabled = userPreferences.getShowStatusLine(chatId);
+  const currentStatus = enabled ? 'ON' : 'OFF';
+
+  const keyboard = [
+    [
+      { text: enabled ? '✓ On' : 'On', callback_data: 'statusline:on' },
+      { text: !enabled ? '✓ Off' : 'Off', callback_data: 'statusline:off' },
+    ],
+  ];
+
+  const preview = buildStatusLineText(chatId);
+  await ctx.reply(
+    `📍 *Status Line*\n\nCurrent: *${currentStatus}*\n\n_Sends a small italic line after each turn so you can see the current effort \\(and future stats\\) without scrolling\\._\n\nPreview: _${esc(preview)}_`,
+    {
+      parse_mode: 'MarkdownV2',
+      reply_markup: { inline_keyboard: keyboard },
+    }
+  );
+}
+
+export async function handleStatusLineCallback(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { chatId } = keyInfo;
+
+  const data = ctx.callbackQuery?.data;
+  if (!data || !data.startsWith('statusline:')) return;
+
+  const newState = data.replace('statusline:', '') === 'on';
+  userPreferences.setShowStatusLine(chatId, newState);
+
+  const statusText = newState ? 'ON' : 'OFF';
+  await ctx.answerCallbackQuery({ text: `Status line ${statusText}!` });
+  await ctx.editMessageText(`✅ Status line *${statusText}*`, { parse_mode: 'MarkdownV2' });
 }
 
 // ---------------------------------------------------------------------------

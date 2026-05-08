@@ -46,6 +46,8 @@ import {
   handleMediumCallback,
   handleTerminalUI,
   handleTerminalUICallback,
+  handleStatusLine,
+  handleStatusLineCallback,
   handleTranscribe,
   handleTranscribeAudio,
   handleTranscribeDocument,
@@ -177,6 +179,7 @@ export async function createBot(): Promise<Bot> {
     ...(config.OPENCODE_ENABLED ? [{ command: 'provider', description: '🔌 Switch AI provider' }] : []),
     { command: 'mode', description: '⚙️ Toggle streaming mode' },
     { command: 'terminalui', description: '🖥️ Toggle terminal-style display' },
+    { command: 'statusline', description: '📍 Toggle per-turn status line' },
     { command: 'botname', description: '✏️ Toggle dynamic bot name' },
     { command: 'topic', description: '💬 Set current work topic in bot name' },
     { command: 'tts', description: '🔊 Toggle voice replies' },
@@ -236,6 +239,7 @@ export async function createBot(): Promise<Bot> {
   bot.command('newproject', handleNewProject);
   bot.command('mode', handleMode);
   bot.command('terminalui', handleTerminalUI);
+  bot.command('statusline', handleStatusLine);
   bot.command('botname', handleBotName);
   bot.command('topic', handleTopic);
   bot.command('tts', handleTTS);
@@ -301,6 +305,8 @@ export async function createBot(): Promise<Bot> {
       await handleModeCallback(ctx);
     } else if (data.startsWith('terminalui:')) {
       await handleTerminalUICallback(ctx);
+    } else if (data.startsWith('statusline:')) {
+      await handleStatusLineCallback(ctx);
     } else if (data.startsWith('botname:')) {
       await handleBotNameCallback(ctx);
     } else if (data.startsWith('tts:')) {

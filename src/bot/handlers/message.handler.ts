@@ -16,7 +16,7 @@ import {
 import { isClaudeCommand } from '../../claude/command-parser.js';
 import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
 import { createTelegraphFromFile } from '../../telegram/telegraph.js';
-import { getStreamingMode, executeRedditFetch, executeMediumFetch, showExtractMenu, projectStatusSuffix, resumeCommandMessage, setSessionTopic, clearTopicAndRefreshBotName } from './command.handler.js';
+import { getStreamingMode, executeRedditFetch, executeMediumFetch, showExtractMenu, projectStatusSuffix, resumeCommandMessage, setSessionTopic, clearTopicAndRefreshBotName, sendStatusLine } from './command.handler.js';
 import { isBotNameEnabled, rateLimitedSetMyName } from '../../telegram/botname-settings.js';
 import { summarizeTopicWithHaiku } from '../../claude/auto-topic-haiku.js';
 import { executeVReddit } from '../../reddit/vreddit.js';
@@ -525,6 +525,9 @@ async function handleAgentReply(
         await sendUsageFooter(ctx, response.usage);
         await sendCompactionNotification(ctx, response.compaction);
         await sendSessionInitNotification(ctx, sessionKey, response.sessionInit);
+
+        const chatId = ctx.chat?.id;
+        if (chatId !== undefined) await sendStatusLine(ctx, chatId, response.usage);
       } catch (error) {
         await messageSender.cancelStreaming(ctx);
         throw error;
@@ -649,6 +652,9 @@ async function handleStreamingResponse(
     await sendUsageFooter(ctx, response.usage);
     await sendCompactionNotification(ctx, response.compaction);
     await sendSessionInitNotification(ctx, sessionKey, response.sessionInit);
+
+    const chatId = ctx.chat?.id;
+    if (chatId !== undefined) await sendStatusLine(ctx, chatId, response.usage);
   } catch (error) {
     await messageSender.cancelStreaming(ctx);
     throw error;
@@ -679,6 +685,8 @@ async function handleWaitResponse(
     await sendUsageFooter(ctx, response.usage);
     await sendCompactionNotification(ctx, response.compaction);
     await sendSessionInitNotification(ctx, sessionKey, response.sessionInit);
+
+    await sendStatusLine(ctx, chatId, response.usage);
   } catch (error) {
     messageSender.stopTypingInterval(typingInterval);
     throw error;
