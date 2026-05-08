@@ -1093,6 +1093,7 @@ export async function handleStatus(ctx: Context): Promise<void> {
     const currentModel = getModel(chatId);
     const provider = getActiveProviderName(chatId);
     const dangerousMode = isDangerousMode() ? '⚠️ ENABLED' : 'Disabled';
+    const effortLabel = getEffortLabel(chatId) ?? 'Default';
 
     let status = `📊 *Session Status*
 
@@ -1100,6 +1101,7 @@ export async function handleStatus(ctx: Context): Promise<void> {
 • *Session ID:* \`${esc(session.conversationId)}\`
 • *Provider:* ${esc(provider)}
 • *Model:* ${esc(currentModel)}
+• *Effort:* ${esc(effortLabel)}
 • *Created:* ${esc(session.createdAt.toLocaleString())}
 • *Last Activity:* ${esc(session.lastActivity.toLocaleString())}
 • *Mode:* ${esc(config.STREAMING_MODE)}
