@@ -211,6 +211,13 @@ export async function createBot(): Promise<Bot> {
   // call. If the callback got queued, it'd deadlock behind the query that's
   // waiting for it.
   bot.callbackQuery(/^q:/, handleAskUserCallback);
+  // Menu buttons for /restartbot, /rebuildbot, /softreset must bypass
+  // sequentialize for the same reason their parent commands do: users tap
+  // these precisely when the bot is hung, so the callback can't be queued
+  // behind the stuck request.
+  bot.callbackQuery(/^restartbot:/, handleRestartBotCallback);
+  bot.callbackQuery(/^rebuild:/, handleRebuildCallback);
+  bot.callbackQuery(/^reset:/, handleResetCallback);
 
   // Batch consecutive text messages BEFORE sequentialize.
   // When Telegram splits a long paste into multiple messages, this combines
@@ -310,14 +317,8 @@ export async function createBot(): Promise<Bot> {
       await handleExtractCallback(ctx);
     } else if (data.startsWith('reddit_action:')) {
       await handleRedditActionCallback(ctx);
-    } else if (data.startsWith('restartbot:')) {
-      await handleRestartBotCallback(ctx);
     } else if (data.startsWith('restart:')) {
       await handleRestartCallback(ctx);
-    } else if (data.startsWith('rebuild:')) {
-      await handleRebuildCallback(ctx);
-    } else if (data.startsWith('reset:')) {
-      await handleResetCallback(ctx);
     } else if (data.startsWith('effort:')) {
       await handleEffortCallback(ctx);
     }
