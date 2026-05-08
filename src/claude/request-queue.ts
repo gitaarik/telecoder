@@ -1,4 +1,5 @@
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
+import { markInFlight, clearInFlight } from './in-flight-tracker.js';
 
 type QueuedRequest<T> = {
   message: string;
@@ -92,6 +93,9 @@ async function processQueue(sessionKey: string): Promise<void> {
 
   processingFlags.set(sessionKey, true);
   const request = queue.shift()!;
+  // Persist a marker so an unexpected exit during this turn can be surfaced
+  // to the user on next startup.
+  markInFlight(sessionKey, request.message);
 
   try {
     const result = await request.handler();
@@ -103,6 +107,7 @@ async function processQueue(sessionKey: string): Promise<void> {
     clearAbortController(sessionKey);
     clearActiveQuery(sessionKey);
     clearCancelled(sessionKey);
+    clearInFlight(sessionKey);
 
     if (queue.length > 0) {
       processQueue(sessionKey);

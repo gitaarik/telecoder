@@ -282,14 +282,20 @@ export async function handleMessage(ctx: Context): Promise<void> {
     return;
   }
 
-  // Check for active session
-  const session = sessionManager.getSession(sessionKey);
+  // Check for active session — fall back to disk if the bot restarted recently.
+  const { session, restored } = sessionManager.getOrRestoreSession(sessionKey);
   if (!session) {
     await ctx.reply(
       '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
       { parse_mode: 'MarkdownV2' }
     );
     return;
+  }
+  if (restored) {
+    await ctx.reply(
+      `↩️ Resumed previous session: *${esc(path.basename(session.workingDirectory))}*`,
+      { parse_mode: 'MarkdownV2' }
+    );
   }
 
   // If CANCEL_ON_NEW_MESSAGE is enabled, auto-cancel the running query;
@@ -385,13 +391,19 @@ async function handleProjectReply(ctx: Context, sessionKey: string, projectPath:
 async function handleFileReply(ctx: Context, sessionKey: string, filePath: string): Promise<void> {
   const trimmedPath = filePath.trim();
 
-  const session = sessionManager.getSession(sessionKey);
+  const { session, restored } = sessionManager.getOrRestoreSession(sessionKey);
   if (!session) {
     await ctx.reply(
       '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
       { parse_mode: 'MarkdownV2' }
     );
     return;
+  }
+  if (restored) {
+    await ctx.reply(
+      `↩️ Resumed previous session: *${esc(path.basename(session.workingDirectory))}*`,
+      { parse_mode: 'MarkdownV2' }
+    );
   }
 
   const fullPath = trimmedPath.startsWith('/')
@@ -440,13 +452,19 @@ async function handleAgentReply(
   input: string,
   mode: 'plan' | 'explore' | 'loop'
 ): Promise<void> {
-  const session = sessionManager.getSession(sessionKey);
+  const { session, restored } = sessionManager.getOrRestoreSession(sessionKey);
   if (!session) {
     await ctx.reply(
       '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
       { parse_mode: 'MarkdownV2' }
     );
     return;
+  }
+  if (restored) {
+    await ctx.reply(
+      `↩️ Resumed previous session: *${esc(path.basename(session.workingDirectory))}*`,
+      { parse_mode: 'MarkdownV2' }
+    );
   }
 
   const trimmedInput = input.trim();
@@ -523,13 +541,19 @@ async function handleAgentReply(
 async function handleTelegraphReply(ctx: Context, sessionKey: string, filePath: string): Promise<void> {
   const trimmedPath = filePath.trim();
 
-  const session = sessionManager.getSession(sessionKey);
+  const { session, restored } = sessionManager.getOrRestoreSession(sessionKey);
   if (!session) {
     await ctx.reply(
       '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
       { parse_mode: 'MarkdownV2' }
     );
     return;
+  }
+  if (restored) {
+    await ctx.reply(
+      `↩️ Resumed previous session: *${esc(path.basename(session.workingDirectory))}*`,
+      { parse_mode: 'MarkdownV2' }
+    );
   }
 
   const fullPath = trimmedPath.startsWith('/')

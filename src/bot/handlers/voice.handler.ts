@@ -53,14 +53,20 @@ export async function handleVoice(ctx: Context): Promise<void> {
     }
   }
 
-  // Check session
-  const session = sessionManager.getSession(sessionKey);
+  // Check session — fall back to disk if the bot restarted recently.
+  const { session, restored } = sessionManager.getOrRestoreSession(sessionKey);
   if (!session) {
     await ctx.reply(
       '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
       { parse_mode: 'MarkdownV2' }
     );
     return;
+  }
+  if (restored) {
+    await ctx.reply(
+      `↩️ Resumed previous session: *${esc(path.basename(session.workingDirectory))}*`,
+      { parse_mode: 'MarkdownV2' }
+    );
   }
 
   // Check file size

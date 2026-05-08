@@ -139,6 +139,26 @@ class SessionManager {
     return this.resumeSession(sessionKey, lastEntry.conversationId);
   }
 
+  /** Return the in-memory session if present; otherwise transparently restore
+   * the last session from disk if it's recent enough. Lets handlers recover
+   * from unplanned restarts without forcing the user to type /continue. */
+  getOrRestoreSession(
+    sessionKey: string,
+    maxAgeMs: number = 60 * 60 * 1000,
+  ): { session: Session | undefined; restored: boolean } {
+    const existing = this.sessions.get(sessionKey);
+    if (existing) return { session: existing, restored: false };
+
+    const lastEntry = sessionHistory.getLastSession(sessionKey);
+    if (!lastEntry) return { session: undefined, restored: false };
+
+    const age = Date.now() - new Date(lastEntry.lastActivity).getTime();
+    if (age < 0 || age > maxAgeMs) return { session: undefined, restored: false };
+
+    const session = this.resumeLastSession(sessionKey);
+    return { session, restored: !!session };
+  }
+
   getSessionHistory(sessionKey: string, limit: number = 5): SessionHistoryEntry[] {
     return sessionHistory.getHistory(sessionKey, limit);
   }

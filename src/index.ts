@@ -8,6 +8,7 @@ import { preventSleep, allowSleep } from './utils/caffeinate.js';
 import { stopCleanup } from './telegram/deduplication.js';
 import { sessionManager } from './claude/session-manager.js';
 import { sessionHistory } from './claude/session-history.js';
+import { consumeAllInFlight } from './claude/in-flight-tracker.js';
 import { clearConversation } from './providers/provider-router.js';
 import { parseSessionKey } from './utils/session-key.js';
 import { setSessionTopic, getEffortLabel } from './bot/handlers/command.handler.js';
@@ -209,6 +210,44 @@ async function autoResumeAfterReload(bot: Bot): Promise<void> {
   }
 }
 
+/**
+ * If a task was running when the bot exited (clean or crash), surface that
+ * to the affected chat so the user knows their last prompt may not have
+ * completed. Also ensures the session is restored in memory so the next
+ * message arrives at a live session.
+ */
+async function notifyInterruptedSessions(bot: Bot): Promise<void> {
+  const interrupted = consumeAllInFlight();
+  if (interrupted.length === 0) return;
+
+  const allowedIds = new Set([
+    ...config.ALLOWED_USER_IDS,
+    ...config.ALLOWED_GROUP_IDS,
+  ]);
+
+  for (const entry of interrupted) {
+    const { chatId, threadId } = parseSessionKey(entry.sessionKey);
+    if (!allowedIds.has(chatId)) continue;
+
+    // Make sure the session is live in memory so the user can immediately reply.
+    if (!sessionManager.getSession(entry.sessionKey)) {
+      sessionManager.resumeLastSession(entry.sessionKey);
+    }
+
+    const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};
+    const previewLine = entry.messagePreview
+      ? `\n\n📝 Last prompt:\n${escapeMarkdownV2(entry.messagePreview)}`
+      : '';
+    const text =
+      `⚠️ I was interrupted while running a task\\. The last action may not have completed\\.${previewLine}`;
+    try {
+      await bot.api.sendMessage(chatId, text, { parse_mode: 'MarkdownV2', ...threadOpts });
+    } catch (err) {
+      console.error(`[InFlight] Failed to notify ${entry.sessionKey}:`, err);
+    }
+  }
+}
+
 async function main() {
   console.log('🤖 Starting Claudegram...');
   console.log(`📋 Allowed users: ${config.ALLOWED_USER_IDS.join(', ')}`);
@@ -237,6 +276,13 @@ async function main() {
     await autoResumeAfterReload(bot);
   } catch (err) {
     console.error('[AutoResume] Failed:', err);
+  }
+
+  // Notify any chats whose tasks were interrupted by an unexpected exit.
+  try {
+    await notifyInterruptedSessions(bot);
+  } catch (err) {
+    console.error('[InFlight] Failed:', err);
   }
 
   // Liveness heartbeat: periodically verify the bot can still reach the
