@@ -10,6 +10,7 @@ const userPreferencesSchema = z.object({
   model: z.string().optional(),
   effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
   showStatusLine: z.boolean().optional(),
+  showTopicInStatusLine: z.boolean().optional(),
   lastUpdated: z.string(),
 });
 
@@ -130,6 +131,19 @@ class UserPreferencesManager {
       this.data[chatId] = { lastUpdated: new Date().toISOString() };
     }
     this.data[chatId].showStatusLine = enabled;
+    this.data[chatId].lastUpdated = new Date().toISOString();
+    this.save();
+  }
+
+  getShowTopicInStatusLine(chatId: number): boolean {
+    return this.data[chatId]?.showTopicInStatusLine === true;
+  }
+
+  setShowTopicInStatusLine(chatId: number, enabled: boolean): void {
+    if (!this.data[chatId]) {
+      this.data[chatId] = { lastUpdated: new Date().toISOString() };
+    }
+    this.data[chatId].showTopicInStatusLine = enabled;
     this.data[chatId].lastUpdated = new Date().toISOString();
     this.save();
   }

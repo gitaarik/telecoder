@@ -527,7 +527,7 @@ async function handleAgentReply(
         await sendSessionInitNotification(ctx, sessionKey, response.sessionInit);
 
         const chatId = ctx.chat?.id;
-        if (chatId !== undefined) await sendStatusLine(ctx, chatId, response.usage);
+        if (chatId !== undefined) await sendStatusLine(ctx, chatId, sessionKey, response.usage);
       } catch (error) {
         await messageSender.cancelStreaming(ctx);
         throw error;
@@ -654,7 +654,7 @@ async function handleStreamingResponse(
     await sendSessionInitNotification(ctx, sessionKey, response.sessionInit);
 
     const chatId = ctx.chat?.id;
-    if (chatId !== undefined) await sendStatusLine(ctx, chatId, response.usage);
+    if (chatId !== undefined) await sendStatusLine(ctx, chatId, sessionKey, response.usage);
   } catch (error) {
     await messageSender.cancelStreaming(ctx);
     throw error;
@@ -686,7 +686,7 @@ async function handleWaitResponse(
     await sendCompactionNotification(ctx, response.compaction);
     await sendSessionInitNotification(ctx, sessionKey, response.sessionInit);
 
-    await sendStatusLine(ctx, chatId, response.usage);
+    await sendStatusLine(ctx, chatId, sessionKey, response.usage);
   } catch (error) {
     messageSender.stopTypingInterval(typingInterval);
     throw error;

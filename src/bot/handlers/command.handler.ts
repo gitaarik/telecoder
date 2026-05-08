@@ -92,23 +92,12 @@ export function getEffortLabel(chatId: number): string | undefined {
   return EFFORT_LEVELS.find((l) => l.id === effort)?.label;
 }
 
-/** Build the full bot display name from base name, project, and topic. */
+/** Build the bot display name from base name and project. Topic now lives in the status line. */
 function buildBotDisplayName(sessionKey: string): string {
   const session = sessionManager.getSession(sessionKey);
-  const topic = sessionTopics.get(sessionKey);
   const project = session?.workingDirectory ? path.basename(session.workingDirectory) : '';
-
-  const parts: string[] = [];
-  if (topic) {
-    // Topic first: "dark mode — myproject — Claudegram"
-    parts.push(topic);
-    if (project) parts.push(project);
-    parts.push(config.BOT_NAME);
-  } else {
-    // No topic: "Claudegram — myproject"
-    parts.push(config.BOT_NAME);
-    if (project) parts.push(project);
-  }
+  const parts: string[] = [config.BOT_NAME];
+  if (project) parts.push(project);
   return parts.join(' — ').slice(0, 64);
 }
 
@@ -3750,73 +3739,116 @@ function shortenModelName(model: string): string {
   return model.replace(/^claude-/, '');
 }
 
-function buildStatusLineText(chatId: number, usage?: AgentUsage): string {
-  const parts: string[] = [];
+function buildStatusLineText(chatId: number, sessionKey?: string, usage?: AgentUsage): string {
+  const lines: string[] = [];
+
+  if (sessionKey && userPreferences.getShowTopicInStatusLine(chatId)) {
+    const topic = sessionTopics.get(sessionKey);
+    if (topic) lines.push(`💬 ${topic}`);
+  }
+
+  const stats: string[] = [];
   const label = getEffortLabel(chatId);
-  parts.push(label ? label.toLowerCase() : '🧠 auto');
+  stats.push(label ? label.toLowerCase() : '🧠 auto');
 
   if (usage) {
-    if (usage.model) parts.push(`🤖 ${shortenModelName(usage.model)}`);
+    if (usage.model) stats.push(`🤖 ${shortenModelName(usage.model)}`);
     if (usage.contextWindow > 0) {
       const used = usage.inputTokens + usage.outputTokens + usage.cacheReadTokens;
       const pct = Math.round((used / usage.contextWindow) * 100);
-      parts.push(`📊 ${pct}%`);
+      stats.push(`📊 ${pct}%`);
     }
-    parts.push(`💰 $${usage.totalCostUsd.toFixed(2)}`);
+    stats.push(`💰 $${usage.totalCostUsd.toFixed(2)}`);
   }
+  lines.push(stats.join(' · '));
 
-  return parts.join(' · ');
+  return lines.join('\n');
 }
 
-export async function sendStatusLine(ctx: Context, chatId: number, usage?: AgentUsage): Promise<void> {
+export async function sendStatusLine(
+  ctx: Context,
+  chatId: number,
+  sessionKey: string,
+  usage?: AgentUsage,
+): Promise<void> {
   if (!userPreferences.getShowStatusLine(chatId)) return;
   try {
-    const text = buildStatusLineText(chatId, usage);
-    await ctx.reply(`_${esc(text)}_`, { parse_mode: 'MarkdownV2' });
+    const text = buildStatusLineText(chatId, sessionKey, usage);
+    const formatted = text.split('\n').map(line => `_${esc(line)}_`).join('\n');
+    await ctx.reply(formatted, { parse_mode: 'MarkdownV2' });
   } catch (err) {
     console.debug('[StatusLine] Failed to send:', err instanceof Error ? err.message : err);
   }
 }
 
-export async function handleStatusLine(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { chatId } = keyInfo;
-
+function buildStatusLineMenu(chatId: number, sessionKey: string): { text: string; keyboard: { text: string; callback_data: string }[][] } {
   const enabled = userPreferences.getShowStatusLine(chatId);
-  const currentStatus = enabled ? 'ON' : 'OFF';
+  const showTopic = userPreferences.getShowTopicInStatusLine(chatId);
 
-  const keyboard = [
+  const keyboard: { text: string; callback_data: string }[][] = [
     [
-      { text: enabled ? '✓ On' : 'On', callback_data: 'statusline:on' },
-      { text: !enabled ? '✓ Off' : 'Off', callback_data: 'statusline:off' },
+      { text: enabled ? '✓ Status line: On' : 'Status line: On', callback_data: 'statusline:on' },
+      { text: !enabled ? '✓ Status line: Off' : 'Status line: Off', callback_data: 'statusline:off' },
+    ],
+    [
+      { text: showTopic ? '✓ Show topic: On' : 'Show topic: On', callback_data: 'statusline:topic:on' },
+      { text: !showTopic ? '✓ Show topic: Off' : 'Show topic: Off', callback_data: 'statusline:topic:off' },
     ],
   ];
 
-  const preview = buildStatusLineText(chatId);
-  await ctx.reply(
-    `📍 *Status Line*\n\nCurrent: *${currentStatus}*\n\n_Sends a small italic line after each turn so you can see the current effort \\(and future stats\\) without scrolling\\._\n\nPreview: _${esc(preview)}_`,
-    {
-      parse_mode: 'MarkdownV2',
-      reply_markup: { inline_keyboard: keyboard },
-    }
-  );
+  const previewText = buildStatusLineText(chatId, sessionKey);
+  const preview = previewText.split('\n').map(line => `_${esc(line)}_`).join('\n');
+  const text =
+    `📍 *Status Line*\n\n` +
+    `Status line: *${enabled ? 'ON' : 'OFF'}*\n` +
+    `Show topic: *${showTopic ? 'ON' : 'OFF'}*\n\n` +
+    `_Sends a small italic line after each turn so you can see the current state without scrolling\\._\n\n` +
+    `Preview:\n${preview}`;
+
+  return { text, keyboard };
+}
+
+export async function handleStatusLine(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { chatId, sessionKey } = keyInfo;
+
+  const menu = buildStatusLineMenu(chatId, sessionKey);
+  await ctx.reply(menu.text, {
+    parse_mode: 'MarkdownV2',
+    reply_markup: { inline_keyboard: menu.keyboard },
+  });
 }
 
 export async function handleStatusLineCallback(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
-  const { chatId } = keyInfo;
+  const { chatId, sessionKey } = keyInfo;
 
   const data = ctx.callbackQuery?.data;
   if (!data || !data.startsWith('statusline:')) return;
 
-  const newState = data.replace('statusline:', '') === 'on';
-  userPreferences.setShowStatusLine(chatId, newState);
+  const action = data.replace('statusline:', '');
+  let toastText: string;
 
-  const statusText = newState ? 'ON' : 'OFF';
-  await ctx.answerCallbackQuery({ text: `Status line ${statusText}!` });
-  await ctx.editMessageText(`✅ Status line *${statusText}*`, { parse_mode: 'MarkdownV2' });
+  if (action === 'topic:on' || action === 'topic:off') {
+    const newState = action === 'topic:on';
+    userPreferences.setShowTopicInStatusLine(chatId, newState);
+    toastText = `Show topic ${newState ? 'ON' : 'OFF'}`;
+  } else if (action === 'on' || action === 'off') {
+    const newState = action === 'on';
+    userPreferences.setShowStatusLine(chatId, newState);
+    toastText = `Status line ${newState ? 'ON' : 'OFF'}`;
+  } else {
+    return;
+  }
+
+  const menu = buildStatusLineMenu(chatId, sessionKey);
+  await ctx.answerCallbackQuery({ text: toastText });
+  await ctx.editMessageText(menu.text, {
+    parse_mode: 'MarkdownV2',
+    reply_markup: { inline_keyboard: menu.keyboard },
+  });
 }
 
 // ---------------------------------------------------------------------------
