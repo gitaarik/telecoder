@@ -68,6 +68,7 @@ import { sanitizeError, sanitizePath } from '../../utils/sanitize.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../../utils/workspace-guard.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
 import { taskTracker, type TaskState } from '../../telegram/task-tracker.js';
+import { readRecentExchanges, type RecapExchange } from '../../claude/session-jsonl.js';
 
 // Helper for consistent MarkdownV2 replies
 async function replyMd(ctx: Context, text: string): Promise<void> {
@@ -280,6 +281,17 @@ export function projectStatusSuffix(sessionKey: string): string {
 /** The copyable command sent as a separate message. */
 export function resumeCommandMessage(sessionId: string): string {
   return `\`claude --resume ${sessionId}\``;
+}
+
+/** Truncate a string to fit within `maxBytes` UTF-8 bytes without splitting a codepoint. */
+function truncateToBytes(s: string, maxBytes: number): string {
+  if (Buffer.byteLength(s, 'utf8') <= maxBytes) return s;
+  let out = '';
+  for (const ch of s) {
+    if (Buffer.byteLength(out + ch, 'utf8') > maxBytes) break;
+    out += ch;
+  }
+  return out;
 }
 
 const OPENAI_TTS_VOICES = [
@@ -1134,28 +1146,35 @@ export async function handleStatus(ctx: Context): Promise<void> {
     const provider = getActiveProviderName(chatId);
     const dangerousMode = isDangerousMode() ? '⚠️ ENABLED' : 'Disabled';
     const effortLabel = getEffortLabel(chatId) ?? 'Default';
+    const topic = getSessionTopic(sessionKey);
+
+    const projectName = path.basename(session.workingDirectory);
 
     let status = `📊 *Session Status*
 
-• *Working Directory:* \`${esc(session.workingDirectory)}\`
-• *Session ID:* \`${esc(session.conversationId)}\`
-• *Provider:* ${esc(provider)}
-• *Model:* ${esc(currentModel)}
-• *Effort:* ${esc(effortLabel)}
-• *Created:* ${esc(session.createdAt.toLocaleString())}
-• *Last Activity:* ${esc(session.lastActivity.toLocaleString())}
-• *Mode:* ${esc(config.STREAMING_MODE)}
-• *Dangerous Mode:* ${esc(dangerousMode)}
-• *Uptime:* ${esc(getUptimeFormatted())}`;
+🤖 *Bot Name:* ${esc(config.BOT_NAME)}
+📦 *Project:* ${esc(projectName)}
+🏷️ *Topic:* ${topic ? esc(topic) : '_none_'}
+🎚️ *Effort:* ${esc(effortLabel)}
+🧠 *Model:* ${esc(currentModel)}
+🔌 *Provider:* ${esc(provider)}
+🆔 *Session ID:* \`${esc(session.claudeSessionId ?? session.conversationId)}\`
+📁 *Working Directory:* \`${esc(session.workingDirectory)}\`
+📡 *Mode:* ${esc(config.STREAMING_MODE)}
+${isDangerousMode() ? '⚠️' : '🛡️'} *Dangerous Mode:* ${esc(dangerousMode)}`;
 
     const cached = getCachedUsage(sessionKey);
     if (cached) {
       const pct = cached.contextWindow > 0
         ? Math.round(((cached.inputTokens + cached.outputTokens) / cached.contextWindow) * 100)
         : 0;
-      status += `\n• *Context:* ${esc(String(pct))}% \\(${esc(fmtTokens(cached.inputTokens + cached.outputTokens))}/${esc(fmtTokens(cached.contextWindow))}\\)`;
-      status += `\n• *Session Cost:* \\$${esc(cached.totalCostUsd.toFixed(4))}`;
+      status += `\n📐 *Context:* ${esc(String(pct))}% \\(${esc(fmtTokens(cached.inputTokens + cached.outputTokens))}/${esc(fmtTokens(cached.contextWindow))}\\)`;
+      status += `\n💰 *Session Cost:* \\$${esc(cached.totalCostUsd.toFixed(4))}`;
     }
+
+    status += `\n🕰️ *Created:* ${esc(session.createdAt.toLocaleString())}`;
+    status += `\n⏱️ *Last Activity:* ${esc(session.lastActivity.toLocaleString())}`;
+    status += `\n⏳ *Uptime:* ${esc(getUptimeFormatted())}`;
 
     await replyMd(ctx, status);
   } catch (err) {
@@ -2047,10 +2066,20 @@ export async function handleResume(ctx: Context): Promise<void> {
   const keyboard = resumable.map((entry) => {
     const date = new Date(entry.lastActivity);
     const timeAgo = formatTimeAgo(date);
+    const suffix = ` (${timeAgo})`;
+    const base = entry.topic
+      ? `${entry.projectName} · ${entry.topic}`
+      : entry.projectName;
+    // Telegram caps inline button labels at 64 bytes — truncate from the right
+    // so the project name stays visible.
+    const budget = 64 - suffix.length - 1;
+    const text = (Buffer.byteLength(base, 'utf8') > budget
+      ? truncateToBytes(base, budget - 1) + '…'
+      : base) + suffix;
 
     return [
       {
-        text: `${entry.projectName} (${timeAgo})`,
+        text,
         callback_data: `resume:${entry.conversationId}`,
       },
     ];
@@ -2095,6 +2124,8 @@ export async function handleResumeCallback(ctx: Context): Promise<void> {
   if (session.claudeSessionId) {
     await replyMd(ctx, resumeCommandMessage(session.claudeSessionId));
   }
+
+  await sendRecapHint(ctx, sessionKey);
 }
 
 export async function handleContinue(ctx: Context): Promise<void> {
@@ -2122,6 +2153,78 @@ export async function handleContinue(ctx: Context): Promise<void> {
   if (session.claudeSessionId) {
     await replyMd(ctx, resumeCommandMessage(session.claudeSessionId));
   }
+
+  await sendRecapHint(ctx, sessionKey);
+}
+
+// Per-turn cap for recap rendering — keeps long assistant responses from
+// blowing past Telegram's 4096-char message limit.
+const RECAP_MAX_CHARS_PER_TURN = 500;
+const RECAP_DEFAULT_N = 3;
+const RECAP_MAX_N = 10;
+
+function truncateForRecap(text: string, max: number = RECAP_MAX_CHARS_PER_TURN): string {
+  const collapsed = text.replace(/\s+/g, ' ').trim();
+  if (collapsed.length <= max) return collapsed;
+  return collapsed.slice(0, max - 1).trimEnd() + '…';
+}
+
+/** Render exchanges as a single MarkdownV2 message with one blockquote per exchange. */
+function formatRecap(exchanges: RecapExchange[]): string {
+  const header = `📋 *Recap* — last ${exchanges.length} exchange${exchanges.length === 1 ? '' : 's'}`;
+  const blocks = exchanges.map((ex) => {
+    const u = esc(truncateForRecap(ex.user));
+    const a = esc(truncateForRecap(ex.assistant));
+    // MarkdownV2 blockquote: every line prefixed with `>` (escaped).
+    return `>*You:* ${u}\n>\n>*Claude:* ${a}`;
+  });
+  return [header, '', ...blocks].join('\n');
+}
+
+/** Post a one-line tip pointing the user at /recap. Used after explicit restore. */
+async function sendRecapHint(ctx: Context, sessionKey: string): Promise<void> {
+  const session = sessionManager.getSession(sessionKey);
+  if (!session?.claudeSessionId) return;
+  const exchanges = readRecentExchanges(session.workingDirectory, session.claudeSessionId, 1);
+  if (exchanges.length === 0) return;
+  await replyMd(ctx, '💡 Tip: use `/recap` to see your last messages from this session\\.');
+}
+
+export async function handleRecap(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { sessionKey } = keyInfo;
+
+  const text = ctx.message?.text || '';
+  const arg = text.split(' ').slice(1).join(' ').trim();
+
+  let n = RECAP_DEFAULT_N;
+  if (arg) {
+    const parsed = parseInt(arg, 10);
+    if (Number.isNaN(parsed) || parsed < 1) {
+      await replyMd(ctx, '⚠️ Usage: `/recap [N]` where N is the number of exchanges \\(default 3, max 10\\)\\.');
+      return;
+    }
+    n = Math.min(parsed, RECAP_MAX_N);
+  }
+
+  const session = sessionManager.getSession(sessionKey);
+  if (!session) {
+    await replyMd(ctx, '⚠️ No active session\\. Use `/continue` or `/resume` first\\.');
+    return;
+  }
+  if (!session.claudeSessionId) {
+    await replyMd(ctx, 'ℹ️ This session has no recorded messages yet\\.');
+    return;
+  }
+
+  const exchanges = readRecentExchanges(session.workingDirectory, session.claudeSessionId, n);
+  if (exchanges.length === 0) {
+    await replyMd(ctx, 'ℹ️ No recoverable exchanges found in this session\\.');
+    return;
+  }
+
+  await replyMd(ctx, formatRecap(exchanges));
 }
 
 export async function handleLoop(ctx: Context): Promise<void> {
@@ -2207,7 +2310,8 @@ export async function handleSessions(ctx: Context): Promise<void> {
       const isActive = currentSession && currentSession.conversationId === entry.conversationId;
       const marker = isActive ? '→ ' : '• ';
       const date = new Date(entry.lastActivity);
-      message += `${marker}\`${esc(entry.projectName)}\` \\(${esc(formatTimeAgo(date))}\\)\n`;
+      const topicSuffix = entry.topic ? ` — _${esc(entry.topic)}_` : '';
+      message += `${marker}\`${esc(entry.projectName)}\` \\(${esc(formatTimeAgo(date))}\\)${topicSuffix}\n`;
     }
   }
 

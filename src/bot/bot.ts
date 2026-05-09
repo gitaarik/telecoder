@@ -36,6 +36,7 @@ import {
   handleResume,
   handleResumeCallback,
   handleContinue,
+  handleRecap,
   handleLoop,
   handleSessions,
   handleTeleport,
@@ -161,6 +162,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'explore', description: '🔍 Explore codebase' },
     { command: 'loop', description: '🔄 Run in loop mode' },
     { command: 'sessions', description: '📚 View saved sessions' },
+    { command: 'recap', description: '📋 Recap last messages of current session' },
     { command: 'teleport', description: '🚀 Move session to terminal' },
     ...(config.REDDIT_ENABLED ? [{ command: 'reddit', description: '📡 Fetch Reddit posts & subreddits' }] : []),
     ...(config.VREDDIT_ENABLED ? [{ command: 'vreddit', description: '🎬 Download Reddit video from post URL' }] : []),
@@ -254,6 +256,7 @@ export async function createBot(): Promise<Bot> {
   bot.command('resume', handleResume);
   bot.command('continue', handleContinue);
   bot.command('sessions', handleSessions);
+  bot.command('recap', handleRecap);
 
   // Loop mode
   bot.command('loop', handleLoop);

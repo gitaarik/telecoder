@@ -1775,6 +1775,11 @@
             <h3>Back to Previous Session</h3>
             <p>After /clear, /project, /newproject, or /start, Claudegram appends a one-tap inline button that resumes the most recent prior session — handy if you regret a clear or want to jump back to the project you just left.</p>
           </div>
+          <div class="feature-card" data-category="session">
+            <div class="feature-icon">📋</div>
+            <h3>Session Recap</h3>
+            <p>Use /recap [N] to re-read the last N user/assistant exchanges from the active session (default 3). After /resume or /continue, Claudegram drops a one-line tip pointing at the command so you can quickly orient yourself in a restored session.</p>
+          </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon">🌐</div>
             <h3>Proxy Support</h3>
@@ -1892,6 +1897,10 @@
             <div class="command-row">
               <code class="command-code">/sessions</code>
               <span class="command-desc">Browse and restore previous sessions</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/recap [N]</code>
+              <span class="command-desc">Re-read the last N exchanges of the current session (default 3)</span>
             </div>
             <div class="command-row">
               <code class="command-code">/teleport</code>
