@@ -1770,6 +1770,11 @@
             <h3>Completion Notifications</h3>
             <p>Get a push notification when long-running tasks finish. Configurable threshold (default: 60s) — never miss a completed task again.</p>
           </div>
+          <div class="feature-card" data-category="session">
+            <div class="feature-icon">↩️</div>
+            <h3>Back to Previous Session</h3>
+            <p>After /clear, /project, /newproject, or /start, Claudegram appends a one-tap inline button that resumes the most recent prior session — handy if you regret a clear or want to jump back to the project you just left.</p>
+          </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon">🌐</div>
             <h3>Proxy Support</h3>
@@ -1860,8 +1865,8 @@
               <span class="command-desc">Create and open a new project</span>
             </div>
             <div class="command-row">
-              <code class="command-code">/clear</code>
-              <span class="command-desc">Clear conversation history (project stays selected)</span>
+              <code class="command-code">/clear [-y]</code>
+              <span class="command-desc">Clear conversation history (project stays selected); pass -y to skip the confirmation prompt</span>
             </div>
             <div class="command-row">
               <code class="command-code">/status</code>

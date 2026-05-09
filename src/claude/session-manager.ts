@@ -89,16 +89,21 @@ class SessionManager {
   setWorkingDirectory(sessionKey: string, directory: string): Session {
     const existing = this.sessions.get(sessionKey);
     if (existing) {
-      // Clear Claude session ID when directory changes — the Agent SDK session
-      // is bound to the original cwd and cannot be resumed with a different one.
-      if (existing.workingDirectory !== directory) {
-        existing.claudeSessionId = undefined;
+      if (existing.workingDirectory === directory) {
+        existing.lastActivity = new Date();
+        sessionHistory.saveSession(
+          sessionKey,
+          existing.conversationId,
+          directory,
+          '',
+          existing.claudeSessionId,
+        );
+        return existing;
       }
-      existing.workingDirectory = directory;
-      existing.lastActivity = new Date();
-      // Save updated session
-      sessionHistory.saveSession(sessionKey, existing.conversationId, directory, '', existing.claudeSessionId);
-      return existing;
+      // Different directory: start a new conversation. The Agent SDK session
+      // is bound to the original cwd, so we mint a fresh conversationId and
+      // leave the prior history entry intact for "back to previous project".
+      return this.createSession(sessionKey, directory);
     }
     return this.createSession(sessionKey, directory);
   }
@@ -169,6 +174,28 @@ class SessionManager {
     session.claudeSessionId = claudeSessionId;
     session.lastActivity = new Date();
     sessionHistory.updateClaudeSessionId(sessionKey, session.conversationId, claudeSessionId);
+  }
+
+  /**
+   * Start a fresh conversation in the same project, preserving the prior
+   * entry in session history so the user can return to it. Used by /clear,
+   * which must actually sever the SDK session — the existing
+   * `claudeSessionId` would otherwise be re-used on the next message and the
+   * Anthropic-side conversation history would persist server-side.
+   */
+  startNewConversation(sessionKey: string): Session | undefined {
+    const existing = this.sessions.get(sessionKey);
+    if (!existing) return undefined;
+    const fresh: Session = {
+      conversationId: this.generateConversationId(),
+      claudeSessionId: undefined,
+      workingDirectory: existing.workingDirectory,
+      createdAt: new Date(),
+      lastActivity: new Date(),
+    };
+    this.sessions.set(sessionKey, fresh);
+    sessionHistory.saveSession(sessionKey, fresh.conversationId, fresh.workingDirectory, '', undefined);
+    return fresh;
   }
 
   private generateConversationId(): string {

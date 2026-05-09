@@ -574,7 +574,17 @@ I bridge your messages to Claude Code running on your local machine\\.
 Current mode: ${config.STREAMING_MODE}
 Effort: ${esc(effortLabel)}${dangerousWarning}`;
 
-  await replyMd(ctx, welcomeMessage);
+  const currentConv = keyInfo
+    ? sessionManager.getSession(keyInfo.sessionKey)?.conversationId
+    : undefined;
+  const backButton = keyInfo
+    ? buildBackToPreviousButton(keyInfo.sessionKey, currentConv)
+    : undefined;
+
+  await ctx.reply(welcomeMessage, {
+    parse_mode: 'MarkdownV2',
+    ...(backButton ? { reply_markup: { inline_keyboard: backButton } } : {}),
+  });
 }
 
 export async function handleClear(ctx: Context): Promise<void> {
@@ -582,11 +592,34 @@ export async function handleClear(ctx: Context): Promise<void> {
   if (!keyInfo) return;
   const { sessionKey } = keyInfo;
 
+  const text = ctx.message?.text || '';
+  const arg = text.split(' ').slice(1).join(' ').trim().toLowerCase();
+  const skipConfirm = arg === '-y' || arg === '--yes' || arg === 'yes' || arg === 'force';
+
+  if (skipConfirm) {
+    clearConversation(sessionKey);
+    sessionManager.startNewConversation(sessionKey);
+    await clearTopicAndRefreshBotName(ctx, sessionKey);
+
+    const session = sessionManager.getSession(sessionKey);
+    const projectName = session ? path.basename(session.workingDirectory) : null;
+    const msg = projectName
+      ? `🔄 Conversation cleared\\. Project *${esc(projectName)}* is still selected\\.`
+      : '🔄 Conversation cleared\\.';
+    const newConv = session?.conversationId;
+    const backButton = buildBackToPreviousButton(sessionKey, newConv);
+    await ctx.reply(msg, {
+      parse_mode: 'MarkdownV2',
+      ...(backButton ? { reply_markup: { inline_keyboard: backButton } } : {}),
+    });
+    return;
+  }
+
   const session = sessionManager.getSession(sessionKey);
   const projectName = session ? path.basename(session.workingDirectory) : 'current session';
 
   await ctx.reply(
-    `⚠️ *Clear conversation?*\n\nThis wipes the conversation history for *${esc(projectName)}*\\. The project stays selected\\.\n\n_This cannot be undone\\._`,
+    `⚠️ *Clear conversation?*\n\nThis wipes the conversation history for *${esc(projectName)}*\\. The project stays selected\\.\n\n_This cannot be undone\\._\n\n💡 Tip: \`/clear \\-y\` skips this confirmation\\.`,
     {
       parse_mode: 'MarkdownV2',
       reply_markup: {
@@ -613,8 +646,9 @@ export async function handleClearCallback(ctx: Context): Promise<void> {
 
   if (action === 'confirm') {
     // Preserve the working directory (project) — only wipe the conversation,
-    // matching Claude Code's /clear semantics. Use /reset for a full nuke.
+    // matching Claude Code's /clear semantics. Use /softreset for a full nuke.
     clearConversation(sessionKey);
+    sessionManager.startNewConversation(sessionKey);
     await clearTopicAndRefreshBotName(ctx, sessionKey);
 
     const session = sessionManager.getSession(sessionKey);
@@ -624,7 +658,12 @@ export async function handleClearCallback(ctx: Context): Promise<void> {
     const msg = projectName
       ? `🔄 Conversation cleared\\. Project *${esc(projectName)}* is still selected\\.`
       : '🔄 Conversation cleared\\.';
-    await ctx.editMessageText(msg, { parse_mode: 'MarkdownV2' });
+    const newConv = session?.conversationId;
+    const backButton = buildBackToPreviousButton(sessionKey, newConv);
+    await ctx.editMessageText(msg, {
+      parse_mode: 'MarkdownV2',
+      ...(backButton ? { reply_markup: { inline_keyboard: backButton } } : {}),
+    });
   } else {
     await ctx.answerCallbackQuery({ text: 'Cancelled' });
     await ctx.editMessageText('👍 Clear cancelled\\. Your session is intact\\.', { parse_mode: 'MarkdownV2' });
@@ -652,10 +691,16 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
     clearConversation(sessionKey);
     await clearTopicAndRefreshBotName(ctx, sessionKey);
 
+    const newConv = sessionManager.getSession(sessionKey)?.conversationId;
+    const backButton = buildBackToPreviousButton(sessionKey, newConv);
+
     await ctx.answerCallbackQuery({ text: 'Project set' });
     await ctx.editMessageText(
       `✅ Project: *${esc(path.basename(state.current))}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`,
-      { parse_mode: 'MarkdownV2' }
+      {
+        parse_mode: 'MarkdownV2',
+        ...(backButton ? { reply_markup: { inline_keyboard: backButton } } : {}),
+      },
     );
 
     const s = sessionManager.getSession(sessionKey);
@@ -926,7 +971,12 @@ export async function handleProject(ctx: Context): Promise<void> {
   clearConversation(sessionKey);
   await clearTopicAndRefreshBotName(ctx, sessionKey);
 
-  await replyMd(ctx, `✅ Project: *${esc(args)}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`);
+  const newConv = sessionManager.getSession(sessionKey)?.conversationId;
+  const backButton = buildBackToPreviousButton(sessionKey, newConv);
+  await ctx.reply(`✅ Project: *${esc(args)}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`, {
+    parse_mode: 'MarkdownV2',
+    ...(backButton ? { reply_markup: { inline_keyboard: backButton } } : {}),
+  });
 
   const s = sessionManager.getSession(sessionKey);
   if (s?.claudeSessionId) {
@@ -964,7 +1014,12 @@ export async function handleNewProject(ctx: Context): Promise<void> {
   clearConversation(sessionKey);
   await clearTopicAndRefreshBotName(ctx, sessionKey);
 
-  await replyMd(ctx, `✅ Created and opened: *${esc(args)}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`);
+  const newConv = sessionManager.getSession(sessionKey)?.conversationId;
+  const backButton = buildBackToPreviousButton(sessionKey, newConv);
+  await ctx.reply(`✅ Created and opened: *${esc(args)}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`, {
+    parse_mode: 'MarkdownV2',
+    ...(backButton ? { reply_markup: { inline_keyboard: backButton } } : {}),
+  });
 
   const s = sessionManager.getSession(sessionKey);
   if (s?.claudeSessionId) {
@@ -2270,6 +2325,27 @@ function formatTimeAgo(date: Date): string {
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
   return date.toLocaleDateString();
+}
+
+/**
+ * One-tap "Back to previous" inline keyboard, reusing the /resume callback.
+ * Skips the entry whose conversationId matches `excludeConversationId` so we
+ * don't offer to return to the session you're already in.
+ */
+export function buildBackToPreviousButton(
+  sessionKey: string,
+  excludeConversationId?: string,
+): { text: string; callback_data: string }[][] | undefined {
+  const history = sessionManager.getSessionHistory(sessionKey, 5);
+  const entry = history.find(
+    (e) => e.claudeSessionId && e.conversationId !== excludeConversationId,
+  );
+  if (!entry) return undefined;
+
+  const timeAgo = formatTimeAgo(new Date(entry.lastActivity));
+  const detail = entry.topic ? `${entry.projectName}: ${entry.topic}` : entry.projectName;
+  const trimmed = detail.length > 45 ? `${detail.slice(0, 44)}…` : detail;
+  return [[{ text: `↩️ Back to ${trimmed} (${timeAgo})`, callback_data: `resume:${entry.conversationId}` }]];
 }
 
 export async function handleFile(ctx: Context): Promise<void> {
