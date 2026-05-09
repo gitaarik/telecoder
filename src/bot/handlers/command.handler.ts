@@ -267,7 +267,8 @@ export function projectStatusSuffix(sessionKey: string): string {
     : new Date().toLocaleString();
   const sessionId = session?.claudeSessionId;
 
-  let suffix = `\n• *Provider:* ${esc(provider)}\n• *Model:* ${esc(model)}\n• *Created:* ${esc(created)}\n• *Dangerous Mode:* ${esc(dangerous)}`;
+  const effortLabel = getEffortLabel(chatId) ?? 'Default';
+  let suffix = `\n• *Provider:* ${esc(provider)}\n• *Model:* ${esc(model)}\n• *Effort:* ${esc(effortLabel)}\n• *Created:* ${esc(created)}\n• *Dangerous Mode:* ${esc(dangerous)}`;
   if (sessionId) {
     suffix += `\n• *Session ID:* \`${esc(sessionId)}\``;
     suffix += `\n\n💡 To continue this session from the terminal, copy the command below\\.`;
@@ -551,6 +552,10 @@ export async function handleStart(ctx: Context): Promise<void> {
     ? '\n\n⚠️ *DANGEROUS MODE ENABLED* \\- All tool permissions auto\\-approved'
     : '';
 
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  const chatId = keyInfo ? parseSessionKey(keyInfo.sessionKey).chatId : undefined;
+  const effortLabel = chatId !== undefined ? (getEffortLabel(chatId) ?? 'Default') : 'Default';
+
   const welcomeMessage = `👋 *Welcome to Claudegram\\!*
 
 I bridge your messages to Claude Code running on your local machine\\.
@@ -566,7 +571,8 @@ I bridge your messages to Claude Code running on your local machine\\.
 • \`/status\` \\- Show current session info
 • \`/commands\` \\- Show all available commands
 
-Current mode: ${config.STREAMING_MODE}${dangerousWarning}`;
+Current mode: ${config.STREAMING_MODE}
+Effort: ${esc(effortLabel)}${dangerousWarning}`;
 
   await replyMd(ctx, welcomeMessage);
 }
