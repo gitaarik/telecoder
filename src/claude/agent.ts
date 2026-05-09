@@ -22,6 +22,7 @@ import { setActiveQuery, clearActiveQuery, isCancelled } from './request-queue.j
 import type { Context } from 'grammy';
 import { config } from '../config.js';
 import { AgentWatchdog } from './agent-watchdog.js';
+import { hasPendingQuestionForSession } from './ask-user.js';
 import { createClaudegramMcpServer } from './mcp-tools.js';
 import { getSessionTopic, getMsSinceTopicSet } from '../bot/handlers/command.handler.js';
 import {
@@ -664,6 +665,7 @@ export async function sendToAgent(
             response.close();
             controller.abort();
           },
+          shouldPauseTimeouts: () => hasPendingQuestionForSession(sessionKey),
         })
       : null;
     watchdog?.start();

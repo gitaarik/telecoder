@@ -29,11 +29,29 @@ interface PendingEntry {
   resolve: (answer: AskUserAnswer | null) => void;
   timer: NodeJS.Timeout;
   optionLabels: string[];
+  sessionKey?: string;
 }
 
 const pending: Map<string, PendingEntry> = new Map();
+// Per-sessionKey pending counter — read by the agent watchdog so it can
+// pause its stale-tool/silence timeouts while we're legitimately waiting on
+// the user. Counter (not boolean) supports rare overlapping asks per session.
+const pendingBySession: Map<string, number> = new Map();
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
+function clearPending(id: string): PendingEntry | undefined {
+  const entry = pending.get(id);
+  if (!entry) return undefined;
+  pending.delete(id);
+  clearTimeout(entry.timer);
+  if (entry.sessionKey) {
+    const next = (pendingBySession.get(entry.sessionKey) ?? 1) - 1;
+    if (next <= 0) pendingBySession.delete(entry.sessionKey);
+    else pendingBySession.set(entry.sessionKey, next);
+  }
+  return entry;
+}
 
 /**
  * Register a new pending question. Returns a short id (hex) and a promise
@@ -42,6 +60,7 @@ const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 export function createPendingQuestion(
   optionLabels: string[],
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
+  sessionKey?: string,
 ): { id: string; promise: Promise<AskUserAnswer | null> } {
   const id = crypto.randomBytes(4).toString('hex');
   let resolveFn!: (answer: AskUserAnswer | null) => void;
@@ -50,12 +69,14 @@ export function createPendingQuestion(
   });
 
   const timer = setTimeout(() => {
-    if (pending.delete(id)) {
-      resolveFn(null);
-    }
+    const entry = clearPending(id);
+    if (entry) entry.resolve(null);
   }, timeoutMs);
 
-  pending.set(id, { resolve: resolveFn, timer, optionLabels });
+  pending.set(id, { resolve: resolveFn, timer, optionLabels, sessionKey });
+  if (sessionKey) {
+    pendingBySession.set(sessionKey, (pendingBySession.get(sessionKey) ?? 0) + 1);
+  }
   return { id, promise };
 }
 
@@ -64,10 +85,8 @@ export function createPendingQuestion(
  * Telegram callback-query dispatcher on button tap.
  */
 export function resolvePendingQuestion(id: string, optionIndex: number): boolean {
-  const entry = pending.get(id);
+  const entry = clearPending(id);
   if (!entry) return false;
-  pending.delete(id);
-  clearTimeout(entry.timer);
   const label = entry.optionLabels[optionIndex];
   if (label === undefined) {
     entry.resolve(null);
@@ -75,4 +94,13 @@ export function resolvePendingQuestion(id: string, optionIndex: number): boolean
   }
   entry.resolve({ label, index: optionIndex });
   return true;
+}
+
+/**
+ * True when there's an outstanding ask-user question for this sessionKey.
+ * The agent watchdog uses this to pause its timeouts so legitimate waits
+ * for a button tap don't get force-closed as a "stale tool".
+ */
+export function hasPendingQuestionForSession(sessionKey: string): boolean {
+  return (pendingBySession.get(sessionKey) ?? 0) > 0;
 }

@@ -29,7 +29,6 @@ import { getUptimeFormatted } from '../middleware/stale-filter.js';
 import { getAvailableCommands } from '../../claude/command-parser.js';
 import {
   cancelRequest,
-  resetRequest,
   clearQueue,
   isProcessing,
   queueRequest,
@@ -646,7 +645,7 @@ export async function handleClearCallback(ctx: Context): Promise<void> {
 
   if (action === 'confirm') {
     // Preserve the working directory (project) — only wipe the conversation,
-    // matching Claude Code's /clear semantics. Use /softreset for a full nuke.
+    // matching Claude Code's /clear semantics.
     clearConversation(sessionKey);
     sessionManager.startNewConversation(sessionKey);
     await clearTopicAndRefreshBotName(ctx, sessionKey);
@@ -1781,59 +1780,6 @@ export async function handleCancel(ctx: Context): Promise<void> {
     await replyMd(ctx, message);
   } else if (!wasProcessing) {
     await replyMd(ctx, 'ℹ️ Nothing to cancel\\.');
-  }
-}
-
-export async function handleReset(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { chatId, sessionKey } = keyInfo;
-
-  const wasProcessing = isProcessing(sessionKey);
-  const reset = await resetRequest(sessionKey);
-  clearQueue(sessionKey);
-
-  // Clear the session so user starts fresh
-  clearConversation(sessionKey);
-  sessionManager.clearSession(sessionKey);
-
-  await clearTopicAndRefreshBotName(ctx, sessionKey);
-
-  if (wasProcessing || reset) {
-    await replyMd(ctx, '🔄 Session reset\\. Current request cancelled and session cleared\\.');
-  } else {
-    await replyMd(ctx, '🔄 Session reset\\.');
-  }
-
-  // Show restore buttons (same UX as /restartbot)
-  try {
-    await ctx.api.sendMessage(chatId, '👇 Restore or start a new session:', {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: '▶️ Continue', callback_data: 'reset:continue' },
-            { text: '📜 Resume', callback_data: 'reset:resume' },
-          ],
-        ],
-      },
-    });
-  } catch (e) {
-    console.debug('[Reset] Failed to send restore buttons:', e instanceof Error ? e.message : e);
-  }
-}
-
-export async function handleResetCallback(ctx: Context): Promise<void> {
-  const data = ctx.callbackQuery?.data;
-  if (!data) return;
-
-  if (data === 'reset:continue') {
-    await ctx.answerCallbackQuery();
-    await handleContinue(ctx);
-  } else if (data === 'reset:resume') {
-    await ctx.answerCallbackQuery();
-    await handleResume(ctx);
-  } else {
-    await ctx.answerCallbackQuery();
   }
 }
 

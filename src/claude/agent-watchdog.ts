@@ -33,6 +33,14 @@ export interface WatchdogOptions {
   onTimeout?: () => void;
   onSilenceTimeout?: () => void;
   onStaleToolTimeout?: () => void;
+  /**
+   * Optional callback that returns true while the query is legitimately
+   * waiting on an external user action (e.g. an inline-keyboard tap from
+   * claudegram_ask_user). When true, all timeout checks are skipped and the
+   * activity timestamps are kept fresh so the watchdog doesn't fire the
+   * moment the wait ends.
+   */
+  shouldPauseTimeouts?: () => boolean;
 }
 
 export class AgentWatchdog {
@@ -46,6 +54,7 @@ export class AgentWatchdog {
   private onTimeout?: () => void;
   private onSilenceTimeout?: () => void;
   private onStaleToolTimeout?: () => void;
+  private shouldPauseTimeouts?: () => boolean;
 
   private startTime: number = 0;
   private lastActivityTime: number = 0;
@@ -65,6 +74,7 @@ export class AgentWatchdog {
     this.onTimeout = options.onTimeout;
     this.onSilenceTimeout = options.onSilenceTimeout;
     this.onStaleToolTimeout = options.onStaleToolTimeout;
+    this.shouldPauseTimeouts = options.shouldPauseTimeouts;
   }
 
   /**
@@ -99,6 +109,17 @@ export class AgentWatchdog {
    * Check if watchdog should fire warnings or timeout.
    */
   private check(): void {
+    // Suspend all timeouts while we're explicitly waiting on external user
+    // input (e.g. an ask_user button tap). Bump both activity timestamps so
+    // the moment the wait ends we don't immediately trip a timeout that
+    // accumulated during the pause.
+    if (this.shouldPauseTimeouts?.()) {
+      const now = Date.now();
+      this.lastActivityTime = now;
+      this.lastMeaningfulActivityTime = now;
+      return;
+    }
+
     const now = Date.now();
     const sinceLastActivity = now - this.lastActivityTime;
     const sinceLastMeaningful = now - this.lastMeaningfulActivityTime;

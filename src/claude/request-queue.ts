@@ -145,35 +145,6 @@ export async function cancelRequest(sessionKey: string): Promise<boolean> {
   return false;
 }
 
-/** Soft reset: interrupt query + signal abort to fully tear down the session. */
-export async function resetRequest(sessionKey: string): Promise<boolean> {
-  const q = activeQueries.get(sessionKey);
-  const controller = activeAbortControllers.get(sessionKey);
-
-  if (q) {
-    cancelledChats.add(sessionKey);
-    try {
-      await q.interrupt();
-    } catch (err) {
-      console.debug('[resetRequest] interrupt() threw for chat', sessionKey, err);
-    }
-    // Also abort controller to fully tear down
-    if (controller) controller.abort();
-    clearActiveQuery(sessionKey);
-    clearAbortController(sessionKey);
-    return true;
-  }
-
-  if (controller) {
-    cancelledChats.add(sessionKey);
-    controller.abort();
-    clearAbortController(sessionKey);
-    return true;
-  }
-
-  return false;
-}
-
 export function clearQueue(sessionKey: string): number {
   const queue = pendingQueues.get(sessionKey);
   if (!queue) return 0;

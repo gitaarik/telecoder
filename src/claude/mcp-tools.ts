@@ -509,7 +509,7 @@ function askUserTool(toolsCtx: McpToolsContext) {
         }
 
         const optionLabels = options.map((o) => o.label);
-        const { id, promise } = createPendingQuestion(optionLabels);
+        const { id, promise } = createPendingQuestion(optionLabels, undefined, toolsCtx.sessionKey);
 
         const lines: string[] = [`❓ ${question}`];
         const annotated = options.filter((o) => o.description);

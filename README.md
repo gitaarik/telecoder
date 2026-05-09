@@ -198,7 +198,6 @@ Open your bot in Telegram → `/start`
 | `/restartbot` | Restart the bot |
 | `/cancel` | Cancel current request |
 | `/commands` | Show all commands |
-| `/softreset` | Soft reset (cancel + clear session) |
 
 ---
 

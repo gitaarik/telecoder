@@ -54,8 +54,6 @@ import {
   handleExtract,
   handleExtractCallback,
   handleRedditActionCallback,
-  handleReset,
-  handleResetCallback,
   handleBotName,
   handleBotNameCallback,
   handleTopic,
@@ -153,7 +151,6 @@ export async function createBot(): Promise<Bot> {
     { command: 'status', description: '📊 Show current session status' },
     { command: 'clear', description: '🗑️ Clear conversation history' },
     { command: 'cancel', description: '⏹️ Cancel current request' },
-    { command: 'softreset', description: '🔄 Soft reset (cancel + clear session)' },
     { command: 'resume', description: '▶️ Resume a session' },
     { command: 'continue', description: '▶️ Continue last session' },
     { command: 'botstatus', description: '🩺 Show bot process status' },
@@ -199,7 +196,6 @@ export async function createBot(): Promise<Bot> {
   // These commands fire BEFORE sequentialize so they bypass per-chat ordering.
   // This lets them interrupt, inspect, or restart even when a query is hung.
   bot.command('cancel', handleCancel);
-  bot.command('softreset', handleReset);
   bot.command('ping', handlePing);
   bot.command('status', handleStatus);
   bot.command('restartbot', handleRestartBot);
@@ -214,13 +210,12 @@ export async function createBot(): Promise<Bot> {
   // call. If the callback got queued, it'd deadlock behind the query that's
   // waiting for it.
   bot.callbackQuery(/^q:/, handleAskUserCallback);
-  // Menu buttons for /restartbot, /rebuildbot, /softreset must bypass
-  // sequentialize for the same reason their parent commands do: users tap
-  // these precisely when the bot is hung, so the callback can't be queued
-  // behind the stuck request.
+  // Menu buttons for /restartbot and /rebuildbot must bypass sequentialize
+  // for the same reason their parent commands do: users tap these precisely
+  // when the bot is hung, so the callback can't be queued behind the stuck
+  // request.
   bot.callbackQuery(/^restartbot:/, handleRestartBotCallback);
   bot.callbackQuery(/^rebuild:/, handleRebuildCallback);
-  bot.callbackQuery(/^reset:/, handleResetCallback);
 
   // Batch consecutive text messages BEFORE sequentialize.
   // When Telegram splits a long paste into multiple messages, this combines
