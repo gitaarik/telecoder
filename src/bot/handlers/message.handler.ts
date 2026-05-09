@@ -16,8 +16,10 @@ import {
 import { isClaudeCommand } from '../../claude/command-parser.js';
 import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
 import { createTelegraphFromFile } from '../../telegram/telegraph.js';
-import { getStreamingMode, executeRedditFetch, executeMediumFetch, showExtractMenu, projectStatusSuffix, resumeCommandMessage, setSessionTopic, clearTopicAndRefreshBotName, sendStatusLine } from './command.handler.js';
+import { getStreamingMode, executeRedditFetch, executeMediumFetch, showExtractMenu, projectStatusSuffix, resumeCommandMessage, setSessionTopic, getSessionTopic, clearTopicAndRefreshBotName, sendStatusLine } from './command.handler.js';
 import { isBotNameEnabled, rateLimitedSetMyName } from '../../telegram/botname-settings.js';
+import { userPreferences } from '../../providers/user-preferences.js';
+import { parseSessionKey } from '../../utils/session-key.js';
 import { summarizeTopicWithHaiku } from '../../claude/auto-topic-haiku.js';
 import { executeVReddit } from '../../reddit/vreddit.js';
 import { detectPlatform, isValidUrl } from '../../media/extract.js';
@@ -37,10 +39,16 @@ async function replyFeatureDisabled(ctx: Context, feature: string): Promise<void
  * immediately, without depending on the main agent calling claudegram_set_topic.
  */
 function fireAutoTopic(ctx: Context, sessionKey: string, userMessage: string): void {
-  if (!config.AUTO_TOPIC_HAIKU || !isBotNameEnabled(sessionKey)) return;
+  if (!config.AUTO_TOPIC_HAIKU) return;
+  // Fire if the topic will be visible somewhere — either the bot name or the
+  // status line. Skipping when nothing displays it avoids wasted Haiku calls.
+  const { chatId } = parseSessionKey(sessionKey);
+  const wantsTopic = isBotNameEnabled(sessionKey) || userPreferences.getShowTopicInStatusLine(chatId);
+  if (!wantsTopic) return;
   void (async () => {
     try {
-      const topic = await summarizeTopicWithHaiku(userMessage);
+      const previousTopic = getSessionTopic(sessionKey);
+      const topic = await summarizeTopicWithHaiku(userMessage, previousTopic);
       if (!topic) return;
       const displayName = setSessionTopic(sessionKey, topic);
       if (isBotNameEnabled(sessionKey)) {
