@@ -3745,17 +3745,34 @@ function shortenModelName(model: string): string {
   return model.replace(/^claude-/, '');
 }
 
-function buildStatusLineText(chatId: number, sessionKey?: string, usage?: AgentUsage): string {
+/**
+ * Build the status-line message body in MarkdownV2.
+ * Each enabled line picks its own formatting (italic for topic/stats,
+ * mono code span for the resume command so it's easy to copy).
+ */
+function buildStatusLineMarkdown(
+  chatId: number,
+  sessionKey?: string,
+  usage?: AgentUsage,
+): string {
   const lines: string[] = [];
 
   if (sessionKey && userPreferences.getShowTopicInStatusLine(chatId)) {
     const topic = sessionTopics.get(sessionKey);
-    if (topic) lines.push(`💬 ${topic}`);
+    if (topic) lines.push(`_💬 ${esc(topic)}_`);
+  }
+
+  if (sessionKey && userPreferences.getShowSessionInStatusLine(chatId)) {
+    const claudeSessionId = sessionManager.getSession(sessionKey)?.claudeSessionId;
+    if (claudeSessionId) {
+      // Inside backticks only `\` and `` ` `` need escaping; UUIDs contain neither.
+      lines.push(`🔗 \`claude --resume ${claudeSessionId}\``);
+    }
   }
 
   const stats: string[] = [];
   const label = getEffortLabel(chatId);
-  stats.push(label ? label.toLowerCase() : '🧠 auto');
+  stats.push(label || '🧠 Auto');
 
   if (usage) {
     if (usage.model) stats.push(`🤖 ${shortenModelName(usage.model)}`);
@@ -3766,7 +3783,7 @@ function buildStatusLineText(chatId: number, sessionKey?: string, usage?: AgentU
     }
     stats.push(`💰 $${usage.totalCostUsd.toFixed(2)}`);
   }
-  lines.push(stats.join(' · '));
+  lines.push(`_${esc(stats.join(' · '))}_`);
 
   return lines.join('\n');
 }
@@ -3779,9 +3796,8 @@ export async function sendStatusLine(
 ): Promise<void> {
   if (!userPreferences.getShowStatusLine(chatId)) return;
   try {
-    const text = buildStatusLineText(chatId, sessionKey, usage);
-    const formatted = text.split('\n').map(line => `_${esc(line)}_`).join('\n');
-    await ctx.reply(formatted, { parse_mode: 'MarkdownV2' });
+    const markdown = buildStatusLineMarkdown(chatId, sessionKey, usage);
+    await ctx.reply(markdown, { parse_mode: 'MarkdownV2' });
   } catch (err) {
     console.debug('[StatusLine] Failed to send:', err instanceof Error ? err.message : err);
   }
@@ -3790,6 +3806,7 @@ export async function sendStatusLine(
 function buildStatusLineMenu(chatId: number, sessionKey: string): { text: string; keyboard: { text: string; callback_data: string }[][] } {
   const enabled = userPreferences.getShowStatusLine(chatId);
   const showTopic = userPreferences.getShowTopicInStatusLine(chatId);
+  const showSession = userPreferences.getShowSessionInStatusLine(chatId);
 
   const keyboard: { text: string; callback_data: string }[][] = [
     [
@@ -3800,15 +3817,20 @@ function buildStatusLineMenu(chatId: number, sessionKey: string): { text: string
       { text: showTopic ? '✓ Show topic: On' : 'Show topic: On', callback_data: 'statusline:topic:on' },
       { text: !showTopic ? '✓ Show topic: Off' : 'Show topic: Off', callback_data: 'statusline:topic:off' },
     ],
+    [
+      { text: showSession ? '✓ Show session: On' : 'Show session: On', callback_data: 'statusline:session:on' },
+      { text: !showSession ? '✓ Show session: Off' : 'Show session: Off', callback_data: 'statusline:session:off' },
+    ],
   ];
 
-  const previewText = buildStatusLineText(chatId, sessionKey);
-  const preview = previewText.split('\n').map(line => `_${esc(line)}_`).join('\n');
+  const preview = buildStatusLineMarkdown(chatId, sessionKey);
   const text =
     `📍 *Status Line*\n\n` +
     `Status line: *${enabled ? 'ON' : 'OFF'}*\n` +
-    `Show topic: *${showTopic ? 'ON' : 'OFF'}*\n\n` +
-    `_Sends a small italic line after each turn so you can see the current state without scrolling\\._\n\n` +
+    `Show topic: *${showTopic ? 'ON' : 'OFF'}*\n` +
+    `Show session: *${showSession ? 'ON' : 'OFF'}*\n\n` +
+    `_Sends a small italic line after each turn so you can see the current state without scrolling\\._ ` +
+    `_The session line shows a copy\\-pasteable \`claude \\-\\-resume\` command for CLI fallback\\._\n\n` +
     `Preview:\n${preview}`;
 
   return { text, keyboard };
@@ -3841,6 +3863,10 @@ export async function handleStatusLineCallback(ctx: Context): Promise<void> {
     const newState = action === 'topic:on';
     userPreferences.setShowTopicInStatusLine(chatId, newState);
     toastText = `Show topic ${newState ? 'ON' : 'OFF'}`;
+  } else if (action === 'session:on' || action === 'session:off') {
+    const newState = action === 'session:on';
+    userPreferences.setShowSessionInStatusLine(chatId, newState);
+    toastText = `Show session ${newState ? 'ON' : 'OFF'}`;
   } else if (action === 'on' || action === 'off') {
     const newState = action === 'on';
     userPreferences.setShowStatusLine(chatId, newState);
