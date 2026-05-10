@@ -8,11 +8,13 @@ const MAX_MESSAGE_LENGTH = 4096;
  */
 export function convertToTelegramMarkdown(text: string): string {
   try {
-    // Pre-process: convert thematic breaks (---, ***, ___) to a unicode separator,
-    // but only outside fenced code blocks. The telegram-markdown-v2 library doesn't
-    // handle these and leaves *** intact, which Telegram then misinterprets as an
-    // unterminated bold/italic entity.
-    const preprocessed = replaceThematicBreaksOutsideCode(text);
+    // Pre-process outside fenced code blocks:
+    // - Rewrite pipe-style markdown tables as bullet lists (Telegram has no monospace
+    //   table rendering in MarkdownV2, so unconverted tables look ugly).
+    // - Convert thematic breaks (---, ***, ___) to a unicode separator, since the
+    //   telegram-markdown-v2 library leaves *** intact and Telegram then misinterprets
+    //   it as an unterminated bold/italic entity.
+    const preprocessed = preprocessOutsideCode(text);
     return convert(preprocessed, 'escape');
   } catch (error) {
     console.error('Markdown conversion error:', error);
@@ -22,16 +24,93 @@ export function convertToTelegramMarkdown(text: string): string {
 }
 
 /**
- * Replace thematic breaks (***, ---, ___) only outside fenced code blocks.
- * Splits on ``` boundaries and only applies the replacement to non-code segments.
+ * Apply non-code-block transformations: table rewriting and thematic-break replacement.
+ * Splits on ``` boundaries so fenced code is left untouched.
  */
-function replaceThematicBreaksOutsideCode(text: string): string {
+function preprocessOutsideCode(text: string): string {
   const parts = text.split(/(```[\s\S]*?```)/g);
   return parts.map((segment, i) => {
     // Odd indices are the fenced code blocks captured by the regex
     if (i % 2 === 1) return segment;
-    return segment.replace(/^[ \t]*([\*\-_]){3,}[ \t]*$/gm, '———');
+    let s = convertTablesToBulletLists(segment);
+    s = s.replace(/^[ \t]*([\*\-_]){3,}[ \t]*$/gm, '———');
+    return s;
   }).join('');
+}
+
+/**
+ * Detect pipe-style markdown tables and rewrite each data row as bold-labeled lines.
+ * Tables in Telegram MarkdownV2 have no monospace rendering, so raw `| a | b |` lines
+ * just look like garbled text. We convert to a format that matches the system prompt's
+ * preferred bullet-with-bold-labels layout.
+ *
+ * A "table region" is 2+ consecutive lines matching `|...|...|`. The first such line
+ * is the header; an optional `|---|---|` separator row directly after is skipped.
+ * Each data row becomes a block of `**Header**: Cell` lines, separated by a blank
+ * line between rows. Standalone pipe lines (1 line) are left untouched to avoid
+ * mangling code-like text.
+ */
+function convertTablesToBulletLists(text: string): string {
+  const lines = text.split('\n');
+  const result: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (isTableRow(lines[i])) {
+      let j = i;
+      while (j < lines.length && isTableRow(lines[j])) j++;
+      const tableLines = lines.slice(i, j);
+      if (tableLines.length >= 2) {
+        result.push(...convertTable(tableLines));
+      } else {
+        result.push(...tableLines);
+      }
+      i = j;
+    } else {
+      result.push(lines[i]);
+      i++;
+    }
+  }
+  return result.join('\n');
+}
+
+function isTableRow(line: string): boolean {
+  const trimmed = line.trim();
+  return /^\|.*\|.*\|$/.test(trimmed);
+}
+
+function isSeparatorRow(line: string): boolean {
+  const cells = parseRow(line);
+  return cells.length > 0 && cells.every(c => /^:?-{2,}:?$/.test(c));
+}
+
+function parseRow(line: string): string[] {
+  const trimmed = line.trim();
+  const inner = trimmed.slice(1, -1);
+  return inner.split('|').map(c => c.trim());
+}
+
+function convertTable(tableLines: string[]): string[] {
+  const headers = parseRow(tableLines[0]);
+  const dataStart = (tableLines.length > 1 && isSeparatorRow(tableLines[1])) ? 2 : 1;
+  const dataRows = tableLines.slice(dataStart).map(parseRow);
+
+  if (dataRows.length === 0) {
+    return headers.filter(h => h.length > 0).map(h => `- ${h}`);
+  }
+
+  const out: string[] = [];
+  for (let r = 0; r < dataRows.length; r++) {
+    if (r > 0) out.push('');
+    const row = dataRows[r];
+    const numCols = Math.max(headers.length, row.length);
+    for (let c = 0; c < numCols; c++) {
+      const header = headers[c] || '';
+      const cell = row[c] || '';
+      if (!cell) continue;
+      out.push(header ? `**${header}**: ${cell}` : cell);
+    }
+  }
+  return out;
 }
 
 /**
