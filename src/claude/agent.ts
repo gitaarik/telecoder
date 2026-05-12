@@ -38,7 +38,7 @@ import { BoundedMap } from '../utils/bounded-map.js';
 import { parseSessionKey } from '../utils/session-key.js';
 import { resolveBundledClaudeBin } from '../utils/resolve-claude-bin.js';
 
-import type { AgentUsage, AgentResponse, AgentOptions, LoopOptions, ImageAttachment, TaskEvent } from '../providers/types.js';
+import type { AgentUsage, AgentResponse, AgentOptions, LoopOptions, ImageAttachment, TaskEvent, ThrottleInfo } from '../providers/types.js';
 import { taskTracker } from '../telegram/task-tracker.js';
 export type { AgentUsage };
 
@@ -355,12 +355,41 @@ function logDangerousModeOperation(sessionKey: string, operation: string, detail
   console.log(`[DANGEROUS_MODE] ${timestamp} session:${sessionKey} ${operation}${detailStr}`);
 }
 
+/**
+ * Detect a Claude Max usage-limit throttle from upstream error text and
+ * extract the reset timestamp when present. Returns undefined for any
+ * error that isn't a usage-limit signal.
+ */
+function parseThrottle(errorText: string | undefined): ThrottleInfo | undefined {
+  if (!errorText) return undefined;
+  // Patterns observed in Claude Code CLI / Anthropic API throttle messages.
+  const isUsageLimit =
+    /usage limit/i.test(errorText) ||
+    /usage_limit_exceeded/i.test(errorText) ||
+    /rate.?limit/i.test(errorText);
+  if (!isUsageLimit) return undefined;
+
+  let resetAt: number | undefined;
+  // ISO-style "resets at 2026-05-12T14:00:00Z"
+  const iso = errorText.match(/(?:reset(?:s)?\s+at[:\s]+)([0-9T:\-+.Z ]{10,})/i);
+  if (iso) {
+    const t = Date.parse(iso[1].trim());
+    if (!Number.isNaN(t)) resetAt = t;
+  }
+  // Unix-seconds "resetAt: 1731412800"
+  if (resetAt === undefined) {
+    const ts = errorText.match(/reset(?:At)?[":\s]+(\d{10})\b/i);
+    if (ts) resetAt = parseInt(ts[1], 10) * 1000;
+  }
+  return { message: errorText.trim(), resetAt };
+}
+
 export async function sendToAgent(
   sessionKey: string,
   message: string,
   options: AgentOptions = {}
 ): Promise<AgentResponse> {
-  const { onProgress, onToolStart, onToolEnd, onTaskEvent, onSubTurnResponse, abortController, command, model, images } = options;
+  const { onProgress, onToolStart, onToolEnd, onTaskEvent, onSubTurnResponse, abortController, command, model, images, executableOverride } = options;
 
   async function emitTaskEvent(event: TaskEvent): Promise<void> {
     try {
@@ -411,6 +440,7 @@ export async function sendToAgent(
   let resultUsage: AgentUsage | undefined;
   let compactionEvent: { trigger: 'manual' | 'auto'; preTokens: number } | undefined;
   let initEvent: { model: string; sessionId: string } | undefined;
+  let throttleInfo: ThrottleInfo | undefined;
 
   // Background timer that periodically flushes lastAssistantPreview to disk.
   // This runs independently of SDK events so that long tool executions (where
@@ -610,6 +640,9 @@ export async function sendToAgent(
       resume: existingSessionId,
       ...(permissionMode === 'bypassPermissions' ? { allowDangerouslySkipPermissions: true } : {}),
       ...(() => {
+        if (executableOverride) {
+          return { pathToClaudeCodeExecutable: executableOverride };
+        }
         if (!config.CLAUDE_USE_BUNDLED_EXECUTABLE) {
           return { pathToClaudeCodeExecutable: config.CLAUDE_EXECUTABLE_PATH };
         }
@@ -963,16 +996,32 @@ export async function sendToAgent(
           onProgress?.(fullText);
         } else if (!silenceTimedOut) {
           // error_max_turns or unexpected error_during_execution
-          // Clear stale session ID so next attempt starts fresh
-          // (but not on silence timeout — we want to preserve the session for recovery)
-          chatSessionIds.delete(sessionKey);
-          const session = sessionManager.getSession(sessionKey);
-          if (session) {
-            session.claudeSessionId = undefined;
-          }
-          logAt('basic', `[Claude] Cleared stale session for session ${sessionKey} due to ${responseMessage.subtype}`);
+          // Try to extract a Max usage-limit signal from the upstream text so
+          // the bot can offer a CCR fallback prompt. The SDK surfaces the raw
+          // error in `result` even on error subtypes.
+          const upstreamText =
+            'result' in responseMessage && typeof responseMessage.result === 'string'
+              ? responseMessage.result
+              : undefined;
+          throttleInfo = parseThrottle(upstreamText);
 
-          fullText = `Error: ${responseMessage.subtype}`;
+          // Preserve the session on a throttle (so a retry via the same chat
+          // resumes properly), otherwise clear it — stale session_ids cause
+          // hard failures on subsequent attempts.
+          if (!throttleInfo) {
+            chatSessionIds.delete(sessionKey);
+            const session = sessionManager.getSession(sessionKey);
+            if (session) {
+              session.claudeSessionId = undefined;
+            }
+            logAt('basic', `[Claude] Cleared stale session for session ${sessionKey} due to ${responseMessage.subtype}`);
+          } else {
+            logAt('basic', `[Claude] Throttle detected for session ${sessionKey}: ${throttleInfo.message.substring(0, 120)}`);
+          }
+
+          fullText = throttleInfo
+            ? `⚠️ ${throttleInfo.message}`
+            : `Error: ${responseMessage.subtype}`;
           onProgress?.(fullText);
         }
       }
@@ -1051,6 +1100,7 @@ export async function sendToAgent(
     usage: resultUsage,
     compaction: compactionEvent,
     sessionInit: initEvent,
+    throttle: throttleInfo,
   };
 }
 
@@ -1081,6 +1131,7 @@ IMPORTANT: When you have fully completed this task, respond with the word "DONE"
   let combinedText = '';
   const allToolsUsed: string[] = [];
   let isComplete = false;
+  let throttleInfo: ThrottleInfo | undefined;
 
   while (iteration < maxIterations && !isComplete) {
     iteration++;
@@ -1108,12 +1159,20 @@ IMPORTANT: When you have fully completed this task, respond with the word "DONE"
         abortController,
         model: options.model,
         telegramCtx: options.telegramCtx,
+        executableOverride: options.executableOverride,
       });
 
       combinedText += response.text;
       allToolsUsed.push(...response.toolsUsed);
 
       onIterationComplete?.(iteration, response.text);
+
+      // Surface throttle from any iteration so the caller can prompt the
+      // user. Abort the loop — continuing would just hit the same wall.
+      if (response.throttle) {
+        throttleInfo = response.throttle;
+        break;
+      }
 
       // Check if Claude said DONE
       if (response.text.includes('DONE')) {
@@ -1138,6 +1197,7 @@ IMPORTANT: When you have fully completed this task, respond with the word "DONE"
   return {
     text: stripReasoningSummary(combinedText),
     toolsUsed: allToolsUsed,
+    throttle: throttleInfo,
   };
 }
 

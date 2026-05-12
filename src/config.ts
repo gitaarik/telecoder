@@ -257,6 +257,21 @@ const envSchema = z.object({
     .string()
     .default('4096')
     .transform((val) => parseInt(val, 10)),
+  // Claude Code Router (CCR) provider — redirects the spawned `claude` binary
+  // through a local CCR proxy so it can be backed by non-Anthropic models.
+  // Useful as a fallback when the Max usage limit is reached.
+  CCR_ENABLED: z
+    .string()
+    .default('false')
+    .transform((val) => val.toLowerCase() === 'true'),
+  CCR_BASE_URL: z.string().default('http://localhost:3456'),
+  CCR_AUTH_TOKEN: z.string().default(''),
+  // When the Anthropic API reports a Max usage limit, automatically prompt
+  // the user with an inline keyboard offering to switch to CCR.
+  CCR_AUTO_PROMPT_ON_THROTTLE: z
+    .string()
+    .default('true')
+    .transform((val) => val.toLowerCase() === 'true'),
 });
 
 const parsed = envSchema.safeParse(process.env);

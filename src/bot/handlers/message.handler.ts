@@ -1,5 +1,6 @@
 import { Context } from 'grammy';
-import { sendToAgent, sendLoopToAgent, clearConversation, type AgentUsage } from '../../providers/provider-router.js';
+import { sendToAgent, sendLoopToAgent, clearConversation, setActiveProvider, getActiveProviderName, type AgentUsage } from '../../providers/provider-router.js';
+import type { ThrottleInfo } from '../../providers/types.js';
 import { sessionManager } from '../../claude/session-manager.js';
 import { config } from '../../config.js';
 import { messageSender } from '../../telegram/message-sender.js';
@@ -622,6 +623,114 @@ async function handleTelegraphReply(ctx: Context, sessionKey: string, filePath: 
   }
 }
 
+// Last user prompt that hit a throttle, keyed by sessionKey. Used by the
+// "Switch & Retry" callback so the bot can replay the prompt under CCR
+// without the user having to retype it. Cleared on consumption or on a
+// new successful query.
+const lastThrottledPrompt = new Map<string, string>();
+
+function formatResetIn(resetAt?: number): string {
+  if (!resetAt) return '';
+  const ms = resetAt - Date.now();
+  if (ms <= 0) return '';
+  const mins = Math.round(ms / 60_000);
+  if (mins < 60) return ` Resets in \\~${mins} min\\.`;
+  const hours = Math.floor(mins / 60);
+  const remainder = mins % 60;
+  return ` Resets in \\~${hours}h${remainder ? ` ${remainder}m` : ''}\\.`;
+}
+
+async function postThrottlePrompt(
+  ctx: Context,
+  sessionKey: string,
+  message: string,
+  throttle: ThrottleInfo,
+): Promise<void> {
+  if (!config.CCR_ENABLED || !config.CCR_AUTO_PROMPT_ON_THROTTLE) return;
+
+  lastThrottledPrompt.set(sessionKey, message);
+
+  const resetTxt = formatResetIn(throttle.resetAt);
+  await ctx.reply(
+    `⚠️ *Max usage limit reached\\.*${esc(resetTxt)}\n\n` +
+      `Route your message through Claude Code Router \\(CCR\\) instead?\n` +
+      `_The switch is sticky — use /ccr to flip back\\._`,
+    {
+      parse_mode: 'MarkdownV2',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: '🔌 Switch to CCR & retry', callback_data: 'ccr_throttle:switch' },
+            { text: 'Cancel', callback_data: 'ccr_throttle:cancel' },
+          ],
+        ],
+      },
+    },
+  );
+}
+
+export async function handleCcrThrottleCallback(ctx: Context): Promise<void> {
+  const data = ctx.callbackQuery?.data;
+  if (!data || !data.startsWith('ccr_throttle:')) return;
+
+  const action = data.replace('ccr_throttle:', '');
+  const sessionKeyInfo = getSessionKeyFromCtx(ctx);
+  if (!sessionKeyInfo) {
+    await ctx.answerCallbackQuery({ text: 'Session not found' });
+    return;
+  }
+  const { sessionKey } = sessionKeyInfo;
+  const chatId = ctx.chat?.id;
+
+  if (action === 'cancel') {
+    lastThrottledPrompt.delete(sessionKey);
+    await ctx.answerCallbackQuery({ text: 'Cancelled' });
+    await ctx.editMessageReplyMarkup({ reply_markup: undefined });
+    return;
+  }
+
+  if (action === 'switch') {
+    if (!config.CCR_ENABLED || !chatId) {
+      await ctx.answerCallbackQuery({ text: 'CCR not available' });
+      return;
+    }
+    const pending = lastThrottledPrompt.get(sessionKey);
+    if (getActiveProviderName(chatId) !== 'ccr') {
+      await setActiveProvider(chatId, 'ccr');
+      // Drop the Anthropic-side session_id so the retry doesn't try to
+      // resume a session the new backend doesn't know about.
+      clearConversation(sessionKey);
+    }
+    lastThrottledPrompt.delete(sessionKey);
+
+    await ctx.answerCallbackQuery({ text: 'Switched to CCR' });
+    await ctx.editMessageReplyMarkup({ reply_markup: undefined });
+
+    if (!pending) {
+      await ctx.reply(
+        '🔌 Switched to CCR\\. Send your message again to retry\\.',
+        { parse_mode: 'MarkdownV2' },
+      );
+      return;
+    }
+
+    await ctx.reply('🔁 Retrying via CCR\\.\\.\\.', { parse_mode: 'MarkdownV2' });
+    try {
+      await queueRequest(sessionKey, pending, async () => {
+        if (getStreamingMode() === 'streaming') {
+          await handleStreamingResponse(ctx, sessionKey, pending);
+        } else {
+          await handleWaitResponse(ctx, sessionKey, chatId, pending);
+        }
+      });
+    } catch (error) {
+      if ((error as Error).message === 'Queue cleared') return;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      await ctx.reply(`❌ Error: ${esc(errorMessage)}`, { parse_mode: 'MarkdownV2' });
+    }
+  }
+}
+
 async function handleStreamingResponse(
   ctx: Context,
   sessionKey: string,
@@ -663,6 +772,12 @@ async function handleStreamingResponse(
 
     const chatId = ctx.chat?.id;
     if (chatId !== undefined) await sendStatusLine(ctx, chatId, sessionKey, response.usage);
+
+    if (response.throttle) {
+      await postThrottlePrompt(ctx, sessionKey, message, response.throttle);
+    } else {
+      lastThrottledPrompt.delete(sessionKey);
+    }
   } catch (error) {
     await messageSender.cancelStreaming(ctx);
     throw error;
@@ -695,6 +810,12 @@ async function handleWaitResponse(
     await sendSessionInitNotification(ctx, sessionKey, response.sessionInit);
 
     await sendStatusLine(ctx, chatId, sessionKey, response.usage);
+
+    if (response.throttle) {
+      await postThrottlePrompt(ctx, sessionKey, message, response.throttle);
+    } else {
+      lastThrottledPrompt.delete(sessionKey);
+    }
   } catch (error) {
     messageSender.stopTypingInterval(typingInterval);
     throw error;

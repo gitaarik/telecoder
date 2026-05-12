@@ -1150,20 +1150,28 @@ export async function handleStatus(ctx: Context): Promise<void> {
 
     const projectName = path.basename(session.workingDirectory);
 
+    // On CCR, the SDK alias doesn't reflect which backend actually served
+    // the turn — CCR picks per-request based on its router config. We
+    // don't try to discover the true backend (would require log parsing).
+    // The "Provider: ccr" line below already signals the routing.
+    const cached = getCachedUsage(sessionKey);
+    const modelLine =
+      provider === 'ccr'
+        ? `${esc(currentModel)} _\\(routed via CCR\\)_`
+        : esc(currentModel);
+
     let status = `📊 *Session Status*
 
 🤖 *Bot Name:* ${esc(config.BOT_NAME)}
 📦 *Project:* ${esc(projectName)}
 🏷️ *Topic:* ${topic ? esc(topic) : '_none_'}
 🎚️ *Effort:* ${esc(effortLabel)}
-🧠 *Model:* ${esc(currentModel)}
+🧠 *Model:* ${modelLine}
 🔌 *Provider:* ${esc(provider)}
 🆔 *Session ID:* \`${esc(session.claudeSessionId ?? session.conversationId)}\`
 📁 *Working Directory:* \`${esc(session.workingDirectory)}\`
 📡 *Mode:* ${esc(config.STREAMING_MODE)}
 ${isDangerousMode() ? '⚠️' : '🛡️'} *Dangerous Mode:* ${esc(dangerousMode)}`;
-
-    const cached = getCachedUsage(sessionKey);
     if (cached) {
       const pct = cached.contextWindow > 0
         ? Math.round(((cached.inputTokens + cached.outputTokens) / cached.contextWindow) * 100)
@@ -1883,6 +1891,12 @@ export async function handleModelCallback(ctx: Context): Promise<void> {
   );
 }
 
+const PROVIDER_DESCRIPTIONS: Record<ProviderName, string> = {
+  claude: '*claude* \\- Claude Code SDK \\(Anthropic / Max\\)',
+  ccr: '*ccr* \\- Routed via Claude Code Router \\(alt providers\\)',
+  opencode: '*opencode* \\- OpenCode \\(75\\+ LLM providers\\)',
+};
+
 export async function handleProviderCommand(ctx: Context): Promise<void> {
   const chatId = ctx.chat?.id;
   if (!chatId) return;
@@ -1895,8 +1909,10 @@ export async function handleProviderCommand(ctx: Context): Promise<void> {
     return [{ text: label, callback_data: `provider:${p}` }];
   });
 
+  const descriptions = providers.map((p) => `• ${PROVIDER_DESCRIPTIONS[p]}`).join('\n');
+
   await ctx.reply(
-    `🔌 *Select Provider*\n\n_Current: ${esc(active)}_\n\n• *claude* \\- Claude Code SDK \\(Anthropic\\)\n• *opencode* \\- OpenCode \\(75\\+ LLM providers\\)`,
+    `🔌 *Select Provider*\n\n_Current: ${esc(active)}_\n\n${descriptions}`,
     {
       parse_mode: 'MarkdownV2',
       reply_markup: {
@@ -1904,6 +1920,38 @@ export async function handleProviderCommand(ctx: Context): Promise<void> {
       },
     }
   );
+}
+
+/**
+ * Quick toggle between Claude (Max) and CCR. Designed for the common case of
+ * "I'm throttled on Max, send subsequent messages through CCR instead."
+ * Sticky — stays on CCR until the user toggles back.
+ */
+export async function handleCcrCommand(ctx: Context): Promise<void> {
+  const chatId = ctx.chat?.id;
+  if (!chatId) return;
+
+  if (!config.CCR_ENABLED) {
+    await replyMd(
+      ctx,
+      '⚠️ CCR is not enabled\\. Set `CCR_ENABLED=true` in `.env` and restart the bot\\.',
+    );
+    return;
+  }
+
+  const active = getActiveProviderName(chatId);
+  const next: ProviderName = active === 'ccr' ? 'claude' : 'ccr';
+  await setActiveProvider(chatId, next);
+  // Clear model — Claude and CCR share labels but CCR's mapping is different.
+  clearModel(chatId);
+
+  // Drop the Anthropic-side session_id so the next message starts fresh on
+  // the new backend (resume of a stale session_id errors on CCR's target).
+  const sessionKeyInfo = getSessionKeyFromCtx(ctx);
+  if (sessionKeyInfo) clearConversation(sessionKeyInfo.sessionKey);
+
+  const label = next === 'ccr' ? 'CCR \\(routed\\)' : 'Claude \\(Max\\)';
+  await replyMd(ctx, `🔌 Switched provider to *${label}*\\.\n\n_Sticky — use /ccr again or /provider to switch back\\._`);
 }
 
 export async function handleProviderCallback(ctx: Context): Promise<void> {
@@ -3867,8 +3915,11 @@ export async function handleEffortCallback(ctx: Context): Promise<void> {
 // box without scrolling. Off by default; opt-in via /statusline.
 
 function shortenModelName(model: string): string {
-  // claude-opus-4-7 → opus-4-7, gpt-4o-mini → gpt-4o-mini
-  return model.replace(/^claude-/, '');
+  // Strip "vendor/" prefix (OpenRouter / CCR style: "anthropic/claude-4-sonnet-...")
+  const slashIdx = model.lastIndexOf('/');
+  const stripped = slashIdx >= 0 ? model.substring(slashIdx + 1) : model;
+  // claude-opus-4-7 → opus-4-7; trim trailing -YYYYMMDD release tags.
+  return stripped.replace(/^claude-/, '').replace(/-\d{8}$/, '');
 }
 
 /**
@@ -3900,8 +3951,13 @@ function buildStatusLineMarkdown(
   const label = getEffortLabel(chatId);
   stats.push(label || '🧠 Auto');
 
+  const provider = getActiveProviderName(chatId);
   if (usage) {
-    if (usage.model) stats.push(`🤖 ${shortenModelName(usage.model)}`);
+    if (usage.model) {
+      const shortened = shortenModelName(usage.model);
+      // The SDK alias doesn't reflect CCR's actual backend; tag accordingly.
+      stats.push(provider === 'ccr' ? `🤖 ${shortened} · CCR` : `🤖 ${shortened}`);
+    }
     if (usage.contextWindow > 0) {
       const used = usage.inputTokens + usage.outputTokens + usage.cacheReadTokens;
       const pct = Math.round((used / usage.contextWindow) * 100);

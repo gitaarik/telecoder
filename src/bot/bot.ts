@@ -31,6 +31,7 @@ import {
   handleModelCallback,
   handleProviderCommand,
   handleProviderCallback,
+  handleCcrCommand,
   handlePlan,
   handleExplore,
   handleResume,
@@ -66,7 +67,7 @@ import {
   handleTasks,
   handleTasksCallback,
 } from './handlers/command.handler.js';
-import { handleMessage } from './handlers/message.handler.js';
+import { handleMessage, handleCcrThrottleCallback } from './handlers/message.handler.js';
 import { handleVoice } from './handlers/voice.handler.js';
 import { handlePhoto, handleImageDocument } from './handlers/photo.handler.js';
 import { createBatchMiddleware } from './middleware/message-batcher.js';
@@ -246,8 +247,11 @@ export async function createBot(): Promise<Bot> {
   bot.command('commands', handleCommands);
   bot.command('model', handleModelCommand);
   bot.command('effort', handleEffort);
-  if (config.OPENCODE_ENABLED) {
+  if (config.OPENCODE_ENABLED || config.CCR_ENABLED) {
     bot.command('provider', handleProviderCommand);
+  }
+  if (config.CCR_ENABLED) {
+    bot.command('ccr', handleCcrCommand);
   }
   bot.command('plan', handlePlan);
   bot.command('explore', handleExplore);
@@ -325,6 +329,8 @@ export async function createBot(): Promise<Bot> {
       await handleRestartCallback(ctx);
     } else if (data.startsWith('effort:')) {
       await handleEffortCallback(ctx);
+    } else if (data.startsWith('ccr_throttle:')) {
+      await handleCcrThrottleCallback(ctx);
     }
     // Note: `tasks:` callback queries are handled by the pre-sequentialize
     // bot.callbackQuery handler above so they remain responsive mid-stream.

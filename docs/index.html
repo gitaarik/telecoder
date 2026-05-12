@@ -1748,7 +1748,12 @@
           <div class="feature-card" data-category="core">
             <div class="feature-icon">🔌</div>
             <h3>Provider Switching</h3>
-            <p>Switch between Claude and OpenCode with /provider. Access 75+ LLM providers when Claude is unavailable.</p>
+            <p>Switch between Claude, CCR, and OpenCode with /provider. Access 75+ LLM providers when Claude is unavailable.</p>
+          </div>
+          <div class="feature-card" data-category="core">
+            <div class="feature-icon">♻️</div>
+            <h3>Max Throttle Fallback</h3>
+            <p>When the Claude Max usage limit hits, the bot detects it and offers a one-tap switch to Claude Code Router (CCR) — your message replays automatically through your chosen alt provider.</p>
           </div>
           <div class="feature-card" data-category="session">
             <div class="feature-icon">🚀</div>
@@ -1922,7 +1927,11 @@
           <div class="commands-grid">
             <div class="command-row">
               <code class="command-code">/provider</code>
-              <span class="command-desc">Switch AI provider (Claude / OpenCode)</span>
+              <span class="command-desc">Switch AI provider (Claude / CCR / OpenCode)</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/ccr</code>
+              <span class="command-desc">Toggle routing through Claude Code Router (sticky fallback when Max runs out)</span>
             </div>
             <div class="command-row">
               <code class="command-code">/model</code>

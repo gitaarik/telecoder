@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { claudeProvider } from './claude-provider.js';
+import { ccrProvider } from './ccr-provider.js';
 import {
   setEffort as claudeSetEffort,
   getEffort as claudeGetEffort,
@@ -55,13 +56,20 @@ function getProvider(chatId: number): Provider {
     }
     return opencodeProvider;
   }
+  if (name === 'ccr') {
+    if (!config.CCR_ENABLED) {
+      console.warn('[ProviderRouter] CCR provider selected but CCR_ENABLED=false; falling back to Claude');
+      return claudeProvider;
+    }
+    return ccrProvider;
+  }
   return claudeProvider;
 }
 
 // --- Public API (identical signatures to agent.ts) ---
 
 export function getActiveProviderName(chatId: number): ProviderName {
-  if (!config.OPENCODE_ENABLED) return 'claude';
+  if (!config.OPENCODE_ENABLED && !config.CCR_ENABLED) return 'claude';
   // Check in-memory cache first
   const cached = chatProviders.get(chatId);
   if (cached) return cached;
@@ -83,8 +91,10 @@ export async function setActiveProvider(chatId: number, provider: ProviderName):
 }
 
 export function getAvailableProviders(): ProviderName[] {
-  if (!config.OPENCODE_ENABLED) return ['claude'];
-  return ['claude', 'opencode'];
+  const list: ProviderName[] = ['claude'];
+  if (config.CCR_ENABLED) list.push('ccr');
+  if (config.OPENCODE_ENABLED) list.push('opencode');
+  return list;
 }
 
 export async function sendToAgent(
@@ -106,8 +116,9 @@ export async function sendLoopToAgent(
 }
 
 export function clearConversation(sessionKey: string): void {
-  // Clear both providers to avoid stale state
+  // Clear all providers to avoid stale state
   claudeProvider.clearConversation(sessionKey);
+  ccrProvider.clearConversation(sessionKey);
   if (opencodeProvider) {
     opencodeProvider.clearConversation(sessionKey);
   }
@@ -157,6 +168,9 @@ export async function getAvailableModels(chatId: number): Promise<ModelInfo[]> {
     // Ensure opencode provider is loaded before accessing
     const provider = await getOpenCodeProvider();
     return provider.getAvailableModels(chatId);
+  }
+  if (providerName === 'ccr') {
+    return ccrProvider.getAvailableModels(chatId);
   }
   return claudeProvider.getAvailableModels(chatId);
 }

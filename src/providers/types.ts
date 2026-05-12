@@ -1,4 +1,11 @@
-export type ProviderName = 'claude' | 'opencode';
+export type ProviderName = 'claude' | 'ccr' | 'opencode';
+
+export interface ThrottleInfo {
+  /** Original error text from the upstream as surfaced by the SDK. */
+  message: string;
+  /** Reset time parsed from the error (epoch ms), if discoverable. */
+  resetAt?: number;
+}
 
 export interface AgentUsage {
   inputTokens: number;
@@ -17,6 +24,8 @@ export interface AgentResponse {
   usage?: AgentUsage;
   compaction?: { trigger: 'manual' | 'auto'; preTokens: number };
   sessionInit?: { model: string; sessionId: string };
+  /** Present when the upstream signalled a Max usage-limit throttle. */
+  throttle?: ThrottleInfo;
 }
 
 export interface ImageAttachment {
@@ -103,6 +112,12 @@ export interface AgentOptions {
   telegramCtx?: unknown;
   /** Optional image attachments to send as multimodal vision input */
   images?: ImageAttachment[];
+  /**
+   * Override the path to the `claude` executable spawned by the SDK.
+   * Used by the CCR provider to point at a wrapper script that exports
+   * ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN before exec'ing real claude.
+   */
+  executableOverride?: string;
 }
 
 export interface LoopOptions extends AgentOptions {
