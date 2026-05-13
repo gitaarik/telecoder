@@ -122,14 +122,16 @@ export class MessageSender {
       try {
         await ctx.reply(part, { parse_mode: 'MarkdownV2' });
       } catch (error) {
-        // MarkdownV2 failed — send as plain text chunks (raw text may exceed 4096 chars)
-        console.error('MarkdownV2 send failed, falling back to plain text:', error);
-        const plainChunks = splitMessage(text);
-        for (const chunk of plainChunks) {
-          await ctx.reply(chunk, { parse_mode: undefined });
+        // MarkdownV2 failed for this part — fallback to plain text for just this part
+        console.error('MarkdownV2 send failed for part, falling back to plain text:', error);
+        try {
+          // Try to send this specific part as plain text
+          await ctx.reply(part.replace(/\\(.)/g, '$1'), { parse_mode: undefined });
+        } catch (plainError) {
+          console.error('Plain text send also failed for part:', plainError);
+          // Last resort: send error message
+          await ctx.reply('⚠️ Message formatting error', { parse_mode: undefined });
         }
-        // Already sent full text as plain — skip remaining MarkdownV2 parts
-        return;
       }
     }
   }
@@ -446,16 +448,13 @@ export class MessageSender {
         await ctx.reply(part, { parse_mode: 'MarkdownV2' });
       } catch (error) {
         console.error('[Task] MarkdownV2 sub-turn send failed, falling back to plain text:', error instanceof Error ? error.message : error);
-        const plainChunks = splitMessage(trimmed);
-        for (const chunk of plainChunks) {
-          try {
-            await ctx.reply(chunk, { parse_mode: undefined });
-          } catch (plainError) {
-            console.error('[Task] Plain-text sub-turn send failed:', plainError instanceof Error ? plainError.message : plainError);
-          }
+        try {
+          // Remove escaping for plain text fallback
+          await ctx.reply(part.replace(/\\(.)/g, '$1'), { parse_mode: undefined });
+        } catch (plainError) {
+          console.error('[Task] Plain-text sub-turn send failed:', plainError instanceof Error ? plainError.message : plainError);
+          await ctx.reply('⚠️ Message formatting error', { parse_mode: undefined });
         }
-        this.noteInterveningPost(sessionKey);
-        return;
       }
     }
     this.noteInterveningPost(sessionKey);
@@ -693,7 +692,13 @@ export class MessageSender {
                 await ctx.reply(parts[i], { parse_mode: 'MarkdownV2' });
               } catch (partError) {
                 console.error(`MarkdownV2 failed for part ${i + 1}:`, partError);
-                await ctx.reply(parts[i], { parse_mode: undefined });
+                try {
+                  // Remove escaping for plain text fallback
+                  await ctx.reply(parts[i].replace(/\\(.)/g, '$1'), { parse_mode: undefined });
+                } catch (plainError) {
+                  console.error(`Plain text fallback failed for part ${i + 1}:`, plainError);
+                  await ctx.reply('⚠️ Message formatting error', { parse_mode: undefined });
+                }
               }
               await new Promise(resolve => setTimeout(resolve, 100));
             }
