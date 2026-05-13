@@ -940,7 +940,17 @@ export async function sendToAgent(
         logAt('trace', '[Claude] Stream event', responseMessage.event);
       } else if (responseMessage.type === 'result') {
         watchdog?.stop();
-        logAt('basic', `[Claude] Query completed: ${getTimingReport(timer)}`);
+        // SDK ≥ v0.2.91 exposes terminal_reason on result messages; surface it
+        // at basic log level when non-`completed` so post-mortem grep can
+        // distinguish e.g. `aborted_streaming` / `aborted_tools` / `max_turns`
+        // / `model_error` from a normal completion. See
+        // docs/debugging/interrupted-by-user-misattribution.md.
+        const terminalReason = (responseMessage as SDKResultMessage & { terminal_reason?: string }).terminal_reason;
+        if (terminalReason && terminalReason !== 'completed') {
+          logAt('basic', `[Claude] TERMINAL_REASON: ${terminalReason} (session:${sessionKey}, ${getTimingReport(timer)})`);
+        } else {
+          logAt('basic', `[Claude] Query completed: ${getTimingReport(timer)}`);
+        }
         logAt('verbose', '[Claude] Result:', JSON.stringify(responseMessage, null, 2).substring(0, 500));
         gotResult = true;
 
