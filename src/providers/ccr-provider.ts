@@ -9,6 +9,7 @@ import {
   isDangerousMode as claudeIsDangerousMode,
 } from '../claude/agent.js';
 import { getCcrShimPath } from '../claude/ccr-shim.js';
+import { ensureCcrRunning } from './ccr-health.js';
 import type { Provider, AgentOptions, LoopOptions, AgentResponse, AgentUsage, ModelInfo } from './types.js';
 
 // CCR's router config decides the actual backend model per request — the
@@ -25,14 +26,24 @@ function withShim<T extends AgentOptions | LoopOptions>(options?: T): T {
   return { ...(options ?? {}), executableOverride: shim } as T;
 }
 
+async function preflightOrFailure(): Promise<AgentResponse | undefined> {
+  const result = await ensureCcrRunning();
+  if (result.status === 'ok' || result.status === 'started') return undefined;
+  return { text: `⚠️ ${result.message}`, toolsUsed: [] };
+}
+
 export const ccrProvider: Provider = {
   name: 'ccr',
 
-  sendToAgent(sessionKey: string, message: string, options?: AgentOptions): Promise<AgentResponse> {
+  async sendToAgent(sessionKey: string, message: string, options?: AgentOptions): Promise<AgentResponse> {
+    const failure = await preflightOrFailure();
+    if (failure) return failure;
     return claudeSendToAgent(sessionKey, message, withShim(options));
   },
 
-  sendLoopToAgent(sessionKey: string, message: string, options?: LoopOptions): Promise<AgentResponse> {
+  async sendLoopToAgent(sessionKey: string, message: string, options?: LoopOptions): Promise<AgentResponse> {
+    const failure = await preflightOrFailure();
+    if (failure) return failure;
     return claudeSendLoopToAgent(sessionKey, message, withShim(options));
   },
 

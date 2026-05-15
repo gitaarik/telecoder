@@ -69,6 +69,12 @@ import { getWorkspaceRoot, isPathWithinRoot } from '../../utils/workspace-guard.
 import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
 import { taskTracker, type TaskState } from '../../telegram/task-tracker.js';
 import { readRecentExchanges, type RecapExchange } from '../../claude/session-jsonl.js';
+import {
+  VERBOSITY_INFO,
+  isValidVerbosityLevel,
+  getVerbosityLevel,
+  type VerbosityLevel,
+} from '../../utils/verbosity.js';
 
 // Helper for consistent MarkdownV2 replies
 async function replyMd(ctx: Context, text: string): Promise<void> {
@@ -4295,4 +4301,114 @@ export async function handleTasksCallback(ctx: Context): Promise<void> {
   }
 
   await ctx.answerCallbackQuery().catch(() => {});
+}
+
+// ── /verbosity ──────────────────────────────────────────────────
+// Pick a verbosity tier (quiet | normal | verbose | debug) for this chat.
+// The tier sets defaults for rendering flags (usage footer, compaction
+// notice, completion ping, untruncated tool inputs). Explicit env vars
+// (CONTEXT_SHOW_USAGE, CONTEXT_NOTIFY_COMPACTION, TERMINAL_UI_VERBOSE)
+// still win over the tier. "Default" clears the chat-specific pref so the
+// env-level VERBOSITY_DEFAULT applies.
+
+function buildVerbosityMenu(chatId: number): { text: string; keyboard: { text: string; callback_data: string }[][] } {
+  const current = getVerbosityLevel(chatId);
+  const hasPref = userPreferences.getVerbosity(chatId) !== undefined;
+
+  const keyboard: { text: string; callback_data: string }[][] = VERBOSITY_INFO.map((info) => {
+    const isCurrent = info.id === current && hasPref;
+    const label = isCurrent ? `✓ ${info.label}` : info.label;
+    return [{ text: label, callback_data: `verbosity:${info.id}` }];
+  });
+  const defaultLabel = !hasPref ? `✓ Default (${config.VERBOSITY_DEFAULT})` : `Default (${config.VERBOSITY_DEFAULT})`;
+  keyboard.push([{ text: defaultLabel, callback_data: 'verbosity:default' }]);
+
+  const descriptions = VERBOSITY_INFO
+    .map((info) => `• *${esc(info.label)}* \\- ${esc(info.description)}`)
+    .join('\n');
+
+  const text =
+    `🎚️ *Verbosity*\n\n` +
+    `Current: *${esc(current)}*${hasPref ? '' : ' _\\(from env default\\)_'}\n\n` +
+    `${descriptions}\n` +
+    `• *Default* \\- Use the env\\-level setting \\(\`VERBOSITY_DEFAULT\`\\)`;
+
+  return { text, keyboard };
+}
+
+export async function handleVerbosity(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { chatId } = keyInfo;
+
+  const arg = (ctx.message?.text || '').split(' ').slice(1).join(' ').trim().toLowerCase();
+
+  if (!arg) {
+    const { text, keyboard } = buildVerbosityMenu(chatId);
+    await ctx.reply(text, {
+      parse_mode: 'MarkdownV2',
+      reply_markup: { inline_keyboard: keyboard },
+    });
+    return;
+  }
+
+  if (arg === 'default' || arg === 'reset' || arg === 'auto') {
+    userPreferences.clearVerbosity(chatId);
+    await ctx.reply(
+      `✅ Verbosity reset to env default \\(*${esc(config.VERBOSITY_DEFAULT)}*\\)`,
+      { parse_mode: 'MarkdownV2' },
+    );
+    return;
+  }
+
+  if (!isValidVerbosityLevel(arg)) {
+    await ctx.reply(
+      `❌ Unknown verbosity level "${esc(arg)}"\\.\n\nValid: quiet, normal, verbose, debug, default`,
+      { parse_mode: 'MarkdownV2' },
+    );
+    return;
+  }
+
+  userPreferences.setVerbosity(chatId, arg);
+  const info = VERBOSITY_INFO.find((l) => l.id === arg);
+  await ctx.reply(
+    `✅ Verbosity set to *${esc(info?.label ?? arg)}*\n\n_${esc(info?.description ?? '')}_`,
+    { parse_mode: 'MarkdownV2' },
+  );
+}
+
+export async function handleVerbosityCallback(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { chatId } = keyInfo;
+
+  const data = ctx.callbackQuery?.data;
+  if (!data || !data.startsWith('verbosity:')) return;
+
+  const choice = data.replace('verbosity:', '');
+
+  if (choice === 'default') {
+    userPreferences.clearVerbosity(chatId);
+    await ctx.answerCallbackQuery({ text: 'Verbosity reset to default' });
+    await ctx.editMessageText(
+      `✅ Verbosity reset to env default \\(*${esc(config.VERBOSITY_DEFAULT)}*\\)`,
+      { parse_mode: 'MarkdownV2' },
+    );
+    return;
+  }
+
+  if (!isValidVerbosityLevel(choice)) {
+    await ctx.answerCallbackQuery({ text: 'Invalid verbosity level' });
+    return;
+  }
+
+  const level: VerbosityLevel = choice;
+  userPreferences.setVerbosity(chatId, level);
+  const info = VERBOSITY_INFO.find((l) => l.id === level);
+
+  await ctx.answerCallbackQuery({ text: `Verbosity: ${info?.label ?? level}` });
+  await ctx.editMessageText(
+    `✅ Verbosity set to *${esc(info?.label ?? level)}*\n\n_${esc(info?.description ?? '')}_`,
+    { parse_mode: 'MarkdownV2' },
+  );
 }

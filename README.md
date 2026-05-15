@@ -170,6 +170,7 @@ Open your bot in Telegram → `/start`
 | `/loop` | Run iteratively until task complete |
 | `/model` | Switch Sonnet / Opus / Haiku |
 | `/mode` | Toggle streaming / wait |
+| `/verbosity` | Pick verbosity tier (quiet / normal / verbose / debug) |
 | `/terminalui` | Toggle terminal-style display |
 
 ### Content

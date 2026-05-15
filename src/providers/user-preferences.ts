@@ -9,6 +9,7 @@ const userPreferencesSchema = z.object({
   provider: z.enum(['claude', 'ccr', 'opencode']).optional(),
   model: z.string().optional(),
   effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
+  verbosity: z.enum(['quiet', 'normal', 'verbose', 'debug']).optional(),
   showStatusLine: z.boolean().optional(),
   showTopicInStatusLine: z.boolean().optional(),
   showSessionInStatusLine: z.boolean().optional(),
@@ -118,6 +119,27 @@ class UserPreferencesManager {
   clearEffort(chatId: number): void {
     if (this.data[chatId]) {
       delete this.data[chatId].effort;
+      this.data[chatId].lastUpdated = new Date().toISOString();
+      this.save();
+    }
+  }
+
+  getVerbosity(chatId: number): 'quiet' | 'normal' | 'verbose' | 'debug' | undefined {
+    return this.data[chatId]?.verbosity;
+  }
+
+  setVerbosity(chatId: number, verbosity: 'quiet' | 'normal' | 'verbose' | 'debug'): void {
+    if (!this.data[chatId]) {
+      this.data[chatId] = { lastUpdated: new Date().toISOString() };
+    }
+    this.data[chatId].verbosity = verbosity;
+    this.data[chatId].lastUpdated = new Date().toISOString();
+    this.save();
+  }
+
+  clearVerbosity(chatId: number): void {
+    if (this.data[chatId]) {
+      delete this.data[chatId].verbosity;
       this.data[chatId].lastUpdated = new Date().toISOString();
       this.save();
     }

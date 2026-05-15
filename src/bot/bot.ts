@@ -66,6 +66,8 @@ import {
   handleEffortCallback,
   handleTasks,
   handleTasksCallback,
+  handleVerbosity,
+  handleVerbosityCallback,
 } from './handlers/command.handler.js';
 import { handleMessage, handleCcrThrottleCallback } from './handlers/message.handler.js';
 import { handleVoice } from './handlers/voice.handler.js';
@@ -174,6 +176,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'telegraph', description: '📄 View markdown with Instant View' },
     { command: 'model', description: '🤖 Switch AI model' },
     { command: 'effort', description: '🎯 Set reasoning effort level' },
+    { command: 'verbosity', description: '🎚️ Set verbosity tier (quiet/normal/verbose/debug)' },
     { command: 'btw', description: '💬 Side question without interrupting' },
     { command: 'tasks', description: '🔄 List active background tasks' },
     ...(config.OPENCODE_ENABLED ? [{ command: 'provider', description: '🔌 Switch AI provider' }] : []),
@@ -247,6 +250,7 @@ export async function createBot(): Promise<Bot> {
   bot.command('commands', handleCommands);
   bot.command('model', handleModelCommand);
   bot.command('effort', handleEffort);
+  bot.command('verbosity', handleVerbosity);
   if (config.OPENCODE_ENABLED || config.CCR_ENABLED) {
     bot.command('provider', handleProviderCommand);
   }
@@ -329,6 +333,8 @@ export async function createBot(): Promise<Bot> {
       await handleRestartCallback(ctx);
     } else if (data.startsWith('effort:')) {
       await handleEffortCallback(ctx);
+    } else if (data.startsWith('verbosity:')) {
+      await handleVerbosityCallback(ctx);
     } else if (data.startsWith('ccr_throttle:')) {
       await handleCcrThrottleCallback(ctx);
     }

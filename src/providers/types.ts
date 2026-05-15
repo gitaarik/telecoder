@@ -89,6 +89,31 @@ export interface TaskNotificationEvent {
 
 export type TaskEvent = TaskStartedEvent | TaskProgressEvent | TaskUpdatedEvent | TaskNotificationEvent;
 
+export interface ToolResultEvent {
+  toolUseId: string;
+  /** Tool name (e.g. "Bash", "Read") if known from the matching tool_use block. */
+  toolName?: string;
+  /** Best-effort string extraction of the tool result content. */
+  content: string;
+  /** True when the SDK marked the result as an error. */
+  isError: boolean;
+}
+
+/**
+ * Emitted on a successful Edit/Write call so the bot can show the actual
+ * before/after content instead of just the file path. Failed edits go
+ * through the generic ToolResultEvent path so the error surfaces.
+ */
+export interface EditDiffEvent {
+  toolUseId: string;
+  toolName: 'Edit' | 'Write';
+  filePath: string;
+  /** Present for Edit (the snippet being replaced). Undefined for Write (new content). */
+  oldString?: string;
+  /** New content. For Edit: the replacement snippet. For Write: full file content. */
+  newString: string;
+}
+
 export interface AgentOptions {
   onProgress?: (text: string) => void;
   onToolStart?: (toolName: string, input?: Record<string, unknown>) => void;
@@ -105,6 +130,16 @@ export interface AgentOptions {
    * chronologically at the bottom.
    */
   onSubTurnResponse?: (text: string) => void | Promise<void>;
+  /**
+   * Called when the SDK reports a tool_result for a tool the agent just used.
+   * The bot surfaces a truncated preview when verbosity is verbose or higher.
+   */
+  onToolResult?: (event: ToolResultEvent) => void | Promise<void>;
+  /**
+   * Called when an Edit or Write tool call succeeds. Renders a unified
+   * before/after preview at verbose+ verbosity.
+   */
+  onEditDiff?: (event: EditDiffEvent) => void | Promise<void>;
   abortController?: AbortController;
   command?: string;
   model?: string;

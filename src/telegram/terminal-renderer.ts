@@ -4,7 +4,6 @@
  */
 
 import { formatDuration } from '../utils/agent-timer.js';
-import { config } from '../config.js';
 
 // Tool icons (emoji-based for mobile friendliness)
 export const TOOL_ICONS: Record<string, string> = {
@@ -175,15 +174,15 @@ export function getToolAction(toolName: string): string {
 }
 
 /**
- * Extract a meaningful detail from tool input for display
+ * Extract a meaningful detail from tool input for display.
+ * Caller controls truncation via the `verbose` flag (resolved per-chat by
+ * the verbosity tier in `utils/verbosity.ts`).
  */
-export function extractToolDetail(toolName: string, input: Record<string, unknown>): string | undefined {
+export function extractToolDetail(toolName: string, input: Record<string, unknown>, verbose: boolean): string | undefined {
   const str = (key: string): string | undefined => {
     const val = input[key];
     return typeof val === 'string' ? val : undefined;
   };
-
-  const verbose = config.TERMINAL_UI_VERBOSE;
 
   switch (toolName) {
     case 'Read':

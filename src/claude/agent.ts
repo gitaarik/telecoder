@@ -38,7 +38,7 @@ import { BoundedMap } from '../utils/bounded-map.js';
 import { parseSessionKey } from '../utils/session-key.js';
 import { resolveBundledClaudeBin } from '../utils/resolve-claude-bin.js';
 
-import type { AgentUsage, AgentResponse, AgentOptions, LoopOptions, ImageAttachment, TaskEvent, ThrottleInfo } from '../providers/types.js';
+import type { AgentUsage, AgentResponse, AgentOptions, LoopOptions, ImageAttachment, TaskEvent, ToolResultEvent, EditDiffEvent, ThrottleInfo } from '../providers/types.js';
 import { taskTracker } from '../telegram/task-tracker.js';
 export type { AgentUsage };
 
@@ -389,7 +389,7 @@ export async function sendToAgent(
   message: string,
   options: AgentOptions = {}
 ): Promise<AgentResponse> {
-  const { onProgress, onToolStart, onToolEnd, onTaskEvent, onSubTurnResponse, abortController, command, model, images, executableOverride } = options;
+  const { onProgress, onToolStart, onToolEnd, onTaskEvent, onSubTurnResponse, onToolResult, onEditDiff, abortController, command, model, images, executableOverride } = options;
 
   async function emitTaskEvent(event: TaskEvent): Promise<void> {
     try {
@@ -405,6 +405,47 @@ export async function sendToAgent(
     } catch (err) {
       console.error('[Claude] onSubTurnResponse handler threw:', err);
     }
+  }
+
+  async function emitToolResult(event: ToolResultEvent): Promise<void> {
+    try {
+      await onToolResult?.(event);
+    } catch (err) {
+      console.error('[Claude] onToolResult handler threw:', err);
+    }
+  }
+
+  async function emitEditDiff(event: EditDiffEvent): Promise<void> {
+    try {
+      await onEditDiff?.(event);
+    } catch (err) {
+      console.error('[Claude] onEditDiff handler threw:', err);
+    }
+  }
+
+  /**
+   * Extract a readable string from a tool_result.content payload. The SDK
+   * may deliver content as a plain string, an array of typed blocks
+   * (text/image/etc.), or rarely something else. Non-text blocks become
+   * placeholders so the user knows there was a result but it isn't a text
+   * preview we can render.
+   */
+  function extractToolResultText(content: unknown): string {
+    if (typeof content === 'string') return content;
+    if (!Array.isArray(content)) return '';
+    const parts: string[] = [];
+    for (const block of content) {
+      if (!block || typeof block !== 'object') continue;
+      const b = block as { type?: string; text?: string };
+      if (b.type === 'text' && typeof b.text === 'string') {
+        parts.push(b.text);
+      } else if (b.type === 'image') {
+        parts.push('[image]');
+      } else if (typeof b.type === 'string') {
+        parts.push(`[${b.type}]`);
+      }
+    }
+    return parts.join('\n');
   }
 
   const session = sessionManager.getSession(sessionKey);
@@ -710,6 +751,29 @@ export async function sendToAgent(
     // so the matching task_started event can be marked as backgrounded.
     // (task_updated.is_backgrounded only fires on transitions, not initial state.)
     const backgroundedToolUseIds = new Set<string>();
+    // Track tool_use_id → tool name so we can label tool_result blocks that
+    // arrive later on user messages. Tools whose results we never want to
+    // surface (TodoWrite has a dedicated UI; topic/ask_user return noise)
+    // are kept in `silentToolUseIds` and skipped at emit-time.
+    const toolUseIdToName = new Map<string, string>();
+    const silentToolUseIds = new Set<string>();
+    const SILENT_TOOL_NAMES = new Set([
+      'TodoWrite',
+      'mcp__claudegram-tools__claudegram_set_topic',
+      'mcp__claudegram-tools__claudegram_ask_user',
+    ]);
+    // For successful Edit/Write tool calls we render a before/after diff
+    // instead of the generic "File edited successfully" tool_result. Inputs
+    // captured at tool_use time are looked up when the matching tool_result
+    // arrives. Failed Edit/Write calls still fall through to onToolResult
+    // so the error surfaces.
+    interface EditDiffInput {
+      toolName: 'Edit' | 'Write';
+      filePath: string;
+      oldString?: string;
+      newString: string;
+    }
+    const editDiffInputs = new Map<string, EditDiffInput>();
     // Monitor tool calls — same wire shape as other backgrounded tasks but
     // we want to render their lifecycle as "📡 Monitor event/armed/ended"
     // instead of the generic "✅ Background task" wording.
@@ -799,6 +863,30 @@ export async function sendToAgent(
             // blocked on it) so treat it as backgrounded too.
             const isMonitorCall = block.name === 'Monitor';
             const isBackgroundedToolCall = toolInput.run_in_background === true || isMonitorCall;
+            if ('id' in block && typeof block.id === 'string') {
+              toolUseIdToName.set(block.id, block.name);
+              if (SILENT_TOOL_NAMES.has(block.name) || isBackgroundedToolCall) {
+                // Backgrounded tasks return a "running in the background"
+                // placeholder; the real outcome surfaces via task_notification.
+                silentToolUseIds.add(block.id);
+              }
+              if ((block.name === 'Edit' || block.name === 'Write')
+                  && typeof toolInput.file_path === 'string') {
+                const newString = block.name === 'Edit'
+                  ? (typeof toolInput.new_string === 'string' ? toolInput.new_string : undefined)
+                  : (typeof toolInput.content === 'string' ? toolInput.content : undefined);
+                if (typeof newString === 'string') {
+                  editDiffInputs.set(block.id, {
+                    toolName: block.name,
+                    filePath: toolInput.file_path,
+                    oldString: block.name === 'Edit' && typeof toolInput.old_string === 'string'
+                      ? toolInput.old_string
+                      : undefined,
+                    newString,
+                  });
+                }
+              }
+            }
             if (isBackgroundedToolCall && 'id' in block && typeof block.id === 'string') {
               backgroundedToolUseIds.add(block.id);
               if (isMonitorCall) monitorToolUseIds.add(block.id);
@@ -927,6 +1015,44 @@ export async function sendToAgent(
           });
         } else {
           logAt('verbose', `[Claude] System: ${responseMessage.subtype ?? 'unknown'}`, responseMessage);
+        }
+      } else if (responseMessage.type === 'user') {
+        // User messages carry tool_result blocks for tools the agent just ran.
+        // Surface them via onToolResult so the bot can show truncated previews
+        // when verbosity is verbose or higher. Synthetic/replay messages are
+        // ignored to avoid duplicating results during resumed sessions.
+        const isSynthetic = (responseMessage as { isSynthetic?: boolean }).isSynthetic === true;
+        const msgContent = (responseMessage as { message?: { content?: unknown } }).message?.content;
+        if (!isSynthetic && Array.isArray(msgContent)) {
+          for (const block of msgContent) {
+            if (!block || typeof block !== 'object') continue;
+            const b = block as { type?: string; tool_use_id?: string; content?: unknown; is_error?: boolean };
+            if (b.type !== 'tool_result' || typeof b.tool_use_id !== 'string') continue;
+            if (silentToolUseIds.has(b.tool_use_id)) continue;
+            const isError = b.is_error === true;
+            // Successful Edit/Write: render the captured before/after content
+            // as a diff instead of the generic "File edited successfully" reply.
+            // Errors still fall through to the normal tool_result path so the
+            // failure reason surfaces to the user.
+            const diffInput = editDiffInputs.get(b.tool_use_id);
+            if (diffInput && !isError) {
+              await emitEditDiff({
+                toolUseId: b.tool_use_id,
+                toolName: diffInput.toolName,
+                filePath: diffInput.filePath,
+                oldString: diffInput.oldString,
+                newString: diffInput.newString,
+              });
+              continue;
+            }
+            const text = extractToolResultText(b.content);
+            await emitToolResult({
+              toolUseId: b.tool_use_id,
+              toolName: toolUseIdToName.get(b.tool_use_id),
+              content: text,
+              isError,
+            });
+          }
         }
       } else if (responseMessage.type === 'tool_progress') {
         logAt('verbose', `[Claude] Tool progress: ${responseMessage.tool_name}`, responseMessage);
@@ -1166,6 +1292,8 @@ IMPORTANT: When you have fully completed this task, respond with the word "DONE"
         onProgress: (text) => {
           onProgress?.(combinedText + text);
         },
+        onToolResult: options.onToolResult,
+        onEditDiff: options.onEditDiff,
         abortController,
         model: options.model,
         telegramCtx: options.telegramCtx,

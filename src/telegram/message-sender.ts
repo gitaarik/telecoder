@@ -13,8 +13,10 @@ import {
   TOOL_ICONS,
 } from './terminal-renderer.js';
 import { taskTracker, type TaskState } from './task-tracker.js';
-import type { TaskEvent } from '../providers/types.js';
-import { getSessionKeyFromCtx } from '../utils/session-key.js';
+import type { TaskEvent, ToolResultEvent, EditDiffEvent } from '../providers/types.js';
+import { getSessionKeyFromCtx, parseSessionKey } from '../utils/session-key.js';
+import { resolveVerbosityFlags } from '../utils/verbosity.js';
+import { actionLogger } from './action-logger.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -45,6 +47,8 @@ interface StreamState {
   // so the next TodoWrite posts a fresh checklist below the prior one.
   todoMessageId: number | null;
   todoLastRendered: string;
+  // Action logging for verbose mode
+  actionLogEnabled: boolean;
 }
 
 interface TodoItem {
@@ -56,6 +60,33 @@ interface TodoItem {
 const TYPING_INTERVAL_MS = 4000; // Send typing every 4 seconds
 const MIN_EDIT_INTERVAL_MS = 10000; // Minimum time between message edits (~5 edits/min safe zone)
 const MONITOR_TASK_TYPE = 'monitor_mcp';
+
+// ANSI CSI/OSC sequence remover — tool output occasionally still carries
+// color codes that render as garbage in Telegram's plain-text view.
+const ANSI_RE = /\[[0-9;?]*[a-zA-Z]|\][^]*(?:|\\)/g;
+function stripAnsi(text: string): string {
+  return text.replace(ANSI_RE, '');
+}
+
+// `mcp__claudegram-tools__claudegram_send_file` → `claudegram_send_file`
+function stripMcpServerPrefix(toolName: string): string {
+  if (!toolName.startsWith('mcp__')) return toolName;
+  const lastSep = toolName.lastIndexOf('__');
+  return lastSep > 0 ? toolName.slice(lastSep + 2) : toolName;
+}
+
+/**
+ * Trim long absolute paths so a diff header reads `src/foo.ts` rather than
+ * `/home/rik/dev/claudegram/src/foo.ts`. Falls back to the full path if no
+ * prefix matches.
+ */
+function stripWorkingDir(filePath: string): string {
+  const cwd = process.cwd();
+  if (filePath.startsWith(cwd + '/')) return filePath.slice(cwd.length + 1);
+  const home = process.env.HOME;
+  if (home && filePath.startsWith(home + '/')) return '~/' + filePath.slice(home.length + 1);
+  return filePath;
+}
 
 function formatTodoList(todos: TodoItem[]): string {
   const lines = ['📝 Todos'];
@@ -219,6 +250,10 @@ export class MessageSender {
     const { chatId, threadId, sessionKey } = keyInfo;
 
     const terminalMode = isTerminalUIEnabled(sessionKey);
+    const verbosityFlags = resolveVerbosityFlags(chatId);
+    const actionLogEnabled = verbosityFlags.useActionLog && (verbosityFlags.showToolResults || verbosityFlags.showDiffs);
+
+
     const initialText = `${getSpinnerFrame(0)} ${TOOL_ICONS.thinking} Processing...`;
     const message = await ctx.reply(initialText, { parse_mode: undefined });
 
@@ -245,7 +280,13 @@ export class MessageSender {
       lastRateLimitDurationMs: 0,
       todoMessageId: null,
       todoLastRendered: '',
+      actionLogEnabled,
     };
+
+    // Initialize action logging if enabled
+    if (actionLogEnabled) {
+      await actionLogger.initialize(ctx, sessionKey);
+    }
 
     // Periodic refresh so the elapsed timer and spinner update even during long tool runs
     if (terminalMode) {
@@ -309,7 +350,9 @@ export class MessageSender {
 
     if (!state.terminalMode) return;
 
-    const detail = input ? extractToolDetail(toolName, input) : undefined;
+    const { chatId } = parseSessionKey(sessionKey);
+    const verbose = resolveVerbosityFlags(chatId).terminalUiVerbose;
+    const detail = input ? extractToolDetail(toolName, input, verbose) : undefined;
     state.currentOperation = { name: toolName, detail };
     state.operationStartTime = Date.now();
     state.spinnerIndex += 1;
@@ -412,6 +455,16 @@ export class MessageSender {
 
   private async postMonitorEvent(ctx: Context, task: TaskState, eventText: string): Promise<void> {
     if (task.skipTranscript) return;
+
+    // Use action logging if enabled
+    const keyInfo = getSessionKeyFromCtx(ctx);
+    const sessionKey = keyInfo?.sessionKey;
+    if (sessionKey && actionLogger.isActive(sessionKey)) {
+      await actionLogger.addMonitorEvent(ctx, sessionKey, task, eventText);
+      return;
+    }
+
+    // Fall back to original behavior
     const truncated = eventText.length > 1000
       ? eventText.substring(0, 997) + '...'
       : eventText;
@@ -460,11 +513,140 @@ export class MessageSender {
     this.noteInterveningPost(sessionKey);
   }
 
+  /**
+   * Post a truncated preview of a tool's result. In action log mode, adds to
+   * the consolidated log; otherwise sends as its own Telegram message.
+   * Sent only when the chat's verbosity tier resolves `showToolResults: true`
+   * (caller is responsible for the gate). Uses plain text — tool output can
+   * contain anything, and trying to escape it into MarkdownV2 invites parse
+   * errors. The streaming bubble is pushed below via `noteInterveningPost`.
+   */
+  async postToolResult(
+    ctx: Context,
+    event: ToolResultEvent,
+    maxLines: number,
+    maxChars: number,
+  ): Promise<void> {
+    const keyInfo = getSessionKeyFromCtx(ctx);
+    const sessionKey = keyInfo?.sessionKey;
+
+    // Check if action logging should be used based on current verbosity flags
+    const chatId = ctx.chat?.id;
+    if (chatId !== undefined) {
+      const flags = resolveVerbosityFlags(chatId);
+      const shouldUseActionLog = flags.useActionLog && (flags.showToolResults || flags.showDiffs);
+
+      if (shouldUseActionLog && sessionKey) {
+        // Initialize action logger if not already active
+        if (!actionLogger.isActive(sessionKey)) {
+          await actionLogger.initialize(ctx, sessionKey);
+        }
+        await actionLogger.addToolResult(ctx, sessionKey, event, maxLines, maxChars);
+        return;
+      }
+    }
+
+    // Fall back to original behavior
+    const cleaned = stripAnsi(event.content).replace(/\s+$/u, '');
+    if (!cleaned && !event.isError) return;
+
+    const icon = event.toolName ? getToolIcon(event.toolName) : '🔹';
+    const label = event.toolName ? stripMcpServerPrefix(event.toolName) : 'tool';
+    const verb = event.isError ? 'error' : 'result';
+
+    let body = cleaned || '(no output)';
+    let trailer = '';
+    const lines = body.split('\n');
+    if (lines.length > maxLines) {
+      body = lines.slice(0, maxLines).join('\n');
+      trailer = `\n[truncated: showing ${maxLines} of ${lines.length} lines]`;
+    }
+    if (body.length > maxChars) {
+      body = body.substring(0, maxChars);
+      trailer = `\n[truncated to ${maxChars} chars]`;
+    }
+
+    const text = `${icon} ${label} ${verb}\n${body}${trailer}`;
+    try {
+      await ctx.reply(text, { parse_mode: undefined });
+      this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
+    } catch (err) {
+      console.error('[ToolResult] Failed to post:', err instanceof Error ? err.message : err);
+    }
+  }
+
+  /**
+   * Post a before/after preview for a successful Edit or Write call. In action
+   * log mode, adds to the consolidated log; otherwise sends as its own message.
+   * Each side is independently capped at `maxLines` and prefixed with `-`/`+`.
+   * Write (new file) skips the `-` side. Plain-text rendering — tool output
+   * can contain anything that would break MarkdownV2 parsing.
+   */
+  async postEditDiff(ctx: Context, event: EditDiffEvent, maxLines: number): Promise<void> {
+    const keyInfo = getSessionKeyFromCtx(ctx);
+    const sessionKey = keyInfo?.sessionKey;
+
+    // Check if action logging should be used based on current verbosity flags
+    const chatId = ctx.chat?.id;
+    if (chatId !== undefined) {
+      const flags = resolveVerbosityFlags(chatId);
+      const shouldUseActionLog = flags.useActionLog && (flags.showToolResults || flags.showDiffs);
+
+      if (shouldUseActionLog && sessionKey) {
+        // Initialize action logger if not already active
+        if (!actionLogger.isActive(sessionKey)) {
+          await actionLogger.initialize(ctx, sessionKey);
+        }
+        await actionLogger.addEditDiff(ctx, sessionKey, event, maxLines);
+        return;
+      }
+    }
+
+    // Fall back to original behavior
+    const fileLabel = stripWorkingDir(event.filePath);
+    const headerIcon = event.toolName === 'Write' ? '✏️' : '🔧';
+    const lines: string[] = [`${headerIcon} ${event.toolName} ${fileLabel}`];
+
+    if (typeof event.oldString === 'string' && event.oldString.length > 0) {
+      const oldLines = event.oldString.split('\n');
+      const oldShown = oldLines.slice(0, maxLines).map((l) => `- ${l}`);
+      if (oldLines.length > maxLines) {
+        oldShown.push(`- [+${oldLines.length - maxLines} more lines]`);
+      }
+      lines.push(...oldShown);
+    }
+
+    const newLines = event.newString.split('\n');
+    const newShown = newLines.slice(0, maxLines).map((l) => `+ ${l}`);
+    if (newLines.length > maxLines) {
+      newShown.push(`+ [+${newLines.length - maxLines} more lines]`);
+    }
+    lines.push(...newShown);
+
+    const text = lines.join('\n');
+    try {
+      await ctx.reply(text, { parse_mode: undefined });
+      this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
+    } catch (err) {
+      console.error('[EditDiff] Failed to post:', err instanceof Error ? err.message : err);
+    }
+  }
+
   private async postTaskCompletion(ctx: Context, task: TaskState): Promise<void> {
     // Skip ambient/housekeeping tasks and foreground subagents — only
     // backgrounded tasks deserve a separate notification message.
     if (task.skipTranscript) return;
     if (!task.isBackgrounded) return;
+
+    // Use action logging if enabled
+    const keyInfo = getSessionKeyFromCtx(ctx);
+    const sessionKey = keyInfo?.sessionKey;
+    if (sessionKey && actionLogger.isActive(sessionKey)) {
+      await actionLogger.addTaskCompletion(ctx, sessionKey, task);
+      return;
+    }
+
+    // Fall back to original behavior
 
     const isMonitor = task.taskType === MONITOR_TASK_TYPE;
 
@@ -608,30 +790,28 @@ export class MessageSender {
     const { chatId, sessionKey } = keyInfo;
 
     const state = this.streamStates.get(sessionKey);
+    if (!state) return;
 
-    if (state) {
-      // Stop typing indicator and spinner
-      this.stopTypingIndicator(state);
-      this.stopSpinnerAnimation(state);
-      state.currentOperation = null;
+    // Stop typing indicator and spinner
+    this.stopTypingIndicator(state);
+    this.stopSpinnerAnimation(state);
+    state.currentOperation = null;
 
-      if (state.messageId) {
-        const intervening = this.interveningPostsThisStream.get(sessionKey) ?? 0;
-        if (intervening > 0) {
-          const trimmedFinal = finalContent.trim();
-          if (!trimmedFinal) {
-            // Nothing to bottom-post — just close out the streaming bubble.
-            try {
-              await ctx.api.editMessageText(chatId, state.messageId, '✅ Done', { parse_mode: undefined });
-            } catch (err) {
-              console.debug('[Stream] Done edit failed:', err instanceof Error ? err.message : err);
-            }
-            this.streamStates.delete(sessionKey);
-            return;
+    if (state.messageId) {
+      const hasInterveningPosts = (this.interveningPostsThisStream.get(sessionKey) ?? 0) > 0;
+      const actionLogWasActive = actionLogger.isActive(sessionKey);
+
+      // If the action log was used OR other messages interrupted the flow,
+      // post the final answer as a new message for better visibility.
+      if (hasInterveningPosts || actionLogWasActive) {
+        const trimmedFinal = finalContent.trim();
+        if (!trimmedFinal) {
+          try {
+            await ctx.api.editMessageText(chatId, state.messageId, '✅ Done', { parse_mode: undefined });
+          } catch (err) {
+            console.debug('[Stream] Done edit failed:', err instanceof Error ? err.message : err);
           }
-          // Sub-events posted during the turn pushed the streaming bubble out
-          // of view. Reduce it to a pointer and post the final response as a
-          // fresh bottom message so the user doesn't have to scroll up.
+        } else {
           try {
             await ctx.api.editMessageText(
               chatId,
@@ -642,27 +822,18 @@ export class MessageSender {
           } catch (err) {
             console.debug('[Stream] Pointer edit failed:', err instanceof Error ? err.message : err);
           }
-          this.streamStates.delete(sessionKey);
           await this.sendMessage(ctx, finalContent);
-          return;
         }
-
-        // Check if we should use Telegraph for final content
+      } else {
+        // Original behavior: No intervening posts, so edit the main message directly.
         if (shouldUseTelegraph(finalContent, sessionKey)) {
           const pageUrl = await createTelegraphPage('Claude Response', finalContent);
-
           if (pageUrl) {
             try {
               const summary = finalContent.substring(0, 200).replace(/[#*_`\[\]]/g, '') + '...';
               const message = `📄 *Response ready:*\n\n${escapeMarkdownV2(summary)}\n\n[Open in Instant View](${escapeMarkdownV2(pageUrl)})`;
-
-              await ctx.api.editMessageText(
-                chatId,
-                state.messageId,
-                message,
-                { parse_mode: 'MarkdownV2' }
-              );
-
+              await ctx.api.editMessageText(chatId, state.messageId, message, { parse_mode: 'MarkdownV2' });
+              // Early exit on success
               this.streamStates.delete(sessionKey);
               return;
             } catch (error) {
@@ -671,62 +842,42 @@ export class MessageSender {
           }
         }
 
-        // Default: MarkdownV2 with chunking
         const parts = processMessageForTelegram(finalContent, config.MAX_MESSAGE_LENGTH);
-
         try {
-          // Update the first message with first part (use MarkdownV2)
           const firstPart = parts[0] || 'Done\\.';
+          await ctx.api.editMessageText(chatId, state.messageId, firstPart, { parse_mode: 'MarkdownV2' });
 
-          try {
-            await ctx.api.editMessageText(
-              chatId,
-              state.messageId,
-              firstPart,
-              { parse_mode: 'MarkdownV2' }
-            );
-
-            // Send additional messages for remaining parts
-            for (let i = 1; i < parts.length; i++) {
-              try {
-                await ctx.reply(parts[i], { parse_mode: 'MarkdownV2' });
-              } catch (partError) {
-                console.error(`MarkdownV2 failed for part ${i + 1}:`, partError);
-                try {
-                  // Remove escaping for plain text fallback
-                  await ctx.reply(parts[i].replace(/\\(.)/g, '$1'), { parse_mode: undefined });
-                } catch (plainError) {
-                  console.error(`Plain text fallback failed for part ${i + 1}:`, plainError);
-                  await ctx.reply('⚠️ Message formatting error', { parse_mode: undefined });
-                }
-              }
-              await new Promise(resolve => setTimeout(resolve, 100));
+          for (let i = 1; i < parts.length; i++) {
+            try {
+              await ctx.reply(parts[i], { parse_mode: 'MarkdownV2' });
+            } catch (partError) {
+              console.error(`MarkdownV2 failed for part ${i + 1}:`, partError);
+              await ctx.reply(parts[i].replace(/\\(.)/g, '$1'), { parse_mode: undefined });
             }
-          } catch (mdError) {
-            // "message is not modified" means the content already matches — treat as success
+          }
+        } catch (mdError) {
             const errMsg = mdError instanceof Error ? mdError.message : '';
             if (errMsg.includes('message is not modified')) {
               console.debug('[Stream] Edit skipped — content unchanged');
             } else {
-              // MarkdownV2 failed — delete streaming placeholder and
-              // re-send via sendMessage which handles Telegraph + chunking
               console.error('MarkdownV2 edit failed, falling back to sendMessage:', mdError);
               try {
                 await ctx.api.deleteMessage(chatId, state.messageId);
               } catch { /* ignore */ }
-
-              this.streamStates.delete(sessionKey);
               await this.sendMessage(ctx, finalContent);
-              return;
             }
-          }
-        } catch (error) {
-          console.error('Error finishing stream:', error);
         }
       }
     }
 
     this.streamStates.delete(sessionKey);
+
+    // Delay action logging cleanup to allow for any remaining tool results
+    if (keyInfo?.sessionKey && actionLogger.isActive(keyInfo.sessionKey)) {
+      setTimeout(() => {
+        actionLogger.cleanup(keyInfo.sessionKey);
+      }, 5000); // 5 second delay to allow tool results to be processed
+    }
   }
 
   async cancelStreaming(ctx: Context): Promise<void> {
@@ -755,6 +906,13 @@ export class MessageSender {
     }
 
     this.streamStates.delete(sessionKey);
+
+    // Delay action logging cleanup to allow for any remaining tool results
+    if (keyInfo?.sessionKey && actionLogger.isActive(keyInfo.sessionKey)) {
+      setTimeout(() => {
+        actionLogger.cleanup(keyInfo.sessionKey);
+      }, 5000); // 5 second delay to allow tool results to be processed
+    }
   }
 
   /**
@@ -769,6 +927,9 @@ export class MessageSender {
   async sendCompletionNotification(ctx: Context, elapsedMs: number): Promise<void> {
     if (!config.NOTIFICATION_ENABLED) return;
     if (elapsedMs < config.NOTIFICATION_THRESHOLD_SECONDS * 1000) return;
+
+    const chatId = ctx.chat?.id;
+    if (chatId !== undefined && !resolveVerbosityFlags(chatId).sendCompletionPing) return;
 
     const sessionKey = getSessionKeyFromCtx(ctx)?.sessionKey;
     if (sessionKey) {

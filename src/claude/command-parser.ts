@@ -116,6 +116,7 @@ export function getAvailableCommands(): string {
       '• `/ping` \\- Check if bot is responsive',
       '• `/cancel` \\- Cancel current request',
       '• `/mode` \\- Toggle streaming mode',
+      '• `/verbosity` \\- Pick verbosity tier \\(quiet / normal / verbose / debug\\)',
       '• `/terminalui` \\- Toggle terminal\\-style display',
       '• `/botname` \\- Toggle dynamic bot name',
       '• `/topic <text>` \\- Set current work topic in bot name',

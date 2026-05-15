@@ -21,6 +21,7 @@ import { getStreamingMode, executeRedditFetch, executeMediumFetch, showExtractMe
 import { isBotNameEnabled, rateLimitedSetMyName } from '../../telegram/botname-settings.js';
 import { userPreferences } from '../../providers/user-preferences.js';
 import { parseSessionKey } from '../../utils/session-key.js';
+import { resolveVerbosityFlags } from '../../utils/verbosity.js';
 import { summarizeTopicWithHaiku } from '../../claude/auto-topic-haiku.js';
 import { executeVReddit } from '../../reddit/vreddit.js';
 import { detectPlatform, isValidUrl } from '../../media/extract.js';
@@ -96,7 +97,10 @@ async function sendUsageFooter(
   ctx: Context,
   usage: AgentUsage | undefined,
 ): Promise<void> {
-  if (!config.CONTEXT_SHOW_USAGE || !usage) return;
+  if (!usage) return;
+  const chatId = ctx.chat?.id;
+  if (chatId === undefined) return;
+  if (!resolveVerbosityFlags(chatId).showUsageFooter) return;
   const u = usage;
   const pct = u.contextWindow > 0
     ? Math.round(((u.inputTokens + u.outputTokens + u.cacheReadTokens) / u.contextWindow) * 100)
@@ -110,7 +114,10 @@ async function sendCompactionNotification(
   ctx: Context,
   compaction: { trigger: 'manual' | 'auto'; preTokens: number } | undefined,
 ): Promise<void> {
-  if (!config.CONTEXT_NOTIFY_COMPACTION || !compaction) return;
+  if (!compaction) return;
+  const chatId = ctx.chat?.id;
+  if (chatId === undefined) return;
+  if (!resolveVerbosityFlags(chatId).notifyCompaction) return;
   const c = compaction;
   console.log(`[Compaction] Sending notification: trigger=${c.trigger}, preTokens=${c.preTokens}`);
   const emoji = c.trigger === 'auto' ? '⚠️' : 'ℹ️';
@@ -142,7 +149,10 @@ async function sendSessionInitNotification(
   sessionKey: string,
   sessionInit: { model: string; sessionId: string } | undefined,
 ): Promise<void> {
-  if (!config.CONTEXT_NOTIFY_COMPACTION || !sessionInit) return;
+  if (!sessionInit) return;
+  const chatId = ctx.chat?.id;
+  if (chatId === undefined) return;
+  if (!resolveVerbosityFlags(chatId).notifyCompaction) return;
   const previousSessionId = sessionManager.getSession(sessionKey)?.claudeSessionId;
   if (previousSessionId && sessionInit.sessionId !== previousSessionId) {
     const msg = `🔄 *New Agent Session*\n\n`
@@ -502,6 +512,20 @@ async function handleAgentReply(
             onProgress: (progressText) => {
               messageSender.updateStream(ctx, progressText);
             },
+            onToolResult: (event) => {
+              const cid = ctx.chat?.id;
+              if (cid === undefined) return;
+              const flags = resolveVerbosityFlags(cid);
+              if (!flags.showToolResults) return;
+              return messageSender.postToolResult(ctx, event, flags.toolResultMaxLines, flags.toolResultMaxChars);
+            },
+            onEditDiff: (event) => {
+              const cid = ctx.chat?.id;
+              if (cid === undefined) return;
+              const flags = resolveVerbosityFlags(cid);
+              if (!flags.showDiffs) return;
+              return messageSender.postEditDiff(ctx, event, flags.diffMaxLines);
+            },
             abortController,
             telegramCtx: ctx,
           });
@@ -518,6 +542,20 @@ async function handleAgentReply(
             },
             onTaskEvent: (event) => messageSender.notifyTaskEvent(ctx, sessionKey, event),
             onSubTurnResponse: (text) => messageSender.postSubTurnResponse(ctx, text),
+            onToolResult: (event) => {
+              const cid = ctx.chat?.id;
+              if (cid === undefined) return;
+              const flags = resolveVerbosityFlags(cid);
+              if (!flags.showToolResults) return;
+              return messageSender.postToolResult(ctx, event, flags.toolResultMaxLines, flags.toolResultMaxChars);
+            },
+            onEditDiff: (event) => {
+              const cid = ctx.chat?.id;
+              if (cid === undefined) return;
+              const flags = resolveVerbosityFlags(cid);
+              if (!flags.showDiffs) return;
+              return messageSender.postEditDiff(ctx, event, flags.diffMaxLines);
+            },
             abortController,
             command: mode,
             telegramCtx: ctx,
@@ -755,6 +793,20 @@ async function handleStreamingResponse(
       },
       onTaskEvent: (event) => messageSender.notifyTaskEvent(ctx, sessionKey, event),
       onSubTurnResponse: (text) => messageSender.postSubTurnResponse(ctx, text),
+      onToolResult: (event) => {
+        const cid = ctx.chat?.id;
+        if (cid === undefined) return;
+        const flags = resolveVerbosityFlags(cid);
+        if (!flags.showToolResults) return;
+        return messageSender.postToolResult(ctx, event, flags.toolResultMaxLines, flags.toolResultMaxChars);
+      },
+      onEditDiff: (event) => {
+        const cid = ctx.chat?.id;
+        if (cid === undefined) return;
+        const flags = resolveVerbosityFlags(cid);
+        if (!flags.showDiffs) return;
+        return messageSender.postEditDiff(ctx, event, flags.diffMaxLines);
+      },
       abortController,
       telegramCtx: ctx,
     });
@@ -798,7 +850,20 @@ async function handleWaitResponse(
   setAbortController(sessionKey, abortController);
 
   try {
-    const response = await sendToAgent(sessionKey, message, { abortController, telegramCtx: ctx });
+    const response = await sendToAgent(sessionKey, message, {
+      abortController,
+      telegramCtx: ctx,
+      onToolResult: (event) => {
+        const flags = resolveVerbosityFlags(chatId);
+        if (!flags.showToolResults) return;
+        return messageSender.postToolResult(ctx, event, flags.toolResultMaxLines, flags.toolResultMaxChars);
+      },
+      onEditDiff: (event) => {
+        const flags = resolveVerbosityFlags(chatId);
+        if (!flags.showDiffs) return;
+        return messageSender.postEditDiff(ctx, event, flags.diffMaxLines);
+      },
+    });
     messageSender.stopTypingInterval(typingInterval);
 
     await messageSender.sendMessage(ctx, response.text);

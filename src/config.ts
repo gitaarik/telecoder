@@ -176,7 +176,12 @@ const envSchema = z.object({
     .string()
     .default('180000')
     .transform((val) => parseInt(val, 10)),
-  // Context visibility
+  // Verbosity tier (quiet | normal | verbose | debug). Drives the defaults
+  // for several rendering flags below; per-chat /verbosity overrides this,
+  // and explicit env vars (CONTEXT_SHOW_USAGE etc.) override the tier.
+  VERBOSITY_DEFAULT: z.enum(['quiet', 'normal', 'verbose', 'debug']).default('normal'),
+  // Context visibility — when set, overrides the verbosity tier. Leave unset
+  // to let the tier decide (recommended).
   CONTEXT_SHOW_USAGE: z
     .string()
     .default('false')
@@ -190,7 +195,8 @@ const envSchema = z.object({
     .string()
     .default('true')
     .transform((val) => val.toLowerCase() === 'true'),
-  // Terminal UI verbose: show full commands/paths without truncation and longer session previews
+  // Terminal UI verbose: show full commands/paths without truncation and longer session previews.
+  // When set, overrides the verbosity tier.
   TERMINAL_UI_VERBOSE: z
     .string()
     .default('false')
@@ -266,6 +272,16 @@ const envSchema = z.object({
     .transform((val) => val.toLowerCase() === 'true'),
   CCR_BASE_URL: z.string().default('http://localhost:3456'),
   CCR_AUTH_TOKEN: z.string().default(''),
+  // When the CCR proxy isn't reachable, automatically spawn `ccr start` in
+  // the background instead of letting the spawned `claude` CLI hang on a
+  // ConnectionRefused. Off by default — opt in if you want hands-off recovery.
+  CCR_AUTOSTART: z
+    .string()
+    .default('false')
+    .transform((val) => val.toLowerCase() === 'true'),
+  // Path or name of the `ccr` binary used for autostart. Defaults to `ccr`
+  // (resolved via PATH). Override if `ccr` lives somewhere systemd can't see.
+  CCR_BINARY: z.string().default('ccr'),
   // When the Anthropic API reports a Max usage limit, automatically prompt
   // the user with an inline keyboard offering to switch to CCR.
   CCR_AUTO_PROMPT_ON_THROTTLE: z
@@ -285,6 +301,20 @@ if (!parsed.success) {
 export const config = parsed.data;
 
 export type Config = typeof config;
+
+// Capture which override env vars were explicitly set (after dotenv has loaded
+// process.env). The verbosity resolver consults these to decide whether to
+// honor the env value or fall back to the per-tier default.
+function isEnvSet(key: string): boolean {
+  const raw = process.env[key];
+  return raw !== undefined && raw !== '';
+}
+
+export const explicitFlags = {
+  CONTEXT_SHOW_USAGE: isEnvSet('CONTEXT_SHOW_USAGE'),
+  CONTEXT_NOTIFY_COMPACTION: isEnvSet('CONTEXT_NOTIFY_COMPACTION'),
+  TERMINAL_UI_VERBOSE: isEnvSet('TERMINAL_UI_VERBOSE'),
+} as const;
 
 // ---------------------------------------------------------------------------
 // Derived helpers (used by index.ts, command.handler.ts, session-history.ts)

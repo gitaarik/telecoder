@@ -1780,6 +1780,11 @@
             <h3>Completion Notifications</h3>
             <p>Get a push notification when long-running tasks finish. Configurable threshold (default: 60s) — never miss a completed task again.</p>
           </div>
+          <div class="feature-card" data-category="core">
+            <div class="feature-icon">🎚️</div>
+            <h3>Verbosity Tiers</h3>
+            <p>One per-chat setting (quiet / normal / verbose / debug) drives how much detail Claudegram surfaces each turn. Verbose adds the per-turn usage footer, untruncated tool inputs, and a consolidated action log that shows tool results and diffs in a single updatable message instead of many separate ones. Debug extends the action log with longer previews (40 lines vs 20). Quiet drops the completion ping. Set with /verbosity; env-level default via VERBOSITY_DEFAULT.</p>
+          </div>
           <div class="feature-card" data-category="session">
             <div class="feature-icon">↩️</div>
             <h3>Back to Previous Session</h3>
@@ -1940,6 +1945,10 @@
             <div class="command-row">
               <code class="command-code">/effort &lt;level&gt;</code>
               <span class="command-desc">Set reasoning effort (low/medium/high/xhigh/max/auto). Enable /statusline to see the current level's icon (🐇/⚖️/🧠/🔬/🚀) after each turn.</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/verbosity &lt;tier&gt;</code>
+              <span class="command-desc">Pick how much detail Claudegram surfaces per turn (quiet / normal / verbose / debug). Verbose adds the per-turn usage footer, untruncated tool inputs, and a consolidated action log that shows tool results and diffs in a single updatable message for a cleaner, more UI-like experience. Debug extends the action log with longer previews (40 lines vs 20); quiet suppresses the completion ping. Per-chat — overrides VERBOSITY_DEFAULT.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/btw &lt;question&gt;</code>
