@@ -7,6 +7,7 @@ import { atomicWriteFileSync } from '../utils/atomic-write.js';
 // Zod schema for user preferences
 const userPreferencesSchema = z.object({
   provider: z.enum(['claude', 'ccr', 'opencode']).optional(),
+  method: z.enum(['sdk', 'pty']).optional(),
   model: z.string().optional(),
   effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
   verbosity: z.enum(['quiet', 'normal', 'verbose', 'debug']).optional(),
@@ -78,6 +79,19 @@ class UserPreferencesManager {
       this.data[chatId] = { lastUpdated: new Date().toISOString() };
     }
     this.data[chatId].provider = provider;
+    this.data[chatId].lastUpdated = new Date().toISOString();
+    this.save();
+  }
+
+  getMethod(chatId: number): 'sdk' | 'pty' | undefined {
+    return this.data[chatId]?.method;
+  }
+
+  setMethod(chatId: number, method: 'sdk' | 'pty'): void {
+    if (!this.data[chatId]) {
+      this.data[chatId] = { lastUpdated: new Date().toISOString() };
+    }
+    this.data[chatId].method = method;
     this.data[chatId].lastUpdated = new Date().toISOString();
     this.save();
   }

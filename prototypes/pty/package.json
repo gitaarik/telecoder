@@ -7,8 +7,8 @@
     "run": "tsx prototype.ts"
   },
   "dependencies": {
-    "node-pty": "^1.0.0",
-    "strip-ansi": "^7.1.0"
+    "@xterm/headless": "^6.0.0",
+    "node-pty": "^1.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.17.14",

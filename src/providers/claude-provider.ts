@@ -1,57 +1,68 @@
-import {
-  sendToAgent as claudeSendToAgent,
-  sendLoopToAgent as claudeSendLoopToAgent,
-  clearConversation as claudeClearConversation,
-  setModel as claudeSetModel,
-  getModel as claudeGetModel,
-  clearModel as claudeClearModel,
-  getCachedUsage as claudeGetCachedUsage,
-  isDangerousMode as claudeIsDangerousMode,
-} from '../claude/agent.js';
+
+import { userPreferences } from './user-preferences.js';
+import { sdkProvider } from './sdk-provider.js';
+import { PtyProvider } from '../claude/pty-provider.js';
+import { parseSessionKey } from '../utils/session-key.js';
 import type { Provider, AgentOptions, LoopOptions, AgentResponse, AgentUsage, ModelInfo } from './types.js';
 
-const CLAUDE_MODELS: ModelInfo[] = [
-  { id: 'opus', label: 'opus', description: 'Most capable (default)' },
-  { id: 'sonnet', label: 'sonnet', description: 'Balanced' },
-  { id: 'haiku', label: 'haiku', description: 'Fast & light' },
-];
+// Instantiate both providers. The router will decide which one to use.
+const ptyProvider = new PtyProvider();
 
+function getMethod(chatId: number): 'sdk' | 'pty' {
+  return userPreferences.getMethod(chatId) || 'sdk'; // Default to SDK
+}
+
+function getInternalProvider(chatId: number): Provider {
+  const method = getMethod(chatId);
+  if (method === 'pty') {
+    return ptyProvider;
+  }
+  return sdkProvider;
+}
+
+// This new claudeProvider is a router that delegates to either the
+// SDK or PTY provider based on user preference.
 export const claudeProvider: Provider = {
   name: 'claude',
 
   sendToAgent(sessionKey: string, message: string, options?: AgentOptions): Promise<AgentResponse> {
-    return claudeSendToAgent(sessionKey, message, options);
+    const chatId = parseSessionKey(sessionKey).chatId;
+    return getInternalProvider(chatId).sendToAgent(sessionKey, message, options);
   },
 
   sendLoopToAgent(sessionKey: string, message: string, options?: LoopOptions): Promise<AgentResponse> {
-    return claudeSendLoopToAgent(sessionKey, message, options);
+    const chatId = parseSessionKey(sessionKey).chatId;
+    return getInternalProvider(chatId).sendLoopToAgent(sessionKey, message, options);
   },
 
   clearConversation(sessionKey: string): void {
-    claudeClearConversation(sessionKey);
+    const chatId = parseSessionKey(sessionKey).chatId;
+    getInternalProvider(chatId).clearConversation(sessionKey);
   },
 
   setModel(chatId: number, model: string): void {
-    claudeSetModel(chatId, model);
+    getInternalProvider(chatId).setModel(chatId, model);
   },
 
   getModel(chatId: number): string {
-    return claudeGetModel(chatId);
+    return getInternalProvider(chatId).getModel(chatId);
   },
 
   clearModel(chatId: number): void {
-    claudeClearModel(chatId);
+    getInternalProvider(chatId).clearModel(chatId);
   },
 
   getCachedUsage(sessionKey: string): AgentUsage | undefined {
-    return claudeGetCachedUsage(sessionKey);
+    const chatId = parseSessionKey(sessionKey).chatId;
+    return getInternalProvider(chatId).getCachedUsage(sessionKey);
   },
 
   isDangerousMode(): boolean {
-    return claudeIsDangerousMode();
+    // This is consistent across both methods.
+    return sdkProvider.isDangerousMode();
   },
 
-  async getAvailableModels(): Promise<ModelInfo[]> {
-    return CLAUDE_MODELS;
+  async getAvailableModels(chatId: number): Promise<ModelInfo[]> {
+    return getInternalProvider(chatId).getAvailableModels(chatId);
   },
 };

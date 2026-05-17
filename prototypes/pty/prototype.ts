@@ -20,10 +20,12 @@
  */
 
 import { spawn, type IPty } from 'node-pty';
-import stripAnsi from 'strip-ansi';
+import headless from '@xterm/headless';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+
+const { Terminal } = headless;
 
 // ---- Config ---------------------------------------------------------------
 
@@ -90,7 +92,13 @@ const term: IPty = spawn(CLAUDE_BIN, args, {
   env: { ...process.env, TERM: 'xterm-256color' },
 });
 
-let buffer = '';
+const xterm = new Terminal({
+  cols: COLS,
+  rows: ROWS,
+  scrollback: 1000,
+  allowProposedApi: true,
+});
+
 let lastChunkAt = Date.now();
 let turnStartedAt = 0;
 let endOfTurnResolver: ((text: string) => void) | null = null;
@@ -100,7 +108,7 @@ let hardTimer: NodeJS.Timeout | null = null;
 
 term.onData((chunk: string) => {
   lastChunkAt = Date.now();
-  buffer += chunk;
+  xterm.write(chunk); // Write data to the virtual terminal
   if (debugLog) debugLog.write(chunk);
 
   if (endOfTurnResolver) {
@@ -117,22 +125,60 @@ term.onExit(({ exitCode, signal }) => {
   }
 });
 
-function checkEndOfTurn() {
-  // Quorum-of-one (prototype): stdout has been quiet for IDLE_MS.
-  // A real impl would also confirm the input prompt glyph is on screen
-  // and the cursor is parked there.
-  if (!endOfTurnResolver) return;
-  const idleFor = Date.now() - lastChunkAt;
-  if (idleFor < IDLE_MS) {
-    idleTimer = setTimeout(checkEndOfTurn, IDLE_MS - idleFor);
-    return;
+function getScreenText(): string {
+  const buffer = xterm.buffer.active;
+  let text = '';
+  for (let i = 0; i < buffer.length; i++) {
+    text += buffer.getLine(i)?.translateToString(true) + '\n';
   }
-  const turnBytes = buffer.slice(turnStartBufferLen);
-  const resolved = endOfTurnResolver;
-  endOfTurnResolver = null;
-  endOfTurnRejector = null;
-  if (hardTimer) clearTimeout(hardTimer);
-  resolved(turnBytes);
+  return text.replace(/\n+$/, ''); // Trim trailing newlines
+}
+
+function extractAssistantResponse(screenText: string): string {
+  const lines = screenText.split('\n');
+  const lastAssistantLine = lines.map((line, i) => [line, i] as const).filter(([line]) => line.includes('●')).pop();
+  if (!lastAssistantLine) {
+    return 'Could not find assistant response.';
+  }
+
+  const responseStartIndex = lastAssistantLine[1];
+  const responseLines = lines.slice(responseStartIndex);
+
+  // Find where the next prompt starts
+  const nextPromptIndex = responseLines.findIndex(line => line.includes('❯'));
+
+  // If a prompt is found, take the lines before it
+  const finalLines = nextPromptIndex !== -1 ? responseLines.slice(0, nextPromptIndex) : responseLines;
+
+  // Clean up and join
+  return finalLines
+    .map(line => line.replace(/^●\s*/, '')) // Remove the bullet point
+    .join('\n')
+    .trim();
+}
+
+function checkEndOfTurn() {
+  const screenText = getScreenText();
+  const lines = screenText.split('\n');
+
+  // Quorum-of-two (v3 prototype): stdout has been quiet for IDLE_MS AND
+  // the input prompt glyph is visible on *any* of the last few lines.
+  const isIdle = (Date.now() - lastChunkAt) >= IDLE_MS;
+  const isPromptVisible = lines.some(line => line.trim().startsWith('❯'));
+
+  if (!endOfTurnResolver) return;
+
+  if (isIdle && isPromptVisible) {
+    const resolved = endOfTurnResolver;
+    endOfTurnResolver = null;
+    endOfTurnRejector = null;
+    if (hardTimer) clearTimeout(hardTimer);
+    resolved(screenText);
+  } else {
+    // Not ready yet, check again after the idle window expires
+    const remaining = isIdle ? IDLE_MS : IDLE_MS - (Date.now() - lastChunkAt);
+    idleTimer = setTimeout(checkEndOfTurn, remaining);
+  }
 }
 
 // ---- Turn machinery -------------------------------------------------------
@@ -142,7 +188,8 @@ let turnStartBufferLen = 0;
 function awaitEndOfTurn(): Promise<string> {
   return new Promise((resolve, reject) => {
     turnStartedAt = Date.now();
-    turnStartBufferLen = buffer.length;
+    // Clear the virtual screen so we only capture this turn's output
+    xterm.reset();
     endOfTurnResolver = resolve;
     endOfTurnRejector = reject;
     idleTimer = setTimeout(checkEndOfTurn, IDLE_MS);
@@ -186,23 +233,16 @@ async function main() {
   // we may need to send Ctrl+Enter or similar.)
   term.write(userPrompt + '\r');
 
-  const rawTurn = await awaitEndOfTurn();
+  const screenText = await awaitEndOfTurn();
   const elapsed = Date.now() - turnStartedAt;
-
-  // Strip ANSI; collapse runs of whitespace lines for readability.
-  const stripped = stripAnsi(rawTurn);
-  const cleaned = stripped
-    .split('\n')
-    .map((l) => l.replace(/\s+$/, ''))
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  const assistantResponse = extractAssistantResponse(screenText);
 
   console.log('─'.repeat(60));
-  console.log(`elapsed: ${elapsed}ms  raw bytes: ${rawTurn.length}  stripped chars: ${stripped.length}`);
+  console.log(`elapsed: ${elapsed}ms`);
   console.log('─'.repeat(60));
-  console.log(cleaned);
+  console.log(assistantResponse);
   console.log('─'.repeat(60));
+  console.log('\n[RAW SCREEN]\n' + screenText);
 
   // Clean exit: send Ctrl+C twice (Claude Code's quit gesture) or just kill.
   term.kill();

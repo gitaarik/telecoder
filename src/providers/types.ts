@@ -1,4 +1,5 @@
 export type ProviderName = 'claude' | 'ccr' | 'opencode';
+export type ClaudeMethod = 'sdk' | 'pty';
 
 export interface ThrottleInfo {
   /** Original error text from the upstream as surfaced by the SDK. */

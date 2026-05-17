@@ -1,3 +1,4 @@
+import { startIpcServer } from '../claude/ipc-server.js';
 import { Bot, type Context } from 'grammy';
 import { autoRetry } from '@grammyjs/auto-retry';
 import { sequentialize } from '@grammyjs/runner';
@@ -68,6 +69,8 @@ import {
   handleTasksCallback,
   handleVerbosity,
   handleVerbosityCallback,
+  handleMethodCommand,
+  handleMethodCallback,
 } from './handlers/command.handler.js';
 import { handleMessage, handleCcrThrottleCallback } from './handlers/message.handler.js';
 import { handleVoice } from './handlers/voice.handler.js';
@@ -116,6 +119,11 @@ function getSequentializeKey(ctx: Context): string | undefined {
 }
 
 export async function createBot(): Promise<Bot> {
+  // Start the IPC server for hook callbacks and the standalone MCP subprocess.
+  // Awaited so the bound port is known before anything else tries to spawn a
+  // subprocess that needs to reach us.
+  await startIpcServer();
+
   // Support HTTP/HTTPS/SOCKS proxy for Telegram API (useful in restricted networks)
   const proxyUrl = config.TELEGRAM_PROXY_URL
     || process.env.HTTPS_PROXY || process.env.https_proxy
@@ -177,6 +185,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'model', description: '🤖 Switch AI model' },
     { command: 'effort', description: '🎯 Set reasoning effort level' },
     { command: 'verbosity', description: '🎚️ Set verbosity tier (quiet/normal/verbose/debug)' },
+    { command: 'method', description: '🛰️ Switch Claude transport (SDK / PTY)' },
     { command: 'btw', description: '💬 Side question without interrupting' },
     { command: 'tasks', description: '🔄 List active background tasks' },
     ...(config.OPENCODE_ENABLED ? [{ command: 'provider', description: '🔌 Switch AI provider' }] : []),
@@ -251,6 +260,7 @@ export async function createBot(): Promise<Bot> {
   bot.command('model', handleModelCommand);
   bot.command('effort', handleEffort);
   bot.command('verbosity', handleVerbosity);
+  bot.command('method', handleMethodCommand);
   if (config.OPENCODE_ENABLED || config.CCR_ENABLED) {
     bot.command('provider', handleProviderCommand);
   }
@@ -335,6 +345,8 @@ export async function createBot(): Promise<Bot> {
       await handleEffortCallback(ctx);
     } else if (data.startsWith('verbosity:')) {
       await handleVerbosityCallback(ctx);
+    } else if (data.startsWith('method:')) {
+      await handleMethodCallback(ctx);
     } else if (data.startsWith('ccr_throttle:')) {
       await handleCcrThrottleCallback(ctx);
     }

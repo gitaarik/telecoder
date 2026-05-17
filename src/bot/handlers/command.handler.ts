@@ -4412,3 +4412,51 @@ export async function handleVerbosityCallback(ctx: Context): Promise<void> {
     { parse_mode: 'MarkdownV2' },
   );
 }
+
+export async function handleMethodCommand(ctx: Context): Promise<void> {
+  const chatId = ctx.chat?.id;
+  if (!chatId) return;
+
+  const descriptions: Record<string, string> = {
+    sdk: "Use Claude Code SDK (default, recommended)",
+    pty: "Use interactive PTY session (experimental, for Max subscription)",
+  };
+
+  const currentMethod = userPreferences.getMethod(chatId) ?? 'sdk';
+  const availableMethods = ['sdk', 'pty'];
+
+  const keyboard = availableMethods.map((method) => {
+    const label = method === currentMethod ? `✓ ${method}` : method;
+    return [{ text: label, callback_data: `method:${method}` }];
+  });
+
+  const descriptionText = Object.entries(descriptions)
+    .map(([key, value]) => `*${key}*\\: ${esc(value)}`)
+    .join('\n');
+
+  await ctx.reply(`${descriptionText}`, {
+    parse_mode: 'MarkdownV2',
+    reply_markup: {
+      inline_keyboard: keyboard,
+    },
+  });
+}
+
+export async function handleMethodCallback(ctx: Context): Promise<void> {
+  const chatId = ctx.chat?.id;
+  if (!chatId) return;
+
+  const data = ctx.callbackQuery?.data;
+  if (!data || !data.startsWith('method:')) return;
+
+  const newMethod = data.replace('method:', '');
+
+  if (newMethod === 'sdk' || newMethod === 'pty') {
+    userPreferences.setMethod(chatId, newMethod);
+  }
+
+  await ctx.answerCallbackQuery();
+  await ctx.editMessageText(`✅ Method set to *${esc(newMethod)}*`, {
+    parse_mode: 'MarkdownV2',
+  });
+}
