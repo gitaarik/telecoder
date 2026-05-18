@@ -917,6 +917,15 @@ function getProjectState(sessionKey: string): ProjectBrowserState {
       existing.current = root;
       existing.page = 0;
     }
+    // Re-sync from the live session's workingDirectory. Otherwise switches
+    // performed via MCP (claudegram_switch_project) don't show up in /project's
+    // "Current:" display because the cached browse-state still points at the
+    // dir the user first opened the browser in.
+    const session = sessionManager.getSession(sessionKey);
+    if (session && isWithinRoot(root, session.workingDirectory) && existing.current !== session.workingDirectory) {
+      existing.current = session.workingDirectory;
+      existing.page = 0;
+    }
     // Refresh timestamp on access to keep active sessions alive
     projectBrowserTimestamps.set(sessionKey, Date.now());
     return existing;
