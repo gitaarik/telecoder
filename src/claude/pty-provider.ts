@@ -1,7 +1,10 @@
 import { spawn, type IPty } from 'node-pty';
 import headless from '@xterm/headless';
 import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
+import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
 import {
   getIpcPort,
@@ -17,6 +20,11 @@ const { Terminal } = headless;
 // ---- Config from prototype --------------------------------------------------
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
+
+// dist/claude/pty-provider.js → sibling dist/bin/mcp-server.js
+const PROVIDER_DIR = path.dirname(fileURLToPath(import.meta.url));
+const MCP_SERVER_JS = path.resolve(PROVIDER_DIR, '../bin/mcp-server.js');
+
 const COLS = 120;
 const ROWS = 40;
 const IDLE_MS = 1200;
@@ -86,6 +94,95 @@ function buildSettingsJson(ipcPort: number): string {
       PostToolUse: [{ hooks: [{ type: 'command', command: hookCommand('postToolUse') }] }],
       PostToolUseFailure: [{ hooks: [{ type: 'command', command: hookCommand('postToolUseFailure') }] }],
       Stop: [{ hooks: [{ type: 'command', command: hookCommand('stop') }] }],
+    },
+  });
+}
+
+/**
+ * Build the system-prompt suffix that tells claude about our MCP tools.
+ * Without this, the MCP tools show up only as deferred-tool names (claude
+ * sees `mcp__claudegram-tools__claudegram_fetch_reddit` but doesn't have
+ * its description, so it'll often fall back to WebFetch/Bash for the same
+ * task). Mentioning each tool with a description and a "prefer over X"
+ * hint makes claude pick the right tool.
+ *
+ * Driven by the same CLAUDEGRAM_*_ENABLED env flags that gate tool
+ * registration in src/bin/mcp-server.ts.
+ */
+function buildMcpToolsSystemPromptNote(): string {
+  const tools: string[] = [
+    '- mcp__claudegram-tools__claudegram_list_projects — list available workspace projects the user can switch to',
+  ];
+  if (config.REDDIT_ENABLED) {
+    tools.push('- mcp__claudegram-tools__claudegram_fetch_reddit — fetch reddit content (subreddits, threads, user profiles). Use this for any reddit.com/r/<subreddit> or post URL; prefer over WebFetch.');
+  }
+  if (config.MEDIUM_ENABLED) {
+    tools.push('- mcp__claudegram-tools__claudegram_fetch_medium — fetch a Medium article (bypasses paywall). Use for medium.com / towardsdatascience.com / etc. URLs; prefer over WebFetch.');
+  }
+  if (config.TELEGRAPH_ENABLED) {
+    tools.push('- mcp__claudegram-tools__claudegram_publish_telegraph — publish a markdown document as a Telegraph (telegra.ph) Instant View page; returns the URL.');
+  }
+  return [
+    'You have access to Claudegram-specific MCP tools listed below. They are loaded lazily — call them directly when relevant; do not try to reproduce their behavior with WebFetch/Bash.',
+    ...tools,
+  ].join('\n');
+}
+
+/**
+ * Build the env we hand to the spawned MCP subprocess via --mcp-config.
+ * MCP server env is the controlled subset listed here — anything not present
+ * won't be visible to the subprocess. We pass:
+ *   - required routing info (CLAUDEGRAM_IPC_PORT, _CLAUDE_SESSION_ID,
+ *     _WORKSPACE_ROOT)
+ *   - PATH/HOME/NODE_ENV so node can find binaries and home-relative files
+ *   - every CLAUDEGRAM_*-prefixed var from this process's env (feature flags
+ *     like CLAUDEGRAM_REDDIT_ENABLED gate which tools register)
+ */
+function buildMcpEnv(required: Record<string, string>): Record<string, string> {
+  const env: Record<string, string> = {
+    PATH: process.env.PATH || '',
+    HOME: process.env.HOME || '',
+    NODE_ENV: process.env.NODE_ENV || '',
+    // Translate the bot's parsed config flags into the CLAUDEGRAM_*_ENABLED
+    // form the MCP subprocess gates on. The bot's own env vars are unprefixed
+    // (REDDIT_ENABLED, MEDIUM_ENABLED, …) so we can't just pass through.
+    CLAUDEGRAM_REDDIT_ENABLED: config.REDDIT_ENABLED ? 'true' : 'false',
+    CLAUDEGRAM_MEDIUM_ENABLED: config.MEDIUM_ENABLED ? 'true' : 'false',
+    CLAUDEGRAM_TELEGRAPH_ENABLED: config.TELEGRAPH_ENABLED ? 'true' : 'false',
+    CLAUDEGRAM_REDDITFETCH_DEFAULT_LIMIT: String(config.REDDITFETCH_DEFAULT_LIMIT),
+    CLAUDEGRAM_REDDITFETCH_DEFAULT_DEPTH: String(config.REDDITFETCH_DEFAULT_DEPTH),
+    // Reddit credentials — the redditfetch module reads these from its own
+    // process.env, so they need to be present in the subprocess env or
+    // OAuth will fail with "Missing Reddit credentials".
+    REDDIT_CLIENT_ID: process.env.REDDIT_CLIENT_ID || '',
+    REDDIT_CLIENT_SECRET: process.env.REDDIT_CLIENT_SECRET || '',
+    REDDIT_USERNAME: process.env.REDDIT_USERNAME || '',
+    REDDIT_PASSWORD: process.env.REDDIT_PASSWORD || '',
+    ...required,
+  };
+  // Any extra CLAUDEGRAM_*-prefixed vars that the bot's env carries (e.g.
+  // user overrides not codified in config.ts) get passed through too.
+  for (const [k, v] of Object.entries(process.env)) {
+    if (k.startsWith('CLAUDEGRAM_') && typeof v === 'string' && env[k] === undefined) {
+      env[k] = v;
+    }
+  }
+  return env;
+}
+
+/**
+ * Build the `--mcp-config` JSON we inject at spawn time. claude will spawn the
+ * referenced node script as a stdio MCP subprocess. The env we pass through is
+ * what the subprocess uses to reach back to our loopback IPC server.
+ */
+function buildMcpConfigJson(env: Record<string, string>): string {
+  return JSON.stringify({
+    mcpServers: {
+      'claudegram-tools': {
+        command: 'node',
+        args: [MCP_SERVER_JS],
+        env,
+      },
     },
   });
 }
@@ -171,6 +268,11 @@ export class PtyProvider implements Provider {
     const claudeSessionId = randomUUID();
     const ipcPort = getIpcPort();
     const settingsJson = buildSettingsJson(ipcPort);
+    const mcpConfigJson = buildMcpConfigJson(buildMcpEnv({
+      CLAUDEGRAM_IPC_PORT: String(ipcPort),
+      CLAUDEGRAM_CLAUDE_SESSION_ID: claudeSessionId,
+      CLAUDEGRAM_WORKSPACE_ROOT: requiredCwd,
+    }));
 
     const args = [
       '--dangerously-skip-permissions',
@@ -182,6 +284,16 @@ export class PtyProvider implements Provider {
       // settings still load, as does our injected --settings JSON below.
       '--setting-sources', 'project,local',
       '--settings', settingsJson,
+      // Spawn our standalone MCP server as a stdio subprocess. Strict mode
+      // scopes MCP to *only* what we pass here — the user's globally
+      // configured MCP servers don't load in PTY mode.
+      '--mcp-config', mcpConfigJson,
+      '--strict-mcp-config',
+      // Make our MCP tools discoverable to claude. Without this the tool
+      // names appear in claude's deferred-tools list but claude often picks
+      // WebFetch/Bash for the same task because the deferred listing has
+      // no descriptions.
+      '--append-system-prompt', buildMcpToolsSystemPromptNote(),
     ];
 
     const term = spawn(CLAUDE_BIN, args, {
