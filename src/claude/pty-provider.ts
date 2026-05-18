@@ -235,7 +235,8 @@ export class PtyProvider implements Provider {
   private sessions = new Map<string, PtySession>();
 
   async sendToAgent(sessionKey: string, message: string, options?: AgentOptions): Promise<AgentResponse> {
-    const finalScreenText = await this._runPtyTurn(sessionKey, message, options);
+    const promptToSend = wrapCommandPrompt(message, options?.command);
+    const finalScreenText = await this._runPtyTurn(sessionKey, promptToSend, options);
     const assistantResponse = this._extractAssistantResponse(finalScreenText);
 
     return {
@@ -704,6 +705,29 @@ export class PtyProvider implements Provider {
 // Callbacks are fire-and-forget — the hook command blocks claude until the
 // HTTP POST returns, so we ack fast and let the bot's Telegram calls run on
 // their own microtasks. Errors are logged, never rethrown into claude.
+
+/**
+ * Apply per-command prompt wrapping so /plan and /explore behave the same in
+ * PTY mode as in SDK mode. SDK does this differently:
+ *   - explore: prepends "Explore the codebase and answer: " to the prompt
+ *   - plan:   sets the SDK permissionMode to 'plan' (claude code then enforces
+ *             read-only tool access)
+ * In PTY mode we spawn with --dangerously-skip-permissions, so we can't flip
+ * permission mode mid-run. Instead, plan mode is steered by a strong prompt
+ * directive — claude will follow it on subscription-side too, matching the
+ * SDK-mode user experience for the common case.
+ */
+function wrapCommandPrompt(message: string, command: AgentOptions['command']): string {
+  if (command === 'explore') {
+    return `Explore the codebase and answer: ${message}`;
+  }
+  if (command === 'plan') {
+    return `PLAN MODE: Analyze this task and produce a detailed implementation plan. Do NOT edit files, create files, or run mutating commands in this turn — read-only investigation only (Read / Grep / Glob, and Bash for non-mutating commands). Output a numbered plan with concrete steps. The user will review the plan and request execution in a follow-up message.
+
+Task: ${message}`;
+  }
+  return message;
+}
 
 function fireAndForget(label: string, fn: (() => Promise<unknown> | unknown) | undefined): void {
   if (!fn) return;
