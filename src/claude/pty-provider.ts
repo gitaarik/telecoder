@@ -7,6 +7,7 @@ import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
 import { claudeSessionFileExists, readLastUsageFromJsonl } from './session-jsonl.js';
+import { isCancelled } from './request-queue.js';
 import { getWorkspaceRoot } from '../utils/workspace-guard.js';
 import {
   getIpcPort,
@@ -242,7 +243,20 @@ export class PtyProvider implements Provider {
 
   async sendToAgent(sessionKey: string, message: string, options?: AgentOptions): Promise<AgentResponse> {
     const promptToSend = wrapCommandPrompt(message, options?.command);
-    const finalScreenText = await this._runPtyTurn(sessionKey, promptToSend, options);
+    let finalScreenText: string;
+    try {
+      finalScreenText = await this._runPtyTurn(sessionKey, promptToSend, options);
+    } catch (err) {
+      // If the user cancelled (/stop or /cancel), the pty kill in the abort
+      // path was deliberate. Return a graceful "cancelled" response instead
+      // of bubbling the error up to handleMessage — handleCancel already
+      // showed the user a "🛑 Cancelled" banner; we just need this promise
+      // to settle cleanly so subsequent queued messages can proceed.
+      if (isCancelled(sessionKey)) {
+        return { text: '🛑 Cancelled.', toolsUsed: [] };
+      }
+      throw err;
+    }
     const assistantResponse = this._extractAssistantResponse(finalScreenText);
 
     const usage = this._refreshUsageFromJsonl(sessionKey);
@@ -319,14 +333,25 @@ export class PtyProvider implements Provider {
     };
     registerActiveTurn(session.claudeSessionId, activeTurn);
 
-    // Mid-turn abort: writing Esc (0x1b) into the pty asks claude's TUI to
-    // interrupt the current generation and return to the input prompt. The
-    // end-of-turn detector then resolves normally (idle + prompt visible +
-    // any bullets that appeared). The session stays alive — claude doesn't
-    // lose conversation context — and the partial response is extracted.
+    // Mid-turn abort. Two stages:
+    //   1. Write Esc (0x1b) into the pty — claude code's TUI shortcut for
+    //      "interrupt current generation and return to prompt".
+    //   2. If Esc doesn't take effect within 2s (claude v2.1.143 sometimes
+    //      ignores it during certain tool-use states), kill the pty outright.
+    //      The next turn will respawn with --resume to restore conversation
+    //      context from the JSONL log, so the user loses at most their place
+    //      in the in-memory transcript — not the conversation itself.
     const abortSignal = options?.abortController?.signal;
+    let abortKillTimer: NodeJS.Timeout | null = null;
     const abortHandler = () => {
       try { session.term.write('\x1b'); } catch { /* pty already gone */ }
+      abortKillTimer = setTimeout(() => {
+        if (session.endOfTurnRejector) {
+          console.warn('[PtyProvider] Esc did not interrupt within 2s, killing pty');
+          try { session.term.kill(); } catch { /* already dead */ }
+          // onExit handler will reject endOfTurnRejector and clear the map.
+        }
+      }, 2000);
     };
     if (abortSignal?.aborted) {
       // Pre-aborted (e.g. user hit /stop before we even started writing). Skip
@@ -364,6 +389,7 @@ export class PtyProvider implements Provider {
 
       return await this._awaitEndOfTurn(session);
     } finally {
+      if (abortKillTimer) clearTimeout(abortKillTimer);
       abortSignal?.removeEventListener('abort', abortHandler);
       unregisterActiveTurn(session.claudeSessionId);
     }
