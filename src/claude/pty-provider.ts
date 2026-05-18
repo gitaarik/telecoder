@@ -644,12 +644,42 @@ function fireAndForget(label: string, fn: (() => Promise<unknown> | unknown) | u
  * SDK mode does. Unknown shapes fall back to a JSON dump — better than
  * nothing for diagnostics, even if it's ugly.
  */
+/**
+ * Join an MCP-style content array (`[{type:'text',text:'...'}, ...]`) into a
+ * plain string. Returns `null` if the input isn't a recognizable MCP content
+ * array, so callers can fall through to other shapes.
+ */
+function joinMcpContentArray(arr: unknown[]): string | null {
+  const texts: string[] = [];
+  for (const item of arr) {
+    if (!item || typeof item !== 'object') return null;
+    const o = item as Record<string, unknown>;
+    if (typeof o.text === 'string') texts.push(o.text);
+  }
+  return texts.length ? texts.join('\n') : null;
+}
+
 function extractToolResponseContent(toolResponse: unknown): string {
   if (toolResponse == null) return '';
   if (typeof toolResponse === 'string') return toolResponse;
+
+  // MCP tool result shapes: claude delivers MCP tool_response either as the
+  // raw content array `[{type:'text', text:'...'}]` or as the wrapped form
+  // `{content: [...], isError?: bool}`. Both should render as plain text in
+  // the action log, not as JSON.
+  if (Array.isArray(toolResponse)) {
+    const joined = joinMcpContentArray(toolResponse);
+    if (joined !== null) return joined;
+  }
+
   if (typeof toolResponse !== 'object') return String(toolResponse);
 
   const obj = toolResponse as Record<string, unknown>;
+
+  if (Array.isArray(obj.content)) {
+    const joined = joinMcpContentArray(obj.content);
+    if (joined !== null) return joined;
+  }
 
   // Read → unwrap file.content
   if (obj.file && typeof obj.file === 'object') {
