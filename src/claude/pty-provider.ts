@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
+import { getWorkspaceRoot } from '../utils/workspace-guard.js';
 import {
   getIpcPort,
   registerActiveTurn,
@@ -280,7 +281,10 @@ export class PtyProvider implements Provider {
     const mcpConfigJson = buildMcpConfigJson(buildMcpEnv({
       CLAUDEGRAM_IPC_PORT: String(ipcPort),
       CLAUDEGRAM_CLAUDE_SESSION_ID: claudeSessionId,
-      CLAUDEGRAM_WORKSPACE_ROOT: requiredCwd,
+      // Workspace root for the MCP subprocess (used by list_projects). This is
+      // the top-level dev directory (`config.WORKSPACE_DIR`), NOT the current
+      // project cwd — list_projects needs to enumerate sibling projects.
+      CLAUDEGRAM_WORKSPACE_ROOT: getWorkspaceRoot(),
     }));
 
     const args = [
