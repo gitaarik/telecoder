@@ -1,8 +1,16 @@
 import { spawn, type IPty } from 'node-pty';
 import headless from '@xterm/headless';
 import * as fs from 'fs';
+import { randomUUID } from 'crypto';
 import { sessionManager } from './session-manager.js';
-import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions } from '../providers/types.js';
+import {
+  getIpcPort,
+  registerActiveTurn,
+  registerIpcHandler,
+  unregisterActiveTurn,
+  type ActiveTurn,
+} from './ipc-server.js';
+import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions, type EditDiffEvent, type ToolResultEvent } from '../providers/types.js';
 
 const { Terminal } = headless;
 
@@ -12,6 +20,13 @@ const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 const COLS = 120;
 const ROWS = 40;
 const IDLE_MS = 1200;
+/**
+ * Short window we wait *after* the Stop hook fires before extracting the
+ * screen. Stop fires when claude finishes the response, but the TUI is
+ * still redrawing the input box at that point. Without a settle, we'd
+ * sometimes capture a half-rendered screen. 200ms is enough in practice.
+ */
+const POST_STOP_SETTLE_MS = 200;
 const MAX_TURN_MS = 5 * 60_000;
 const STARTUP_MAX_MS = 15_000;
 
@@ -32,6 +47,11 @@ interface PtySession {
   term: IPty;
   xterm: headless.Terminal;
   cwd: string;
+  /**
+   * Pre-minted UUID passed to `claude --session-id`. Used as the registry key
+   * for hook event dispatch (the hook payload's `session_id` matches this).
+   */
+  claudeSessionId: string;
   lastChunkAt: number;
   endOfTurnResolver: ((text: string) => void) | null;
   endOfTurnRejector: ((err: Error) => void) | null;
@@ -39,6 +59,35 @@ interface PtySession {
   hardTimer: NodeJS.Timeout | null;
   onProgress?: (progress: string) => void;
   lastScreenText: string;
+  /**
+   * True once the current turn's Stop hook has fired. While true, the
+   * end-of-turn check uses POST_STOP_SETTLE_MS instead of IDLE_MS and stops
+   * requiring the input prompt glyph to be visible (Stop is itself the
+   * authoritative signal; the prompt-visible check was only a heuristic).
+   */
+  stopReceived: boolean;
+}
+
+/**
+ * Build the `--settings` JSON we inject at spawn time. Each registered hook
+ * runs a `curl` POST to our loopback IPC server; the hook command is wrapped
+ * so it always exits 0 (so a transient IPC failure never blocks claude).
+ *
+ * Stop / SubagentStop are intentionally NOT registered here — Phase 2 will
+ * use them as the end-of-turn signal. UserPromptSubmit is similarly deferred.
+ */
+function buildSettingsJson(ipcPort: number): string {
+  const hookCommand = (eventName: string) =>
+    `curl -s -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:${ipcPort}/hook/${eventName}' >/dev/null 2>&1; exit 0`;
+
+  return JSON.stringify({
+    hooks: {
+      PreToolUse: [{ hooks: [{ type: 'command', command: hookCommand('preToolUse') }] }],
+      PostToolUse: [{ hooks: [{ type: 'command', command: hookCommand('postToolUse') }] }],
+      PostToolUseFailure: [{ hooks: [{ type: 'command', command: hookCommand('postToolUseFailure') }] }],
+      Stop: [{ hooks: [{ type: 'command', command: hookCommand('stop') }] }],
+    },
+  });
 }
 
 export class PtyProvider implements Provider {
@@ -59,17 +108,51 @@ export class PtyProvider implements Provider {
   private async _runPtyTurn(sessionKey: string, prompt: string, options?: AgentOptions): Promise<string> {
     const session = this._getOrCreateSession(sessionKey, options);
 
-    await this._waitForIdle(session, IDLE_MS, STARTUP_MAX_MS);
+    // Bind the in-flight options to claude's session_id so hook callbacks
+    // dispatched by the IPC server can find the right AgentOptions to fire.
+    // onClaudeStop is the Stop hook bridge — flips stopReceived and re-arms
+    // the idle timer with the shorter settle window so we don't wait the
+    // full IDLE_MS if no more chunks arrive after Stop fires.
+    const activeTurn: ActiveTurn = {
+      sessionKey,
+      options: options ?? {},
+      onClaudeStop: () => {
+        session.stopReceived = true;
+        if (session.endOfTurnResolver) {
+          if (session.idleTimer) clearTimeout(session.idleTimer);
+          session.idleTimer = setTimeout(() => this._checkEndOfTurn(session), POST_STOP_SETTLE_MS);
+        }
+      },
+    };
+    registerActiveTurn(session.claudeSessionId, activeTurn);
 
-    // Snapshot the screen before submitting so the progress diff and the
-    // end-of-turn extraction only see content produced by this turn — the
-    // pty stays alive across turns to preserve conversation state, so the
-    // buffer holds the cumulative history.
-    session.lastScreenText = this._getScreenText(session);
+    try {
+      await this._waitForReady(session, IDLE_MS, STARTUP_MAX_MS);
 
-    session.term.write(prompt + '\r');
+      // Snapshot the screen before submitting so the progress diff and the
+      // end-of-turn extraction only see content produced by this turn — the
+      // pty stays alive across turns to preserve conversation state, so the
+      // buffer holds the cumulative history.
+      session.lastScreenText = this._getScreenText(session);
 
-    return this._awaitEndOfTurn(session);
+      // Submit handling for claude's TUI input editor:
+      //
+      // claude v2.1.143 integrated an Nvim-style multi-line editor (the
+      // status bar shows "ctrl+g to edit in Nvim"). Writing `prompt + '\r'`
+      // in a single term.write produces a bulk-input that the editor seems
+      // to treat as a paste — the CR/LF inside gets buffered as content
+      // rather than firing the submit action, so our prompt would just sit
+      // in the input box. Splitting the write into "type the chars" then a
+      // brief settle then a separate "press Enter" makes the trailing CR
+      // look like a real keystroke and triggers submit.
+      session.term.write(prompt);
+      await new Promise((r) => setTimeout(r, 100));
+      session.term.write('\r');
+
+      return await this._awaitEndOfTurn(session);
+    } finally {
+      unregisterActiveTurn(session.claudeSessionId);
+    }
   }
 
   private _getOrCreateSession(sessionKey: string, options?: AgentOptions): PtySession {
@@ -85,7 +168,21 @@ export class PtyProvider implements Provider {
       this._cleanupSession(sessionKey);
     }
 
-    const args = ['--dangerously-skip-permissions'];
+    const claudeSessionId = randomUUID();
+    const ipcPort = getIpcPort();
+    const settingsJson = buildSettingsJson(ipcPort);
+
+    const args = [
+      '--dangerously-skip-permissions',
+      '--session-id', claudeSessionId,
+      // Exclude user-level settings. This keeps PTY mode predictable —
+      // most importantly it drops `editorMode: "vim"` which makes \r insert
+      // a newline instead of submitting (we saw prompts pile up in the
+      // multi-line buffer and never reach the model). Project + local
+      // settings still load, as does our injected --settings JSON below.
+      '--setting-sources', 'project,local',
+      '--settings', settingsJson,
+    ];
 
     const term = spawn(CLAUDE_BIN, args, {
       name: 'xterm-256color',
@@ -106,6 +203,7 @@ export class PtyProvider implements Provider {
       term,
       xterm,
       cwd: requiredCwd,
+      claudeSessionId,
       lastChunkAt: Date.now(),
       endOfTurnResolver: null,
       endOfTurnRejector: null,
@@ -113,6 +211,7 @@ export class PtyProvider implements Provider {
       hardTimer: null,
       onProgress: options?.onProgress,
       lastScreenText: '',
+      stopReceived: false,
     };
 
     term.onData((chunk: string) => this._onData(session, chunk));
@@ -121,7 +220,13 @@ export class PtyProvider implements Provider {
       if (session.endOfTurnRejector) {
         session.endOfTurnRejector(new Error(`claude exited (code=${exitCode}, signal=${signal}) mid-turn`));
       }
-      this.sessions.delete(sessionKey);
+      // Identity check: /clear or a workspace switch synchronously kills
+      // this term, removes us from the map, and may immediately spawn a
+      // replacement at the same sessionKey. By the time *this* late onExit
+      // fires, the replacement is the live session — don't wipe it out.
+      if (this.sessions.get(sessionKey) === session) {
+        this.sessions.delete(sessionKey);
+      }
     });
 
     this.sessions.set(sessionKey, session);
@@ -147,29 +252,44 @@ export class PtyProvider implements Provider {
 
     if (session.endOfTurnResolver) {
       if (session.idleTimer) clearTimeout(session.idleTimer);
-      session.idleTimer = setTimeout(() => this._checkEndOfTurn(session), IDLE_MS);
+      const idleMs = session.stopReceived ? POST_STOP_SETTLE_MS : IDLE_MS;
+      session.idleTimer = setTimeout(() => this._checkEndOfTurn(session), idleMs);
     }
   }
 
   private _checkEndOfTurn(session: PtySession) {
-    const screenText = this._getScreenText(session);
-    const lines = screenText.split('\n');
-
-    const isIdle = (Date.now() - session.lastChunkAt) >= IDLE_MS;
-    const isPromptVisible = lines.some(line => line.trim().startsWith('❯'));
-
     if (!session.endOfTurnResolver) return;
 
-    if (isIdle && isPromptVisible) {
+    const idleMs = session.stopReceived ? POST_STOP_SETTLE_MS : IDLE_MS;
+    const sinceLast = Date.now() - session.lastChunkAt;
+    const isIdle = sinceLast >= idleMs;
+
+    // Stop hook fired → Stop itself is the authoritative end-of-turn signal,
+    // we just wait for a brief settle. Otherwise fall back to the legacy
+    // heuristic (idle + prompt glyph visible).
+    const canResolve = session.stopReceived
+      ? isIdle
+      : isIdle && this._isPromptVisible(session);
+
+    if (canResolve) {
       const resolved = session.endOfTurnResolver;
       session.endOfTurnResolver = null;
       session.endOfTurnRejector = null;
       if (session.hardTimer) clearTimeout(session.hardTimer);
-      resolved(screenText);
+      resolved(this._getScreenText(session));
     } else {
-      const remaining = isIdle ? IDLE_MS : IDLE_MS - (Date.now() - session.lastChunkAt);
+      const remaining = Math.max(50, idleMs - sinceLast);
       session.idleTimer = setTimeout(() => this._checkEndOfTurn(session), remaining);
     }
+  }
+
+  private _isPromptVisible(session: PtySession): boolean {
+    // ❯ appears in claude's input box. We use includes() rather than
+    // startsWith() because the box-drawing chrome wraps the line as
+    // `│ ❯ <typed text> │`, which trims to a string that doesn't *start*
+    // with ❯. claude's own assistant output uses ● for bullets, not ❯,
+    // so false positives are unlikely.
+    return this._getScreenText(session).includes('❯');
   }
 
   private _awaitEndOfTurn(session: PtySession): Promise<string> {
@@ -177,6 +297,9 @@ export class PtyProvider implements Provider {
       // Intentionally NOT resetting xterm / lastScreenText: the pty is shared
       // across turns, and _runPtyTurn snapshotted lastScreenText right before
       // writing the prompt so the diff & extraction logic see only new content.
+      // stopReceived MUST be reset — it's per-turn state and the previous turn
+      // left it true.
+      session.stopReceived = false;
       session.endOfTurnResolver = resolve;
       session.endOfTurnRejector = reject;
       session.idleTimer = setTimeout(() => this._checkEndOfTurn(session), IDLE_MS);
@@ -191,13 +314,23 @@ export class PtyProvider implements Provider {
     });
   }
 
-  private async _waitForIdle(session: PtySession, idleMs: number, capMs: number): Promise<void> {
+  /**
+   * Wait until claude is actually ready to receive a prompt: stdout has been
+   * idle for `idleMs` AND the input prompt glyph is visible on the rendered
+   * screen. Stdout-idle alone is unsafe — claude's startup pauses (plugin
+   * loading, settings parse) can exceed idleMs before the input box is drawn,
+   * so a prompt written then gets silently consumed by the startup flow.
+   * Caps at `capMs` so we never hang forever; logs a warning if the cap is
+   * hit and proceeds anyway (better than freezing the bot).
+   */
+  private async _waitForReady(session: PtySession, idleMs: number, capMs: number): Promise<void> {
     const start = Date.now();
     while (Date.now() - start < capMs) {
       const since = Date.now() - session.lastChunkAt;
-      if (since >= idleMs) return;
-      await new Promise((r) => setTimeout(r, Math.max(50, idleMs - since)));
+      if (since >= idleMs && this._isPromptVisible(session)) return;
+      await new Promise((r) => setTimeout(r, 50));
     }
+    console.warn(`[PtyProvider] _waitForReady cap reached (${capMs}ms) without confirmed input prompt; proceeding anyway`);
   }
 
   private _getScreenText(session: PtySession): string {
@@ -289,3 +422,126 @@ export class PtyProvider implements Provider {
     ]);
   }
 }
+
+// ---- Hook → AgentOptions callback bridge ------------------------------------
+//
+// The handlers below run inside the IPC server when claude-spawned hook curls
+// reach us. They translate hook payloads into the SDK-shaped callbacks the bot
+// already implements (onToolStart / onToolEnd / onToolResult / onEditDiff), so
+// PTY mode lights up the same verbose UI as SDK mode.
+//
+// Callbacks are fire-and-forget — the hook command blocks claude until the
+// HTTP POST returns, so we ack fast and let the bot's Telegram calls run on
+// their own microtasks. Errors are logged, never rethrown into claude.
+
+function fireAndForget(label: string, fn: (() => Promise<unknown> | unknown) | undefined): void {
+  if (!fn) return;
+  void Promise.resolve()
+    .then(() => fn())
+    .catch(err => console.error(`[PTY hook] ${label} threw:`, err));
+}
+
+/**
+ * Pick the model-facing string out of a hook payload's `tool_response`.
+ *
+ * SDK mode delivers tool results as the *serialized* form the model sees
+ * (Read → just the file content, Bash → stdout+stderr text). Hook payloads
+ * instead give us claude's internal structured object:
+ *   Read → { type: 'text', file: { filePath, content } }
+ *   Bash → { stdout, stderr, exit_code, … }
+ *
+ * We unwrap the common shapes so PTY mode renders tool results the same way
+ * SDK mode does. Unknown shapes fall back to a JSON dump — better than
+ * nothing for diagnostics, even if it's ugly.
+ */
+function extractToolResponseContent(toolResponse: unknown): string {
+  if (toolResponse == null) return '';
+  if (typeof toolResponse === 'string') return toolResponse;
+  if (typeof toolResponse !== 'object') return String(toolResponse);
+
+  const obj = toolResponse as Record<string, unknown>;
+
+  // Read → unwrap file.content
+  if (obj.file && typeof obj.file === 'object') {
+    const file = obj.file as Record<string, unknown>;
+    if (typeof file.content === 'string') return file.content;
+  }
+
+  // Bash → combine stdout + stderr (matches what the model sees)
+  if ('stdout' in obj || 'stderr' in obj) {
+    const parts: string[] = [];
+    if (typeof obj.stdout === 'string' && obj.stdout) parts.push(obj.stdout);
+    if (typeof obj.stderr === 'string' && obj.stderr) parts.push(obj.stderr);
+    return parts.join('\n').trim();
+  }
+
+  // Common single-field shapes
+  for (const key of ['content', 'result', 'output', 'text'] as const) {
+    if (typeof obj[key] === 'string') return obj[key] as string;
+  }
+
+  // Unknown shape — JSON-dump as a last resort so something shows up
+  try { return JSON.stringify(obj); }
+  catch { return String(obj); }
+}
+
+registerIpcHandler('/hook/preToolUse', (turn, body) => {
+  const toolName = String(body.tool_name ?? 'unknown');
+  const toolInput = (body.tool_input ?? {}) as Record<string, unknown>;
+  fireAndForget('onToolStart', () => turn.options.onToolStart?.(toolName, toolInput));
+  return { ok: true };
+});
+
+registerIpcHandler('/hook/postToolUse', (turn, body) => {
+  const toolName = String(body.tool_name ?? 'unknown');
+  const toolInput = (body.tool_input ?? {}) as Record<string, unknown>;
+  const toolUseId = String(body.tool_use_id ?? '');
+
+  fireAndForget('onToolEnd', () => turn.options.onToolEnd?.());
+
+  if (toolName === 'Edit' || toolName === 'Write') {
+    // Successful Edit/Write — surface the diff so the bot shows before/after.
+    const event: EditDiffEvent = {
+      toolUseId,
+      toolName,
+      filePath: String(toolInput.file_path ?? ''),
+      oldString: toolName === 'Edit' ? String(toolInput.old_string ?? '') : undefined,
+      newString: toolName === 'Edit'
+        ? String(toolInput.new_string ?? '')
+        : String(toolInput.content ?? ''),
+    };
+    fireAndForget('onEditDiff', () => turn.options.onEditDiff?.(event));
+  } else {
+    const event: ToolResultEvent = {
+      toolUseId,
+      toolName,
+      content: extractToolResponseContent(body.tool_response),
+      isError: false,
+    };
+    fireAndForget('onToolResult', () => turn.options.onToolResult?.(event));
+  }
+  return { ok: true };
+});
+
+registerIpcHandler('/hook/postToolUseFailure', (turn, body) => {
+  const toolName = String(body.tool_name ?? 'unknown');
+  const toolUseId = String(body.tool_use_id ?? '');
+
+  fireAndForget('onToolEnd', () => turn.options.onToolEnd?.());
+  const event: ToolResultEvent = {
+    toolUseId,
+    toolName,
+    content: extractToolResponseContent(body.tool_response),
+    isError: true,
+  };
+  fireAndForget('onToolResult', () => turn.options.onToolResult?.(event));
+  return { ok: true };
+});
+
+// Stop fires when claude finishes responding. PtyProvider's onClaudeStop sets
+// stopReceived on the live pty session so end-of-turn detection switches to
+// the short settle window and stops requiring the input prompt to be visible.
+registerIpcHandler('/hook/stop', (turn) => {
+  turn.onClaudeStop?.();
+  return { ok: true };
+});
