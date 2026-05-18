@@ -18,7 +18,7 @@ import { isClaudeCommand } from '../../claude/command-parser.js';
 import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
 import { createTelegraphFromFile } from '../../telegram/telegraph.js';
 import { getStreamingMode, executeRedditFetch, executeMediumFetch, showExtractMenu, projectStatusSuffix, resumeCommandMessage, setSessionTopic, getSessionTopic, clearTopicAndRefreshBotName, sendStatusLine } from './command.handler.js';
-import { isBotNameEnabled, rateLimitedSetMyName } from '../../telegram/botname-settings.js';
+import { isBotNameEnabled } from '../../telegram/botname-settings.js';
 import { userPreferences } from '../../providers/user-preferences.js';
 import { parseSessionKey } from '../../utils/session-key.js';
 import { resolveVerbosityFlags } from '../../utils/verbosity.js';
@@ -52,10 +52,10 @@ function fireAutoTopic(ctx: Context, sessionKey: string, userMessage: string): v
       const previousTopic = getSessionTopic(sessionKey);
       const topic = await summarizeTopicWithHaiku(userMessage, previousTopic);
       if (!topic) return;
-      const displayName = setSessionTopic(sessionKey, topic);
-      if (isBotNameEnabled(sessionKey)) {
-        await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), displayName);
-      }
+      // Topic lives in the status line, not the Telegram bot name. Updating
+      // the topic doesn't change buildBotDisplayName, so no setMyName call —
+      // we don't want to burn Telegram's bot-name rate limit on a no-op.
+      setSessionTopic(sessionKey, topic);
     } catch (err) {
       console.debug('[AutoTopic] Side-call update failed:', err instanceof Error ? err.message : err);
     }

@@ -17,65 +17,20 @@
  */
 
 import { registerIpcHandler } from './ipc-server.js';
-import type { Context } from 'grammy';
-
-interface TelegramCtxLike {
-  api?: {
-    setMyName: (name: string) => Promise<unknown>;
-  };
-}
-
-function getTelegramCtx(options: unknown): TelegramCtxLike | undefined {
-  if (!options || typeof options !== 'object') return undefined;
-  const ctx = (options as { telegramCtx?: unknown }).telegramCtx;
-  if (!ctx || typeof ctx !== 'object') return undefined;
-  return ctx as TelegramCtxLike;
-}
 
 // ── /mcp/set_topic ───────────────────────────────────────────────────
 registerIpcHandler('/mcp/set_topic', async (turn, body) => {
   const topic = String(body.topic ?? '').trim();
 
-  const [{ isBotNameEnabled, rateLimitedSetMyName }, { setSessionTopic }] = await Promise.all([
-    import('../telegram/botname-settings.js'),
-    import('../bot/handlers/command.handler.js'),
-  ]);
-
-  if (!isBotNameEnabled(turn.sessionKey)) {
-    return {
-      success: false,
-      displayName: '',
-      message: 'Dynamic bot name is disabled for this session.',
-    };
-  }
-
-  const ctx = getTelegramCtx(turn.options as unknown);
-  if (!ctx?.api) {
-    return {
-      success: false,
-      displayName: '',
-      message: 'No Telegram API available for this turn.',
-    };
-  }
-
-  const displayName = setSessionTopic(turn.sessionKey, topic);
-  try {
-    // First arg is a per-bot rate-state key (any object identity works);
-    // ctx.api is convenient and stable for the lifetime of the bot instance.
-    await rateLimitedSetMyName(ctx.api as unknown as object, (n) => ctx.api!.setMyName(n), displayName);
-  } catch (err) {
-    console.error('[mcp-bridge /mcp/set_topic] setMyName failed:', err);
-  }
+  // Topic now lives in the status line, not the Telegram bot name, so
+  // setSessionTopic is the only thing we do here — no setMyName call.
+  // (The persisted topic survives restarts and is what the status-line
+  // renderer reads.)
+  const { setSessionTopic } = await import('../bot/handlers/command.handler.js');
+  setSessionTopic(turn.sessionKey, topic);
 
   return {
     success: true,
-    displayName,
-    message: topic
-      ? `Topic set to "${topic}". Bot name: ${displayName}`
-      : `Topic cleared. Bot name: ${displayName}`,
+    message: topic ? `Topic set to "${topic}".` : 'Topic cleared.',
   };
 });
-
-// Re-export Context so consumers (none yet, but anticipated) have it via this
-// module without dragging in grammy directly.
-export type { Context };

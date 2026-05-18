@@ -180,14 +180,10 @@ export async function handleTopic(ctx: Context): Promise<void> {
   const text = ctx.message?.text || '';
   const topic = text.split(' ').slice(1).join(' ').trim();
 
-  const displayName = setSessionTopic(sessionKey, topic);
-  if (isBotNameEnabled(sessionKey)) {
-    try {
-      await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), displayName);
-    } catch (err) {
-      console.error('[Bot] Failed to update bot name:', err);
-    }
-  }
+  // Topic lives in the status line, not the Telegram bot name —
+  // setSessionTopic updates in-memory + persistent state but the bot's
+  // Telegram-side display name doesn't change, so no setMyName call.
+  setSessionTopic(sessionKey, topic);
   await replyMd(ctx, topic ? `✅ Topic: *${esc(topic)}*` : '✅ Topic cleared');
 }
 
