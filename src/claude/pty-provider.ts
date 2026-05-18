@@ -590,8 +590,67 @@ export class PtyProvider implements Provider {
     }
   }
 
-  async sendLoopToAgent(sessionKey: string, message: string, options?: LoopOptions): Promise<AgentResponse> {
-    return Promise.reject(new Error('Loop mode is not yet implemented for the PtyProvider.'));
+  async sendLoopToAgent(sessionKey: string, message: string, options: LoopOptions = {}): Promise<AgentResponse> {
+    const {
+      onProgress,
+      abortController,
+      maxIterations = config.MAX_LOOP_ITERATIONS,
+      onIterationComplete,
+    } = options;
+
+    if (!sessionManager.getSession(sessionKey)) {
+      throw new Error('No active session. Use /project to set working directory.');
+    }
+
+    // Wrap only the first prompt with the DONE convention. Continuation turns
+    // reuse the live pty so conversation context is already in claude's memory.
+    const loopPrompt = `${message}\n\nIMPORTANT: When you have fully completed this task, respond with the word "DONE" on its own line at the end of your response. If you need to continue working, do not say "DONE".`;
+
+    let iteration = 0;
+    let combinedText = '';
+    const allToolsUsed: string[] = [];
+    let isComplete = false;
+
+    while (iteration < maxIterations && !isComplete) {
+      iteration++;
+
+      if (abortController?.signal.aborted) {
+        return { text: combinedText + '\n\n🛑 Loop cancelled.', toolsUsed: allToolsUsed };
+      }
+
+      const iterationPrefix = `\n\n--- Iteration ${iteration}/${maxIterations} ---\n\n`;
+      combinedText += iterationPrefix;
+      onProgress?.(combinedText);
+
+      const currentPrompt = iteration === 1 ? loopPrompt : 'Continue the task. Say "DONE" when complete.';
+
+      try {
+        const response = await this.sendToAgent(sessionKey, currentPrompt, {
+          ...options,
+          onProgress: (text) => onProgress?.(combinedText + text),
+        });
+
+        combinedText += response.text;
+        allToolsUsed.push(...response.toolsUsed);
+        onIterationComplete?.(iteration, response.text);
+
+        if (response.text.includes('DONE')) {
+          isComplete = true;
+          combinedText += '\n\n✅ Loop completed.';
+        } else if (iteration >= maxIterations) {
+          combinedText += `\n\n⚠️ Max iterations (${maxIterations}) reached.`;
+        }
+
+        onProgress?.(combinedText);
+      } catch (error) {
+        if (abortController?.signal.aborted) {
+          return { text: combinedText + '\n\n🛑 Loop cancelled.', toolsUsed: allToolsUsed };
+        }
+        throw error;
+      }
+    }
+
+    return { text: combinedText, toolsUsed: allToolsUsed };
   }
 
   clearConversation(sessionKey: string): void {
