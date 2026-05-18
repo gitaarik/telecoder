@@ -166,6 +166,30 @@ if (process.env.CLAUDEGRAM_MEDIUM_ENABLED === 'true') {
   );
 }
 
+// ── claudegram_send_file (IPC: needs bot for Telegram sendDocument) ──
+server.tool(
+  'claudegram_send_file',
+  'Send a file from the server to the user via Telegram. The file must be within the current working directory or /tmp. Use this after creating files (SVGs, images, reports, etc.) to deliver them directly to the user. Maximum file size: 50MB.',
+  {
+    file_path: z.string().describe('Absolute or workspace-relative path to the file to send.'),
+    caption: z.string().optional().describe('Optional caption to display with the file in Telegram.'),
+  },
+  async ({ file_path, caption }) => {
+    try {
+      const result = await ipc<{ success: boolean; message: string }>('/mcp/send_file', { file_path, caption });
+      return {
+        content: [{ type: 'text' as const, text: result.message }],
+        isError: !result.success,
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text' as const, text: `File send error: ${error instanceof Error ? error.message : String(error)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
 // ── claudegram_set_topic (IPC: needs bot for Telegram setMyName) ─────
 if (process.env.CLAUDEGRAM_DYNAMIC_BOT_NAME === 'true') {
   server.tool(
