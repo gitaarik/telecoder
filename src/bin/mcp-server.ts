@@ -166,6 +166,39 @@ if (process.env.CLAUDEGRAM_MEDIUM_ENABLED === 'true') {
   );
 }
 
+// ── claudegram_ask_user (IPC: long-poll on Telegram button tap) ──────
+server.tool(
+  'claudegram_ask_user',
+  'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or 10 minutes pass. Keep the question short and the options crisp — labels must be ≤ 60 chars. Prefer this over the built-in AskUserQuestion when interacting through claudegram.',
+  {
+    question: z.string().describe('The question to display to the user. Keep concise (1-2 sentences).'),
+    options: z
+      .array(
+        z.object({
+          label: z.string().describe('Short button label shown in Telegram. Must be ≤ 60 chars.'),
+          description: z.string().optional().describe('Optional one-line context shown in the question body.'),
+        })
+      )
+      .min(2)
+      .max(8)
+      .describe('Between 2 and 8 options for the user to choose from.'),
+  },
+  async ({ question, options }) => {
+    try {
+      const result = await ipc<{ success: boolean; message: string }>('/mcp/ask_user', { question, options });
+      return {
+        content: [{ type: 'text' as const, text: result.message }],
+        isError: !result.success,
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text' as const, text: `Ask-user error: ${error instanceof Error ? error.message : String(error)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
 // ── claudegram_switch_project (IPC: updates session workdir) ─────────
 server.tool(
   'claudegram_switch_project',

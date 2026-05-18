@@ -78,6 +78,14 @@ interface PtySession {
    * authoritative signal; the prompt-visible check was only a heuristic).
    */
   stopReceived: boolean;
+  /**
+   * In-flight tool count for the active turn. Bumped on PreToolUse hooks,
+   * decremented on PostToolUse/PostToolUseFailure. While >0 we refuse the
+   * idle-fallback end-of-turn (a long-running tool like claudegram_ask_user
+   * can pause the pty for minutes with no output). Stop is still authoritative
+   * — it only fires after all tools complete, so it can resolve regardless.
+   */
+  inflightTools: number;
 }
 
 /**
@@ -118,6 +126,7 @@ function buildMcpToolsSystemPromptNote(): string {
     '- mcp__claudegram-tools__claudegram_list_projects — list available workspace projects the user can switch to',
     '- mcp__claudegram-tools__claudegram_switch_project — switch the working directory to a different project (call list_projects first). The change takes effect on the next user query.',
     '- mcp__claudegram-tools__claudegram_send_file — send a file from the bot\'s filesystem (within the workspace or /tmp) to the user via Telegram. Use after creating files (reports, SVGs, images, etc.) to deliver them directly. Max 50MB.',
+    '- mcp__claudegram-tools__claudegram_ask_user — ask the user a multiple-choice question via a Telegram inline keyboard (2-8 options). Pauses until the user taps a button. Prefer this over the built-in AskUserQuestion whenever you need a decision from the user — AskUserQuestion is for terminal users and does not render correctly through claudegram.',
   ];
   if (config.REDDIT_ENABLED) {
     tools.push('- mcp__claudegram-tools__claudegram_fetch_reddit — fetch reddit content (subreddits, threads, user profiles). Use this for any reddit.com/r/<subreddit> or post URL; prefer over WebFetch.');
@@ -234,6 +243,18 @@ export class PtyProvider implements Provider {
           session.idleTimer = setTimeout(() => this._checkEndOfTurn(session), POST_STOP_SETTLE_MS);
         }
       },
+      onToolStart: () => { session.inflightTools++; },
+      onToolEnd: () => {
+        session.inflightTools = Math.max(0, session.inflightTools - 1);
+        // A tool just completed — the screen may be about to update. If the
+        // idle timer was waiting, reschedule it so we don't fire while output
+        // is still settling.
+        if (session.endOfTurnResolver && session.idleTimer) {
+          clearTimeout(session.idleTimer);
+          const idleMs = session.stopReceived ? POST_STOP_SETTLE_MS : IDLE_MS;
+          session.idleTimer = setTimeout(() => this._checkEndOfTurn(session), idleMs);
+        }
+      },
     };
     registerActiveTurn(session.claudeSessionId, activeTurn);
 
@@ -341,6 +362,7 @@ export class PtyProvider implements Provider {
       onProgress: options?.onProgress,
       lastScreenText: '',
       stopReceived: false,
+      inflightTools: 0,
     };
 
     term.onData((chunk: string) => this._onData(session, chunk));
@@ -393,6 +415,16 @@ export class PtyProvider implements Provider {
     const sinceLast = Date.now() - session.lastChunkAt;
     const isIdle = sinceLast >= idleMs;
 
+    // A tool is still pending (e.g. claudegram_ask_user long-polling for a
+    // user button tap, or claude's own AskUserQuestion dialog waiting on the
+    // TUI). The pty is silent by design — don't mistake that for end-of-turn.
+    // Stop only fires *after* all tools complete, so even the post-Stop path
+    // is safe to gate on this.
+    if (session.inflightTools > 0) {
+      session.idleTimer = setTimeout(() => this._checkEndOfTurn(session), idleMs);
+      return;
+    }
+
     // Stop hook fired → Stop itself is the authoritative end-of-turn signal,
     // we just wait for a brief settle. Otherwise fall back to the legacy
     // heuristic (idle + prompt glyph visible).
@@ -427,8 +459,11 @@ export class PtyProvider implements Provider {
       // across turns, and _runPtyTurn snapshotted lastScreenText right before
       // writing the prompt so the diff & extraction logic see only new content.
       // stopReceived MUST be reset — it's per-turn state and the previous turn
-      // left it true.
+      // left it true. inflightTools should already be 0 at end-of-turn but
+      // reset defensively in case a Pre→Post pair was skipped (e.g. claude
+      // killed mid-tool).
       session.stopReceived = false;
+      session.inflightTools = 0;
       session.endOfTurnResolver = resolve;
       session.endOfTurnRejector = reject;
       session.idleTimer = setTimeout(() => this._checkEndOfTurn(session), IDLE_MS);
@@ -617,6 +652,7 @@ function extractToolResponseContent(toolResponse: unknown): string {
 registerIpcHandler('/hook/preToolUse', (turn, body) => {
   const toolName = String(body.tool_name ?? 'unknown');
   const toolInput = (body.tool_input ?? {}) as Record<string, unknown>;
+  turn.onToolStart?.();
   fireAndForget('onToolStart', () => turn.options.onToolStart?.(toolName, toolInput));
   return { ok: true };
 });
@@ -626,6 +662,7 @@ registerIpcHandler('/hook/postToolUse', (turn, body) => {
   const toolInput = (body.tool_input ?? {}) as Record<string, unknown>;
   const toolUseId = String(body.tool_use_id ?? '');
 
+  turn.onToolEnd?.();
   fireAndForget('onToolEnd', () => turn.options.onToolEnd?.());
 
   if (toolName === 'Edit' || toolName === 'Write') {
@@ -656,6 +693,7 @@ registerIpcHandler('/hook/postToolUseFailure', (turn, body) => {
   const toolName = String(body.tool_name ?? 'unknown');
   const toolUseId = String(body.tool_use_id ?? '');
 
+  turn.onToolEnd?.();
   fireAndForget('onToolEnd', () => turn.options.onToolEnd?.());
   const event: ToolResultEvent = {
     toolUseId,

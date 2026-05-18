@@ -30,6 +30,14 @@ export interface ActiveTurn {
    * to know about pty internals.
    */
   onClaudeStop?: () => void;
+  /**
+   * Bumped on PreToolUse, decremented on PostToolUse/Failure. PtyProvider uses
+   * this to refuse the idle-fallback end-of-turn while a tool is still in
+   * flight (e.g. claudegram_ask_user can block for minutes waiting on a button
+   * tap; otherwise we'd resolve the turn long before the tool returns).
+   */
+  onToolStart?: () => void;
+  onToolEnd?: () => void;
 }
 
 const activeTurns = new Map<string, ActiveTurn>();
@@ -139,6 +147,14 @@ export async function startIpcServer(): Promise<{ port: number }> {
       }
     });
   });
+
+  // Long-poll friendly: claudegram_ask_user can hold a request open for up to
+  // 10 min waiting on a user button tap, and Node's default requestTimeout
+  // (5 min in Node 18+) would otherwise kill the connection mid-wait. This
+  // server is bound to 127.0.0.1 only, so disabling the cap doesn't expose
+  // anything to the network.
+  server.requestTimeout = 0;
+  server.headersTimeout = 0;
 
   const envPort = process.env.CLAUDEGRAM_IPC_PORT
     ? parseInt(process.env.CLAUDEGRAM_IPC_PORT, 10)

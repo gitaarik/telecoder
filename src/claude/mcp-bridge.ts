@@ -22,6 +22,7 @@ import { InputFile, type Context } from 'grammy';
 import { registerIpcHandler } from './ipc-server.js';
 import { sessionManager } from './session-manager.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../utils/workspace-guard.js';
+import { createPendingQuestion } from './ask-user.js';
 
 const TELEGRAM_MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 
@@ -47,6 +48,70 @@ registerIpcHandler('/mcp/set_topic', async (turn, body) => {
     success: true,
     message: topic ? `Topic set to "${topic}".` : 'Topic cleared.',
   };
+});
+
+// ── /mcp/ask_user ────────────────────────────────────────────────────
+// Long-polling IPC handler: registers a pending question in the same shared
+// ask-user registry SDK mode uses, sends a Telegram inline keyboard, and
+// awaits the user's button tap. The existing callback-query dispatcher
+// (handling `q:<id>:<idx>` callback_data) resolves the promise so we can
+// return the chosen label to claude. Times out at 10 min via createPendingQuestion's default.
+registerIpcHandler('/mcp/ask_user', async (turn, body) => {
+  const question = String(body.question ?? '').trim();
+  const rawOptions = Array.isArray(body.options) ? body.options : [];
+  const options = rawOptions
+    .map((o): { label: string; description?: string } | null => {
+      if (!o || typeof o !== 'object') return null;
+      const oo = o as Record<string, unknown>;
+      if (typeof oo.label !== 'string' || !oo.label) return null;
+      return {
+        label: oo.label,
+        description: typeof oo.description === 'string' ? oo.description : undefined,
+      };
+    })
+    .filter((o): o is { label: string; description?: string } => o !== null);
+
+  if (!question || options.length < 2) {
+    return { success: false, message: 'Error: ask_user requires a non-empty question and ≥ 2 options.' };
+  }
+
+  const ctx = getTelegramCtx(turn.options as unknown);
+  if (!ctx?.chat?.id) {
+    return { success: false, message: 'Error: no Telegram context available to ask the user.' };
+  }
+
+  const optionLabels = options.map((o) => o.label);
+  const { id, promise } = createPendingQuestion(optionLabels, undefined, turn.sessionKey);
+
+  const lines: string[] = [`❓ ${question}`];
+  const annotated = options.filter((o) => o.description);
+  if (annotated.length > 0) {
+    lines.push('');
+    for (const o of options) {
+      if (o.description) lines.push(`• *${o.label}* — ${o.description}`);
+    }
+  }
+
+  const keyboard = options.map((o, idx) => [{
+    text: o.label.length > 60 ? o.label.slice(0, 57) + '…' : o.label,
+    callback_data: `q:${id}:${idx}`,
+  }]);
+
+  const threadId = ctx.message?.is_topic_message ? ctx.message?.message_thread_id : undefined;
+  await ctx.api.sendMessage(ctx.chat.id, lines.join('\n'), {
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: keyboard },
+    ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
+  });
+
+  const answer = await promise;
+  if (!answer) {
+    return {
+      success: true,
+      message: 'User did not respond within 10 minutes. Proceed using your best judgment or ask again.',
+    };
+  }
+  return { success: true, message: `User selected: ${answer.label}` };
 });
 
 // ── /mcp/switch_project ──────────────────────────────────────────────
