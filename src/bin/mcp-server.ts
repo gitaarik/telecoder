@@ -166,6 +166,29 @@ if (process.env.CLAUDEGRAM_MEDIUM_ENABLED === 'true') {
   );
 }
 
+// ── claudegram_switch_project (IPC: updates session workdir) ─────────
+server.tool(
+  'claudegram_switch_project',
+  'Switch the working directory to a different project. The change takes effect on the next query. Use claudegram_list_projects first to see available projects.',
+  {
+    project_name: z.string().describe('Name of the project directory to switch to'),
+  },
+  async ({ project_name }) => {
+    try {
+      const result = await ipc<{ success: boolean; message: string }>('/mcp/switch_project', { project_name });
+      return {
+        content: [{ type: 'text' as const, text: result.message }],
+        isError: !result.success,
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text' as const, text: `Switch project error: ${error instanceof Error ? error.message : String(error)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
 // ── claudegram_send_file (IPC: needs bot for Telegram sendDocument) ──
 server.tool(
   'claudegram_send_file',

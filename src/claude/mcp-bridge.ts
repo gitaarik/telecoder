@@ -49,6 +49,35 @@ registerIpcHandler('/mcp/set_topic', async (turn, body) => {
   };
 });
 
+// ── /mcp/switch_project ──────────────────────────────────────────────
+// Updates the session's working directory. PtyProvider's _getOrCreateSession
+// detects the cwd mismatch on the next turn and respawns the pty in the new
+// dir — so the switch is logically "happens on next query," same as SDK mode.
+registerIpcHandler('/mcp/switch_project', async (turn, body) => {
+  const projectName = String(body.project_name ?? '').trim();
+  if (!projectName) {
+    return { success: false, message: 'Error: project_name is required.' };
+  }
+
+  const workspaceRoot = getWorkspaceRoot();
+  const targetPath = path.resolve(workspaceRoot, projectName);
+
+  if (!isPathWithinRoot(workspaceRoot, targetPath)) {
+    return { success: false, message: `Error: Path must be within workspace root: ${workspaceRoot}` };
+  }
+
+  if (!fs.existsSync(targetPath) || !fs.statSync(targetPath).isDirectory()) {
+    return { success: false, message: `Error: Project not found: ${projectName}` };
+  }
+
+  sessionManager.setWorkingDirectory(turn.sessionKey, targetPath);
+
+  return {
+    success: true,
+    message: `Switched to project: ${projectName} (${targetPath}). The new working directory will take effect on the next query.`,
+  };
+});
+
 // ── /mcp/send_file ───────────────────────────────────────────────────
 // Sends a file from the bot's filesystem (workspace or /tmp) to the user via
 // Telegram. Mirrors the SDK in-process MCP tool in src/claude/mcp-tools.ts but

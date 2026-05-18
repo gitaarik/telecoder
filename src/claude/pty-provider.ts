@@ -115,6 +115,7 @@ function buildSettingsJson(ipcPort: number): string {
 function buildMcpToolsSystemPromptNote(): string {
   const tools: string[] = [
     '- mcp__claudegram-tools__claudegram_list_projects — list available workspace projects the user can switch to',
+    '- mcp__claudegram-tools__claudegram_switch_project — switch the working directory to a different project (call list_projects first). The change takes effect on the next user query.',
     '- mcp__claudegram-tools__claudegram_send_file — send a file from the bot\'s filesystem (within the workspace or /tmp) to the user via Telegram. Use after creating files (reports, SVGs, images, etc.) to deliver them directly. Max 50MB.',
   ];
   if (config.REDDIT_ENABLED) {
