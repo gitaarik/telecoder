@@ -13,6 +13,9 @@ import {
   unregisterActiveTurn,
   type ActiveTurn,
 } from './ipc-server.js';
+// Side-effect import: registers /mcp/* IPC handlers that bridge the standalone
+// MCP subprocess back to bot-side state (Telegram API, session topic, …).
+import './mcp-bridge.js';
 import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions, type EditDiffEvent, type ToolResultEvent } from '../providers/types.js';
 
 const { Terminal } = headless;
@@ -122,6 +125,9 @@ function buildMcpToolsSystemPromptNote(): string {
   if (config.TELEGRAPH_ENABLED) {
     tools.push('- mcp__claudegram-tools__claudegram_publish_telegraph — publish a markdown document as a Telegraph (telegra.ph) Instant View page; returns the URL.');
   }
+  if (config.DYNAMIC_BOT_NAME) {
+    tools.push('- mcp__claudegram-tools__claudegram_set_topic — update the conversation topic shown in the bot display name. Call proactively when the topic of work shifts. Empty string clears it. Keep topics 1-4 words.');
+  }
   return [
     'You have access to Claudegram-specific MCP tools listed below. They are loaded lazily — call them directly when relevant; do not try to reproduce their behavior with WebFetch/Bash.',
     ...tools,
@@ -149,6 +155,7 @@ function buildMcpEnv(required: Record<string, string>): Record<string, string> {
     CLAUDEGRAM_REDDIT_ENABLED: config.REDDIT_ENABLED ? 'true' : 'false',
     CLAUDEGRAM_MEDIUM_ENABLED: config.MEDIUM_ENABLED ? 'true' : 'false',
     CLAUDEGRAM_TELEGRAPH_ENABLED: config.TELEGRAPH_ENABLED ? 'true' : 'false',
+    CLAUDEGRAM_DYNAMIC_BOT_NAME: config.DYNAMIC_BOT_NAME ? 'true' : 'false',
     CLAUDEGRAM_REDDITFETCH_DEFAULT_LIMIT: String(config.REDDITFETCH_DEFAULT_LIMIT),
     CLAUDEGRAM_REDDITFETCH_DEFAULT_DEPTH: String(config.REDDITFETCH_DEFAULT_DEPTH),
     // Reddit credentials — the redditfetch module reads these from its own

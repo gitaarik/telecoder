@@ -23,6 +23,27 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const workspaceRoot = process.env.CLAUDEGRAM_WORKSPACE_ROOT || path.resolve(process.cwd());
+const ipcPort = process.env.CLAUDEGRAM_IPC_PORT;
+const claudeSessionId = process.env.CLAUDEGRAM_CLAUDE_SESSION_ID || '';
+const ipcUrl = ipcPort ? `http://127.0.0.1:${ipcPort}` : null;
+
+/**
+ * POST a JSON payload to the bot's loopback IPC server. claude's session_id
+ * is appended automatically so the IPC server can route to the right active
+ * turn. Throws on non-2xx so the calling tool can surface a useful error.
+ */
+async function ipc<T = unknown>(routePath: string, payload: Record<string, unknown> = {}): Promise<T> {
+  if (!ipcUrl) throw new Error('CLAUDEGRAM_IPC_PORT not set; cannot reach bot');
+  const res = await fetch(`${ipcUrl}${routePath}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: claudeSessionId, ...payload }),
+  });
+  if (!res.ok) {
+    throw new Error(`IPC ${routePath} → HTTP ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
 
 // ── Constants ────────────────────────────────────────────────────────
 const REDDIT_MAX_CHARS = 50_000;
@@ -138,6 +159,34 @@ if (process.env.CLAUDEGRAM_MEDIUM_ENABLED === 'true') {
       } catch (error) {
         return {
           content: [{ type: 'text' as const, text: `Medium fetch error: ${error instanceof Error ? error.message : String(error)}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+}
+
+// ── claudegram_set_topic (IPC: needs bot for Telegram setMyName) ─────
+if (process.env.CLAUDEGRAM_DYNAMIC_BOT_NAME === 'true') {
+  server.tool(
+    'claudegram_set_topic',
+    'Update the conversation topic shown in the bot display name. Call this proactively when the work topic changes. Pass an empty string to clear. Keep topics very short (1-4 words, e.g. "auth refactor", "CI fix", "dark mode").',
+    {
+      topic: z.string().describe('Short topic label (1-4 words). Empty string to clear.'),
+    },
+    async ({ topic }) => {
+      try {
+        const result = await ipc<{ success: boolean; message?: string; displayName?: string }>('/mcp/set_topic', { topic });
+        return {
+          content: [{
+            type: 'text' as const,
+            text: result.message || (result.success ? `Topic set to "${topic}".` : 'Topic update failed.'),
+          }],
+          isError: !result.success,
+        };
+      } catch (error) {
+        return {
+          content: [{ type: 'text' as const, text: `set_topic error: ${error instanceof Error ? error.message : String(error)}` }],
           isError: true,
         };
       }
