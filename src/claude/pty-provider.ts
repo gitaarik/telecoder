@@ -319,6 +319,23 @@ export class PtyProvider implements Provider {
     };
     registerActiveTurn(session.claudeSessionId, activeTurn);
 
+    // Mid-turn abort: writing Esc (0x1b) into the pty asks claude's TUI to
+    // interrupt the current generation and return to the input prompt. The
+    // end-of-turn detector then resolves normally (idle + prompt visible +
+    // any bullets that appeared). The session stays alive — claude doesn't
+    // lose conversation context — and the partial response is extracted.
+    const abortSignal = options?.abortController?.signal;
+    const abortHandler = () => {
+      try { session.term.write('\x1b'); } catch { /* pty already gone */ }
+    };
+    if (abortSignal?.aborted) {
+      // Pre-aborted (e.g. user hit /stop before we even started writing). Skip
+      // the whole pty round-trip and return whatever's currently on screen.
+      unregisterActiveTurn(session.claudeSessionId);
+      return this._getScreenText(session);
+    }
+    abortSignal?.addEventListener('abort', abortHandler);
+
     try {
       await this._waitForReady(session, IDLE_MS, STARTUP_MAX_MS);
 
@@ -347,6 +364,7 @@ export class PtyProvider implements Provider {
 
       return await this._awaitEndOfTurn(session);
     } finally {
+      abortSignal?.removeEventListener('abort', abortHandler);
       unregisterActiveTurn(session.claudeSessionId);
     }
   }
