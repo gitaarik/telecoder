@@ -1,6 +1,6 @@
 # Pty-driven Claude Code provider
 
-Status: **paused** — design and prototype done; resume closer to the policy date (2026-06-15) or sooner if circumstances change.
+Status: **active** — provider is wired and feature-complete for the hook-driven verbose UI path (tool indicators, edit diffs, Stop-driven end-of-turn) and a standalone stdio MCP subprocess (no-IPC tools + claudegram_set_topic over an HTTP IPC bridge). The remaining IPC-dependent tools (send_file, ask_user, switch_project, extract_media's Telegram side) are pending. The design notes below capture the original framing and reasoning; see git log for what shipped (`feat: wire PTY provider as /method option`, `feat: PTY mode verbose UI via hook bridge + Stop-driven end-of-turn`, `feat: standalone MCP server for PTY mode`, `feat: claudegram_set_topic MCP tool over IPC bridge`).
 
 ## Why this exists
 

@@ -1751,6 +1751,11 @@
             <p>Switch between Claude, CCR, and OpenCode with /provider. Access 75+ LLM providers when Claude is unavailable.</p>
           </div>
           <div class="feature-card" data-category="core">
+            <div class="feature-icon">🛰️</div>
+            <h3>PTY Mode (Subscription Path)</h3>
+            <p>Switch with /method to drive Claude Code as an interactive pseudo-terminal session instead of the Agent SDK. Built for the 2026-06-15 policy split that separates programmatic-pool usage from Pro/Max subscription. Verbose UI (tool indicators, edit diffs, action log) is delivered via hook events from the spawned <code>claude</code>; reddit / medium / telegraph / set_topic are available as MCP tools loaded from a standalone subprocess. SDK mode remains available as a fallback.</p>
+          </div>
+          <div class="feature-card" data-category="core">
             <div class="feature-icon">♻️</div>
             <h3>Max Throttle Fallback</h3>
             <p>When the Claude Max usage limit hits, the bot detects it and offers a one-tap switch to Claude Code Router (CCR) — your message replays automatically through your chosen alt provider.</p>
