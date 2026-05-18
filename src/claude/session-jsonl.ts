@@ -23,9 +23,14 @@ interface JsonlRecord {
 }
 
 /** Build the path Claude Code uses to store a session's JSONL log. */
-function sessionJsonlPath(workingDirectory: string, sessionId: string): string {
+export function sessionJsonlPath(workingDirectory: string, sessionId: string): string {
   const encoded = workingDirectory.replace(/\//g, '-');
   return path.join(os.homedir(), '.claude', 'projects', encoded, `${sessionId}.jsonl`);
+}
+
+/** True if Claude Code has an on-disk session log for `id` under `cwd`. */
+export function claudeSessionFileExists(workingDirectory: string, sessionId: string): boolean {
+  return fs.existsSync(sessionJsonlPath(workingDirectory, sessionId));
 }
 
 /** Pull joined text from a record's content blocks, ignoring tool/thinking blocks. */

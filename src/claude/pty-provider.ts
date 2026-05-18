@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
+import { claudeSessionFileExists } from './session-jsonl.js';
 import { getWorkspaceRoot } from '../utils/workspace-guard.js';
 import {
   getIpcPort,
@@ -312,7 +313,19 @@ export class PtyProvider implements Provider {
       this._cleanupSession(sessionKey);
     }
 
-    const claudeSessionId = randomUUID();
+    // Resume the prior claude session if we have one on disk for this cwd.
+    // Bot restarts (or any pty teardown) wipe the live process's in-memory
+    // context, but `claude --resume <id>` replays the JSONL log so claude
+    // picks up exactly where the previous turn left off. The id is preserved
+    // across resumes, so our IPC routing key stays stable.
+    const botSession = sessionManager.getSession(sessionKey);
+    const priorId = botSession?.claudeSessionId;
+    const resuming = !!(priorId && claudeSessionFileExists(requiredCwd, priorId));
+    const claudeSessionId = resuming ? priorId! : randomUUID();
+    if (!resuming) {
+      sessionManager.setClaudeSessionId(sessionKey, claudeSessionId);
+    }
+
     const ipcPort = getIpcPort();
     const settingsJson = buildSettingsJson(ipcPort);
     const mcpConfigJson = buildMcpConfigJson(buildMcpEnv({
@@ -326,7 +339,7 @@ export class PtyProvider implements Provider {
 
     const args = [
       '--dangerously-skip-permissions',
-      '--session-id', claudeSessionId,
+      ...(resuming ? ['--resume', claudeSessionId] : ['--session-id', claudeSessionId]),
       // Exclude user-level settings. This keeps PTY mode predictable —
       // most importantly it drops `editorMode: "vim"` which makes \r insert
       // a newline instead of submitting (we saw prompts pile up in the
