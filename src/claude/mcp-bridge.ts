@@ -78,6 +78,72 @@ registerIpcHandler('/mcp/switch_project', async (turn, body) => {
   };
 });
 
+// ── /mcp/extract_media ───────────────────────────────────────────────
+// Extracts text/audio/video from a YouTube/Instagram/TikTok URL via yt-dlp,
+// uploads the resulting media files to the user via Telegram, and returns
+// a text summary back to claude. Mirrors the SDK in-process extractMediaTool.
+registerIpcHandler('/mcp/extract_media', async (turn, body) => {
+  const url = String(body.url ?? '');
+  const mode = String(body.mode ?? '') as 'text' | 'audio' | 'video' | 'all';
+
+  if (!url) return { success: false, message: 'Error: url is required.' };
+  if (!['text', 'audio', 'video', 'all'].includes(mode)) {
+    return { success: false, message: `Error: mode must be one of text/audio/video/all (got "${mode}").` };
+  }
+
+  const ctx = getTelegramCtx(turn.options as unknown);
+  if (!ctx) {
+    return { success: false, message: 'Error: No Telegram context for this turn.' };
+  }
+
+  const { extractMedia, cleanupExtractResult } = await import('../media/extract.js');
+  let result: Awaited<ReturnType<typeof extractMedia>> | undefined;
+
+  try {
+    result = await extractMedia({ url, mode });
+    const parts: string[] = [];
+
+    if (result.videoPath) {
+      try {
+        await ctx.replyWithVideo(new InputFile(result.videoPath), { caption: `📹 ${result.title}` });
+        parts.push('Video sent to user.');
+      } catch (err) {
+        parts.push(`Video send failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    if (result.audioPath && (mode === 'audio' || mode === 'all')) {
+      try {
+        await ctx.replyWithAudio(new InputFile(result.audioPath), { caption: `🎵 ${result.title}` });
+        parts.push('Audio sent to user.');
+      } catch (err) {
+        parts.push(`Audio send failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    if (result.transcript) {
+      parts.push(`Transcript:\n\n${result.transcript}`);
+    }
+
+    if (result.warnings.length > 0) {
+      parts.push(`Warnings: ${result.warnings.join('; ')}`);
+    }
+
+    if (parts.length === 0) {
+      parts.push('Extraction completed but no content was produced.');
+    }
+
+    return { success: true, message: parts.join('\n\n') };
+  } catch (err) {
+    return {
+      success: false,
+      message: `Media extraction error: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  } finally {
+    if (result) cleanupExtractResult(result);
+  }
+});
+
 // ── /mcp/send_file ───────────────────────────────────────────────────
 // Sends a file from the bot's filesystem (workspace or /tmp) to the user via
 // Telegram. Mirrors the SDK in-process MCP tool in src/claude/mcp-tools.ts but

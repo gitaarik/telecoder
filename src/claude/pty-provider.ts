@@ -125,6 +125,9 @@ function buildMcpToolsSystemPromptNote(): string {
   if (config.MEDIUM_ENABLED) {
     tools.push('- mcp__claudegram-tools__claudegram_fetch_medium — fetch a Medium article (bypasses paywall). Use for medium.com / towardsdatascience.com / etc. URLs; prefer over WebFetch.');
   }
+  if (config.EXTRACT_ENABLED) {
+    tools.push('- mcp__claudegram-tools__claudegram_extract_media — extract text/audio/video from YouTube/Instagram/TikTok URLs. Audio/video files are sent directly to the user; transcripts are returned as text. Use for any youtube.com/youtu.be/instagram.com/tiktok.com URL.');
+  }
   if (config.TELEGRAPH_ENABLED) {
     tools.push('- mcp__claudegram-tools__claudegram_publish_telegraph — publish a markdown document as a Telegraph (telegra.ph) Instant View page; returns the URL.');
   }
@@ -158,6 +161,7 @@ function buildMcpEnv(required: Record<string, string>): Record<string, string> {
     CLAUDEGRAM_REDDIT_ENABLED: config.REDDIT_ENABLED ? 'true' : 'false',
     CLAUDEGRAM_MEDIUM_ENABLED: config.MEDIUM_ENABLED ? 'true' : 'false',
     CLAUDEGRAM_TELEGRAPH_ENABLED: config.TELEGRAPH_ENABLED ? 'true' : 'false',
+    CLAUDEGRAM_EXTRACT_ENABLED: config.EXTRACT_ENABLED ? 'true' : 'false',
     CLAUDEGRAM_DYNAMIC_BOT_NAME: config.DYNAMIC_BOT_NAME ? 'true' : 'false',
     CLAUDEGRAM_REDDITFETCH_DEFAULT_LIMIT: String(config.REDDITFETCH_DEFAULT_LIMIT),
     CLAUDEGRAM_REDDITFETCH_DEFAULT_DEPTH: String(config.REDDITFETCH_DEFAULT_DEPTH),

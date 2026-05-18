@@ -189,6 +189,32 @@ server.tool(
   },
 );
 
+// ── claudegram_extract_media (IPC: yt-dlp + Telegram upload on bot side) ─
+if (process.env.CLAUDEGRAM_EXTRACT_ENABLED === 'true') {
+  server.tool(
+    'claudegram_extract_media',
+    'Extract text transcripts, audio, or video from YouTube, Instagram, and TikTok URLs. Audio/video files are sent directly to the user via Telegram. Transcripts are returned as text.',
+    {
+      url: z.string().describe('URL of the video (YouTube, Instagram, or TikTok)'),
+      mode: z.enum(['text', 'audio', 'video', 'all']).describe('What to extract: "text" for transcript, "audio" for MP3, "video" for MP4, "all" for everything'),
+    },
+    async ({ url, mode }) => {
+      try {
+        const result = await ipc<{ success: boolean; message: string }>('/mcp/extract_media', { url, mode });
+        return {
+          content: [{ type: 'text' as const, text: result.message }],
+          isError: !result.success,
+        };
+      } catch (error) {
+        return {
+          content: [{ type: 'text' as const, text: `Extract media error: ${error instanceof Error ? error.message : String(error)}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+}
+
 // ── claudegram_send_file (IPC: needs bot for Telegram sendDocument) ──
 server.tool(
   'claudegram_send_file',
