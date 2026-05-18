@@ -86,6 +86,15 @@ interface PtySession {
    * — it only fires after all tools complete, so it can resolve regardless.
    */
   inflightTools: number;
+  /**
+   * Number of `●` (assistant-message) glyphs visible on screen at the moment
+   * we submitted the current turn's prompt. The idle fallback refuses to
+   * resolve end-of-turn until the count strictly increases — guarantees
+   * claude actually rendered an assistant reply before we extract. Without
+   * this gate, on a freshly-respawned pty the idle window can elapse with
+   * only the startup banner visible, producing a "(banner)" response.
+   */
+  bulletCountAtSubmit: number;
 }
 
 /**
@@ -266,6 +275,9 @@ export class PtyProvider implements Provider {
       // pty stays alive across turns to preserve conversation state, so the
       // buffer holds the cumulative history.
       session.lastScreenText = this._getScreenText(session);
+      // Baseline assistant-bullet count. The idle fallback refuses to resolve
+      // until this count strictly increases (= claude has rendered a reply).
+      session.bulletCountAtSubmit = this._countBullets(session.lastScreenText);
 
       // Submit handling for claude's TUI input editor:
       //
@@ -363,6 +375,7 @@ export class PtyProvider implements Provider {
       lastScreenText: '',
       stopReceived: false,
       inflightTools: 0,
+      bulletCountAtSubmit: 0,
     };
 
     term.onData((chunk: string) => this._onData(session, chunk));
@@ -427,10 +440,13 @@ export class PtyProvider implements Provider {
 
     // Stop hook fired → Stop itself is the authoritative end-of-turn signal,
     // we just wait for a brief settle. Otherwise fall back to the legacy
-    // heuristic (idle + prompt glyph visible).
+    // heuristic (idle + prompt glyph visible + claude actually rendered a
+    // reply since we submitted — fresh-respawn ptys can otherwise hit idle
+    // with just the startup banner visible).
+    const sawReply = this._countBullets(this._getScreenText(session)) > session.bulletCountAtSubmit;
     const canResolve = session.stopReceived
       ? isIdle
-      : isIdle && this._isPromptVisible(session);
+      : isIdle && this._isPromptVisible(session) && sawReply;
 
     if (canResolve) {
       const resolved = session.endOfTurnResolver;
@@ -442,6 +458,16 @@ export class PtyProvider implements Provider {
       const remaining = Math.max(50, idleMs - sinceLast);
       session.idleTimer = setTimeout(() => this._checkEndOfTurn(session), remaining);
     }
+  }
+
+  private _countBullets(text: string): number {
+    // `●` is claude's assistant-message glyph in the TUI. Counting occurrences
+    // gives us a cheap "did claude actually render a reply yet" signal.
+    let n = 0;
+    for (let i = 0; i < text.length; i++) {
+      if (text.charCodeAt(i) === 0x25CF) n++;
+    }
+    return n;
   }
 
   private _isPromptVisible(session: PtySession): boolean {
