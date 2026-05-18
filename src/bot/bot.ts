@@ -211,6 +211,7 @@ export async function createBot(): Promise<Bot> {
   // These commands fire BEFORE sequentialize so they bypass per-chat ordering.
   // This lets them interrupt, inspect, or restart even when a query is hung.
   bot.command('cancel', handleCancel);
+  bot.command('stop', handleCancel); // alias — natural expectation for "stop the current turn"
   bot.command('ping', handlePing);
   bot.command('status', handleStatus);
   bot.command('restartbot', handleRestartBot);
