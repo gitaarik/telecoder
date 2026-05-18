@@ -19,7 +19,7 @@ import {
 // Side-effect import: registers /mcp/* IPC handlers that bridge the standalone
 // MCP subprocess back to bot-side state (Telegram API, session topic, …).
 import './mcp-bridge.js';
-import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions, type EditDiffEvent, type ToolResultEvent } from '../providers/types.js';
+import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions, type EditDiffEvent, type ToolResultEvent, type ImageAttachment } from '../providers/types.js';
 
 const { Terminal } = headless;
 
@@ -242,7 +242,9 @@ export class PtyProvider implements Provider {
   private usageCache = new Map<string, AgentUsage>();
 
   async sendToAgent(sessionKey: string, message: string, options?: AgentOptions): Promise<AgentResponse> {
-    const promptToSend = wrapCommandPrompt(message, options?.command);
+    const commandWrapped = wrapCommandPrompt(message, options?.command);
+    const { prompt: promptToSend, tempPaths } = stageImagesForPty(commandWrapped, options?.images);
+
     let finalScreenText: string;
     try {
       finalScreenText = await this._runPtyTurn(sessionKey, promptToSend, options);
@@ -256,6 +258,13 @@ export class PtyProvider implements Provider {
         return { text: '🛑 Cancelled.', toolsUsed: [] };
       }
       throw err;
+    } finally {
+      // Best-effort cleanup of staged image temp files. Claude has presumably
+      // already read them via the Read tool; leaving them around would just
+      // accumulate cruft in /tmp.
+      for (const p of tempPaths) {
+        try { fs.unlinkSync(p); } catch { /* already gone */ }
+      }
     }
     const assistantResponse = this._extractAssistantResponse(finalScreenText);
 
@@ -793,6 +802,50 @@ export class PtyProvider implements Provider {
 // their own microtasks. Errors are logged, never rethrown into claude.
 
 /**
+ * Map an ImageAttachment mediaType to a sensible file extension. Falls back
+ * to `.bin` for unknowns — claude code's Read tool sniffs content anyway, the
+ * extension is mostly cosmetic.
+ */
+function imageExtension(mediaType: string): string {
+  if (mediaType === 'image/jpeg') return 'jpg';
+  if (mediaType === 'image/png') return 'png';
+  if (mediaType === 'image/gif') return 'gif';
+  if (mediaType === 'image/webp') return 'webp';
+  return 'bin';
+}
+
+/**
+ * Write the user's image attachments to /tmp and inject their paths into the
+ * prompt. Claude's Read tool natively supports image files and surfaces them
+ * to the model as image content blocks, so this gets us SDK-mode equivalent
+ * image semantics without needing to deal with pty paste protocols.
+ *
+ * Returns the augmented prompt plus the list of temp paths the caller is
+ * responsible for deleting after the turn ends.
+ */
+function stageImagesForPty(prompt: string, images?: ImageAttachment[]): { prompt: string; tempPaths: string[] } {
+  if (!images || images.length === 0) return { prompt, tempPaths: [] };
+
+  const tempPaths: string[] = [];
+  for (const img of images) {
+    const ext = imageExtension(img.mediaType);
+    const filePath = path.join('/tmp', `claudegram-img-${randomUUID()}.${ext}`);
+    fs.writeFileSync(filePath, Buffer.from(img.data, 'base64'));
+    tempPaths.push(filePath);
+  }
+
+  const imageList = tempPaths.map((p, i) => `  ${i + 1}. ${p}`).join('\n');
+  const augmented = `${prompt}
+
+The user attached ${tempPaths.length === 1 ? 'an image' : `${tempPaths.length} images`} at:
+${imageList}
+
+Read ${tempPaths.length === 1 ? 'it' : 'them'} with the Read tool to see ${tempPaths.length === 1 ? 'its' : 'their'} contents.`;
+
+  return { prompt: augmented, tempPaths };
+}
+
+/**
  * Apply per-command prompt wrapping so /plan and /explore behave the same in
  * PTY mode as in SDK mode. SDK does this differently:
  *   - explore: prepends "Explore the codebase and answer: " to the prompt
@@ -808,9 +861,29 @@ function wrapCommandPrompt(message: string, command: AgentOptions['command']): s
     return `Explore the codebase and answer: ${message}`;
   }
   if (command === 'plan') {
-    return `PLAN MODE: Analyze this task and produce a detailed implementation plan. Do NOT edit files, create files, or run mutating commands in this turn — read-only investigation only (Read / Grep / Glob, and Bash for non-mutating commands). Output a numbered plan with concrete steps. The user will review the plan and request execution in a follow-up message.
+    return `═══ PLAN MODE — STRICT ═══
 
-Task: ${message}`;
+You are in plan mode. Your only job this turn is to produce an implementation plan. Read the codebase, understand the task, and output a numbered plan.
+
+PROHIBITED THIS TURN (treat as if these tools are disabled):
+  • Edit, Write, NotebookEdit — no file changes of any kind
+  • Bash commands that mutate state (no rm, mv, cp, mkdir, npm install, git commit, git push, etc.)
+  • Any side-effecting MCP tool (no send_file, no extract_media, no telegraph publishing)
+  • Do not run a build, do not run tests
+  • Do not "just fix one quick thing while you're there"
+
+ALLOWED:
+  • Read, Grep, Glob — read-only file inspection
+  • Bash for strictly read-only commands (ls, cat, grep, git log, git diff, git status, wc)
+  • claudegram_list_projects, claudegram_ask_user — read-only or interactive-only
+
+If you find yourself about to call a prohibited tool, STOP and put the action into the plan instead. The user will review the plan and explicitly ask you to execute in a follow-up message.
+
+Output format: numbered steps, one per change you'd make. End with an "Out of scope" list of things you're deliberately not touching.
+
+═══ TASK ═══
+
+${message}`;
   }
   return message;
 }
