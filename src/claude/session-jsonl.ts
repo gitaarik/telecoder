@@ -33,6 +33,62 @@ export function claudeSessionFileExists(workingDirectory: string, sessionId: str
   return fs.existsSync(sessionJsonlPath(workingDirectory, sessionId));
 }
 
+export interface JsonlUsageSnapshot {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  model: string;
+  /** Number of `type:'user'` records in the log — proxy for SDK's numTurns. */
+  numTurns: number;
+}
+
+/**
+ * Read the most recent assistant-message usage block from a Claude Code session
+ * log. Returns undefined if the log doesn't exist or has no usage records.
+ *
+ * Claude writes the JSONL append-only with usage attached to each assistant
+ * message (`message.usage = {input_tokens, cache_read_input_tokens, ...}`).
+ * We scan newest-first to find the last usage block — that represents the
+ * cumulative token state after the last turn.
+ */
+export function readLastUsageFromJsonl(workingDirectory: string, sessionId: string): JsonlUsageSnapshot | undefined {
+  const filePath = sessionJsonlPath(workingDirectory, sessionId);
+  if (!fs.existsSync(filePath)) return undefined;
+
+  const raw = fs.readFileSync(filePath, 'utf-8');
+  const lines = raw.split('\n');
+
+  let numTurns = 0;
+  let lastUsage: JsonlUsageSnapshot | undefined;
+
+  for (const line of lines) {
+    if (!line) continue;
+    let rec: Record<string, unknown>;
+    try { rec = JSON.parse(line) as Record<string, unknown>; }
+    catch { continue; }
+
+    if (rec.type === 'user') numTurns++;
+
+    const msg = rec.message as Record<string, unknown> | undefined;
+    const usage = msg?.usage as Record<string, unknown> | undefined;
+    if (!usage) continue;
+
+    lastUsage = {
+      inputTokens: typeof usage.input_tokens === 'number' ? usage.input_tokens : 0,
+      outputTokens: typeof usage.output_tokens === 'number' ? usage.output_tokens : 0,
+      cacheReadTokens: typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : 0,
+      cacheWriteTokens: typeof usage.cache_creation_input_tokens === 'number' ? usage.cache_creation_input_tokens : 0,
+      model: typeof msg?.model === 'string' ? msg.model as string : '',
+      numTurns: 0, // filled in after the loop
+    };
+  }
+
+  if (!lastUsage) return undefined;
+  lastUsage.numTurns = numTurns;
+  return lastUsage;
+}
+
 /** Pull joined text from a record's content blocks, ignoring tool/thinking blocks. */
 function extractText(content: JsonlMessage['content']): string {
   if (typeof content === 'string') return content.trim();

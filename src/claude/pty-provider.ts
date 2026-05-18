@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
-import { claudeSessionFileExists } from './session-jsonl.js';
+import { claudeSessionFileExists, readLastUsageFromJsonl } from './session-jsonl.js';
 import { getWorkspaceRoot } from '../utils/workspace-guard.js';
 import {
   getIpcPort,
@@ -233,16 +233,57 @@ export class PtyProvider implements Provider {
   readonly name: ProviderName = 'claude';
 
   private sessions = new Map<string, PtySession>();
+  /**
+   * Last-known usage per sessionKey, refreshed at end-of-turn from claude's
+   * on-disk JSONL log. Surfaced via getCachedUsage so the status line and
+   * per-turn usage chips light up the same as SDK mode.
+   */
+  private usageCache = new Map<string, AgentUsage>();
 
   async sendToAgent(sessionKey: string, message: string, options?: AgentOptions): Promise<AgentResponse> {
     const promptToSend = wrapCommandPrompt(message, options?.command);
     const finalScreenText = await this._runPtyTurn(sessionKey, promptToSend, options);
     const assistantResponse = this._extractAssistantResponse(finalScreenText);
 
+    const usage = this._refreshUsageFromJsonl(sessionKey);
+
     return {
       text: assistantResponse,
       toolsUsed: [], // PTY provider does not have tool usage information
+      usage,
     };
+  }
+
+  /**
+   * Tail the active session's JSONL log for the most recent usage block and
+   * cache it. Falls back to undefined if claude hasn't written a usage record
+   * yet (very first turn, or pre-existing session without compatible records).
+   * Total cost is left at 0 — claude doesn't write pricing into the log and
+   * recomputing it from pricing tables here would be brittle for first cut.
+   */
+  private _refreshUsageFromJsonl(sessionKey: string): AgentUsage | undefined {
+    const botSession = sessionManager.getSession(sessionKey);
+    if (!botSession?.claudeSessionId) return undefined;
+
+    const snapshot = readLastUsageFromJsonl(botSession.workingDirectory, botSession.claudeSessionId);
+    if (!snapshot) return undefined;
+
+    const usage: AgentUsage = {
+      inputTokens: snapshot.inputTokens,
+      outputTokens: snapshot.outputTokens,
+      cacheReadTokens: snapshot.cacheReadTokens,
+      cacheWriteTokens: snapshot.cacheWriteTokens,
+      totalCostUsd: 0,
+      // PTY mode runs claude with the user's 1m-context entitlement (the banner
+      // reads "Opus 4.7 (1M context) · Claude Max"). Hardcoding 1_000_000 is
+      // a reasonable default — the bot's % calculation just needs *some* sane
+      // denominator.
+      contextWindow: 1_000_000,
+      numTurns: snapshot.numTurns,
+      model: snapshot.model || 'claude-opus-4-7',
+    };
+    this.usageCache.set(sessionKey, usage);
+    return usage;
   }
 
   private async _runPtyTurn(sessionKey: string, prompt: string, options?: AgentOptions): Promise<string> {
@@ -665,6 +706,7 @@ export class PtyProvider implements Provider {
 
   clearConversation(sessionKey: string): void {
     this._cleanupSession(sessionKey);
+    this.usageCache.delete(sessionKey);
     console.log(`[PtyProvider] Cleared conversation for session ${sessionKey}`);
   }
 
@@ -681,7 +723,7 @@ export class PtyProvider implements Provider {
   }
 
   getCachedUsage(sessionKey: string): AgentUsage | undefined {
-    return undefined;
+    return this.usageCache.get(sessionKey);
   }
 
   isDangerousMode(): boolean {
