@@ -517,7 +517,7 @@ function askUserTool(toolsCtx: McpToolsContext) {
           lines.push('');
           for (const o of options) {
             if (o.description) {
-              lines.push(`• *${o.label}* — ${o.description}`);
+              lines.push(`• ${o.label} — ${o.description}`);
             }
           }
         }
@@ -527,9 +527,13 @@ function askUserTool(toolsCtx: McpToolsContext) {
           callback_data: `q:${id}:${idx}`,
         }]);
 
+        // Plain text (no parse_mode): model-supplied question/label/description
+        // text can contain stray underscores, asterisks, or backticks (e.g.
+        // URL params like `f_WT=2`) that break legacy Markdown parsing —
+        // Telegram returns 400 and the tool fails with no useful signal to
+        // the model. Button labels still surface the choice clearly.
         const threadId = ctx.message?.is_topic_message ? ctx.message?.message_thread_id : undefined;
         await ctx.api.sendMessage(ctx.chat.id, lines.join('\n'), {
-          parse_mode: 'Markdown',
           reply_markup: { inline_keyboard: keyboard },
           ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
         });

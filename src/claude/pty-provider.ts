@@ -461,6 +461,13 @@ export class PtyProvider implements Provider {
       // WebFetch/Bash for the same task because the deferred listing has
       // no descriptions.
       '--append-system-prompt', buildMcpToolsSystemPromptNote(),
+      // Hard-disable claude's built-in AskUserQuestion. The headless xterm has
+      // no real user to type a response, so an AskUserQuestion call freezes
+      // the turn until MAX_TURN_MS fires (~30 min). The system-prompt note
+      // already steers claude toward claudegram_ask_user, but the model still
+      // reaches for the built-in sometimes mid-turn — a hard deny forces it
+      // to the MCP variant (or plain text).
+      '--disallowedTools', 'AskUserQuestion',
     ];
 
     const term = spawn(CLAUDE_BIN, args, {
@@ -468,7 +475,17 @@ export class PtyProvider implements Provider {
       cols: COLS,
       rows: ROWS,
       cwd: requiredCwd,
-      env: { ...process.env, TERM: 'xterm-256color' },
+      env: {
+        ...process.env,
+        TERM: 'xterm-256color',
+        // Claude code's default MCP tool-call timeout is 60s. claudegram_ask_user
+        // long-polls for up to 10 min waiting on a Telegram button tap; without
+        // this override claude aborts the call at 60s, fires postToolUseFailure
+        // with an empty tool_response (rendered as "(no output)" in the action
+        // log), and the model gives up on the tool. 15 min covers the 10-min
+        // ask-user window with margin.
+        MCP_TOOL_TIMEOUT: '900000',
+      },
     });
 
     const xterm = new Terminal({

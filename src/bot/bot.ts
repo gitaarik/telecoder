@@ -102,7 +102,11 @@ async function handleAskUserCallback(ctx: Context): Promise<void> {
     const original = (ctx.callbackQuery?.message as { text?: string } | undefined)?.text ?? '';
     const buttonText = (ctx.callbackQuery?.message as { reply_markup?: { inline_keyboard?: Array<Array<{ text?: string }>> } } | undefined)
       ?.reply_markup?.inline_keyboard?.[idx]?.[0]?.text ?? `option ${idx + 1}`;
-    await ctx.editMessageText(`${original}\n\n✅ You picked: *${buttonText}*`, { parse_mode: 'Markdown' });
+    // Plain text: buttonText is model-supplied and may contain unbalanced
+    // Markdown punctuation (underscores in URL params, stray asterisks, …)
+    // which would 400 the edit. The try/catch below would swallow it, but
+    // we'd rather just show the confirmation reliably.
+    await ctx.editMessageText(`${original}\n\n✅ You picked: ${buttonText}`);
   } catch {
     // Edit may fail if message changed shape — non-fatal.
   }
