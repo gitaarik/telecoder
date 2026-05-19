@@ -37,7 +37,7 @@ import {
 } from '../../claude/request-queue.js';
 import { createTelegraphFromFile, createTelegraphPage } from '../../telegram/telegraph.js';
 import { isMediumUrl, fetchMediumArticle, FreediumArticle } from '../../medium/freedium.js';
-import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
+import { escapeMarkdownV2 as esc, processMessageForTelegram } from '../../telegram/markdown.js';
 import { getTTSSettings, setTTSEnabled, setTTSVoice, setTTSAutoplay } from '../../tts/tts-settings.js';
 import { getTerminalUISettings, setTerminalUIEnabled } from '../../telegram/terminal-settings.js';
 import { getBotNameSettings, setBotNameEnabled, isBotNameEnabled, rateLimitedSetMyName } from '../../telegram/botname-settings.js';
@@ -2216,28 +2216,53 @@ export async function handleContinue(ctx: Context): Promise<void> {
   await sendRecapHint(ctx, sessionKey);
 }
 
-// Per-turn cap for recap rendering — keeps long assistant responses from
-// blowing past Telegram's 4096-char message limit.
-const RECAP_MAX_CHARS_PER_TURN = 500;
+// Cap for the user-prompt blockquote — long pasted prompts shouldn't dominate
+// the recap. Assistant replies are NOT truncated: they go through the same
+// converter+chunker as the original delivery, so their markdown renders
+// (bold, code, lists) instead of showing escaped literals.
+const RECAP_USER_MAX_CHARS = 500;
 const RECAP_DEFAULT_N = 3;
 const RECAP_MAX_N = 10;
 
-function truncateForRecap(text: string, max: number = RECAP_MAX_CHARS_PER_TURN): string {
+function truncateUserPrompt(text: string, max: number = RECAP_USER_MAX_CHARS): string {
   const collapsed = text.replace(/\s+/g, ' ').trim();
   if (collapsed.length <= max) return collapsed;
   return collapsed.slice(0, max - 1).trimEnd() + '…';
 }
 
-/** Render exchanges as a single MarkdownV2 message with one blockquote per exchange. */
-function formatRecap(exchanges: RecapExchange[]): string {
-  const header = `📋 *Recap* — last ${exchanges.length} exchange${exchanges.length === 1 ? '' : 's'}`;
-  const blocks = exchanges.map((ex) => {
-    const u = esc(truncateForRecap(ex.user));
-    const a = esc(truncateForRecap(ex.assistant));
-    // MarkdownV2 blockquote: every line prefixed with `>` (escaped).
-    return `>*You:* ${u}\n>\n>*Claude:* ${a}`;
-  });
-  return [header, '', ...blocks].join('\n');
+/**
+ * Post the recap as a sequence of messages: a header, then for each exchange
+ * the user prompt as a blockquote followed by the assistant reply rendered
+ * with its original markdown intact. This mirrors how the assistant text
+ * looked on first delivery, instead of cramming everything into one escaped
+ * blockquote block where `*bold*` / backticks / lists show as raw characters.
+ */
+async function sendRecap(ctx: Context, exchanges: RecapExchange[]): Promise<void> {
+  await replyMd(
+    ctx,
+    `📋 *Recap* — last ${exchanges.length} exchange${exchanges.length === 1 ? '' : 's'}`,
+  );
+
+  for (const ex of exchanges) {
+    const userText = esc(truncateUserPrompt(ex.user));
+    await replyMd(ctx, `>*You:* ${userText}`);
+
+    for (const part of processMessageForTelegram(ex.assistant)) {
+      try {
+        await ctx.reply(part, { parse_mode: 'MarkdownV2' });
+      } catch (error) {
+        // Same fallback shape as MessageSender.sendMessage: if MarkdownV2 parse
+        // fails (malformed entity from the converter), strip backslash-escapes
+        // and resend as plain text rather than dropping the chunk.
+        console.error('[Recap] MarkdownV2 send failed, falling back to plain text:', error);
+        try {
+          await ctx.reply(part.replace(/\\(.)/g, '$1'), { parse_mode: undefined });
+        } catch (plainError) {
+          console.error('[Recap] Plain text send also failed:', plainError);
+        }
+      }
+    }
+  }
 }
 
 /** Post a one-line tip pointing the user at /recap. Used after explicit restore. */
@@ -2283,7 +2308,7 @@ export async function handleRecap(ctx: Context): Promise<void> {
     return;
   }
 
-  await replyMd(ctx, formatRecap(exchanges));
+  await sendRecap(ctx, exchanges);
 }
 
 export async function handleLoop(ctx: Context): Promise<void> {
