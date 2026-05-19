@@ -101,6 +101,60 @@ function extractText(content: JsonlMessage['content']): string {
 }
 
 /**
+ * Return the joined text of every assistant content block emitted since the
+ * most recent `type:'user'` record. PTY-mode end-of-turn extraction uses this
+ * instead of scraping the xterm buffer because a single turn can produce
+ * multiple `●` text blocks interleaved with tool calls — screen-scrape only
+ * picks the last `●`, silently dropping the earlier blocks. Returns undefined
+ * if the log isn't on disk yet or has no assistant text since the last user
+ * record (caller should fall back to whatever signal it has).
+ */
+export function readLastAssistantTurnText(
+  workingDirectory: string,
+  sessionId: string,
+): string | undefined {
+  const filePath = sessionJsonlPath(workingDirectory, sessionId);
+  if (!fs.existsSync(filePath)) return undefined;
+
+  const raw = fs.readFileSync(filePath, 'utf-8');
+  const lines = raw.split('\n');
+
+  // Walk forward; remember where the last real user prompt sits, then collect
+  // text from every assistant record after it. extractText filters out
+  // tool_use / tool_result / thinking blocks so we only keep prose.
+  //
+  // Crucial subtlety: `type:'user'` records aren't only user prompts — every
+  // tool_result is also delivered as a user-role record. If we treated each
+  // user record as a turn boundary we'd slice from the LAST tool_result,
+  // dropping all assistant text emitted earlier in the same turn. Filtering
+  // user records by `text.length > 0` discards tool_result-only records
+  // (extractText returns '' for those) and isolates real prompts.
+  let lastPromptIdx = -1;
+  const records: { role: 'user' | 'assistant'; text: string }[] = [];
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    let rec: JsonlRecord;
+    try { rec = JSON.parse(line) as JsonlRecord; }
+    catch { continue; }
+    const role = rec.type === 'user' ? 'user' : rec.type === 'assistant' ? 'assistant' : null;
+    if (!role) continue;
+    const text = extractText(rec.message?.content);
+    records.push({ role, text });
+    if (role === 'user' && text.length > 0) lastPromptIdx = records.length - 1;
+  }
+
+  if (lastPromptIdx === -1) return undefined;
+
+  const assistantTexts = records
+    .slice(lastPromptIdx + 1)
+    .filter((r) => r.role === 'assistant' && r.text.length > 0)
+    .map((r) => r.text);
+
+  if (assistantTexts.length === 0) return undefined;
+  return assistantTexts.join('\n\n');
+}
+
+/**
  * Read the JSONL log for a session and return the last `n` user/assistant
  * exchanges. Tool calls, tool results, and thinking blocks are skipped so the
  * recap reads like a conversation transcript.

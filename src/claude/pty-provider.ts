@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
-import { claudeSessionFileExists, readLastUsageFromJsonl } from './session-jsonl.js';
+import { claudeSessionFileExists, readLastAssistantTurnText, readLastUsageFromJsonl } from './session-jsonl.js';
 import { isCancelled } from './request-queue.js';
 import { getWorkspaceRoot } from '../utils/workspace-guard.js';
 import {
@@ -266,7 +266,16 @@ export class PtyProvider implements Provider {
         try { fs.unlinkSync(p); } catch { /* already gone */ }
       }
     }
-    const assistantResponse = this._extractAssistantResponse(finalScreenText);
+    // Prefer the JSONL session log over screen scraping. A single turn can
+    // emit multiple `●` text blocks separated by tool calls (e.g. "let me
+    // check X" → Bash → "found it, here's the answer"); _extractAssistantResponse
+    // only sees the last bullet because it scrapes the final screen. The JSONL
+    // log has every text block as a structured record, so joining them gives
+    // the user the full reply. Falls back to screen scrape if the log isn't
+    // available (very rare — Stop hook fires after claude flushes records).
+    const assistantResponse =
+      this._readAssistantResponseFromJsonl(sessionKey)
+      ?? this._extractAssistantResponse(finalScreenText);
 
     const usage = this._refreshUsageFromJsonl(sessionKey);
 
@@ -275,6 +284,17 @@ export class PtyProvider implements Provider {
       toolsUsed: [], // PTY provider does not have tool usage information
       usage,
     };
+  }
+
+  /**
+   * Read the last assistant turn's full text from the JSONL session log.
+   * Returns undefined when there's no session yet or the log hasn't been
+   * written — sendToAgent falls back to screen scrape in that case.
+   */
+  private _readAssistantResponseFromJsonl(sessionKey: string): string | undefined {
+    const botSession = sessionManager.getSession(sessionKey);
+    if (!botSession?.claudeSessionId) return undefined;
+    return readLastAssistantTurnText(botSession.workingDirectory, botSession.claudeSessionId);
   }
 
   /**
