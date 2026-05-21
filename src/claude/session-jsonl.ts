@@ -33,6 +33,22 @@ export function claudeSessionFileExists(workingDirectory: string, sessionId: str
   return fs.existsSync(sessionJsonlPath(workingDirectory, sessionId));
 }
 
+/**
+ * Mtime (ms since epoch) of the session's JSONL log, or 0 if it doesn't exist
+ * yet. Used by PTY mode as an end-of-turn signal — claude flushes a fresh
+ * record to the log for every assistant message, tool call, system event,
+ * compaction boundary, etc., so a moving mtime is reliable evidence that
+ * claude actually did work for the current prompt (the prior bullet-count
+ * heuristic broke on slash commands like /compact that don't emit a `●`).
+ */
+export function sessionJsonlMtimeMs(workingDirectory: string, sessionId: string): number {
+  try {
+    return fs.statSync(sessionJsonlPath(workingDirectory, sessionId)).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
 export interface JsonlUsageSnapshot {
   inputTokens: number;
   outputTokens: number;

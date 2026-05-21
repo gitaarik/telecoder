@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
-import { claudeSessionFileExists, readLastAssistantTurnText, readLastUsageFromJsonl } from './session-jsonl.js';
+import { claudeSessionFileExists, readLastAssistantTurnText, readLastUsageFromJsonl, sessionJsonlMtimeMs } from './session-jsonl.js';
 import { isCancelled } from './request-queue.js';
 import { getWorkspaceRoot } from '../utils/workspace-guard.js';
 import {
@@ -52,6 +52,16 @@ const POST_STOP_SETTLE_MS = 200;
  */
 const MAX_TURN_MS = 30 * 60_000;
 const STARTUP_MAX_MS = 15_000;
+/**
+ * Idle + prompt-visible safety net for prompts that produce no JSONL activity.
+ * Most prompts (model turns, /compact, /clear, /handoff, …) write at least one
+ * record to the session log, so the JSONL-mtime gate resolves them cleanly.
+ * Slash commands like /cost or /config emit purely TUI output without touching
+ * the log; without this fallback those would hang until MAX_TURN_MS. 5s of
+ * confirmed idle with the input prompt back on screen is well past any
+ * realistic typing latency from claude itself.
+ */
+const NO_JSONL_FALLBACK_MS = 5_000;
 
 function resolveCwd(sessionKey: string): string {
   const session = sessionManager.getSession(sessionKey);
@@ -98,14 +108,23 @@ interface PtySession {
    */
   inflightTools: number;
   /**
-   * Number of `●` (assistant-message) glyphs visible on screen at the moment
-   * we submitted the current turn's prompt. The idle fallback refuses to
-   * resolve end-of-turn until the count strictly increases — guarantees
-   * claude actually rendered an assistant reply before we extract. Without
-   * this gate, on a freshly-respawned pty the idle window can elapse with
-   * only the startup banner visible, producing a "(banner)" response.
+   * Wall-clock time we wrote the current turn's prompt to the pty. Used by
+   * the idle fallback together with the JSONL-mtime snapshot below to decide
+   * whether claude has done any work for this prompt yet. Also drives the
+   * NO_JSONL_FALLBACK_MS safety net for slash commands that produce no
+   * JSONL records (e.g. /cost).
    */
-  bulletCountAtSubmit: number;
+  submitTimeMs: number;
+  /**
+   * Session-log mtime captured immediately before we submitted the prompt.
+   * The idle fallback refuses to resolve until the current mtime exceeds
+   * this value — claude flushes a record to the log for every assistant
+   * message, tool call, system event, and compact_boundary, so a moving
+   * mtime is a reliable "claude actually did something" signal. Replaces
+   * the older bullet-count heuristic, which silently hung on /compact and
+   * other slash commands that don't emit a `●` glyph.
+   */
+  jsonlMtimeAtSubmit: number;
 }
 
 /**
@@ -398,9 +417,13 @@ export class PtyProvider implements Provider {
       // pty stays alive across turns to preserve conversation state, so the
       // buffer holds the cumulative history.
       session.lastScreenText = this._getScreenText(session);
-      // Baseline assistant-bullet count. The idle fallback refuses to resolve
-      // until this count strictly increases (= claude has rendered a reply).
-      session.bulletCountAtSubmit = this._countBullets(session.lastScreenText);
+      // Baseline for the idle fallback: capture both wall-clock and the
+      // session-log mtime now, so _checkEndOfTurn can tell whether claude has
+      // actually produced output for *this* prompt (mtime advanced) or we're
+      // looking at a no-op slash command (mtime unchanged → NO_JSONL_FALLBACK_MS
+      // safety net).
+      session.submitTimeMs = Date.now();
+      session.jsonlMtimeAtSubmit = this._currentJsonlMtimeMs(sessionKey);
 
       // Submit handling for claude's TUI input editor:
       //
@@ -529,7 +552,8 @@ export class PtyProvider implements Provider {
       lastScreenText: '',
       stopReceived: false,
       inflightTools: 0,
-      bulletCountAtSubmit: 0,
+      submitTimeMs: 0,
+      jsonlMtimeAtSubmit: 0,
     };
 
     term.onData((chunk: string) => this._onData(session, chunk));
@@ -593,14 +617,20 @@ export class PtyProvider implements Provider {
     }
 
     // Stop hook fired → Stop itself is the authoritative end-of-turn signal,
-    // we just wait for a brief settle. Otherwise fall back to the legacy
-    // heuristic (idle + prompt glyph visible + claude actually rendered a
-    // reply since we submitted — fresh-respawn ptys can otherwise hit idle
-    // with just the startup banner visible).
-    const sawReply = this._countBullets(this._getScreenText(session)) > session.bulletCountAtSubmit;
+    // we just wait for a brief settle. Otherwise fall back to the idle path:
+    // pty quiet for IDLE_MS, the input prompt is back on screen, AND claude
+    // has either written something to the JSONL log since we submitted
+    // (model turns, /compact, /handoff, /clear all do) or we've waited
+    // NO_JSONL_FALLBACK_MS to cover purely-TUI slash commands like /cost.
+    // The JSONL-mtime gate replaces an older bullet-count check that hung
+    // indefinitely on /compact because compaction renders no `●` glyph.
+    const jsonlMtime = this._lookupJsonlMtime(session);
+    const sawJsonlActivity = jsonlMtime > session.jsonlMtimeAtSubmit;
+    const sinceSubmit = Date.now() - session.submitTimeMs;
+    const claudeProducedSomething = sawJsonlActivity || sinceSubmit >= NO_JSONL_FALLBACK_MS;
     const canResolve = session.stopReceived
       ? isIdle
-      : isIdle && this._isPromptVisible(session) && sawReply;
+      : isIdle && this._isPromptVisible(session) && claudeProducedSomething;
 
     if (canResolve) {
       const resolved = session.endOfTurnResolver;
@@ -609,19 +639,27 @@ export class PtyProvider implements Provider {
       if (session.hardTimer) clearTimeout(session.hardTimer);
       resolved(this._getScreenText(session));
     } else {
-      const remaining = Math.max(50, idleMs - sinceLast);
-      session.idleTimer = setTimeout(() => this._checkEndOfTurn(session), remaining);
+      // If we're only waiting on NO_JSONL_FALLBACK_MS, re-arm just past the
+      // deadline so a no-op slash command doesn't sit on an idle timer that
+      // only re-fires when the pty produces another chunk.
+      const idleRemaining = Math.max(50, idleMs - sinceLast);
+      const fallbackRemaining = claudeProducedSomething
+        ? Infinity
+        : Math.max(50, NO_JSONL_FALLBACK_MS - sinceSubmit);
+      const wait = Math.min(idleRemaining, fallbackRemaining);
+      session.idleTimer = setTimeout(() => this._checkEndOfTurn(session), wait);
     }
   }
 
-  private _countBullets(text: string): number {
-    // `●` is claude's assistant-message glyph in the TUI. Counting occurrences
-    // gives us a cheap "did claude actually render a reply yet" signal.
-    let n = 0;
-    for (let i = 0; i < text.length; i++) {
-      if (text.charCodeAt(i) === 0x25CF) n++;
-    }
-    return n;
+  /** Cheap fs.stat on the active session's JSONL log; 0 if not on disk yet. */
+  private _currentJsonlMtimeMs(sessionKey: string): number {
+    const botSession = sessionManager.getSession(sessionKey);
+    if (!botSession?.claudeSessionId) return 0;
+    return sessionJsonlMtimeMs(botSession.workingDirectory, botSession.claudeSessionId);
+  }
+
+  private _lookupJsonlMtime(session: PtySession): number {
+    return sessionJsonlMtimeMs(session.cwd, session.claudeSessionId);
   }
 
   private _isPromptVisible(session: PtySession): boolean {
