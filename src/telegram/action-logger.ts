@@ -6,7 +6,7 @@
 
 import { Context, GrammyError } from 'grammy';
 import { escapeMarkdownV2 } from './markdown.js';
-import { getToolIcon } from './terminal-renderer.js';
+import { getToolIcon, extractToolDetail } from './terminal-renderer.js';
 import type { ToolResultEvent, EditDiffEvent } from '../providers/types.js';
 import type { TaskState } from './task-tracker.js';
 
@@ -26,6 +26,8 @@ export interface ActionEntry {
   type: 'tool_result' | 'edit_diff' | 'monitor_event' | 'task_completion';
   icon: string;
   title: string;
+  /** Optional subtitle line rendered between title and content (e.g. `$ ls -la`). Not truncated by the per-entry content cap. */
+  subtitle?: string;
   content?: string;
   status: 'running' | 'completed' | 'error';
 }
@@ -102,12 +104,20 @@ export class ActionLogger {
       trailer = `\n[truncated to ${maxChars} chars]`;
     }
 
+    const detail = event.toolName && event.input
+      ? extractToolDetail(event.toolName, event.input, true)
+      : undefined;
+    const subtitle = detail
+      ? `${event.toolName === 'Bash' ? '$ ' : ''}${detail}`
+      : undefined;
+
     const entry: ActionEntry = {
       id: `tool-${Date.now()}-${Math.random()}`,
       timestamp: Date.now(),
       type: 'tool_result',
       icon,
       title: `${label} ${event.isError ? 'error' : 'result'}`,
+      subtitle,
       content: content + trailer,
       status
     };
@@ -361,6 +371,13 @@ export class ActionLogger {
 
       lines.push(`${entry.icon} ${statusEmoji} \\[${escapeMarkdownV2(time)}\\] ${escapeMarkdownV2(entry.title)}`);
 
+      if (entry.subtitle) {
+        const trimmedSubtitle = entry.subtitle.length > 200
+          ? entry.subtitle.substring(0, 197) + '...'
+          : entry.subtitle;
+        lines.push(`\`${escapeMarkdownV2(trimmedSubtitle)}\``);
+      }
+
       if (entry.content) {
         const truncatedContent = entry.content.length > 200
           ? entry.content.substring(0, 197) + '...'
@@ -404,6 +421,13 @@ export class ActionLogger {
       });
 
       lines.push(`${entry.icon} ${statusEmoji} [${time}] ${entry.title}`);
+
+      if (entry.subtitle) {
+        const trimmedSubtitle = entry.subtitle.length > 200
+          ? entry.subtitle.substring(0, 197) + '...'
+          : entry.subtitle;
+        lines.push(`  ${trimmedSubtitle}`);
+      }
 
       if (entry.content) {
         const truncatedContent = entry.content.length > 200

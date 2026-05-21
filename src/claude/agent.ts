@@ -756,6 +756,7 @@ export async function sendToAgent(
     // surface (TodoWrite has a dedicated UI; topic/ask_user return noise)
     // are kept in `silentToolUseIds` and skipped at emit-time.
     const toolUseIdToName = new Map<string, string>();
+    const toolUseIdToInput = new Map<string, Record<string, unknown>>();
     const silentToolUseIds = new Set<string>();
     const SILENT_TOOL_NAMES = new Set([
       'TodoWrite',
@@ -865,6 +866,7 @@ export async function sendToAgent(
             const isBackgroundedToolCall = toolInput.run_in_background === true || isMonitorCall;
             if ('id' in block && typeof block.id === 'string') {
               toolUseIdToName.set(block.id, block.name);
+              toolUseIdToInput.set(block.id, toolInput);
               if (SILENT_TOOL_NAMES.has(block.name) || isBackgroundedToolCall) {
                 // Backgrounded tasks return a "running in the background"
                 // placeholder; the real outcome surfaces via task_notification.
@@ -1049,6 +1051,7 @@ export async function sendToAgent(
             await emitToolResult({
               toolUseId: b.tool_use_id,
               toolName: toolUseIdToName.get(b.tool_use_id),
+              input: toolUseIdToInput.get(b.tool_use_id),
               content: text,
               isError,
             });

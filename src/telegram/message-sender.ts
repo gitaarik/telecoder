@@ -566,7 +566,14 @@ export class MessageSender {
       trailer = `\n[truncated to ${maxChars} chars]`;
     }
 
-    const text = `${icon} ${label} ${verb}\n${body}${trailer}`;
+    const detail = event.toolName && event.input
+      ? extractToolDetail(event.toolName, event.input, true)
+      : undefined;
+    const detailLine = detail
+      ? `${event.toolName === 'Bash' ? '$ ' : ''}${detail}\n`
+      : '';
+
+    const text = `${icon} ${label} ${verb}\n${detailLine}${body}${trailer}`;
     try {
       await ctx.reply(text, { parse_mode: undefined });
       this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);

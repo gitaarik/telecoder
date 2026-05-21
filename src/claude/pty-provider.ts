@@ -1076,6 +1076,7 @@ registerIpcHandler('/hook/postToolUse', (turn, body) => {
     const event: ToolResultEvent = {
       toolUseId,
       toolName,
+      input: toolInput,
       content: extractToolResponseContent(body.tool_response),
       isError: false,
     };
@@ -1086,6 +1087,7 @@ registerIpcHandler('/hook/postToolUse', (turn, body) => {
 
 registerIpcHandler('/hook/postToolUseFailure', (turn, body) => {
   const toolName = String(body.tool_name ?? 'unknown');
+  const toolInput = (body.tool_input ?? {}) as Record<string, unknown>;
   const toolUseId = String(body.tool_use_id ?? '');
 
   turn.onToolEnd?.();
@@ -1093,6 +1095,7 @@ registerIpcHandler('/hook/postToolUseFailure', (turn, body) => {
   const event: ToolResultEvent = {
     toolUseId,
     toolName,
+    input: toolInput,
     content: extractToolResponseContent(body.tool_response),
     isError: true,
   };

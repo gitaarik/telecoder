@@ -94,6 +94,8 @@ export interface ToolResultEvent {
   toolUseId: string;
   /** Tool name (e.g. "Bash", "Read") if known from the matching tool_use block. */
   toolName?: string;
+  /** Raw input from the matching tool_use block (e.g. {command} for Bash). */
+  input?: Record<string, unknown>;
   /** Best-effort string extraction of the tool result content. */
   content: string;
   /** True when the SDK marked the result as an error. */
