@@ -38,9 +38,24 @@ interface Session {
 
 class SessionManager {
   private sessions: Map<string, Session> = new Map();
+  // Tracks the last assistant text we successfully relayed to Telegram per
+  // sessionKey. Compared against the JSONL's latest assistant turn to detect
+  // gaps introduced by extractor edge cases (pure tool-call turns, lossy
+  // screen-scrape fallback, early end-of-turn before JSONL flush). In-memory
+  // only — after a restart we assume "caught up to nothing" so /sync will
+  // surface the most recent turn, which is the safer default.
+  private lastRelayedAssistantText: Map<string, string> = new Map();
 
   getSession(sessionKey: string): Session | undefined {
     return this.sessions.get(sessionKey);
+  }
+
+  getLastRelayedAssistantText(sessionKey: string): string {
+    return this.lastRelayedAssistantText.get(sessionKey) ?? '';
+  }
+
+  setLastRelayedAssistantText(sessionKey: string, text: string): void {
+    this.lastRelayedAssistantText.set(sessionKey, text);
   }
 
   createSession(sessionKey: string, workingDirectory: string, conversationId?: string): Session {
@@ -110,6 +125,7 @@ class SessionManager {
 
   clearSession(sessionKey: string): void {
     this.sessions.delete(sessionKey);
+    this.lastRelayedAssistantText.delete(sessionKey);
     // Note: We don't clear history here - history is for resuming past sessions
   }
 
@@ -194,6 +210,7 @@ class SessionManager {
       lastActivity: new Date(),
     };
     this.sessions.set(sessionKey, fresh);
+    this.lastRelayedAssistantText.delete(sessionKey);
     sessionHistory.saveSession(sessionKey, fresh.conversationId, fresh.workingDirectory, '', undefined);
     return fresh;
   }

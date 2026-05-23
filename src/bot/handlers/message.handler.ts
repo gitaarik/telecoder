@@ -23,6 +23,7 @@ import { userPreferences } from '../../providers/user-preferences.js';
 import { parseSessionKey } from '../../utils/session-key.js';
 import { resolveVerbosityFlags } from '../../utils/verbosity.js';
 import { summarizeTopicWithHaiku } from '../../claude/auto-topic-haiku.js';
+import { readLastAssistantTurnText } from '../../claude/session-jsonl.js';
 import { executeVReddit } from '../../reddit/vreddit.js';
 import { detectPlatform, isValidUrl } from '../../media/extract.js';
 import { maybeSendVoiceReply } from '../../tts/voice-reply.js';
@@ -62,6 +63,63 @@ function fireAutoTopic(ctx: Context, sessionKey: string, userMessage: string): v
   })();
 }
 
+
+/**
+ * After a turn's main response has been sent to Telegram, compare what we
+ * relayed against the canonical assistant text in Claude Code's session JSONL.
+ * If the JSONL has more prose than we sent — typical for the lossy extractor
+ * paths (pure tool-call turns that returned empty, multi-block screen-scrape
+ * dropping earlier blocks, early end-of-turn before JSONL flush) — post the
+ * missing content as a follow-up. Updates the per-session tracker either way.
+ *
+ * Best-effort: any failure logs and swallows so a catch-up bug can never
+ * break the primary relay path. Skips silently when the session has no
+ * claudeSessionId (e.g. SDK mode), since the JSONL doesn't exist there.
+ */
+async function relayCatchUpIfMissed(
+  ctx: Context,
+  sessionKey: string,
+  relayedText: string,
+): Promise<void> {
+  try {
+    const session = sessionManager.getSession(sessionKey);
+    if (!session?.claudeSessionId) {
+      sessionManager.setLastRelayedAssistantText(sessionKey, relayedText);
+      return;
+    }
+
+    const jsonlText = readLastAssistantTurnText(session.workingDirectory, session.claudeSessionId);
+    if (!jsonlText) {
+      sessionManager.setLastRelayedAssistantText(sessionKey, relayedText);
+      return;
+    }
+
+    // 20-char slack absorbs trailing-whitespace / trim differences between
+    // the screen-scrape and JSONL forms. Below that, treat as in sync.
+    if (jsonlText.length <= relayedText.length + 20) {
+      sessionManager.setLastRelayedAssistantText(sessionKey, jsonlText);
+      return;
+    }
+
+    // If what we sent is a prefix of the canonical text (PTY happy path that
+    // truncated mid-stream), post only the suffix. Otherwise post the full
+    // canonical version — the texts come from different extractors and any
+    // mid-string diff would risk dropping the actually-missing content.
+    const missing = jsonlText.startsWith(relayedText) && relayedText.length > 0
+      ? jsonlText.slice(relayedText.length).trim()
+      : jsonlText;
+    if (!missing) {
+      sessionManager.setLastRelayedAssistantText(sessionKey, jsonlText);
+      return;
+    }
+
+    await ctx.reply('📨 *Catch\\-up* — recovered from session log', { parse_mode: 'MarkdownV2' });
+    await messageSender.sendMessage(ctx, missing);
+    sessionManager.setLastRelayedAssistantText(sessionKey, jsonlText);
+  } catch (err) {
+    console.error('[CatchUp] post-relay check failed:', err instanceof Error ? err.message : err);
+  }
+}
 
 function extractRedditUrl(text: string): string | null {
   const matches = text.match(/https?:\/\/\S+/gi);
@@ -563,6 +621,7 @@ async function handleAgentReply(
         }
 
         await messageSender.finishStreaming(ctx, response.text);
+        await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
         await maybeSendVoiceReply(ctx, response.text);
 
         // Completion notification for long tasks

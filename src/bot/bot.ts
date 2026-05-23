@@ -39,6 +39,7 @@ import {
   handleResumeCallback,
   handleContinue,
   handleRecap,
+  handleSync,
   handleLoop,
   handleSessions,
   handleTeleport,
@@ -178,6 +179,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'loop', description: '🔄 Run in loop mode' },
     { command: 'sessions', description: '📚 View saved sessions' },
     { command: 'recap', description: '📋 Recap last messages of current session' },
+    { command: 'sync', description: '📨 Resend any missed reply from the session log' },
     { command: 'teleport', description: '🚀 Move session to terminal' },
     ...(config.REDDIT_ENABLED ? [{ command: 'reddit', description: '📡 Fetch Reddit posts & subreddits' }] : []),
     ...(config.VREDDIT_ENABLED ? [{ command: 'vreddit', description: '🎬 Download Reddit video from post URL' }] : []),
@@ -222,6 +224,10 @@ export async function createBot(): Promise<Bot> {
   bot.command('rebuildbot', handleRebuild);
   bot.command('btw', handleBtw); // Side question — must bypass queue to work mid-task
   bot.command('tasks', handleTasks); // Read-only; must bypass queue so it works mid-stream
+  // /sync exists for the "I think a reply went missing" scenario, which by
+  // definition includes hung or sluggish turns — gating it on sequentialize
+  // would queue it behind the very turn the user wants to inspect.
+  bot.command('sync', handleSync);
   // /tasks inline-keyboard buttons (view/back/refresh) also need to bypass
   // sequentialize so they're responsive while a stream is active.
   bot.callbackQuery(/^tasks:/, handleTasksCallback);

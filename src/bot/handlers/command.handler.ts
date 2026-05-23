@@ -68,7 +68,7 @@ import { sanitizeError, sanitizePath } from '../../utils/sanitize.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../../utils/workspace-guard.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
 import { taskTracker, type TaskState } from '../../telegram/task-tracker.js';
-import { readRecentExchanges, type RecapExchange } from '../../claude/session-jsonl.js';
+import { readRecentExchanges, readLastAssistantTurnText, type RecapExchange } from '../../claude/session-jsonl.js';
 import {
   VERBOSITY_INFO,
   isValidVerbosityLevel,
@@ -2309,6 +2309,57 @@ export async function handleRecap(ctx: Context): Promise<void> {
   }
 
   await sendRecap(ctx, exchanges);
+}
+
+/**
+ * Manual safety net for the PTY → Telegram translation. Reads the canonical
+ * latest assistant turn from Claude Code's session JSONL and posts whatever
+ * the user hasn't seen yet. Mirrors the proactive catch-up that runs after
+ * each turn (relayCatchUpIfMissed in message.handler.ts); /sync exists for
+ * cases where the user suspects a miss outside that automatic window — e.g.
+ * a quietly-failed catch-up, or after a bot restart that wiped the relayed
+ * tracker.
+ */
+export async function handleSync(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { sessionKey } = keyInfo;
+
+  const session = sessionManager.getSession(sessionKey);
+  if (!session) {
+    await replyMd(ctx, '⚠️ No active session\\. Use `/continue` or `/resume` first\\.');
+    return;
+  }
+  if (!session.claudeSessionId) {
+    await replyMd(ctx, 'ℹ️ This session has no recorded messages yet\\.');
+    return;
+  }
+
+  const jsonlText = readLastAssistantTurnText(session.workingDirectory, session.claudeSessionId);
+  if (!jsonlText) {
+    await replyMd(ctx, 'ℹ️ No assistant reply found for the current turn\\.');
+    return;
+  }
+
+  const relayed = sessionManager.getLastRelayedAssistantText(sessionKey);
+  // Same 20-char slack as the proactive check — trim/whitespace deltas don't
+  // count as a real miss.
+  if (jsonlText.length <= relayed.length + 20) {
+    await replyMd(ctx, "✅ You're caught up — nothing new in the session log\\.");
+    return;
+  }
+
+  const missing = jsonlText.startsWith(relayed) && relayed.length > 0
+    ? jsonlText.slice(relayed.length).trim()
+    : jsonlText;
+  if (!missing) {
+    await replyMd(ctx, "✅ You're caught up — nothing new in the session log\\.");
+    return;
+  }
+
+  await replyMd(ctx, '📨 *Sync* — from session log');
+  await messageSender.sendMessage(ctx, missing);
+  sessionManager.setLastRelayedAssistantText(sessionKey, jsonlText);
 }
 
 export async function handleLoop(ctx: Context): Promise<void> {

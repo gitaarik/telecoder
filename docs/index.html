@@ -1800,6 +1800,11 @@
             <h3>Session Recap</h3>
             <p>Use /recap [N] to re-read the last N user/assistant exchanges from the active session (default 3). After /resume or /continue, Claudegram drops a one-line tip pointing at the command so you can quickly orient yourself in a restored session.</p>
           </div>
+          <div class="feature-card" data-category="session">
+            <div class="feature-icon">📨</div>
+            <h3>Missed-Reply Catch-up</h3>
+            <p>After every turn, Claudegram cross-checks what it sent against Claude Code's canonical session log and auto-posts anything the extractor missed (pure tool-call turns, multi-block lossy screen-scrape, early end-of-turn flushes). Hit /sync any time to manually re-check — bypasses the queue so it works during hung turns.</p>
+          </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon">🌐</div>
             <h3>Proxy Support</h3>
@@ -1921,6 +1926,10 @@
             <div class="command-row">
               <code class="command-code">/recap [N]</code>
               <span class="command-desc">Re-read the last N exchanges of the current session (default 3)</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/sync</code>
+              <span class="command-desc">Resend the latest assistant reply from the session log if Telegram missed any of it</span>
             </div>
             <div class="command-row">
               <code class="command-code">/teleport</code>
