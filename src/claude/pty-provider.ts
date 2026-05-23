@@ -20,6 +20,8 @@ import {
 // MCP subprocess back to bot-side state (Telegram API, session topic, …).
 import './mcp-bridge.js';
 import { onAsyncToolArmed, markTurnStart, markTurnEnd, teardown as teardownMonitorRelay, relayPushNotification, type AsyncToolKind } from './monitor-relay.js';
+import { evaluateToolCall, isPermissionGateEnabled, DENY_MARKER_START, DENY_MARKER_END } from './permission-gate.js';
+import type { Context } from 'grammy';
 import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions, type EditDiffEvent, type ToolResultEvent, type ImageAttachment } from '../providers/types.js';
 
 const { Terminal } = headless;
@@ -140,9 +142,24 @@ function buildSettingsJson(ipcPort: number): string {
   const hookCommand = (eventName: string) =>
     `curl -s -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:${ipcPort}/hook/${eventName}' >/dev/null 2>&1; exit 0`;
 
+  // PreToolUse needs a richer wrapper so it can BLOCK tool execution when
+  // the IPC handler decides to deny. The marker protocol: if the IPC response
+  // body contains `__CLAUDEGRAM_DENY__<reason>__END__`, exit 2 (claude code's
+  // signal for "block this tool, feed the stderr back to the model") with the
+  // reason on stderr. Otherwise exit 0 and let the tool proceed.
+  //
+  // We use shell parameter expansion instead of jq so no extra binary is
+  // required. The marker is intentionally distinctive so it can't collide
+  // with normal JSON content.
+  const preToolUseCommand =
+    `RESP=$(curl -s --max-time 900 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:${ipcPort}/hook/preToolUse' 2>/dev/null); ` +
+    `case "$RESP" in *__CLAUDEGRAM_DENY__*) ` +
+    `REASON=\${RESP##*__CLAUDEGRAM_DENY__}; REASON=\${REASON%%__END__*}; ` +
+    `printf '%s' "$REASON" >&2; exit 2 ;; esac; exit 0`;
+
   return JSON.stringify({
     hooks: {
-      PreToolUse: [{ hooks: [{ type: 'command', command: hookCommand('preToolUse') }] }],
+      PreToolUse: [{ hooks: [{ type: 'command', command: preToolUseCommand }] }],
       PostToolUse: [{ hooks: [{ type: 'command', command: hookCommand('postToolUse') }] }],
       PostToolUseFailure: [{ hooks: [{ type: 'command', command: hookCommand('postToolUseFailure') }] }],
       Stop: [{ hooks: [{ type: 'command', command: hookCommand('stop') }] }],
@@ -1075,7 +1092,7 @@ function extractToolResponseContent(toolResponse: unknown): string {
   catch { return String(obj); }
 }
 
-registerIpcHandler('/hook/preToolUse', (turn, body) => {
+registerIpcHandler('/hook/preToolUse', async (turn, body) => {
   const toolName = String(body.tool_name ?? 'unknown');
   const toolInput = (body.tool_input ?? {}) as Record<string, unknown>;
   turn.onToolStart?.();
@@ -1115,6 +1132,27 @@ registerIpcHandler('/hook/preToolUse', (turn, body) => {
   if (toolName === 'PushNotification') {
     const message = String(toolInput.message ?? '').trim();
     if (message) relayPushNotification(turn.sessionKey, message);
+  }
+
+  // Permission gate: opt-in via CLAUDEGRAM_PERMISSION_PROMPTS=1. For tools
+  // matching a dangerous pattern, blocks the call and waits for Telegram
+  // approval. Decision returned as a deny-marker string the shell wrapper
+  // parses to exit 2 (claude code's "block this tool" signal).
+  if (isPermissionGateEnabled()) {
+    const ctx = (turn.options as { telegramCtx?: Context }).telegramCtx;
+    const decision = await evaluateToolCall({
+      sessionKey: turn.sessionKey,
+      toolName,
+      toolInput,
+      telegramCtx: ctx,
+    });
+    if (decision.block) {
+      // Bump the inflight counter back down — the tool isn't actually going
+      // to run, so PostToolUse won't fire and inflightTools would otherwise
+      // stay stuck high.
+      turn.onToolEnd?.();
+      return `${DENY_MARKER_START}${decision.reason}${DENY_MARKER_END}`;
+    }
   }
 
   return { ok: true };

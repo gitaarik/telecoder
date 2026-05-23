@@ -41,6 +41,7 @@ import {
   handleRecap,
   handleSync,
   handleHandoff,
+  handlePermissions,
   handleProjectCommands,
   handleLoop,
   handleSessions,
@@ -189,6 +190,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'schedules', description: '🔔 List active scheduled tasks' },
     { command: 'unschedule', description: '🔕 Remove a scheduled task by id' },
     { command: 'projectcommands', description: '📜 List slash commands from .claude/commands/' },
+    { command: 'permissions', description: '🔐 Show the permission-gate state and guarded patterns' },
     { command: 'teleport', description: '🚀 Move session to terminal' },
     ...(config.REDDIT_ENABLED ? [{ command: 'reddit', description: '📡 Fetch Reddit posts & subreddits' }] : []),
     ...(config.VREDDIT_ENABLED ? [{ command: 'vreddit', description: '🎬 Download Reddit video from post URL' }] : []),
@@ -306,6 +308,7 @@ export async function createBot(): Promise<Bot> {
   // Loop mode
   bot.command('loop', handleLoop);
   bot.command('projectcommands', handleProjectCommands);
+  bot.command('permissions', handlePermissions);
 
   // Teleport to terminal
   bot.command('teleport', handleTeleport);

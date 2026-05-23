@@ -2470,6 +2470,25 @@ export async function handleSync(ctx: Context): Promise<void> {
  * `/mycommand` to claude, which dispatches to the file), so this is purely
  * a discoverability helper — no per-command registration needed.
  */
+/** Show the current permission-gate state and the patterns it enforces. */
+export async function handlePermissions(ctx: Context): Promise<void> {
+  const { isPermissionGateEnabled, listDangerousPatterns } = await import('../../claude/permission-gate.js');
+  const enabled = isPermissionGateEnabled();
+  const patterns = listDangerousPatterns();
+
+  const lines: string[] = [
+    `🔐 *Permission gate* — ${enabled ? '✅ enabled' : '⛔️ disabled'}`,
+    '',
+    enabled
+      ? 'Bash commands matching the patterns below trigger a Telegram approval prompt before claude executes them\\. Other tools auto\\-allow\\.'
+      : 'Disabled\\. Set `CLAUDEGRAM_PERMISSION_PROMPTS=1` and restart the bot to enable\\.',
+    '',
+    '*Guarded patterns:*',
+    ...patterns.map((p) => `• ${esc(p.reason)}`),
+  ];
+  await replyMd(ctx, lines.join('\n'));
+}
+
 export async function handleProjectCommands(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
