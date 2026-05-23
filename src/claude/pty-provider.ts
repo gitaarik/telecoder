@@ -19,7 +19,7 @@ import {
 // Side-effect import: registers /mcp/* IPC handlers that bridge the standalone
 // MCP subprocess back to bot-side state (Telegram API, session topic, …).
 import './mcp-bridge.js';
-import { onMonitorArmed, markTurnStart, markTurnEnd, teardown as teardownMonitorRelay } from './monitor-relay.js';
+import { onAsyncToolArmed, markTurnStart, markTurnEnd, teardown as teardownMonitorRelay, type AsyncToolKind } from './monitor-relay.js';
 import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions, type EditDiffEvent, type ToolResultEvent, type ImageAttachment } from '../providers/types.js';
 
 const { Terminal } = headless;
@@ -172,10 +172,11 @@ function buildMcpToolsSystemPromptNote(): string {
     '- mcp__claudegram-tools__claudegram_list_schedules — list active schedules in this chat (id, cadence, runs, prompt preview). Call before creating a new schedule to check for duplicates, or to find an id to cancel.',
     '- mcp__claudegram-tools__claudegram_cancel_schedule — remove a scheduled task by id.',
   ];
-  // Monitor isn't a claudegram_* tool, but PTY mode wires up a relay so its
-  // events between user turns surface in Telegram. Mention it so the model
-  // confidently uses Monitor when it's the right fit (watching a file/process).
-  tools.push('- Monitor (built-in) — supported in claudegram PTY mode. When events fire between user turns, claudegram posts each new assistant text block to Telegram with a "📡 Monitor event" header. Use it freely for "watch X and tell me when Y happens" tasks.');
+  // Async built-ins (Monitor, backgrounded Bash, Task subagent) aren't
+  // claudegram_* tools, but PTY mode wires up a relay so task-notifications
+  // that arrive after the user-turn ends still reach Telegram. Mention it so
+  // the model confidently uses these tools when they're the right fit.
+  tools.push('- Async built-ins (Monitor, `Bash(run_in_background=true)`, `Task`) — supported in claudegram PTY mode. Task-notifications that fire between user turns are relayed to Telegram with a "📡 Monitor — ...", "⚙️ Backgrounded: ...", or "🤖 Subagent started: ..." header, paired with the actual event payload and your response. Use these freely for "watch X", "run X in background while continuing", or "delegate Y to a subagent" tasks.');
   if (config.REDDIT_ENABLED) {
     tools.push('- mcp__claudegram-tools__claudegram_fetch_reddit — fetch reddit content (subreddits, threads, user profiles). Use this for any reddit.com/r/<subreddit> or post URL; prefer over WebFetch.');
   }
@@ -1075,21 +1076,31 @@ registerIpcHandler('/hook/preToolUse', (turn, body) => {
   turn.onToolStart?.();
   fireAndForget('onToolStart', () => turn.options.onToolStart?.(toolName, toolInput));
 
-  // Arm the monitor relay so events that fire AFTER this turn ends still get
-  // routed to Telegram. Monitor is backgrounded — PostToolUse fires almost
-  // immediately, the user-turn returns, and any further activity comes
-  // through as new JSONL entries with no active turn to forward them.
-  if (toolName === 'Monitor') {
+  // Arm the relay so any task-notifications that fire AFTER this turn ends
+  // still get routed to Telegram. Three async tool families need this:
+  //   - Monitor (continuous event stream)
+  //   - Bash with run_in_background=true (single completion notification)
+  //   - Task (subagent — completion notification)
+  // Each is backgrounded: PostToolUse fires almost immediately, the user-turn
+  // returns, and the actual outcome arrives later as a task-notification.
+  const asyncKind: AsyncToolKind | null =
+    toolName === 'Monitor' ? 'monitor' :
+    (toolName === 'Bash' && toolInput.run_in_background === true) ? 'bash_background' :
+    toolName === 'Task' ? 'subagent' :
+    null;
+  if (asyncKind) {
     const session = sessionManager.getSession(turn.sessionKey);
     const description = String(
       toolInput.description ??
       toolInput.target ??
       toolInput.file_path ??
       toolInput.path ??
-      'monitor',
+      toolInput.command ??
+      toolInput.prompt ??
+      asyncKind,
     );
     if (session?.claudeSessionId) {
-      onMonitorArmed(turn.sessionKey, session.workingDirectory, session.claudeSessionId, description);
+      onAsyncToolArmed(asyncKind, turn.sessionKey, session.workingDirectory, session.claudeSessionId, description);
     }
   }
 

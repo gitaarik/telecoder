@@ -89,12 +89,17 @@ export function setMonitorRelayBot(bot: Bot): void {
   botRef = bot;
 }
 
+export type AsyncToolKind = 'monitor' | 'bash_background' | 'subagent';
+
 /**
- * Register that Monitor was invoked in this session. Idempotent — multiple
- * Monitor calls in the same session share one watcher; we just append the
- * descriptions for the "armed" announcement.
+ * Register that an async tool (Monitor, backgrounded Bash, or subagent Task)
+ * was invoked. Arms the JSONL watcher on first call per session so future
+ * task-notifications and their assistant responses get relayed to Telegram.
+ *
+ * Idempotent — multiple async tool calls in one session share one watcher.
  */
-export function onMonitorArmed(
+export function onAsyncToolArmed(
+  kind: AsyncToolKind,
   sessionKey: string,
   cwd: string,
   claudeSessionId: string,
@@ -124,7 +129,7 @@ export function onMonitorArmed(
     startWatching(state);
   }
   state.descriptions.push(description);
-  postArmed(sessionKey, description);
+  postArmed(sessionKey, kind, description);
 }
 
 export function markTurnStart(sessionKey: string): void {
@@ -254,13 +259,17 @@ function extractAssistantText(content: unknown): string {
     .join('\n\n');
 }
 
-function postArmed(sessionKey: string, description: string): void {
+function postArmed(sessionKey: string, kind: AsyncToolKind, description: string): void {
   if (!botRef) return;
   const { chatId, threadId } = parseSessionKey(sessionKey);
   const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};
   const preview = description.length > 200 ? description.slice(0, 197) + '...' : description;
+  const header =
+    kind === 'monitor' ? '📡 Monitor armed' :
+    kind === 'bash_background' ? '⚙️ Backgrounded' :
+    '🤖 Subagent started';
   botRef.api
-    .sendMessage(chatId, `📡 Monitor armed: ${preview}`, threadOpts)
+    .sendMessage(chatId, `${header}: ${preview}`, threadOpts)
     .catch((err) => {
       console.error('[Monitor] failed to post armed message:', err instanceof Error ? err.message : err);
     });
