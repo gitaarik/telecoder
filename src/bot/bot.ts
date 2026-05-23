@@ -80,6 +80,7 @@ import { handleVoice } from './handlers/voice.handler.js';
 import { handlePhoto, handleImageDocument, handleTextDocument } from './handlers/photo.handler.js';
 import { createBatchMiddleware } from './middleware/message-batcher.js';
 import { resolvePendingQuestion } from '../claude/ask-user.js';
+import { resolvePendingPoll } from '../claude/poll-user.js';
 
 // Resolve sequentialize constraint: same-chat updates are ordered,
 // but /cancel is registered BEFORE this middleware so it bypasses it.
@@ -376,6 +377,20 @@ export async function createBot(): Promise<Bot> {
     }
     // Note: `tasks:` callback queries are handled by the pre-sequentialize
     // bot.callbackQuery handler above so they remain responsive mid-stream.
+  });
+
+  // Resolve pending claudegram_poll_user MCP calls on first vote. Must be
+  // registered before the catch-all paths so the poll_answer update reaches
+  // us; non-anonymous polls only fire poll_answer for non-anonymous voting,
+  // which is required for the resolve-on-first-vote semantics to work.
+  bot.on('poll_answer', async (ctx) => {
+    const pa = ctx.pollAnswer;
+    if (!pa) return;
+    const resolved = resolvePendingPoll(pa.poll_id, pa.option_ids);
+    if (!resolved) {
+      // Not a claudegram-tracked poll — ignore (could be a user-created poll
+      // in the same chat).
+    }
   });
 
   // Handle voice messages

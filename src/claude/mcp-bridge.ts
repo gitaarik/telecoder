@@ -23,6 +23,7 @@ import { registerIpcHandler } from './ipc-server.js';
 import { sessionManager } from './session-manager.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../utils/workspace-guard.js';
 import { createPendingQuestion } from './ask-user.js';
+import { createPendingPoll } from './poll-user.js';
 import { scheduler } from './scheduler.js';
 
 const TELEGRAM_MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
@@ -284,6 +285,47 @@ registerIpcHandler('/mcp/send_file', async (turn, body) => {
     success: true,
     message: `File sent to user: ${fileName} (${sizeMB}MB)`,
   };
+});
+
+// ── /mcp/poll_user ───────────────────────────────────────────────────
+// Telegram poll variant of ask_user. Non-anonymous (required for the bot
+// to receive poll_answer events); resolves on the first vote so the agent
+// loop doesn't hang. Multi-select snapshots whatever's selected when the
+// first poll_answer arrives.
+registerIpcHandler('/mcp/poll_user', async (turn, body) => {
+  const question = String(body.question ?? '').trim();
+  const rawOptions = Array.isArray(body.options) ? body.options : [];
+  const options = rawOptions.filter((o): o is string => typeof o === 'string' && o.length > 0).slice(0, 10);
+  const allowsMultiple = !!body.allows_multiple_answers;
+
+  if (!question) return { success: false, message: 'Error: question is required.' };
+  if (options.length < 2) return { success: false, message: 'Error: at least 2 options required.' };
+
+  const ctx = getTelegramCtx(turn.options as unknown);
+  if (!ctx?.chat?.id) {
+    return { success: false, message: 'Error: no Telegram context available to ask the user.' };
+  }
+
+  const threadId = ctx.message?.is_topic_message ? ctx.message?.message_thread_id : undefined;
+  const sent = await ctx.api.sendPoll(ctx.chat.id, question, options.map((o) => ({ text: o })), {
+    is_anonymous: false,
+    allows_multiple_answers: allowsMultiple,
+    ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
+  });
+
+  const pollId = sent.poll.id;
+  const answer = await createPendingPoll(pollId, options, allowsMultiple, turn.sessionKey);
+
+  if (!answer) {
+    return { success: true, message: 'No one voted within 10 minutes. Proceed using your best judgment.' };
+  }
+  if (answer.labels.length === 0) {
+    return { success: true, message: 'Vote received but no options recorded.' };
+  }
+  if (answer.labels.length === 1) {
+    return { success: true, message: `User selected: ${answer.labels[0]}` };
+  }
+  return { success: true, message: `User selected: ${answer.labels.join(', ')}` };
 });
 
 // ── /mcp/schedule_loop ───────────────────────────────────────────────

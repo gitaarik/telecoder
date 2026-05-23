@@ -330,6 +330,35 @@ if (process.env.CLAUDEGRAM_TELEGRAPH_ENABLED === 'true') {
   );
 }
 
+// ── claudegram_poll_user (IPC: Telegram poll) ────────────────────────
+server.tool(
+  'claudegram_poll_user',
+  'Ask the user (or a group) a question via a Telegram poll. Prefer this over claudegram_ask_user when (a) multiple chat members should vote, (b) you want vote counts shown alongside, or (c) you need multi-select. Polls are non-anonymous (vote identities visible). Resolves on the first vote — for multi-select, the snapshot at that moment is returned. 2-10 options.',
+  {
+    question: z.string().describe('The poll question. ≤ 300 chars (Telegram cap).'),
+    options: z.array(z.string()).min(2).max(10).describe('Poll options. Each ≤ 100 chars.'),
+    allows_multiple_answers: z.boolean().optional().describe('Whether voters can pick more than one option. Default false.'),
+  },
+  async ({ question, options, allows_multiple_answers }) => {
+    try {
+      const result = await ipc<{ success: boolean; message: string }>('/mcp/poll_user', {
+        question,
+        options,
+        allows_multiple_answers: !!allows_multiple_answers,
+      });
+      return {
+        content: [{ type: 'text' as const, text: result.message }],
+        isError: !result.success,
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text' as const, text: `Poll error: ${error instanceof Error ? error.message : String(error)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
 // ── claudegram_loop (IPC: registers an interval schedule) ────────────
 server.tool(
   'claudegram_loop',
