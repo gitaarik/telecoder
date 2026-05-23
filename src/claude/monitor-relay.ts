@@ -30,6 +30,53 @@ interface MonitorState {
   inTurn: boolean;
   /** Coalesce rapid-fire change events into one read. */
   pendingRead: NodeJS.Timeout | null;
+  /**
+   * The most recently seen task-notification user record that hasn't yet
+   * been paired with an assistant response. Lives across handleChange calls
+   * because the assistant response often appears in a later chunk than the
+   * notification that triggered it.
+   */
+  pendingNotification: TaskNotification | null;
+}
+
+interface TaskNotification {
+  taskId: string;
+  summary: string;
+  event: string;
+}
+
+function parseTaskNotification(rec: { origin?: { kind?: string }; message?: { content?: unknown } }): TaskNotification | null {
+  // origin.kind is the cleanest discriminator when the field is present;
+  // fall back to scanning for the wrapper tag in older records that don't
+  // carry it.
+  const isNotif = rec.origin?.kind === 'task-notification';
+  const content = rec.message?.content;
+  let text: string;
+  if (typeof content === 'string') {
+    text = content;
+  } else if (Array.isArray(content)) {
+    const textBlock = content.find((b: unknown) =>
+      !!b && typeof b === 'object'
+      && (b as { type?: string }).type === 'text'
+      && typeof (b as { text?: unknown }).text === 'string',
+    ) as { text: string } | undefined;
+    if (!textBlock) return null;
+    text = textBlock.text;
+  } else {
+    return null;
+  }
+
+  if (!isNotif && !text.includes('<task-notification>')) return null;
+
+  const taskIdMatch = text.match(/<task-id>([^<]*)<\/task-id>/);
+  const summaryMatch = text.match(/<summary>([\s\S]*?)<\/summary>/);
+  const eventMatch = text.match(/<event>([\s\S]*?)<\/event>/);
+
+  return {
+    taskId: taskIdMatch?.[1].trim() ?? '',
+    summary: summaryMatch?.[1].trim() ?? '',
+    event: eventMatch?.[1].trim() ?? '',
+  };
 }
 
 const states = new Map<string, MonitorState>();
@@ -64,6 +111,7 @@ export function onMonitorArmed(
       descriptions: [],
       inTurn: true,
       pendingRead: null,
+      pendingNotification: null,
     };
     states.set(sessionKey, state);
     startWatching(state);
@@ -170,10 +218,28 @@ function handleChange(state: MonitorState): void {
     let rec: unknown;
     try { rec = JSON.parse(trimmed); } catch { continue; }
     if (!rec || typeof rec !== 'object') continue;
-    const typed = rec as { type?: string; message?: { content?: unknown } };
-    if (typed.type !== 'assistant') continue;
-    const text = extractAssistantText(typed.message?.content);
-    if (text) postEvent(state.sessionKey, text);
+    const typed = rec as {
+      type?: string;
+      origin?: { kind?: string };
+      message?: { content?: unknown; role?: string };
+    };
+
+    if (typed.type === 'user') {
+      const notif = parseTaskNotification(typed);
+      if (notif) {
+        // Two notifications in a row without a paired response = orphan;
+        // flush the first one alone before tracking the new trigger.
+        if (state.pendingNotification) {
+          postMonitorMessage(state.sessionKey, state.pendingNotification, '');
+        }
+        state.pendingNotification = notif;
+      }
+    } else if (typed.type === 'assistant') {
+      const text = extractAssistantText(typed.message?.content);
+      if (!text) continue;
+      postMonitorMessage(state.sessionKey, state.pendingNotification, text);
+      state.pendingNotification = null;
+    }
   }
 }
 
@@ -200,13 +266,44 @@ function postArmed(sessionKey: string, description: string): void {
     });
 }
 
-function postEvent(sessionKey: string, text: string): void {
+function stripSummaryPrefix(summary: string): string {
+  // Claude code formats summaries as `Monitor event: "<desc>"` — strip the
+  // boilerplate so the header isn't redundant with the "📡 Monitor" prefix.
+  return summary.replace(/^Monitor event:\s*/i, '').replace(/^"(.*)"$/, '$1').trim();
+}
+
+function postMonitorMessage(
+  sessionKey: string,
+  notif: TaskNotification | null,
+  response: string,
+): void {
   if (!botRef) return;
+  if (!notif && !response) return;
+
   const { chatId, threadId } = parseSessionKey(sessionKey);
   const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};
-  const preview = text.length > MAX_EVENT_CHARS ? text.slice(0, MAX_EVENT_CHARS - 3) + '...' : text;
+
+  const lines: string[] = [];
+  let header = '📡 Monitor';
+  if (notif?.summary) {
+    const desc = stripSummaryPrefix(notif.summary);
+    if (desc) header += ` — ${desc}`;
+  }
+  lines.push(header);
+
+  if (notif?.event) {
+    const ep = notif.event.length > 500 ? notif.event.slice(0, 497) + '...' : notif.event;
+    lines.push(`▸ ${ep}`);
+  }
+
+  if (response) {
+    const rp = response.length > MAX_EVENT_CHARS ? response.slice(0, MAX_EVENT_CHARS - 3) + '...' : response;
+    if (lines.length > 1) lines.push('');
+    lines.push(rp);
+  }
+
   botRef.api
-    .sendMessage(chatId, `📡 Monitor event\n\n${preview}`, threadOpts)
+    .sendMessage(chatId, lines.join('\n'), threadOpts)
     .catch((err) => {
       console.error('[Monitor] failed to post event:', err instanceof Error ? err.message : err);
     });
