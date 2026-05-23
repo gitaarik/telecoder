@@ -40,6 +40,7 @@ import {
   handleContinue,
   handleRecap,
   handleSync,
+  handleHandoff,
   handleProjectCommands,
   handleLoop,
   handleSessions,
@@ -183,6 +184,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'sessions', description: '📚 View saved sessions' },
     { command: 'recap', description: '📋 Recap last messages of current session' },
     { command: 'sync', description: '📨 Resend any missed reply from the session log' },
+    { command: 'handoff', description: '📦 Export the session as a markdown handoff document' },
     { command: 'schedule', description: '🔔 Schedule a recurring prompt (e.g. every 1h, daily 9am)' },
     { command: 'schedules', description: '🔔 List active scheduled tasks' },
     { command: 'unschedule', description: '🔕 Remove a scheduled task by id' },
@@ -235,6 +237,7 @@ export async function createBot(): Promise<Bot> {
   // definition includes hung or sluggish turns — gating it on sequentialize
   // would queue it behind the very turn the user wants to inspect.
   bot.command('sync', handleSync);
+  bot.command('handoff', handleHandoff);
   // Schedule commands bypass sequentialize so they remain responsive even
   // when a scheduled-fire turn is already running (the cap-enforcing create,
   // the list, and the remove all need to work mid-stream).

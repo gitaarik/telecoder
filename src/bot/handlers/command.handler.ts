@@ -2325,6 +2325,95 @@ export async function handleRecap(ctx: Context): Promise<void> {
 }
 
 /**
+ * Dump the current session's conversation to a markdown file and deliver
+ * via Telegram (Telegraph link + downloadable file). Useful before switching
+ * projects, clearing context, or handing off to a teammate. Captures all
+ * exchanges (capped at 200) plus session metadata.
+ */
+export async function handleHandoff(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { sessionKey } = keyInfo;
+
+  const session = sessionManager.getSession(sessionKey);
+  if (!session) {
+    await replyMd(ctx, '⚠️ No active session\\. Use `/continue` or `/resume` first\\.');
+    return;
+  }
+  if (!session.claudeSessionId) {
+    await replyMd(ctx, 'ℹ️ This session has no recorded messages yet\\.');
+    return;
+  }
+
+  const exchanges = readRecentExchanges(session.workingDirectory, session.claudeSessionId, 200);
+  if (exchanges.length === 0) {
+    await replyMd(ctx, 'ℹ️ No recoverable exchanges in this session\\.');
+    return;
+  }
+
+  const projectName = path.basename(session.workingDirectory);
+  const topic = getSessionTopic(sessionKey);
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+  const headerLines: string[] = [
+    `# Session handoff — ${projectName}`,
+    '',
+    `**Project:** \`${session.workingDirectory}\`  `,
+    `**Session id:** \`${session.claudeSessionId}\`  `,
+    `**Conversation id:** \`${session.conversationId}\`  `,
+    `**Exported:** ${new Date().toLocaleString()}  `,
+    topic ? `**Topic:** ${topic}  ` : '',
+    `**Exchanges:** ${exchanges.length}`,
+    '',
+    `Resume with: \`claude --resume ${session.claudeSessionId}\``,
+    '',
+    '---',
+    '',
+  ].filter(Boolean);
+
+  const bodyLines: string[] = [];
+  exchanges.forEach((ex, i) => {
+    bodyLines.push(`## Exchange ${i + 1}`);
+    bodyLines.push('');
+    bodyLines.push('### User');
+    bodyLines.push('');
+    bodyLines.push(ex.user.trim());
+    bodyLines.push('');
+    bodyLines.push('### Assistant');
+    bodyLines.push('');
+    bodyLines.push(ex.assistant.trim());
+    bodyLines.push('');
+    bodyLines.push('---');
+    bodyLines.push('');
+  });
+
+  const md = [...headerLines, ...bodyLines].join('\n');
+  const outDir = path.join(session.workingDirectory, '.claudegram', 'handoffs');
+  try {
+    fs.mkdirSync(outDir, { recursive: true, mode: 0o700 });
+  } catch (err) {
+    await replyMd(ctx, `❌ Couldn't create handoff dir: ${esc(err instanceof Error ? err.message : String(err))}`);
+    return;
+  }
+  const filePath = path.join(outDir, `handoff-${ts}.md`);
+  try {
+    fs.writeFileSync(filePath, md, { mode: 0o600 });
+  } catch (err) {
+    await replyMd(ctx, `❌ Couldn't write handoff: ${esc(err instanceof Error ? err.message : String(err))}`);
+    return;
+  }
+
+  await replyMd(
+    ctx,
+    `📦 *Handoff written* — \`${esc(path.relative(session.workingDirectory, filePath))}\`\n` +
+    `${exchanges.length} exchange${exchanges.length === 1 ? '' : 's'} captured\\.`,
+  );
+
+  // Telegraph preview + downloadable file (mirrors /telegraph)
+  await messageSender.sendMarkdownFile(ctx, filePath, { useTelegraph: true, sendAsDocument: true });
+}
+
+/**
  * Manual safety net for the PTY → Telegram translation. Reads the canonical
  * latest assistant turn from Claude Code's session JSONL and posts whatever
  * the user hasn't seen yet. Mirrors the proactive catch-up that runs after
