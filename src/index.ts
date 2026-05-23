@@ -10,6 +10,7 @@ import { sessionManager } from './claude/session-manager.js';
 import { sessionHistory } from './claude/session-history.js';
 import { consumeAllInFlight } from './claude/in-flight-tracker.js';
 import { clearConversation } from './providers/provider-router.js';
+import { startScheduledRunner } from './claude/scheduled-runner.js';
 import { parseSessionKey } from './utils/session-key.js';
 import { setSessionTopic, getEffortLabel } from './bot/handlers/command.handler.js';
 import { isBotNameEnabled, rateLimitedSetMyName, notifyBotNameBlockToChat } from './telegram/botname-settings.js';
@@ -319,6 +320,15 @@ async function main() {
     await notifyInterruptedSessions(bot);
   } catch (err) {
     console.error('[InFlight] Failed:', err);
+  }
+
+  // Re-arm persisted scheduled tasks (/schedule). Runs after session
+  // restore so the first scheduled fire can resolve the live session
+  // instead of paying a cold-spawn tax.
+  try {
+    startScheduledRunner(bot);
+  } catch (err) {
+    console.error('[Scheduler] Failed to start:', err);
   }
 
   // Liveness heartbeat: periodically verify the bot can still reach the

@@ -74,6 +74,7 @@ import {
   handleMethodCallback,
 } from './handlers/command.handler.js';
 import { handleMessage, handleCcrThrottleCallback } from './handlers/message.handler.js';
+import { handleSchedule, handleSchedules, handleUnschedule } from './handlers/schedule.handler.js';
 import { handleVoice } from './handlers/voice.handler.js';
 import { handlePhoto, handleImageDocument } from './handlers/photo.handler.js';
 import { createBatchMiddleware } from './middleware/message-batcher.js';
@@ -180,6 +181,9 @@ export async function createBot(): Promise<Bot> {
     { command: 'sessions', description: '📚 View saved sessions' },
     { command: 'recap', description: '📋 Recap last messages of current session' },
     { command: 'sync', description: '📨 Resend any missed reply from the session log' },
+    { command: 'schedule', description: '🔔 Schedule a recurring prompt (e.g. every 1h, daily 9am)' },
+    { command: 'schedules', description: '🔔 List active scheduled tasks' },
+    { command: 'unschedule', description: '🔕 Remove a scheduled task by id' },
     { command: 'teleport', description: '🚀 Move session to terminal' },
     ...(config.REDDIT_ENABLED ? [{ command: 'reddit', description: '📡 Fetch Reddit posts & subreddits' }] : []),
     ...(config.VREDDIT_ENABLED ? [{ command: 'vreddit', description: '🎬 Download Reddit video from post URL' }] : []),
@@ -228,6 +232,12 @@ export async function createBot(): Promise<Bot> {
   // definition includes hung or sluggish turns — gating it on sequentialize
   // would queue it behind the very turn the user wants to inspect.
   bot.command('sync', handleSync);
+  // Schedule commands bypass sequentialize so they remain responsive even
+  // when a scheduled-fire turn is already running (the cap-enforcing create,
+  // the list, and the remove all need to work mid-stream).
+  bot.command('schedule', handleSchedule);
+  bot.command('schedules', handleSchedules);
+  bot.command('unschedule', handleUnschedule);
   // /tasks inline-keyboard buttons (view/back/refresh) also need to bypass
   // sequentialize so they're responsive while a stream is active.
   bot.callbackQuery(/^tasks:/, handleTasksCallback);

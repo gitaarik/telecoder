@@ -484,6 +484,29 @@ export class MessageSender {
   }
 
   /**
+   * Post the "🔔 Scheduled: …" header that precedes a scheduled-task fire.
+   * The scheduled prompt itself is then enqueued through the normal turn
+   * pipeline; this header just makes the unprompted message obvious so the
+   * user understands why a turn appeared with no input from them.
+   */
+  async postScheduledFire(ctx: Context, label: string, prompt: string): Promise<void> {
+    const preview = prompt.length > 100 ? prompt.substring(0, 97) + '...' : prompt;
+    const headline = label
+      ? `🔔 *Scheduled* — ${escapeMarkdownV2(label)}`
+      : `🔔 *Scheduled fire*`;
+    const text = `${headline}\n\`${escapeMarkdownV2(preview)}\``;
+    try {
+      await ctx.reply(text, { parse_mode: 'MarkdownV2' });
+    } catch (error) {
+      console.error('[Schedule] Failed to post scheduled header:', error instanceof Error ? error.message : error);
+      try {
+        await ctx.reply(`🔔 Scheduled${label ? ` — ${label}` : ''}\n${preview}`);
+      } catch { /* ignore */ }
+    }
+    this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
+  }
+
+  /**
    * Post the model's text response from an SDK-driven sub-turn (monitor
    * event echoes, post-task_notification commentary) as its own Telegram
    * message. Routed through the MarkdownV2 formatter so the model's

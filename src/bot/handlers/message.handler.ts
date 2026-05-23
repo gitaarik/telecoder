@@ -85,7 +85,7 @@ function fireAutoTopic(ctx: Context, sessionKey: string, userMessage: string): v
  * break the primary relay path. Skips silently when the session has no
  * claudeSessionId (e.g. SDK mode), since the JSONL doesn't exist there.
  */
-async function relayCatchUpIfMissed(
+export async function relayCatchUpIfMissed(
   ctx: Context,
   sessionKey: string,
   relayedText: string,

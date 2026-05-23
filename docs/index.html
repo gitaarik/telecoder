@@ -1806,6 +1806,11 @@
             <p>After every turn, Claudegram cross-checks what it sent against Claude Code's canonical session log and auto-posts anything the extractor missed (pure tool-call turns, multi-block lossy screen-scrape, early end-of-turn flushes). Hit /sync any time to manually re-check — bypasses the queue so it works during hung turns.</p>
           </div>
           <div class="feature-card" data-category="core">
+            <div class="feature-icon">🔔</div>
+            <h3>Scheduled Tasks</h3>
+            <p>Use /schedule to run a prompt on a recurring cadence. Supports intervals (<code>every 5m</code>, <code>every 1h</code>) and cron-style days/times (<code>daily 9am</code>, <code>weekdays 14:00</code>, <code>mon,wed,fri 10:30</code>). Each fire posts a "🔔 Scheduled" header and runs through the same session as your manual chats. Hard caps (10 active per chat, 50 fires default) keep runaway API spend in check.</p>
+          </div>
+          <div class="feature-card" data-category="core">
             <div class="feature-icon">🌐</div>
             <h3>Proxy Support</h3>
             <p>Connect through HTTP/HTTPS/SOCKS proxies via TELEGRAM_PROXY_URL or standard HTTP_PROXY env vars. Essential for restricted networks.</p>
@@ -1930,6 +1935,18 @@
             <div class="command-row">
               <code class="command-code">/sync</code>
               <span class="command-desc">Resend the latest assistant reply from the session log if Telegram missed any of it</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/schedule &lt;when&gt; &lt;prompt&gt;</code>
+              <span class="command-desc">Schedule a recurring prompt — supports <code>every 5m</code>, <code>every 1h</code>, <code>daily 9am</code>, <code>weekdays 14:00</code>, <code>mon,wed,fri 10:30</code>, or a raw 5-field cron. Options: <code>--max-runs N</code>, <code>--label "..."</code>. Each fire posts a "🔔 Scheduled" header and runs through the current session.</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/schedules</code>
+              <span class="command-desc">List active scheduled tasks for this chat with id, next-fire time, run count, and the prompt preview</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/unschedule &lt;id&gt;</code>
+              <span class="command-desc">Remove a scheduled task by id (get the id from /schedules)</span>
             </div>
             <div class="command-row">
               <code class="command-code">/teleport</code>
