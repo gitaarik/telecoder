@@ -2375,6 +2375,45 @@ export async function handleSync(ctx: Context): Promise<void> {
   sessionManager.setLastRelayedAssistantText(sessionKey, jsonlText);
 }
 
+/**
+ * List the current project's `.claude/commands/*.md` slash commands. They
+ * pass through to claude code untouched (typing `/mycommand` in chat sends
+ * `/mycommand` to claude, which dispatches to the file), so this is purely
+ * a discoverability helper — no per-command registration needed.
+ */
+export async function handleProjectCommands(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { sessionKey } = keyInfo;
+
+  const session = sessionManager.getSession(sessionKey);
+  if (!session) {
+    await replyMd(ctx, '⚠️ No project set\\. Use `/project` first\\.');
+    return;
+  }
+
+  const { getProjectCommands } = await import('../../claude/project-commands.js');
+  const commands = getProjectCommands(session.workingDirectory);
+  if (commands.length === 0) {
+    await replyMd(
+      ctx,
+      `No project slash commands in \`${esc(path.basename(session.workingDirectory))}\`\\.\n\n` +
+      `Add markdown files under \`.claude/commands/\` to define them — see [docs](https://docs.claude.com/en/docs/claude-code/slash-commands)\\.`,
+    );
+    return;
+  }
+
+  const lines: string[] = [
+    `📜 *Project commands* \\(${commands.length}\\) in \`${esc(path.basename(session.workingDirectory))}\``,
+    '',
+    ...commands.map((c) => {
+      const desc = c.description ? ` — ${esc(c.description)}` : '';
+      return `• \`/${esc(c.name)}\`${desc}`;
+    }),
+  ];
+  await replyMd(ctx, lines.join('\n'));
+}
+
 export async function handleLoop(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;

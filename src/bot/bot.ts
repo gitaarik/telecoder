@@ -40,6 +40,7 @@ import {
   handleContinue,
   handleRecap,
   handleSync,
+  handleProjectCommands,
   handleLoop,
   handleSessions,
   handleTeleport,
@@ -76,7 +77,7 @@ import {
 import { handleMessage, handleCcrThrottleCallback } from './handlers/message.handler.js';
 import { handleSchedule, handleSchedules, handleUnschedule } from './handlers/schedule.handler.js';
 import { handleVoice } from './handlers/voice.handler.js';
-import { handlePhoto, handleImageDocument } from './handlers/photo.handler.js';
+import { handlePhoto, handleImageDocument, handleTextDocument } from './handlers/photo.handler.js';
 import { createBatchMiddleware } from './middleware/message-batcher.js';
 import { resolvePendingQuestion } from '../claude/ask-user.js';
 
@@ -184,6 +185,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'schedule', description: '🔔 Schedule a recurring prompt (e.g. every 1h, daily 9am)' },
     { command: 'schedules', description: '🔔 List active scheduled tasks' },
     { command: 'unschedule', description: '🔕 Remove a scheduled task by id' },
+    { command: 'projectcommands', description: '📜 List slash commands from .claude/commands/' },
     { command: 'teleport', description: '🚀 Move session to terminal' },
     ...(config.REDDIT_ENABLED ? [{ command: 'reddit', description: '📡 Fetch Reddit posts & subreddits' }] : []),
     ...(config.VREDDIT_ENABLED ? [{ command: 'vreddit', description: '🎬 Download Reddit video from post URL' }] : []),
@@ -299,6 +301,7 @@ export async function createBot(): Promise<Bot> {
 
   // Loop mode
   bot.command('loop', handleLoop);
+  bot.command('projectcommands', handleProjectCommands);
 
   // Teleport to terminal
   bot.command('teleport', handleTeleport);
@@ -384,20 +387,35 @@ export async function createBot(): Promise<Bot> {
   // Handle images
   bot.on('message:photo', handlePhoto);
 
-  // Handle documents: check for audio transcribe ForceReply first, then image documents
+  // Handle documents: route by MIME type
+  //   audio/* (replying to transcribe prompt) → transcribe
+  //   image/*                                  → image vision
+  //   anything else                            → read as text/PDF/etc.
   bot.on('message:document', async (ctx) => {
+    const doc = ctx.message?.document;
+    const mime = doc?.mime_type ?? '';
+
     // Try transcribe-document path first (audio MIME + reply to ForceReply)
     const replyTo = ctx.message?.reply_to_message;
-    const doc = ctx.message?.document;
-    if (replyTo && replyTo.from?.is_bot && doc?.mime_type?.startsWith('audio/')) {
+    if (replyTo && replyTo.from?.is_bot && mime.startsWith('audio/')) {
       const replyText = (replyTo as { text?: string }).text || '';
       if (replyText.includes('Transcribe Audio')) {
         await handleTranscribeDocument(ctx);
         return;
       }
     }
-    // Fall through to image document handler
-    await handleImageDocument(ctx);
+
+    if (mime.startsWith('image/')) {
+      await handleImageDocument(ctx);
+      return;
+    }
+
+    // Skip audio that isn't being transcribed — voice/audio messages have
+    // their own dedicated handlers, so a stray audio document here is likely
+    // not meant for the agent. Everything else (PDF, text, code, CSV, …)
+    // goes to the document reader.
+    if (mime.startsWith('audio/') || mime.startsWith('video/')) return;
+    await handleTextDocument(ctx);
   });
 
   // Handle regular text messages

@@ -233,6 +233,121 @@ export async function handlePhoto(ctx: Context): Promise<void> {
   }
 }
 
+/**
+ * Handle non-image, non-audio document uploads (PDFs, .txt, .csv, .md, code
+ * files, etc.). Saves to the project's uploads dir and prompts claude to
+ * Read the file. Image and audio MIME types are filtered out before this
+ * runs by the dispatcher in bot.ts.
+ */
+export async function handleTextDocument(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  const messageId = ctx.message?.message_id;
+  const messageDate = ctx.message?.date;
+  const document = ctx.message?.document;
+
+  if (!keyInfo || !messageId || !messageDate || !document) return;
+  const { sessionKey } = keyInfo;
+
+  if (isStaleMessage(messageDate)) {
+    console.log(`[Doc] Ignoring stale document ${messageId}`);
+    return;
+  }
+  if (isDuplicate(messageId)) {
+    console.log(`[Doc] Ignoring duplicate document ${messageId}`);
+    return;
+  }
+  markProcessed(messageId);
+
+  const { session, restored } = sessionManager.getOrRestoreSession(sessionKey);
+  if (!session) {
+    await ctx.reply(
+      '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
+      { parse_mode: 'MarkdownV2' }
+    );
+    return;
+  }
+  if (restored) {
+    await ctx.reply(
+      `↩️ Resumed previous session: *${esc(path.basename(session.workingDirectory))}*`,
+      { parse_mode: 'MarkdownV2' }
+    );
+  }
+
+  const fileSizeMB = (document.file_size || 0) / (1024 * 1024);
+  if (fileSizeMB > config.DOCUMENT_MAX_FILE_SIZE_MB) {
+    await ctx.reply(
+      `❌ Document too large \\(${esc(fileSizeMB.toFixed(1))}MB\\)\\. Limit: ${esc(String(config.DOCUMENT_MAX_FILE_SIZE_MB))}MB\\.`,
+      { parse_mode: 'MarkdownV2' }
+    );
+    return;
+  }
+
+  const uploadsDir = ensureUploadsDir(session.workingDirectory);
+  const timestamp = Date.now();
+  const originalName = document.file_name ? sanitizeFileName(document.file_name) : `file_${document.file_unique_id}`;
+  const destPath = path.join(uploadsDir, `${timestamp}_${originalName}`);
+
+  try {
+    await downloadTelegramFile(ctx, document.file_id, destPath);
+    if (!fs.existsSync(destPath) || fs.statSync(destPath).size === 0) {
+      throw new Error('Downloaded document is empty.');
+    }
+
+    const relativePath = path.relative(session.workingDirectory, destPath);
+    const caption = ctx.message?.caption?.trim();
+    const noteLines = [
+      `User uploaded a file: ${document.file_name ?? originalName}`,
+      `Saved at: ${destPath}`,
+      `Relative path: ${relativePath}`,
+      caption ? `Caption: "${caption}"` : 'Caption: (none)',
+      'Use the Read tool to read its contents. For PDFs use Read with `pages` for large files.',
+      'If the caption asks a question, answer it based on the file. Otherwise summarize the contents and ask if they want a specific analysis.',
+    ];
+    const agentPrompt = noteLines.join('\n');
+
+    if (isProcessing(sessionKey)) {
+      const position = getQueuePosition(sessionKey) + 1;
+      await ctx.reply(`⏳ Queued \\(position ${position}\\)`, { parse_mode: 'MarkdownV2' });
+    }
+
+    await queueRequest(sessionKey, agentPrompt, async () => {
+      if (getStreamingMode() === 'streaming') {
+        const startTime = Date.now();
+        await messageSender.startStreaming(ctx);
+        const abortController = new AbortController();
+        setAbortController(sessionKey, abortController);
+        try {
+          const response = await sendToAgent(sessionKey, agentPrompt, {
+            onProgress: (progressText) => {
+              messageSender.updateStream(ctx, progressText);
+            },
+            abortController,
+            telegramCtx: ctx,
+          });
+          await messageSender.finishStreaming(ctx, response.text);
+          await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
+        } catch (error) {
+          await messageSender.cancelStreaming(ctx);
+          throw error;
+        }
+      } else {
+        await ctx.replyWithChatAction('typing');
+        const abortController = new AbortController();
+        setAbortController(sessionKey, abortController);
+        const response = await sendToAgent(sessionKey, agentPrompt, {
+          abortController,
+          telegramCtx: ctx,
+        });
+        await messageSender.sendMessage(ctx, response.text);
+      }
+    });
+  } catch (error) {
+    const errorMessage = sanitizeError(error);
+    console.error('[Doc] Error:', errorMessage);
+    await ctx.reply(`❌ Document error: ${esc(errorMessage)}`, { parse_mode: 'MarkdownV2' });
+  }
+}
+
 export async function handleImageDocument(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   const messageId = ctx.message?.message_id;

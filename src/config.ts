@@ -88,6 +88,10 @@ const envSchema = z.object({
     .string()
     .default('20')
     .transform((val) => parseInt(val, 10)),
+  DOCUMENT_MAX_FILE_SIZE_MB: z
+    .string()
+    .default('25')
+    .transform((val) => parseInt(val, 10)),
   // New config options
   DANGEROUS_MODE: z
     .string()
