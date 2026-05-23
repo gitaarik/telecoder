@@ -165,15 +165,20 @@ interface WorkerMessage {
 // workers do), and config.ts validates it at import time.
 const CLAUDEGRAM_DIR = path.join(os.homedir(), '.claudegram');
 
-function writeReloadMarkerForToken(token: string): void {
+function writeReloadMarkerForToken(token: string, instanceName?: string): void {
+  let botId = '';
   try {
-    const botId = token.split(':')[0];
-    if (!botId) return;
+    botId = token.split(':')[0];
+    if (!botId) {
+      console.warn(`[Launcher] writeReloadMarkerForToken (${instanceName ?? '?'}) called with malformed token (no colon) — skipping`);
+      return;
+    }
     const markerPath = path.join(CLAUDEGRAM_DIR, `pending-reload-${botId}.json`);
     mkdirSync(CLAUDEGRAM_DIR, { recursive: true });
     writeFileSync(markerPath, JSON.stringify({ timestamp: new Date().toISOString() }));
+    console.log(`[Launcher] Wrote reload marker for ${instanceName ?? botId} (botId=${botId}) at ${markerPath}`);
   } catch (err) {
-    console.error('[Launcher] Failed to write reload marker:', err);
+    console.error(`[Launcher] Failed to write reload marker for ${instanceName ?? (botId || '?')}:`, err);
   }
 }
 
@@ -233,7 +238,7 @@ function spawnWorker(inst: ResolvedInstance): Worker {
       const restartTarget = (resolvedName: string) => {
         const targetInst = instances.find(i => i.name === resolvedName);
         if (msg.autoResume && targetInst) {
-          writeReloadMarkerForToken(targetInst.token);
+          writeReloadMarkerForToken(targetInst.token, targetInst.name);
         }
         const w = workers.get(resolvedName)!;
         pendingRestarts.add(resolvedName);
@@ -263,17 +268,26 @@ function spawnWorker(inst: ResolvedInstance): Worker {
         worker.postMessage({ type: 'restart_sibling_result', success: true, name: targetName });
       }
     } else if (msg?.type === 'restart_all') {
-      console.log(`[Launcher] ${inst.name} requested restart of ALL instances${msg.autoResume ? ' (with auto-resume)' : ''}`);
+      console.log(`[Launcher] ${inst.name} requested restart of ALL instances${msg.autoResume ? ' (with auto-resume)' : ''} — ${instances.length} configured, ${workers.size} live`);
+      const liveNames = new Set(workers.keys());
+      const missingFromWorkers = instances.filter(i => !liveNames.has(i.name)).map(i => i.name);
+      if (missingFromWorkers.length > 0) {
+        console.warn(`[Launcher] restart_all: configured instances with no live worker (won't be respawned by terminate): ${missingFromWorkers.join(', ')}`);
+      }
       for (const i of instances) {
         pendingRestarts.add(i.name);
         if (msg.autoResume) {
-          writeReloadMarkerForToken(i.token);
+          writeReloadMarkerForToken(i.token, i.name);
         }
       }
       // Stagger terminations to avoid port conflicts on respawn
       let delay = 0;
-      for (const [, w] of workers) {
-        setTimeout(() => w.terminate(), delay);
+      for (const [name, w] of workers) {
+        const scheduledAt = delay;
+        setTimeout(() => {
+          console.log(`[Launcher] restart_all: terminating ${name} (scheduled +${scheduledAt}ms)`);
+          w.terminate();
+        }, delay);
         delay += 200;
       }
     }
@@ -297,6 +311,7 @@ function spawnWorker(inst: ResolvedInstance): Worker {
         console.log(`[Launcher] ✓ ${inst.name} respawned`);
       }, 1000);
     } else {
+      console.warn(`[Launcher] ${inst.name} exited without a pending restart — not respawning (sessions for this bot won't be auto-resumed)`);
       workers.delete(inst.name);
       if (workers.size === 0) {
         console.log('All workers exited. Shutting down launcher.');

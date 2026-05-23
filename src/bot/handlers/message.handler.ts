@@ -23,7 +23,7 @@ import { userPreferences } from '../../providers/user-preferences.js';
 import { parseSessionKey } from '../../utils/session-key.js';
 import { resolveVerbosityFlags } from '../../utils/verbosity.js';
 import { summarizeTopicWithHaiku } from '../../claude/auto-topic-haiku.js';
-import { readLastAssistantTurnText } from '../../claude/session-jsonl.js';
+import { readLastAiTitle, readLastAssistantTurnText } from '../../claude/session-jsonl.js';
 import { executeVReddit } from '../../reddit/vreddit.js';
 import { detectPlatform, isValidUrl } from '../../media/extract.js';
 import { maybeSendVoiceReply } from '../../tts/voice-reply.js';
@@ -51,7 +51,16 @@ function fireAutoTopic(ctx: Context, sessionKey: string, userMessage: string): v
   void (async () => {
     try {
       const previousTopic = getSessionTopic(sessionKey);
-      const topic = await summarizeTopicWithHaiku(userMessage, previousTopic);
+      let topic = await summarizeTopicWithHaiku(userMessage, previousTopic);
+      // If Haiku failed AND we have no prior topic at all, seed from Claude
+      // Code's aiTitle so the status line shows *something* instead of staying
+      // blank until the next turn succeeds. With a prior topic we keep it.
+      if (!topic && !previousTopic) {
+        const session = sessionManager.getSession(sessionKey);
+        if (session?.claudeSessionId) {
+          topic = readLastAiTitle(session.workingDirectory, session.claudeSessionId);
+        }
+      }
       if (!topic) return;
       // Topic lives in the status line, not the Telegram bot name. Updating
       // the topic doesn't change buildBotDisplayName, so no setMyName call —

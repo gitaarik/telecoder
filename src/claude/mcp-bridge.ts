@@ -142,6 +142,14 @@ registerIpcHandler('/mcp/switch_project', async (turn, body) => {
 
   sessionManager.setWorkingDirectory(turn.sessionKey, targetPath);
 
+  // Refresh the Telegram bot display name so it reflects the new project.
+  // Matches the behavior of /project and the SDK in-process switch_project tool.
+  const ctx = getTelegramCtx(turn.options as unknown);
+  if (ctx) {
+    const { clearTopicAndRefreshBotName } = await import('../bot/handlers/command.handler.js');
+    await clearTopicAndRefreshBotName(ctx, turn.sessionKey);
+  }
+
   return {
     success: true,
     message: `Switched to project: ${projectName} (${targetPath}). The new working directory will take effect on the next query.`,

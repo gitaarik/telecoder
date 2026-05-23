@@ -171,6 +171,41 @@ export function readLastAssistantTurnText(
 }
 
 /**
+ * Read the most recent `type:'ai-title'` record's `aiTitle` field from the
+ * session log. Claude Code writes this as a session-level label (visible in
+ * its resume picker); empirically it locks in early and doesn't track topic
+ * shifts, so treat it as a session label, not a live focus tracker. Useful
+ * as a seed when our own topic state is empty (resume path, or Haiku failure
+ * with no prior topic).
+ */
+export function readLastAiTitle(
+  workingDirectory: string,
+  sessionId: string,
+): string | undefined {
+  const filePath = sessionJsonlPath(workingDirectory, sessionId);
+  if (!fs.existsSync(filePath)) return undefined;
+
+  const raw = fs.readFileSync(filePath, 'utf-8');
+  const lines = raw.split('\n');
+
+  let lastTitle: string | undefined;
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    // Cheap pre-filter — these records are dense, no point parsing every line.
+    if (!line.includes('"ai-title"')) continue;
+    let rec: Record<string, unknown>;
+    try { rec = JSON.parse(line) as Record<string, unknown>; }
+    catch { continue; }
+    if (rec.type !== 'ai-title') continue;
+    const title = rec.aiTitle;
+    if (typeof title === 'string' && title.trim().length > 0) {
+      lastTitle = title.trim();
+    }
+  }
+  return lastTitle;
+}
+
+/**
  * Read the JSONL log for a session and return the last `n` user/assistant
  * exchanges. Tool calls, tool results, and thinking blocks are skipped so the
  * recap reads like a conversation transcript.

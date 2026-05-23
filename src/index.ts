@@ -12,7 +12,7 @@ import { consumeAllInFlight } from './claude/in-flight-tracker.js';
 import { clearConversation } from './providers/provider-router.js';
 import { parseSessionKey } from './utils/session-key.js';
 import { setSessionTopic, getEffortLabel } from './bot/handlers/command.handler.js';
-import { isBotNameEnabled, rateLimitedSetMyName } from './telegram/botname-settings.js';
+import { isBotNameEnabled, rateLimitedSetMyName, notifyBotNameBlockToChat } from './telegram/botname-settings.js';
 import { splitMessage, escapeMarkdownV2, processMessageForTelegram } from './telegram/markdown.js';
 import type { Bot } from 'grammy';
 
@@ -94,13 +94,17 @@ const RELOAD_MARKER_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
 
 async function autoResumeAfterReload(bot: Bot): Promise<void> {
   const markerFile = getReloadMarkerPath();
-  if (!fs.existsSync(markerFile)) return;
+  if (!fs.existsSync(markerFile)) {
+    console.log(`[AutoResume] No reload marker at ${markerFile} — skipping auto-resume`);
+    return;
+  }
 
   let marker: { timestamp: string };
   try {
     const raw = fs.readFileSync(markerFile, 'utf-8');
     marker = JSON.parse(raw);
-  } catch {
+  } catch (err) {
+    console.warn(`[AutoResume] Marker file ${markerFile} is unreadable, deleting:`, err instanceof Error ? err.message : err);
     try { fs.unlinkSync(markerFile); } catch {}
     return;
   }
@@ -108,10 +112,12 @@ async function autoResumeAfterReload(bot: Bot): Promise<void> {
   // Validate timestamp freshness
   const age = Date.now() - new Date(marker.timestamp).getTime();
   if (age > RELOAD_MARKER_MAX_AGE_MS || age < 0) {
-    console.log('[AutoResume] Stale marker file, ignoring');
+    console.log(`[AutoResume] Stale marker (age=${age}ms, max=${RELOAD_MARKER_MAX_AGE_MS}ms), ignoring`);
     try { fs.unlinkSync(markerFile); } catch {}
     return;
   }
+
+  console.log(`[AutoResume] Found fresh marker (age=${Math.round(age / 1000)}s), evaluating sessions for restore`);
 
   // Delete marker immediately to prevent double-processing or crash loops
   try { fs.unlinkSync(markerFile); } catch {}
@@ -122,32 +128,56 @@ async function autoResumeAfterReload(bot: Bot): Promise<void> {
     ...config.ALLOWED_USER_IDS,
     ...config.ALLOWED_GROUP_IDS,
   ]);
+  console.log(`[AutoResume] ${activeSessions.size} candidate session(s) in history; allowlist size=${allowedIds.size}`);
+
   let resumed = 0;
+  const skipped: Record<string, number> = { notAllowed: 0, idle: 0, noClaudeSessionId: 0, resumeReturnedUndefined: 0, threw: 0 };
 
   for (const [sessionKey, entry] of activeSessions) {
     const { chatId, threadId } = parseSessionKey(sessionKey);
 
     // Only resume sessions belonging to this bot instance
-    if (!allowedIds.has(chatId)) continue;
+    if (!allowedIds.has(chatId)) {
+      console.log(`[AutoResume] skip ${sessionKey}: chatId ${chatId} not in this bot's allowlist`);
+      skipped.notAllowed++;
+      continue;
+    }
 
     // Only resume sessions with recent activity (within last hour)
     const lastActivity = new Date(entry.lastActivity).getTime();
-    if (Date.now() - lastActivity > 60 * 60 * 1000) continue;
+    const idleMs = Date.now() - lastActivity;
+    if (idleMs > 60 * 60 * 1000) {
+      console.log(`[AutoResume] skip ${sessionKey}: idle for ${Math.round(idleMs / 60000)}min (cutoff=60min, lastActivity=${entry.lastActivity})`);
+      skipped.idle++;
+      continue;
+    }
 
     // Only resume sessions that have a Claude session ID
-    if (!entry.claudeSessionId) continue;
+    if (!entry.claudeSessionId) {
+      console.log(`[AutoResume] skip ${sessionKey}: entry has no claudeSessionId (conversationId=${entry.conversationId}, project=${entry.projectName}) — likely a session that never completed init`);
+      skipped.noClaudeSessionId++;
+      continue;
+    }
 
     try {
       const session = sessionManager.resumeLastSession(sessionKey);
-      if (!session) continue;
+      if (!session) {
+        console.warn(`[AutoResume] skip ${sessionKey}: sessionManager.resumeLastSession returned undefined (history entry exists with claudeSessionId=${entry.claudeSessionId})`);
+        skipped.resumeReturnedUndefined++;
+        continue;
+      }
+      console.log(`[AutoResume] resuming ${sessionKey}: project=${entry.projectName}, claudeSessionId=${entry.claudeSessionId}, idle=${Math.round(idleMs / 1000)}s`);
 
       clearConversation(sessionKey);
 
-      // Restore topic in memory and update bot name
-      if (entry.topic && isBotNameEnabled(sessionKey)) {
-        const displayName = setSessionTopic(sessionKey, entry.topic);
+      // Restore topic in memory and update bot name. Refresh the name even
+      // when no topic was persisted — otherwise the bot keeps whatever name
+      // was last sent (potentially for a different chat/project) after restart.
+      if (isBotNameEnabled(sessionKey)) {
+        const displayName = setSessionTopic(sessionKey, entry.topic || '');
         try {
-          await rateLimitedSetMyName(bot.api, (n) => bot.api.setMyName(n), displayName);
+          const result = await rateLimitedSetMyName(bot.api, (n) => bot.api.setMyName(n), displayName);
+          await notifyBotNameBlockToChat(bot.api, chatId, result, threadId);
         } catch (e) {
           console.debug('[AutoResume] Failed to update bot name:', e instanceof Error ? e.message : e);
         }
@@ -202,12 +232,18 @@ async function autoResumeAfterReload(bot: Bot): Promise<void> {
       resumed++;
     } catch (err) {
       console.error(`[AutoResume] Failed to resume ${sessionKey}:`, err);
+      skipped.threw++;
     }
   }
 
-  if (resumed > 0) {
-    console.log(`[AutoResume] Restored ${resumed} session(s)`);
-  }
+  const skipSummary = Object.entries(skipped)
+    .filter(([, n]) => n > 0)
+    .map(([k, n]) => `${k}=${n}`)
+    .join(', ');
+  console.log(
+    `[AutoResume] Done: restored=${resumed}/${activeSessions.size}` +
+    (skipSummary ? `, skipped(${skipSummary})` : '')
+  );
 }
 
 /**

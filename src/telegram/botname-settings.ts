@@ -9,7 +9,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { atomicWriteFileSync } from '../utils/atomic-write.js';
 import { z } from 'zod';
-import { GrammyError } from 'grammy';
+import { GrammyError, type Context } from 'grammy';
 
 const botnameSettingsSchema = z.object({
   enabled: z.boolean().optional(),
@@ -196,15 +196,34 @@ function getRateState(key: object): NameRateState {
   return state;
 }
 
+/**
+ * Result of a rateLimitedSetMyName call. Callers with a chat context can pass
+ * this to `notifyBotNameBlock` to surface 429-induced cooldowns to the user.
+ *
+ * - 'sent': Telegram accepted the update (immediate path).
+ * - 'queued': Soft-throttled; will fire from the deferred timer within ~60s.
+ * - 'no_change': Name unchanged from the last successful send — skipped.
+ * - 'newly_blocked': Telegram returned 429 on THIS call; a new cooldown is now
+ *   in effect. `blockedUntilMs` is the unix-ms timestamp at which calls resume.
+ * - 'still_blocked': A prior 429 cooldown is still active; we didn't even try.
+ */
+export type SetMyNameResult =
+  | { status: 'sent' }
+  | { status: 'queued' }
+  | { status: 'no_change' }
+  | { status: 'newly_blocked'; blockedUntilMs: number }
+  | { status: 'still_blocked'; blockedUntilMs: number };
+
 async function callAndHandle429(
   state: NameRateState,
   apiCall: (name: string) => Promise<unknown>,
   name: string,
   source: string,
-): Promise<void> {
+): Promise<{ kind: 'sent' } | { kind: 'newly_blocked'; blockedUntilMs: number }> {
   try {
     await apiCall(name);
     state.lastSentName = name;
+    return { kind: 'sent' };
   } catch (err) {
     const retryAfterMs = extractRetryAfterMs(err);
     if (retryAfterMs !== undefined) {
@@ -212,7 +231,7 @@ async function callAndHandle429(
       setBlockedUntil(until);
       const mins = Math.round(retryAfterMs / 60000);
       console.warn(`[BotName] ${source}: setMyName rate-limited by Telegram, blocked for ~${mins}m (until ${new Date(until).toISOString()})`);
-      return;
+      return { kind: 'newly_blocked', blockedUntilMs: until };
     }
     throw err;
   }
@@ -237,13 +256,13 @@ export async function rateLimitedSetMyName(
   botKey: object,
   apiCall: (name: string) => Promise<unknown>,
   name: string,
-): Promise<void> {
+): Promise<SetMyNameResult> {
   const blockedUntil = getBlockedUntil();
   const now = Date.now();
   if (blockedUntil > now) {
     const mins = Math.round((blockedUntil - now) / 60000);
     console.debug(`[BotName] Skipping setMyName — Telegram cooldown for ~${mins}m more.`);
-    return;
+    return { status: 'still_blocked', blockedUntilMs: blockedUntil };
   }
 
   const state = getRateState(botKey);
@@ -251,7 +270,7 @@ export async function rateLimitedSetMyName(
   // No-op if the name we already sent matches — most auto-topic calls re-emit
   // the same topic for follow-up messages, and Telegram counts those toward
   // the rate limit even though the visible name doesn't change.
-  if (state.lastSentName === name) return;
+  if (state.lastSentName === name) return { status: 'no_change' };
 
   const elapsed = now - state.lastUpdateTime;
 
@@ -260,30 +279,109 @@ export async function rateLimitedSetMyName(
     state.pendingName = null;
     state.pendingApiCall = null;
     if (state.pendingTimer) { clearTimeout(state.pendingTimer); state.pendingTimer = null; }
-    await callAndHandle429(state, apiCall, name, 'immediate');
-  } else {
-    state.pendingName = name;
-    state.pendingApiCall = apiCall;
-    if (!state.pendingTimer) {
-      const delay = MIN_NAME_UPDATE_INTERVAL_MS - elapsed;
-      state.pendingTimer = setTimeout(async () => {
-        state.pendingTimer = null;
-        const queuedName = state.pendingName;
-        const queuedCall = state.pendingApiCall;
-        state.pendingName = null;
-        state.pendingApiCall = null;
-        if (queuedName === null || !queuedCall) return;
-        if (state.lastSentName === queuedName) return;
-        // Re-check the persistent cooldown — it may have been set since this
-        // timer was scheduled (e.g. a sibling immediate call hit 429).
-        if (getBlockedUntil() > Date.now()) return;
-        state.lastUpdateTime = Date.now();
-        try {
-          await callAndHandle429(state, queuedCall, queuedName, 'deferred');
-        } catch (err) {
-          console.error('[BotName] Deferred name update failed:', err instanceof Error ? err.message : err);
-        }
-      }, delay);
+    const r = await callAndHandle429(state, apiCall, name, 'immediate');
+    if (r.kind === 'newly_blocked') {
+      return { status: 'newly_blocked', blockedUntilMs: r.blockedUntilMs };
     }
+    return { status: 'sent' };
+  }
+
+  state.pendingName = name;
+  state.pendingApiCall = apiCall;
+  if (!state.pendingTimer) {
+    const delay = MIN_NAME_UPDATE_INTERVAL_MS - elapsed;
+    state.pendingTimer = setTimeout(async () => {
+      state.pendingTimer = null;
+      const queuedName = state.pendingName;
+      const queuedCall = state.pendingApiCall;
+      state.pendingName = null;
+      state.pendingApiCall = null;
+      if (queuedName === null || !queuedCall) return;
+      if (state.lastSentName === queuedName) return;
+      // Re-check the persistent cooldown — it may have been set since this
+      // timer was scheduled (e.g. a sibling immediate call hit 429).
+      if (getBlockedUntil() > Date.now()) return;
+      state.lastUpdateTime = Date.now();
+      try {
+        await callAndHandle429(state, queuedCall, queuedName, 'deferred');
+      } catch (err) {
+        console.error('[BotName] Deferred name update failed:', err instanceof Error ? err.message : err);
+      }
+    }, delay);
+  }
+  return { status: 'queued' };
+}
+
+// ---------------------------------------------------------------------------
+// Cooldown notification (surface 429 blackouts to the user)
+// ---------------------------------------------------------------------------
+
+// Dedup keyed on `${BOT_ID}:${chatId}:${blockedUntilMs}` so a fresh 429
+// (different blockedUntilMs) re-notifies, but repeated drops inside the same
+// cooldown window do not. Lives in-memory only — after restart, the cooldown
+// reloads from disk and the next attempt re-notifies, which is fine UX.
+const notifiedCooldowns = new Set<string>();
+
+function makeCooldownKey(chatId: number, blockedUntilMs: number): string {
+  return `${BOT_ID}:${chatId}:${blockedUntilMs}`;
+}
+
+function formatCooldownMessage(blockedUntilMs: number): string {
+  const remainingMs = Math.max(0, blockedUntilMs - Date.now());
+  const mins = Math.round(remainingMs / 60000);
+  const when = mins >= 60
+    ? `~${Math.round(mins / 60)}h`
+    : `~${Math.max(mins, 1)}m`;
+  return `⚠️ Bot name update skipped — Telegram rate-limited setMyName. Will retry in ${when}.`;
+}
+
+/**
+ * Shared dedup gate: returns true exactly once per (bot, chat, cooldown window)
+ * so multiple dropped updates inside the same window stay quiet.
+ */
+function shouldNotifyCooldown(chatId: number, blockedUntilMs: number): boolean {
+  const key = makeCooldownKey(chatId, blockedUntilMs);
+  if (notifiedCooldowns.has(key)) return false;
+  notifiedCooldowns.add(key);
+  return true;
+}
+
+/**
+ * If `result` indicates a 429 cooldown, send a one-time notice to the chat in
+ * `ctx`. Deduped per (bot, chat, cooldown window) so repeated dropped updates
+ * inside the same window don't spam the user.
+ */
+export async function notifyBotNameBlock(ctx: Context, result: SetMyNameResult): Promise<void> {
+  if (result.status !== 'newly_blocked' && result.status !== 'still_blocked') return;
+  const chatId = ctx.chat?.id;
+  if (chatId === undefined) return;
+  if (!shouldNotifyCooldown(chatId, result.blockedUntilMs)) return;
+
+  try {
+    await ctx.reply(formatCooldownMessage(result.blockedUntilMs));
+  } catch (err) {
+    console.debug('[BotName] Failed to send cooldown notice:', err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * Same as `notifyBotNameBlock` but takes a raw `bot.api` reference plus chat /
+ * thread IDs — for paths that don't have a grammy `Context` (e.g. auto-resume
+ * loops over sessions and sends through `bot.api.sendMessage`).
+ */
+export async function notifyBotNameBlockToChat(
+  api: { sendMessage(chatId: number, text: string, options?: { message_thread_id?: number }): Promise<unknown> },
+  chatId: number,
+  result: SetMyNameResult,
+  threadId?: number,
+): Promise<void> {
+  if (result.status !== 'newly_blocked' && result.status !== 'still_blocked') return;
+  if (!shouldNotifyCooldown(chatId, result.blockedUntilMs)) return;
+
+  try {
+    const opts = threadId !== undefined ? { message_thread_id: threadId } : undefined;
+    await api.sendMessage(chatId, formatCooldownMessage(result.blockedUntilMs), opts);
+  } catch (err) {
+    console.debug('[BotName] Failed to send cooldown notice:', err instanceof Error ? err.message : err);
   }
 }

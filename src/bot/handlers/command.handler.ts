@@ -40,7 +40,7 @@ import { isMediumUrl, fetchMediumArticle, FreediumArticle } from '../../medium/f
 import { escapeMarkdownV2 as esc, processMessageForTelegram } from '../../telegram/markdown.js';
 import { getTTSSettings, setTTSEnabled, setTTSVoice, setTTSAutoplay } from '../../tts/tts-settings.js';
 import { getTerminalUISettings, setTerminalUIEnabled } from '../../telegram/terminal-settings.js';
-import { getBotNameSettings, setBotNameEnabled, isBotNameEnabled, rateLimitedSetMyName } from '../../telegram/botname-settings.js';
+import { getBotNameSettings, setBotNameEnabled, isBotNameEnabled, rateLimitedSetMyName, notifyBotNameBlock } from '../../telegram/botname-settings.js';
 import { getTelegraphSettings, setTelegraphEnabled } from '../../telegram/telegraph-settings.js';
 import { userPreferences } from '../../providers/user-preferences.js';
 import { maybeSendVoiceReply } from '../../tts/voice-reply.js';
@@ -68,7 +68,7 @@ import { sanitizeError, sanitizePath } from '../../utils/sanitize.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../../utils/workspace-guard.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
 import { taskTracker, type TaskState } from '../../telegram/task-tracker.js';
-import { readRecentExchanges, readLastAssistantTurnText, type RecapExchange } from '../../claude/session-jsonl.js';
+import { readRecentExchanges, readLastAiTitle, readLastAssistantTurnText, type RecapExchange } from '../../claude/session-jsonl.js';
 import {
   VERBOSITY_INFO,
   isValidVerbosityLevel,
@@ -111,7 +111,8 @@ function buildBotDisplayName(sessionKey: string): string {
 async function updateBotName(ctx: Context, sessionKey: string, projectPath: string): Promise<void> {
   if (!isBotNameEnabled(sessionKey)) return;
   try {
-    await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), buildBotDisplayName(sessionKey));
+    const result = await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), buildBotDisplayName(sessionKey));
+    await notifyBotNameBlock(ctx, result);
   } catch (err) {
     console.error('[Bot] Failed to update bot name:', err);
   }
@@ -125,7 +126,8 @@ export async function clearTopicAndRefreshBotName(ctx: Context, sessionKey: stri
   setSessionTopic(sessionKey, '');
   if (!isBotNameEnabled(sessionKey)) return;
   try {
-    await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), buildBotDisplayName(sessionKey));
+    const result = await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), buildBotDisplayName(sessionKey));
+    await notifyBotNameBlock(ctx, result);
   } catch (err) {
     console.debug('[Topic] Failed to refresh bot name after topic clear:', err instanceof Error ? err.message : err);
   }
@@ -134,12 +136,22 @@ export async function clearTopicAndRefreshBotName(ctx: Context, sessionKey: stri
 /**
  * Restore the session topic from the saved value (or clear if absent) and refresh
  * the bot display name. Called when resuming/continuing a previous conversation.
+ *
+ * When no persisted topic exists, fall back to Claude Code's `aiTitle` from the
+ * session JSONL — better a stale session label than a blank topic line on resume.
  */
 export async function restoreTopicAndRefreshBotName(ctx: Context, sessionKey: string, topic: string | undefined): Promise<void> {
+  if (!topic) {
+    const session = sessionManager.getSession(sessionKey);
+    if (session?.claudeSessionId) {
+      topic = readLastAiTitle(session.workingDirectory, session.claudeSessionId);
+    }
+  }
   setSessionTopic(sessionKey, topic || '');
   if (!isBotNameEnabled(sessionKey)) return;
   try {
-    await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), buildBotDisplayName(sessionKey));
+    const result = await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), buildBotDisplayName(sessionKey));
+    await notifyBotNameBlock(ctx, result);
   } catch (err) {
     console.debug('[Topic] Failed to refresh bot name after topic restore:', err instanceof Error ? err.message : err);
   }
@@ -246,7 +258,8 @@ export async function handleBotNameCallback(ctx: Context): Promise<void> {
   // Reset bot name to base when disabling
   if (!newState) {
     try {
-      await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), config.BOT_NAME);
+      const result = await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), config.BOT_NAME);
+      await notifyBotNameBlock(ctx, result);
     } catch (err) {
       console.error('[Bot] Failed to reset bot name:', err);
     }

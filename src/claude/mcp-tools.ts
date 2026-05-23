@@ -15,7 +15,7 @@ import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../utils/workspace-guard.js';
 import { isBotNameEnabled, rateLimitedSetMyName } from '../telegram/botname-settings.js';
-import { setSessionTopic } from '../bot/handlers/command.handler.js';
+import { setSessionTopic, clearTopicAndRefreshBotName } from '../bot/handlers/command.handler.js';
 import { createPendingQuestion } from './ask-user.js';
 
 // Lazy imports to avoid circular deps and unnecessary module loading
@@ -148,6 +148,7 @@ function switchProjectTool(toolsCtx: McpToolsContext) {
         }
 
         sessionManager.setWorkingDirectory(toolsCtx.sessionKey, targetPath);
+        await clearTopicAndRefreshBotName(toolsCtx.telegramCtx, toolsCtx.sessionKey);
 
         return {
           content: [{
