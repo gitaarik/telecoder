@@ -1811,6 +1811,11 @@
             <p>Use /schedule to run a prompt on a recurring cadence. Supports intervals (<code>every 5m</code>, <code>every 1h</code>) and cron-style days/times (<code>daily 9am</code>, <code>weekdays 14:00</code>, <code>mon,wed,fri 10:30</code>). Each fire posts a "🔔 Scheduled" header and runs through the same session as your manual chats. Hard caps (10 active per chat, 50 fires default) keep runaway API spend in check.</p>
           </div>
           <div class="feature-card" data-category="core">
+            <div class="feature-icon">🤖</div>
+            <h3>Claude Self-Scheduling</h3>
+            <p>In PTY mode, Claude has access to <code>claudegram_loop</code> and <code>claudegram_schedule</code> MCP tools so it can set up its own recurring tasks ("ping me when CI finishes", "remind me about this tomorrow"). Built-in <code>CronCreate</code> / <code>ScheduleWakeup</code> are blocked since they can't reach back into Telegram — set <code>CLAUDEGRAM_ALLOW_NATIVE_SCHEDULING=1</code> to re-enable for experimentation.</p>
+          </div>
+          <div class="feature-card" data-category="core">
             <div class="feature-icon">🌐</div>
             <h3>Proxy Support</h3>
             <p>Connect through HTTP/HTTPS/SOCKS proxies via TELEGRAM_PROXY_URL or standard HTTP_PROXY env vars. Essential for restricted networks.</p>

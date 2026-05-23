@@ -330,6 +330,112 @@ if (process.env.CLAUDEGRAM_TELEGRAPH_ENABLED === 'true') {
   );
 }
 
+// ── claudegram_loop (IPC: registers an interval schedule) ────────────
+server.tool(
+  'claudegram_loop',
+  'Schedule a prompt to re-fire on a fixed interval, pinging the user via Telegram each time. Use for "every N minutes/hours, do X" tasks (poll a status, check a metric, remind me). The first fire is one interval from now, NOT immediately. Returns the schedule id. Hard caps: 60s minimum interval, default 50 fires (max 500), 10 schedules per chat.',
+  {
+    prompt: z.string().describe('Exact prompt to re-fire on each tick. Write it as a complete instruction — the model receives it with no extra context beyond your current session.'),
+    interval_seconds: z.number().int().min(60).describe('How often to fire, in seconds. Must be ≥ 60.'),
+    max_runs: z.number().int().min(1).max(500).optional().describe('Cap on total fires. Default 50, ceiling 500. Schedule auto-disables after the cap is hit.'),
+    label: z.string().optional().describe('Short human-readable title shown in the "🔔 Scheduled" header (≤ 60 chars recommended).'),
+  },
+  async ({ prompt, interval_seconds, max_runs, label }) => {
+    try {
+      const result = await ipc<{ success: boolean; message: string }>('/mcp/schedule_loop', {
+        prompt,
+        interval_seconds,
+        max_runs,
+        label,
+      });
+      return {
+        content: [{ type: 'text' as const, text: result.message }],
+        isError: !result.success,
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text' as const, text: `Loop schedule error: ${error instanceof Error ? error.message : String(error)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ── claudegram_schedule (IPC: registers a cron-based schedule) ───────
+server.tool(
+  'claudegram_schedule',
+  'Schedule a prompt to fire on a cron expression (e.g. "0 9 * * *" for daily 9am). Use for time-of-day or day-of-week tasks (morning standup, weekly summary, end-of-day report). 5-field cron only (minute hour day-of-month month day-of-week). Returns the schedule id. Same caps as claudegram_loop.',
+  {
+    prompt: z.string().describe('Exact prompt to fire on each scheduled time.'),
+    cron_expression: z.string().describe('5-field cron expression. Examples: "0 9 * * *" (daily 9am), "0 9 * * 1-5" (weekdays 9am), "*/15 * * * *" (every 15 min on the dot — note: subject to the same 60s minimum).'),
+    max_runs: z.number().int().min(1).max(500).optional().describe('Cap on total fires. Default 50, ceiling 500.'),
+    label: z.string().optional().describe('Short human-readable title shown in the "🔔 Scheduled" header.'),
+  },
+  async ({ prompt, cron_expression, max_runs, label }) => {
+    try {
+      const result = await ipc<{ success: boolean; message: string }>('/mcp/schedule_cron', {
+        prompt,
+        cron_expression,
+        max_runs,
+        label,
+      });
+      return {
+        content: [{ type: 'text' as const, text: result.message }],
+        isError: !result.success,
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text' as const, text: `Cron schedule error: ${error instanceof Error ? error.message : String(error)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ── claudegram_list_schedules (IPC: read-only) ───────────────────────
+server.tool(
+  'claudegram_list_schedules',
+  'List active schedules for the current chat. Returns each schedule\'s id, type, cadence, run count, and prompt preview. Use before creating a new schedule to check existing ones, or to find an id to cancel.',
+  {},
+  async () => {
+    try {
+      const result = await ipc<{ success: boolean; message: string }>('/mcp/schedule_list', {});
+      return {
+        content: [{ type: 'text' as const, text: result.message }],
+        isError: !result.success,
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text' as const, text: `List schedules error: ${error instanceof Error ? error.message : String(error)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ── claudegram_cancel_schedule (IPC: remove a schedule by id) ────────
+server.tool(
+  'claudegram_cancel_schedule',
+  'Cancel and remove a scheduled task by id. Get the id from claudegram_list_schedules.',
+  {
+    id: z.string().describe('The schedule id (looks like sch_xxxxxxxx_xxxxxx).'),
+  },
+  async ({ id }) => {
+    try {
+      const result = await ipc<{ success: boolean; message: string }>('/mcp/schedule_cancel', { id });
+      return {
+        content: [{ type: 'text' as const, text: result.message }],
+        isError: !result.success,
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text' as const, text: `Cancel schedule error: ${error instanceof Error ? error.message : String(error)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);

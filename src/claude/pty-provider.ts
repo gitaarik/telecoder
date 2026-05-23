@@ -166,6 +166,10 @@ function buildMcpToolsSystemPromptNote(): string {
     '- mcp__claudegram-tools__claudegram_switch_project — switch the working directory to a different project (call list_projects first). The change takes effect on the next user query.',
     '- mcp__claudegram-tools__claudegram_send_file — send a file from the bot\'s filesystem (within the workspace or /tmp) to the user via Telegram. Use after creating files (reports, SVGs, images, etc.) to deliver them directly. Max 50MB.',
     '- mcp__claudegram-tools__claudegram_ask_user — ask the user a multiple-choice question via a Telegram inline keyboard (2-8 options). Pauses until the user taps a button. Prefer this over the built-in AskUserQuestion whenever you need a decision from the user — AskUserQuestion is for terminal users and does not render correctly through claudegram.',
+    '- mcp__claudegram-tools__claudegram_loop — schedule a prompt to re-fire on a fixed interval (min 60s). Use for periodic polling / "every N minutes do X" tasks. Prefer this over the built-in CronCreate or ScheduleWakeup — those don\'t reach back into Telegram. The user sees each fire as a "🔔 Scheduled" message.',
+    '- mcp__claudegram-tools__claudegram_schedule — schedule a prompt on a 5-field cron expression (e.g. "0 9 * * *" for daily 9am). Use for time-of-day tasks (morning summary, end-of-day report). Same Telegram-visible behavior as claudegram_loop.',
+    '- mcp__claudegram-tools__claudegram_list_schedules — list active schedules in this chat (id, cadence, runs, prompt preview). Call before creating a new schedule to check for duplicates, or to find an id to cancel.',
+    '- mcp__claudegram-tools__claudegram_cancel_schedule — remove a scheduled task by id.',
   ];
   if (config.REDDIT_ENABLED) {
     tools.push('- mcp__claudegram-tools__claudegram_fetch_reddit — fetch reddit content (subreddits, threads, user profiles). Use this for any reddit.com/r/<subreddit> or post URL; prefer over WebFetch.');
@@ -510,7 +514,15 @@ export class PtyProvider implements Provider {
       // already steers claude toward claudegram_ask_user, but the model still
       // reaches for the built-in sometimes mid-turn — a hard deny forces it
       // to the MCP variant (or plain text).
-      '--disallowedTools', 'AskUserQuestion',
+      //
+      // CronCreate / ScheduleWakeup are also blocked: in PTY mode their fires
+      // (if they even arm) would land outside our session and never reach the
+      // Telegram chat. claudegram_loop / claudegram_schedule replace them and
+      // route fires through the bot. Set CLAUDEGRAM_ALLOW_NATIVE_SCHEDULING=1
+      // to keep the built-ins enabled if you want to experiment.
+      '--disallowedTools', process.env.CLAUDEGRAM_ALLOW_NATIVE_SCHEDULING === '1'
+        ? 'AskUserQuestion'
+        : 'AskUserQuestion,CronCreate,ScheduleWakeup',
     ];
 
     const term = spawn(CLAUDE_BIN, args, {

@@ -23,6 +23,7 @@ import { registerIpcHandler } from './ipc-server.js';
 import { sessionManager } from './session-manager.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../utils/workspace-guard.js';
 import { createPendingQuestion } from './ask-user.js';
+import { scheduler } from './scheduler.js';
 
 const TELEGRAM_MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 
@@ -283,4 +284,113 @@ registerIpcHandler('/mcp/send_file', async (turn, body) => {
     success: true,
     message: `File sent to user: ${fileName} (${sizeMB}MB)`,
   };
+});
+
+// ── /mcp/schedule_loop ───────────────────────────────────────────────
+// Claude-initiated interval scheduling. Same scheduler as the Telegram-side
+// /schedule command — only the entrypoint differs, so caps and persistence
+// are uniformly enforced regardless of who created the schedule.
+registerIpcHandler('/mcp/schedule_loop', async (turn, body) => {
+  const prompt = String(body.prompt ?? '').trim();
+  const intervalSeconds = typeof body.interval_seconds === 'number' ? body.interval_seconds : 0;
+  const maxRuns = typeof body.max_runs === 'number' ? body.max_runs : undefined;
+  const label = typeof body.label === 'string' ? body.label : undefined;
+
+  if (!prompt) return { success: false, message: 'Error: prompt is required.' };
+  if (intervalSeconds < 60) return { success: false, message: 'Error: interval_seconds must be at least 60.' };
+
+  const session = sessionManager.getSession(turn.sessionKey);
+  if (!session) {
+    return { success: false, message: 'Error: no session bound to this chat — schedule cannot be created.' };
+  }
+
+  try {
+    const created = scheduler.createSchedule({
+      sessionKey: turn.sessionKey,
+      cwd: session.workingDirectory,
+      claudeSessionId: session.claudeSessionId,
+      prompt,
+      label,
+      maxRuns,
+      kind: 'interval',
+      intervalMs: intervalSeconds * 1000,
+    });
+    const nextFire = scheduler.nextFireAt(created.id);
+    const nextLine = nextFire ? ` Next fire: ${new Date(nextFire).toLocaleString()}.` : '';
+    return {
+      success: true,
+      message: `Schedule created (id=${created.id}). Will fire every ${intervalSeconds}s, up to ${created.maxRuns} times.${nextLine}`,
+    };
+  } catch (err) {
+    return { success: false, message: `Error: ${err instanceof Error ? err.message : String(err)}` };
+  }
+});
+
+// ── /mcp/schedule_cron ───────────────────────────────────────────────
+registerIpcHandler('/mcp/schedule_cron', async (turn, body) => {
+  const prompt = String(body.prompt ?? '').trim();
+  const cronExpression = String(body.cron_expression ?? '').trim();
+  const maxRuns = typeof body.max_runs === 'number' ? body.max_runs : undefined;
+  const label = typeof body.label === 'string' ? body.label : undefined;
+
+  if (!prompt) return { success: false, message: 'Error: prompt is required.' };
+  if (!cronExpression) return { success: false, message: 'Error: cron_expression is required.' };
+
+  const session = sessionManager.getSession(turn.sessionKey);
+  if (!session) {
+    return { success: false, message: 'Error: no session bound to this chat — schedule cannot be created.' };
+  }
+
+  try {
+    const created = scheduler.createSchedule({
+      sessionKey: turn.sessionKey,
+      cwd: session.workingDirectory,
+      claudeSessionId: session.claudeSessionId,
+      prompt,
+      label,
+      maxRuns,
+      kind: 'cron',
+      cronExpr: cronExpression,
+    });
+    const nextFire = scheduler.nextFireAt(created.id);
+    const nextLine = nextFire ? ` Next fire: ${new Date(nextFire).toLocaleString()}.` : '';
+    return {
+      success: true,
+      message: `Schedule created (id=${created.id}, cron=${cronExpression}, up to ${created.maxRuns} fires).${nextLine}`,
+    };
+  } catch (err) {
+    return { success: false, message: `Error: ${err instanceof Error ? err.message : String(err)}` };
+  }
+});
+
+// ── /mcp/schedule_list ───────────────────────────────────────────────
+registerIpcHandler('/mcp/schedule_list', async (turn) => {
+  const list = scheduler.listSchedules(turn.sessionKey);
+  if (list.length === 0) {
+    return { success: true, message: 'No active schedules for this chat.' };
+  }
+  const lines = list.map((s) => {
+    const status = s.disabled ? ' [DISABLED]' : '';
+    const cadence = s.kind === 'interval'
+      ? `every ${Math.round((s.intervalMs ?? 0) / 1000)}s`
+      : `cron ${s.cronExpr ?? '?'}`;
+    const next = scheduler.nextFireAt(s.id);
+    const nextLine = next ? `, next ${new Date(next).toLocaleString()}` : '';
+    const promptPreview = s.prompt.length > 60 ? s.prompt.slice(0, 57) + '...' : s.prompt;
+    const labelPart = s.label ? ` "${s.label}"` : '';
+    return `${s.id}${labelPart}: ${cadence}, ${s.runs}/${s.maxRuns} runs${nextLine}${status}\n  prompt: ${promptPreview}`;
+  });
+  return { success: true, message: `Active schedules (${list.length}):\n\n${lines.join('\n\n')}` };
+});
+
+// ── /mcp/schedule_cancel ─────────────────────────────────────────────
+registerIpcHandler('/mcp/schedule_cancel', async (turn, body) => {
+  const id = String(body.id ?? '').trim();
+  if (!id) return { success: false, message: 'Error: id is required.' };
+  const target = scheduler.getSchedule(id);
+  if (!target || target.sessionKey !== turn.sessionKey) {
+    return { success: false, message: `No schedule "${id}" in this chat.` };
+  }
+  scheduler.deleteSchedule(id);
+  return { success: true, message: `Schedule ${id} cancelled.` };
 });
