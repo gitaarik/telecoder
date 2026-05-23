@@ -19,6 +19,7 @@ import {
 // Side-effect import: registers /mcp/* IPC handlers that bridge the standalone
 // MCP subprocess back to bot-side state (Telegram API, session topic, …).
 import './mcp-bridge.js';
+import { onMonitorArmed, markTurnStart, markTurnEnd, teardown as teardownMonitorRelay } from './monitor-relay.js';
 import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions, type EditDiffEvent, type ToolResultEvent, type ImageAttachment } from '../providers/types.js';
 
 const { Terminal } = headless;
@@ -171,6 +172,10 @@ function buildMcpToolsSystemPromptNote(): string {
     '- mcp__claudegram-tools__claudegram_list_schedules — list active schedules in this chat (id, cadence, runs, prompt preview). Call before creating a new schedule to check for duplicates, or to find an id to cancel.',
     '- mcp__claudegram-tools__claudegram_cancel_schedule — remove a scheduled task by id.',
   ];
+  // Monitor isn't a claudegram_* tool, but PTY mode wires up a relay so its
+  // events between user turns surface in Telegram. Mention it so the model
+  // confidently uses Monitor when it's the right fit (watching a file/process).
+  tools.push('- Monitor (built-in) — supported in claudegram PTY mode. When events fire between user turns, claudegram posts each new assistant text block to Telegram with a "📡 Monitor event" header. Use it freely for "watch X and tell me when Y happens" tasks.');
   if (config.REDDIT_ENABLED) {
     tools.push('- mcp__claudegram-tools__claudegram_fetch_reddit — fetch reddit content (subreddits, threads, user profiles). Use this for any reddit.com/r/<subreddit> or post URL; prefer over WebFetch.');
   }
@@ -384,6 +389,9 @@ export class PtyProvider implements Provider {
       },
     };
     registerActiveTurn(session.claudeSessionId, activeTurn);
+    // Tell the monitor relay we're in a turn so it suppresses event posts
+    // for assistant text that's being delivered through the normal pipeline.
+    markTurnStart(sessionKey);
 
     // Mid-turn abort. Two stages:
     //   1. Write Esc (0x1b) into the pty — claude code's TUI shortcut for
@@ -448,6 +456,8 @@ export class PtyProvider implements Provider {
       if (abortKillTimer) clearTimeout(abortKillTimer);
       abortSignal?.removeEventListener('abort', abortHandler);
       unregisterActiveTurn(session.claudeSessionId);
+      // Re-enable monitor-event relay; the turn pipeline is done forwarding.
+      markTurnEnd(sessionKey);
     }
   }
 
@@ -779,6 +789,9 @@ export class PtyProvider implements Provider {
       if(session.hardTimer) clearTimeout(session.hardTimer);
       this.sessions.delete(sessionKey);
     }
+    // Stop any monitor relay tied to this session — the JSONL it was watching
+    // belongs to a now-dead claudeSessionId; the next session gets a new one.
+    teardownMonitorRelay(sessionKey);
   }
 
   async sendLoopToAgent(sessionKey: string, message: string, options: LoopOptions = {}): Promise<AgentResponse> {
@@ -1061,6 +1074,25 @@ registerIpcHandler('/hook/preToolUse', (turn, body) => {
   const toolInput = (body.tool_input ?? {}) as Record<string, unknown>;
   turn.onToolStart?.();
   fireAndForget('onToolStart', () => turn.options.onToolStart?.(toolName, toolInput));
+
+  // Arm the monitor relay so events that fire AFTER this turn ends still get
+  // routed to Telegram. Monitor is backgrounded — PostToolUse fires almost
+  // immediately, the user-turn returns, and any further activity comes
+  // through as new JSONL entries with no active turn to forward them.
+  if (toolName === 'Monitor') {
+    const session = sessionManager.getSession(turn.sessionKey);
+    const description = String(
+      toolInput.description ??
+      toolInput.target ??
+      toolInput.file_path ??
+      toolInput.path ??
+      'monitor',
+    );
+    if (session?.claudeSessionId) {
+      onMonitorArmed(turn.sessionKey, session.workingDirectory, session.claudeSessionId, description);
+    }
+  }
+
   return { ok: true };
 });
 

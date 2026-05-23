@@ -11,6 +11,7 @@ import { sessionHistory } from './claude/session-history.js';
 import { consumeAllInFlight } from './claude/in-flight-tracker.js';
 import { clearConversation } from './providers/provider-router.js';
 import { startScheduledRunner } from './claude/scheduled-runner.js';
+import { setMonitorRelayBot } from './claude/monitor-relay.js';
 import { parseSessionKey } from './utils/session-key.js';
 import { setSessionTopic, getEffortLabel } from './bot/handlers/command.handler.js';
 import { isBotNameEnabled, rateLimitedSetMyName, notifyBotNameBlockToChat } from './telegram/botname-settings.js';
@@ -330,6 +331,10 @@ async function main() {
   } catch (err) {
     console.error('[Scheduler] Failed to start:', err);
   }
+
+  // Register the bot reference for the PTY-mode Monitor relay so Monitor
+  // events that fire between user turns can be posted to Telegram.
+  setMonitorRelayBot(bot);
 
   // Liveness heartbeat: periodically verify the bot can still reach the
   // Telegram API. If the runner has stopped or getMe fails repeatedly,

@@ -1816,6 +1816,11 @@
             <p>In PTY mode, Claude has access to <code>claudegram_loop</code> and <code>claudegram_schedule</code> MCP tools so it can set up its own recurring tasks ("ping me when CI finishes", "remind me about this tomorrow"). Built-in <code>CronCreate</code> / <code>ScheduleWakeup</code> are blocked since they can't reach back into Telegram — set <code>CLAUDEGRAM_ALLOW_NATIVE_SCHEDULING=1</code> to re-enable for experimentation.</p>
           </div>
           <div class="feature-card" data-category="core">
+            <div class="feature-icon">📡</div>
+            <h3>Monitor Event Relay</h3>
+            <p>In PTY mode, Claude's built-in <code>Monitor</code> tool works end-to-end: claudegram watches the session log for new assistant text after the turn ends and posts each event as a "📡 Monitor event" Telegram message. Useful for "tail this log and tell me when it errors", "watch this process and ping me when it exits", and similar reactive tasks.</p>
+          </div>
+          <div class="feature-card" data-category="core">
             <div class="feature-icon">🌐</div>
             <h3>Proxy Support</h3>
             <p>Connect through HTTP/HTTPS/SOCKS proxies via TELEGRAM_PROXY_URL or standard HTTP_PROXY env vars. Essential for restricted networks.</p>
