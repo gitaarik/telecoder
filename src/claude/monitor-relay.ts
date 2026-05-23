@@ -259,6 +259,27 @@ function extractAssistantText(content: unknown): string {
     .join('\n\n');
 }
 
+/**
+ * Relay claude's PushNotification tool to Telegram. The native tool fires
+ * an OS-level notification on the bot host (no real user is sitting there)
+ * so the only useful surface is Telegram. Called from PreToolUse and treated
+ * independently of the JSONL watcher — push notifications are single-shot
+ * and don't need turn-end pairing.
+ */
+export function relayPushNotification(sessionKey: string, message: string): void {
+  if (!botRef) return;
+  const trimmed = message.trim();
+  if (!trimmed) return;
+  const { chatId, threadId } = parseSessionKey(sessionKey);
+  const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};
+  const preview = trimmed.length > 500 ? trimmed.slice(0, 497) + '...' : trimmed;
+  botRef.api
+    .sendMessage(chatId, `🔔 ${preview}`, threadOpts)
+    .catch((err) => {
+      console.error('[Monitor] failed to post push notification:', err instanceof Error ? err.message : err);
+    });
+}
+
 function postArmed(sessionKey: string, kind: AsyncToolKind, description: string): void {
   if (!botRef) return;
   const { chatId, threadId } = parseSessionKey(sessionKey);

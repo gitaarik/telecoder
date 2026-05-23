@@ -1817,8 +1817,8 @@
           </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon">📡</div>
-            <h3>Monitor Event Relay</h3>
-            <p>In PTY mode, Claude's built-in <code>Monitor</code> tool works end-to-end: claudegram watches the session log for new assistant text after the turn ends and posts each event as a "📡 Monitor event" Telegram message. Useful for "tail this log and tell me when it errors", "watch this process and ping me when it exits", and similar reactive tasks.</p>
+            <h3>Async Event Relay</h3>
+            <p>In PTY mode, claudegram surfaces task-notifications from <code>Monitor</code>, <code>Bash(run_in_background=true)</code>, and <code>Task</code> subagents to Telegram between turns. Each event posts as a "📡 Monitor — ...", "⚙️ Backgrounded: ...", or "🤖 Subagent started: ..." header, with the raw event payload (▸ trigger line) and Claude's analysis. <code>PushNotification</code> is also relayed as "🔔 &lt;message&gt;". Useful for "tail this log and tell me when it errors", "build the docs in the background", or "delegate Y to a subagent" tasks.</p>
           </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon">🌐</div>

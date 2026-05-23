@@ -19,7 +19,7 @@ import {
 // Side-effect import: registers /mcp/* IPC handlers that bridge the standalone
 // MCP subprocess back to bot-side state (Telegram API, session topic, …).
 import './mcp-bridge.js';
-import { onAsyncToolArmed, markTurnStart, markTurnEnd, teardown as teardownMonitorRelay, type AsyncToolKind } from './monitor-relay.js';
+import { onAsyncToolArmed, markTurnStart, markTurnEnd, teardown as teardownMonitorRelay, relayPushNotification, type AsyncToolKind } from './monitor-relay.js';
 import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions, type EditDiffEvent, type ToolResultEvent, type ImageAttachment } from '../providers/types.js';
 
 const { Terminal } = headless;
@@ -177,6 +177,8 @@ function buildMcpToolsSystemPromptNote(): string {
   // that arrive after the user-turn ends still reach Telegram. Mention it so
   // the model confidently uses these tools when they're the right fit.
   tools.push('- Async built-ins (Monitor, `Bash(run_in_background=true)`, `Task`) — supported in claudegram PTY mode. Task-notifications that fire between user turns are relayed to Telegram with a "📡 Monitor — ...", "⚙️ Backgrounded: ...", or "🤖 Subagent started: ..." header, paired with the actual event payload and your response. Use these freely for "watch X", "run X in background while continuing", or "delegate Y to a subagent" tasks.');
+  tools.push('- PushNotification (built-in) — supported in claudegram PTY mode. The message text is relayed to Telegram as "🔔 <message>". Use the normal rules: only when the user might have walked away and there\'s something they\'d act on now.');
+  tools.push('- For scheduled/recurring tasks, prefer claudegram_loop / claudegram_schedule over the built-in CronCreate / ScheduleWakeup / RemoteTrigger — those don\'t reach back into Telegram.');
   if (config.REDDIT_ENABLED) {
     tools.push('- mcp__claudegram-tools__claudegram_fetch_reddit — fetch reddit content (subreddits, threads, user profiles). Use this for any reddit.com/r/<subreddit> or post URL; prefer over WebFetch.');
   }
@@ -526,14 +528,15 @@ export class PtyProvider implements Provider {
       // reaches for the built-in sometimes mid-turn — a hard deny forces it
       // to the MCP variant (or plain text).
       //
-      // CronCreate / ScheduleWakeup are also blocked: in PTY mode their fires
-      // (if they even arm) would land outside our session and never reach the
-      // Telegram chat. claudegram_loop / claudegram_schedule replace them and
-      // route fires through the bot. Set CLAUDEGRAM_ALLOW_NATIVE_SCHEDULING=1
-      // to keep the built-ins enabled if you want to experiment.
+      // CronCreate / ScheduleWakeup / RemoteTrigger are also blocked: their
+      // fires land outside our session (cron in PTY mode, RemoteTrigger on
+      // claude.ai's servers) and never reach the Telegram chat.
+      // claudegram_loop / claudegram_schedule replace them and route fires
+      // through the bot. Set CLAUDEGRAM_ALLOW_NATIVE_SCHEDULING=1 to keep
+      // the built-ins enabled if you want to experiment.
       '--disallowedTools', process.env.CLAUDEGRAM_ALLOW_NATIVE_SCHEDULING === '1'
         ? 'AskUserQuestion'
-        : 'AskUserQuestion,CronCreate,ScheduleWakeup',
+        : 'AskUserQuestion,CronCreate,ScheduleWakeup,RemoteTrigger',
     ];
 
     const term = spawn(CLAUDE_BIN, args, {
@@ -1102,6 +1105,14 @@ registerIpcHandler('/hook/preToolUse', (turn, body) => {
     if (session?.claudeSessionId) {
       onAsyncToolArmed(asyncKind, turn.sessionKey, session.workingDirectory, session.claudeSessionId, description);
     }
+  }
+
+  // PushNotification: claude's "ping the user" tool. The native impl fires
+  // an OS-level notification on the bot host (no real user there); for us
+  // Telegram is the notification surface, so we relay the message text.
+  if (toolName === 'PushNotification') {
+    const message = String(toolInput.message ?? '').trim();
+    if (message) relayPushNotification(turn.sessionKey, message);
   }
 
   return { ok: true };
