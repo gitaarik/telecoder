@@ -58,11 +58,16 @@ function writeAll(entries: InFlightEntry[]): void {
   }
 }
 
+// Cap stored prompt at 50KB so a long interrupted prompt survives the restart
+// notification flow intact. The restore renderer chunks if it exceeds the
+// 4096-char per-Telegram-message limit.
+const MAX_PROMPT_CHARS = 50_000;
+
 export function markInFlight(sessionKey: string, messagePreview: string): void {
   const others = readAll().filter((e) => e.sessionKey !== sessionKey);
   others.push({
     sessionKey,
-    messagePreview: messagePreview.slice(0, 200),
+    messagePreview: messagePreview.slice(0, MAX_PROMPT_CHARS),
     startedAt: new Date().toISOString(),
   });
   writeAll(others);

@@ -3,7 +3,6 @@ import * as path from 'path';
 import * as os from 'os';
 import { z } from 'zod';
 import { atomicWriteFileSync } from '../utils/atomic-write.js';
-import { config } from '../config.js';
 
 // Zod schema for session history entry
 const sessionHistoryEntrySchema = z.object({
@@ -32,9 +31,10 @@ interface SessionHistoryData {
 const HISTORY_DIR = path.join(os.homedir(), '.claudegram');
 const DEFAULT_HISTORY_FILE = path.join(HISTORY_DIR, 'sessions.json');
 const MAX_HISTORY_PER_CHAT = 20;
-// Cap stored assistant preview at 50KB so multi-chunk responses survive a
-// reload intact (Telegram allows 4096 chars/message — the restore flow chunks).
-const MAX_ASSISTANT_PREVIEW_CHARS = 50_000;
+// Cap stored previews at 50KB so multi-chunk content survives a reload intact
+// (Telegram allows 4096 chars/message — the restore flow chunks). Applies to
+// both the user's last prompt and the assistant's last response.
+const MAX_PREVIEW_CHARS = 50_000;
 
 class SessionHistory {
   private data: SessionHistoryData = { sessions: {} };
@@ -135,7 +135,7 @@ class SessionHistory {
       claudeSessionId: claudeSessionId ?? existingEntry?.claudeSessionId,
       projectPath,
       projectName,
-      lastMessagePreview: lastMessagePreview.substring(0, config.TERMINAL_UI_VERBOSE ? 1000 : 100),
+      lastMessagePreview: lastMessagePreview.substring(0, MAX_PREVIEW_CHARS),
       lastAssistantPreview: existingEntry?.lastAssistantPreview,
       topic: existingEntry?.topic,
       createdAt:
@@ -195,7 +195,7 @@ class SessionHistory {
 
     const entry = history.find((e) => e.conversationId === conversationId);
     if (entry) {
-      entry.lastMessagePreview = preview.substring(0, config.TERMINAL_UI_VERBOSE ? 1000 : 100);
+      entry.lastMessagePreview = preview.substring(0, MAX_PREVIEW_CHARS);
       entry.lastActivity = new Date().toISOString();
       this.save();
     }
@@ -207,7 +207,7 @@ class SessionHistory {
 
     const entry = history.find((e) => e.conversationId === conversationId);
     if (entry) {
-      entry.lastAssistantPreview = preview.substring(0, MAX_ASSISTANT_PREVIEW_CHARS);
+      entry.lastAssistantPreview = preview.substring(0, MAX_PREVIEW_CHARS);
       entry.lastActivity = new Date().toISOString();
       this.save();
     }

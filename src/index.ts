@@ -189,7 +189,9 @@ async function autoResumeAfterReload(bot: Bot): Promise<void> {
       const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};
 
       // Header: plain status text — escape for MarkdownV2 so any special chars
-      // in topic/project names don't break the parser.
+      // in topic/project names don't break the parser. Kept compact (no prompt
+      // body) so a long stored prompt doesn't blow past the 4096-char limit;
+      // the prompt is delivered in its own chunked block below.
       let header = `✅ Reloaded and session restored: ${escapeMarkdownV2(projectName)}`;
       if (entry.topic) {
         header += ` \\(topic: ${escapeMarkdownV2(entry.topic)}\\)`;
@@ -198,9 +200,6 @@ async function autoResumeAfterReload(bot: Bot): Promise<void> {
       if (effortLabel) {
         header += `\nEffort: ${escapeMarkdownV2(effortLabel)}`;
       }
-      if (entry.lastMessagePreview) {
-        header += `\n\n📝 Last prompt:\n${escapeMarkdownV2(entry.lastMessagePreview)}`;
-      }
       try {
         await bot.api.sendMessage(chatId, header, { parse_mode: 'MarkdownV2', ...threadOpts });
       } catch {
@@ -208,6 +207,28 @@ async function autoResumeAfterReload(bot: Bot): Promise<void> {
         const plain = header.replace(/\\(.)/g, '$1');
         for (const chunk of splitMessage(plain)) {
           await bot.api.sendMessage(chatId, chunk, threadOpts);
+        }
+      }
+
+      // Last prompt: deliver the full stored prompt as its own message
+      // (chunked if long). User input is treated as literal text — escape
+      // rather than re-render as markdown so a literal `*` or `_` doesn't
+      // become formatting noise.
+      if (entry.lastMessagePreview) {
+        await bot.api.sendMessage(chatId, '📝 Last prompt:', threadOpts);
+        const escaped = escapeMarkdownV2(entry.lastMessagePreview);
+        let mdFailed = false;
+        for (const part of splitMessage(escaped)) {
+          if (mdFailed) break;
+          try {
+            await bot.api.sendMessage(chatId, part, { parse_mode: 'MarkdownV2', ...threadOpts });
+          } catch (error) {
+            console.error('[AutoResume] MarkdownV2 send failed for prompt, falling back to plain text:', error);
+            mdFailed = true;
+            for (const chunk of splitMessage(entry.lastMessagePreview)) {
+              await bot.api.sendMessage(chatId, chunk, threadOpts);
+            }
+          }
         }
       }
 
@@ -273,15 +294,36 @@ async function notifyInterruptedSessions(bot: Bot): Promise<void> {
     }
 
     const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};
-    const previewLine = entry.messagePreview
-      ? `\n\n📝 Last prompt:\n${escapeMarkdownV2(entry.messagePreview)}`
-      : '';
     const text =
-      `⚠️ I was interrupted while running a task\\. The last action may not have completed\\.${previewLine}`;
+      `⚠️ I was interrupted while running a task\\. The last action may not have completed\\.`;
     try {
       await bot.api.sendMessage(chatId, text, { parse_mode: 'MarkdownV2', ...threadOpts });
     } catch (err) {
       console.error(`[InFlight] Failed to notify ${entry.sessionKey}:`, err);
+    }
+
+    // Deliver the interrupted prompt as its own chunked block so long prompts
+    // survive intact rather than getting clipped into the header.
+    if (entry.messagePreview) {
+      try {
+        await bot.api.sendMessage(chatId, '📝 Last prompt:', threadOpts);
+        const escaped = escapeMarkdownV2(entry.messagePreview);
+        let mdFailed = false;
+        for (const part of splitMessage(escaped)) {
+          if (mdFailed) break;
+          try {
+            await bot.api.sendMessage(chatId, part, { parse_mode: 'MarkdownV2', ...threadOpts });
+          } catch (error) {
+            console.error(`[InFlight] MarkdownV2 send failed for prompt, falling back to plain text:`, error);
+            mdFailed = true;
+            for (const chunk of splitMessage(entry.messagePreview)) {
+              await bot.api.sendMessage(chatId, chunk, threadOpts);
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`[InFlight] Failed to deliver prompt for ${entry.sessionKey}:`, err);
+      }
     }
   }
 }
