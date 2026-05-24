@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import type { Bot } from 'grammy';
 import { sessionJsonlPath } from './session-jsonl.js';
 import { parseSessionKey } from '../utils/session-key.js';
+import { convertToTelegramMarkdown } from '../telegram/markdown.js';
 
 /**
  * PTY-mode Monitor relay. When claude calls its built-in Monitor tool, events
@@ -81,6 +82,32 @@ function parseTaskNotification(rec: { origin?: { kind?: string }; message?: { co
 
 const states = new Map<string, MonitorState>();
 let botRef: Bot | null = null;
+
+/**
+ * Send a relay message with MarkdownV2 formatting, falling back to plain text
+ * if the converted output is rejected by Telegram. Mirrors the turn pipeline
+ * in messageSender.sendMessage so monitor/push messages render bold, code,
+ * links, etc. instead of arriving as a wall of escaped text.
+ */
+async function sendFormatted(
+  chatId: number,
+  threadOpts: { message_thread_id?: number },
+  text: string,
+  context: string,
+): Promise<void> {
+  if (!botRef) return;
+  const converted = convertToTelegramMarkdown(text);
+  try {
+    await botRef.api.sendMessage(chatId, converted, { ...threadOpts, parse_mode: 'MarkdownV2' });
+  } catch (mdErr) {
+    console.error(`[Monitor] MarkdownV2 send failed (${context}), falling back to plain text:`, mdErr instanceof Error ? mdErr.message : mdErr);
+    try {
+      await botRef.api.sendMessage(chatId, text, threadOpts);
+    } catch (plainErr) {
+      console.error(`[Monitor] plain text send also failed (${context}):`, plainErr instanceof Error ? plainErr.message : plainErr);
+    }
+  }
+}
 
 const MAX_EVENT_CHARS = 2000;
 const COALESCE_MS = 200;
@@ -273,11 +300,7 @@ export function relayPushNotification(sessionKey: string, message: string): void
   const { chatId, threadId } = parseSessionKey(sessionKey);
   const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};
   const preview = trimmed.length > 500 ? trimmed.slice(0, 497) + '...' : trimmed;
-  botRef.api
-    .sendMessage(chatId, `🔔 ${preview}`, threadOpts)
-    .catch((err) => {
-      console.error('[Monitor] failed to post push notification:', err instanceof Error ? err.message : err);
-    });
+  sendFormatted(chatId, threadOpts, `🔔 ${preview}`, 'push').catch(() => {});
 }
 
 function postArmed(sessionKey: string, kind: AsyncToolKind, description: string): void {
@@ -289,11 +312,7 @@ function postArmed(sessionKey: string, kind: AsyncToolKind, description: string)
     kind === 'monitor' ? '📡 Monitor armed' :
     kind === 'bash_background' ? '⚙️ Backgrounded' :
     '🤖 Subagent started';
-  botRef.api
-    .sendMessage(chatId, `${header}: ${preview}`, threadOpts)
-    .catch((err) => {
-      console.error('[Monitor] failed to post armed message:', err instanceof Error ? err.message : err);
-    });
+  sendFormatted(chatId, threadOpts, `${header}: ${preview}`, 'armed').catch(() => {});
 }
 
 function stripSummaryPrefix(summary: string): string {
@@ -332,9 +351,5 @@ function postMonitorMessage(
     lines.push(rp);
   }
 
-  botRef.api
-    .sendMessage(chatId, lines.join('\n'), threadOpts)
-    .catch((err) => {
-      console.error('[Monitor] failed to post event:', err instanceof Error ? err.message : err);
-    });
+  sendFormatted(chatId, threadOpts, lines.join('\n'), 'event').catch(() => {});
 }
