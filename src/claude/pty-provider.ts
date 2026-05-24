@@ -573,6 +573,11 @@ export class PtyProvider implements Provider {
         // log), and the model gives up on the tool. 15 min covers the 10-min
         // ask-user window with margin.
         MCP_TOOL_TIMEOUT: '900000',
+        // Suppress claude's "How is Claude doing this session?" feedback
+        // survey. It renders as plain text in the PTY ("1: Bad  2: Fine ..."),
+        // which has no clickable buttons in Telegram and just clutters the
+        // chat — there's no real user at a TUI to respond.
+        CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: '1',
       },
     });
 
