@@ -642,7 +642,7 @@ async function handleAgentReply(
         await sendSessionInitNotification(ctx, sessionKey, response.sessionInit);
 
         const chatId = ctx.chat?.id;
-        if (chatId !== undefined) await sendStatusLine(ctx, chatId, sessionKey, response.usage);
+        if (chatId !== undefined) await sendStatusLine(ctx, chatId, sessionKey, response.usage, trimmedInput);
       } catch (error) {
         await messageSender.cancelStreaming(ctx);
         throw error;
@@ -891,7 +891,7 @@ async function handleStreamingResponse(
     await sendSessionInitNotification(ctx, sessionKey, response.sessionInit);
 
     const chatId = ctx.chat?.id;
-    if (chatId !== undefined) await sendStatusLine(ctx, chatId, sessionKey, response.usage);
+    if (chatId !== undefined) await sendStatusLine(ctx, chatId, sessionKey, response.usage, message);
 
     if (response.throttle) {
       await postThrottlePrompt(ctx, sessionKey, message, response.throttle);
@@ -942,7 +942,7 @@ async function handleWaitResponse(
     await sendCompactionNotification(ctx, response.compaction);
     await sendSessionInitNotification(ctx, sessionKey, response.sessionInit);
 
-    await sendStatusLine(ctx, chatId, sessionKey, response.usage);
+    await sendStatusLine(ctx, chatId, sessionKey, response.usage, message);
 
     if (response.throttle) {
       await postThrottlePrompt(ctx, sessionKey, message, response.throttle);

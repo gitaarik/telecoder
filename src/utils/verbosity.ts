@@ -37,12 +37,12 @@ export const VERBOSITY_INFO: VerbosityLevelInfo[] = [
   {
     id: 'verbose',
     label: '🔊 Verbose',
-    description: 'Adds the per-turn usage footer, untruncated tool inputs, and a consolidated action log that shows tool results and diffs in a single updatable message.',
+    description: 'Adds the per-turn usage footer, untruncated tool inputs, and a consolidated action log that streams tool results and diffs live, then collapses to a Telegraph link at the end of each turn.',
   },
   {
     id: 'debug',
     label: '🐛 Debug',
-    description: 'Verbose mode with extended limits: longer tool result previews (40 lines) and diffs (50 lines) in the consolidated action log. Reserved for upcoming thinking blocks, hook events, and SDK internals.',
+    description: 'Verbose mode with extended limits: longer tool result previews (40 lines) and diffs (50 lines) in the consolidated action log. Same end-of-turn collapse to a Telegraph link. Reserved for upcoming thinking blocks, hook events, and SDK internals.',
   },
 ];
 

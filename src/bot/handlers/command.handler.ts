@@ -4169,28 +4169,52 @@ function shortenModelName(model: string): string {
   return stripped.replace(/^claude-/, '').replace(/-\d{8}$/, '');
 }
 
+const STATUS_LINE_PROMPT_MAX = 140;
+
+function formatLastPromptLine(prompt: string): string {
+  // Collapse to a single line and truncate so verbose action logs above don't
+  // bury the prompt itself; the user just needs enough to recognise it.
+  const normalised = prompt.replace(/\s+/g, ' ').trim();
+  if (!normalised) return '';
+  const truncated = normalised.length > STATUS_LINE_PROMPT_MAX
+    ? normalised.slice(0, STATUS_LINE_PROMPT_MAX - 1).trimEnd() + '…'
+    : normalised;
+  return `_▸ ${esc(truncated)}_`;
+}
+
 /**
  * Build the status-line message body in MarkdownV2.
  * Each enabled line picks its own formatting (italic for topic/stats,
  * mono code span for the resume command so it's easy to copy).
+ *
+ * Sections are joined with blank lines so the first line (typically the
+ * topic) stands alone in Telegram's chat-list preview — that's the only
+ * line visible when distinguishing multiple bots in the same project.
  */
 function buildStatusLineMarkdown(
   chatId: number,
   sessionKey?: string,
   usage?: AgentUsage,
+  lastPrompt?: string,
 ): string {
-  const lines: string[] = [];
+  const sections: string[] = [];
 
   if (sessionKey && userPreferences.getShowTopicInStatusLine(chatId)) {
     const topic = sessionTopics.get(sessionKey);
-    if (topic) lines.push(`_💬 ${esc(topic)}_`);
+    if (topic) sections.push(`_💬 ${esc(topic)}_`);
   }
 
+  if (lastPrompt && userPreferences.getShowPromptInStatusLine(chatId)) {
+    const formatted = formatLastPromptLine(lastPrompt);
+    if (formatted) sections.push(formatted);
+  }
+
+  const tail: string[] = [];
   if (sessionKey && userPreferences.getShowSessionInStatusLine(chatId)) {
     const claudeSessionId = sessionManager.getSession(sessionKey)?.claudeSessionId;
     if (claudeSessionId) {
       // Inside backticks only `\` and `` ` `` need escaping; UUIDs contain neither.
-      lines.push(`🔗 \`claude --resume ${claudeSessionId}\``);
+      tail.push(`🔗 \`claude --resume ${claudeSessionId}\``);
     }
   }
 
@@ -4212,9 +4236,10 @@ function buildStatusLineMarkdown(
     }
     stats.push(`💰 $${usage.totalCostUsd.toFixed(2)}`);
   }
-  lines.push(`_${esc(stats.join(' · '))}_`);
+  tail.push(`_${esc(stats.join(' · '))}_`);
 
-  return lines.join('\n');
+  sections.push(tail.join('\n'));
+  return sections.join('\n\n');
 }
 
 export async function sendStatusLine(
@@ -4222,10 +4247,11 @@ export async function sendStatusLine(
   chatId: number,
   sessionKey: string,
   usage?: AgentUsage,
+  lastPrompt?: string,
 ): Promise<void> {
   if (!userPreferences.getShowStatusLine(chatId)) return;
   try {
-    const markdown = buildStatusLineMarkdown(chatId, sessionKey, usage);
+    const markdown = buildStatusLineMarkdown(chatId, sessionKey, usage, lastPrompt);
     await ctx.reply(markdown, { parse_mode: 'MarkdownV2' });
   } catch (err) {
     console.debug('[StatusLine] Failed to send:', err instanceof Error ? err.message : err);
@@ -4236,6 +4262,7 @@ function buildStatusLineMenu(chatId: number, sessionKey: string): { text: string
   const enabled = userPreferences.getShowStatusLine(chatId);
   const showTopic = userPreferences.getShowTopicInStatusLine(chatId);
   const showSession = userPreferences.getShowSessionInStatusLine(chatId);
+  const showPrompt = userPreferences.getShowPromptInStatusLine(chatId);
 
   const keyboard: { text: string; callback_data: string }[][] = [
     [
@@ -4247,18 +4274,24 @@ function buildStatusLineMenu(chatId: number, sessionKey: string): { text: string
       { text: !showTopic ? '✓ Show topic: Off' : 'Show topic: Off', callback_data: 'statusline:topic:off' },
     ],
     [
+      { text: showPrompt ? '✓ Show last prompt: On' : 'Show last prompt: On', callback_data: 'statusline:prompt:on' },
+      { text: !showPrompt ? '✓ Show last prompt: Off' : 'Show last prompt: Off', callback_data: 'statusline:prompt:off' },
+    ],
+    [
       { text: showSession ? '✓ Show session: On' : 'Show session: On', callback_data: 'statusline:session:on' },
       { text: !showSession ? '✓ Show session: Off' : 'Show session: Off', callback_data: 'statusline:session:off' },
     ],
   ];
 
-  const preview = buildStatusLineMarkdown(chatId, sessionKey);
+  const preview = buildStatusLineMarkdown(chatId, sessionKey, undefined, 'example prompt for preview');
   const text =
     `📍 *Status Line*\n\n` +
     `Status line: *${enabled ? 'ON' : 'OFF'}*\n` +
     `Show topic: *${showTopic ? 'ON' : 'OFF'}*\n` +
+    `Show last prompt: *${showPrompt ? 'ON' : 'OFF'}*\n` +
     `Show session: *${showSession ? 'ON' : 'OFF'}*\n\n` +
     `_Sends a small italic line after each turn so you can see the current state without scrolling\\._ ` +
+    `_Show last prompt is handy under /verbosity verbose, where the action log can push your prompt off screen\\._ ` +
     `_The session line shows a copy\\-pasteable \`claude \\-\\-resume\` command for CLI fallback\\._\n\n` +
     `Preview:\n${preview}`;
 
@@ -4296,6 +4329,10 @@ export async function handleStatusLineCallback(ctx: Context): Promise<void> {
     const newState = action === 'session:on';
     userPreferences.setShowSessionInStatusLine(chatId, newState);
     toastText = `Show session ${newState ? 'ON' : 'OFF'}`;
+  } else if (action === 'prompt:on' || action === 'prompt:off') {
+    const newState = action === 'prompt:on';
+    userPreferences.setShowPromptInStatusLine(chatId, newState);
+    toastText = `Show last prompt ${newState ? 'ON' : 'OFF'}`;
   } else if (action === 'on' || action === 'off') {
     const newState = action === 'on';
     userPreferences.setShowStatusLine(chatId, newState);

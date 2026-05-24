@@ -7,6 +7,8 @@
 import { Context, GrammyError } from 'grammy';
 import { escapeMarkdownV2 } from './markdown.js';
 import { getToolIcon, extractToolDetail } from './terminal-renderer.js';
+import { createTelegraphPage } from './telegraph.js';
+import { isTelegraphEnabled } from './telegraph-settings.js';
 import type { ToolResultEvent, EditDiffEvent } from '../providers/types.js';
 import type { TaskState } from './task-tracker.js';
 
@@ -39,6 +41,8 @@ interface ActionLogState {
   entries: ActionEntry[];
   lastUpdate: number;
   rateLimitedUntil: number;
+  /** Once finalized, addX still records entries but skips message edits so the collapsed summary stays put. */
+  finalized: boolean;
 }
 
 /**
@@ -66,7 +70,8 @@ export class ActionLogger {
       messageId: null, // Will be created when first action is added
       entries: [],
       lastUpdate: Date.now(),
-      rateLimitedUntil: 0
+      rateLimitedUntil: 0,
+      finalized: false,
     });
   }
 
@@ -257,6 +262,12 @@ export class ActionLogger {
    * Update the action log message with current entries
    */
   private async updateLogMessage(ctx: Context, state: ActionLogState): Promise<void> {
+    // Once the turn has been collapsed into a Telegraph summary, leave the
+    // message alone. Stragglers (background-task completions arriving in the
+    // post-turn drain window) are still recorded in state.entries but they
+    // shouldn't blow away the user-visible summary.
+    if (state.finalized) return;
+
     // If no message exists yet, create it now that we have content
     if (!state.messageId) {
       const sendOpts = state.threadId !== undefined ? { message_thread_id: state.threadId } : {};
@@ -447,6 +458,95 @@ export class ActionLogger {
     }
 
     return lines.join('\n');
+  }
+
+  /**
+   * Collapse the in-chat action log into a Telegraph link at the end of a turn.
+   * Renders all entries (no 10-entry cap) onto a Telegraph page, then edits
+   * the existing action-log message into a brief "📋 N actions · view full
+   * log" summary. If Telegraph is disabled or fails, the message is left as-is
+   * (callers still get the live-streamed view).
+   */
+  async finalize(ctx: Context, sessionKey: string): Promise<void> {
+    const state = this.logStates.get(sessionKey);
+    if (!state || state.finalized) return;
+    if (!state.messageId || state.entries.length === 0) return;
+    if (!isTelegraphEnabled(sessionKey)) return;
+
+    state.finalized = true;
+
+    const markdown = this.renderTelegraphMarkdown(state.entries);
+    const pageUrl = await createTelegraphPage('Action log', markdown);
+    if (!pageUrl) {
+      // Telegraph creation failed (rate limit, network); leave the live log
+      // visible so the user still has something to inspect.
+      state.finalized = false;
+      return;
+    }
+
+    const summary = this.renderCollapsedSummary(state.entries, pageUrl);
+    try {
+      await ctx.api.editMessageText(state.chatId, state.messageId, summary, {
+        parse_mode: 'MarkdownV2',
+        link_preview_options: { is_disabled: true },
+      });
+    } catch (error) {
+      if (error instanceof GrammyError) {
+        const msg = error.message.toLowerCase();
+        if (msg.includes('message is not modified')) return;
+      }
+      console.error('[ActionLogger] Failed to collapse message:', error);
+    }
+  }
+
+  /**
+   * Render the full action log as markdown for a Telegraph page. Uses the
+   * same truncation that was applied when entries were captured — no attempt
+   * to recover untruncated content.
+   */
+  private renderTelegraphMarkdown(entries: ActionEntry[]): string {
+    const sections: string[] = [];
+    entries.forEach((entry, index) => {
+      const statusEmoji = entry.status === 'completed' ? '✅' :
+                         entry.status === 'error' ? '❌' : '⏳';
+      const time = new Date(entry.timestamp).toLocaleTimeString('en-US', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+
+      const headerLines: string[] = [];
+      headerLines.push(`## ${index + 1}. ${entry.icon} ${statusEmoji} ${entry.title}`);
+      headerLines.push(`_${time}_`);
+      if (entry.subtitle) {
+        headerLines.push('');
+        headerLines.push('```');
+        headerLines.push(entry.subtitle);
+        headerLines.push('```');
+      }
+      if (entry.content) {
+        headerLines.push('');
+        headerLines.push('```');
+        headerLines.push(entry.content);
+        headerLines.push('```');
+      }
+      sections.push(headerLines.join('\n'));
+    });
+    return sections.join('\n\n---\n\n');
+  }
+
+  /**
+   * Render the collapsed in-chat summary line that replaces the live log.
+   */
+  private renderCollapsedSummary(entries: ActionEntry[], pageUrl: string): string {
+    const completed = entries.filter(e => e.status === 'completed').length;
+    const errors = entries.filter(e => e.status === 'error').length;
+    const counts = [`${entries.length} action${entries.length === 1 ? '' : 's'}`];
+    if (errors > 0) counts.push(`${errors} error${errors === 1 ? '' : 's'}`);
+    else if (completed < entries.length) counts.push(`${completed} completed`);
+    const summary = counts.join(' · ');
+    return `📋 _${escapeMarkdownV2(summary)}_ · [view full log](${escapeMarkdownV2(pageUrl)})`;
   }
 
   /**

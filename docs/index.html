@@ -1778,7 +1778,7 @@
           <div class="feature-card" data-category="core">
             <div class="feature-icon">📍</div>
             <h3>Per-Turn Status Line</h3>
-            <p>Sends a small status line after each turn showing the current topic, effort, model, context %, and cost — right above the compose box and visible in the Telegram chat list as the latest message. Optional copy-pasteable <code>claude --resume &lt;id&gt;</code> line for CLI fallback if Claudegram loses the session. Off by default; opt in with /statusline.</p>
+            <p>Sends a small status line after each turn showing the current topic, effort, model, context %, and cost — right above the compose box and visible in the Telegram chat list as the latest message. Optional sub-toggles for your last prompt (handy under verbose mode, where the action log can bury what you typed) and a copy-pasteable <code>claude --resume &lt;id&gt;</code> line for CLI fallback. Off by default; opt in with /statusline.</p>
           </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon">🔔</div>
@@ -1788,7 +1788,7 @@
           <div class="feature-card" data-category="core">
             <div class="feature-icon">🎚️</div>
             <h3>Verbosity Tiers</h3>
-            <p>One per-chat setting (quiet / normal / verbose / debug) drives how much detail Claudegram surfaces each turn. Verbose adds the per-turn usage footer, untruncated tool inputs, and a consolidated action log that shows tool results and diffs in a single updatable message instead of many separate ones. Debug extends the action log with longer previews (40 lines vs 20). Quiet drops the completion ping. Set with /verbosity; env-level default via VERBOSITY_DEFAULT.</p>
+            <p>One per-chat setting (quiet / normal / verbose / debug) drives how much detail Claudegram surfaces each turn. Verbose adds the per-turn usage footer, untruncated tool inputs, and a consolidated action log that streams tool results and diffs live in a single updatable message, then collapses to a Telegraph link at the end of the turn so the chat history stays tidy. Debug extends the action log with longer previews (40 lines vs 20). Quiet drops the completion ping. Set with /verbosity; env-level default via VERBOSITY_DEFAULT.</p>
           </div>
           <div class="feature-card" data-category="session">
             <div class="feature-icon">↩️</div>
@@ -1993,7 +1993,7 @@
             </div>
             <div class="command-row">
               <code class="command-code">/verbosity &lt;tier&gt;</code>
-              <span class="command-desc">Pick how much detail Claudegram surfaces per turn (quiet / normal / verbose / debug). Verbose adds the per-turn usage footer, untruncated tool inputs, and a consolidated action log that shows tool results and diffs in a single updatable message for a cleaner, more UI-like experience. Debug extends the action log with longer previews (40 lines vs 20); quiet suppresses the completion ping. Per-chat — overrides VERBOSITY_DEFAULT.</span>
+              <span class="command-desc">Pick how much detail Claudegram surfaces per turn (quiet / normal / verbose / debug). Verbose adds the per-turn usage footer, untruncated tool inputs, and a consolidated action log that streams live then collapses to a Telegraph link at the end of the turn. Debug extends the action log with longer previews (40 lines vs 20); quiet suppresses the completion ping. Per-chat — overrides VERBOSITY_DEFAULT.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/btw &lt;question&gt;</code>
@@ -2013,7 +2013,7 @@
             </div>
             <div class="command-row">
               <code class="command-code">/statusline</code>
-              <span class="command-desc">Toggle per-turn status line (effort, model, context %, cost) with sub-toggles for topic and a copy-pasteable claude --resume command</span>
+              <span class="command-desc">Toggle per-turn status line (effort, model, context %, cost) with sub-toggles for topic, your last prompt, and a copy-pasteable claude --resume command</span>
             </div>
             <div class="command-row">
               <code class="command-code">/botname</code>
