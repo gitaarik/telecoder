@@ -9,18 +9,76 @@ const MAX_MESSAGE_LENGTH = 4096;
 export function convertToTelegramMarkdown(text: string): string {
   try {
     // Pre-process outside fenced code blocks:
+    // - Extract <expandable>...</expandable> blocks so convert() can't escape
+    //   their special MarkdownV2 markers (**> and ||). Restored after conversion.
     // - Rewrite pipe-style markdown tables as bullet lists (Telegram has no monospace
     //   table rendering in MarkdownV2, so unconverted tables look ugly).
     // - Convert thematic breaks (---, ***, ___) to a unicode separator, since the
     //   telegram-markdown-v2 library leaves *** intact and Telegram then misinterprets
     //   it as an unterminated bold/italic entity.
-    const preprocessed = preprocessOutsideCode(text);
-    return convert(preprocessed, 'escape');
+    const { text: stripped, blocks } = extractExpandableBlocks(text);
+    const preprocessed = preprocessOutsideCode(stripped);
+    const converted = convert(preprocessed, 'escape');
+    return restoreExpandableBlocks(converted, blocks);
   } catch (error) {
     console.error('Markdown conversion error:', error);
     // Fallback: escape special characters manually
     return escapeMarkdownV2(text);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Expandable blockquotes
+// ---------------------------------------------------------------------------
+//
+// Telegram MarkdownV2 supports collapsible quotes (Bot API 7.0):
+//   **>First line
+//   >Second line
+//   >Third line||
+//
+// The telegram-markdown-v2 library has no concept of these — it would escape
+// the * | > markers. We work around it by pulling <expandable>...</expandable>
+// regions out of the text before conversion, leaving an alphanumeric placeholder
+// that convert() won't touch, then re-emitting the proper syntax afterwards.
+// Plain-text content only; markdown formatting inside is not interpreted.
+
+const EXPANDABLE_TAG_RE = /<expandable>([\s\S]*?)<\/expandable>/g;
+const expandablePlaceholder = (i: number) => `XCGEXPANDABLEBLOCK${i}ENDX`;
+
+function extractExpandableBlocks(text: string): { text: string; blocks: string[] } {
+  const blocks: string[] = [];
+  // Only extract outside fenced code so triple-backtick examples remain literal.
+  const parts = text.split(/(```[\s\S]*?```)/g);
+  const processed = parts.map((segment, i) => {
+    if (i % 2 === 1) return segment;
+    return segment.replace(EXPANDABLE_TAG_RE, (_, body) => {
+      const idx = blocks.length;
+      blocks.push(body);
+      // Force placeholder onto its own line — Telegram only recognizes **> at
+      // the start of a line, so the expanded block must not end up mid-paragraph.
+      return `\n${expandablePlaceholder(idx)}\n`;
+    });
+  });
+  return { text: processed.join(''), blocks };
+}
+
+function buildExpandableSyntax(body: string): string {
+  const trimmed = body.replace(/^\n+|\n+$/g, '');
+  if (!trimmed) return '';
+  const escaped = trimmed.split('\n').map(escapeMarkdownV2);
+  if (escaped.length === 1) return `**>${escaped[0]}||`;
+  const head = `**>${escaped[0]}`;
+  const middle = escaped.slice(1, -1).map(l => `>${l}`);
+  const tail = `>${escaped[escaped.length - 1]}||`;
+  return [head, ...middle, tail].join('\n');
+}
+
+function restoreExpandableBlocks(text: string, blocks: string[]): string {
+  let result = text;
+  blocks.forEach((body, idx) => {
+    result = result.replace(expandablePlaceholder(idx), buildExpandableSyntax(body));
+  });
+  return result;
 }
 
 /**
