@@ -43,6 +43,7 @@ import { getTerminalUISettings, setTerminalUIEnabled } from '../../telegram/term
 import { getBotNameSettings, setBotNameEnabled, isBotNameEnabled, rateLimitedSetMyName, notifyBotNameBlock } from '../../telegram/botname-settings.js';
 import { getTelegraphSettings, setTelegraphEnabled } from '../../telegram/telegraph-settings.js';
 import { userPreferences } from '../../providers/user-preferences.js';
+import { projectFavorites } from '../../providers/project-favorites.js';
 import { maybeSendVoiceReply } from '../../tts/voice-reply.js';
 import { transcribeFile, downloadTelegramAudio } from '../../audio/transcribe.js';
 import { executeVReddit } from '../../reddit/vreddit.js';
@@ -696,6 +697,32 @@ export async function handleClearCallback(ctx: Context): Promise<void> {
   }
 }
 
+async function selectProjectFromCallback(ctx: Context, sessionKey: string, projectPath: string): Promise<void> {
+  sessionManager.setWorkingDirectory(sessionKey, projectPath);
+  clearConversation(sessionKey);
+  await clearTopicAndRefreshBotName(ctx, sessionKey);
+
+  const state = getProjectState(sessionKey);
+  state.current = projectPath;
+  state.page = 0;
+
+  const newConv = sessionManager.getSession(sessionKey)?.conversationId;
+  const backButton = buildBackToPreviousButton(sessionKey, newConv);
+
+  await ctx.editMessageText(
+    `✅ Project: *${esc(path.basename(projectPath))}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`,
+    {
+      parse_mode: 'MarkdownV2',
+      ...(backButton ? { reply_markup: { inline_keyboard: backButton } } : {}),
+    },
+  );
+
+  const s = sessionManager.getSession(sessionKey);
+  if (s?.claudeSessionId) {
+    await replyMd(ctx, resumeCommandMessage(s.claudeSessionId));
+  }
+}
+
 export async function handleProjectCallback(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
@@ -712,27 +739,91 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  if (action === 'use') {
-    sessionManager.setWorkingDirectory(sessionKey, state.current);
-    clearConversation(sessionKey);
-    await clearTopicAndRefreshBotName(ctx, sessionKey);
+  if (action === 'favorites') {
+    await ctx.answerCallbackQuery();
+    await sendFavoritesScreen(ctx, sessionKey, true);
+    return;
+  }
 
-    const newConv = sessionManager.getSession(sessionKey)?.conversationId;
-    const backButton = buildBackToPreviousButton(sessionKey, newConv);
+  if (action === 'browse') {
+    syncProjectStateToSession(sessionKey);
+    await ctx.answerCallbackQuery();
+    await sendProjectBrowser(ctx, sessionKey, state, true);
+    return;
+  }
 
-    await ctx.answerCallbackQuery({ text: 'Project set' });
-    await ctx.editMessageText(
-      `✅ Project: *${esc(path.basename(state.current))}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`,
-      {
-        parse_mode: 'MarkdownV2',
-        ...(backButton ? { reply_markup: { inline_keyboard: backButton } } : {}),
-      },
-    );
+  if (action === 'fav-add-here') {
+    const added = projectFavorites.add(sessionKey, state.current);
+    await ctx.answerCallbackQuery({ text: added ? '⭐ Added to favorites' : 'Already a favorite' });
+    await sendProjectBrowser(ctx, sessionKey, state, true);
+    return;
+  }
 
-    const s = sessionManager.getSession(sessionKey);
-    if (s?.claudeSessionId) {
-      await replyMd(ctx, resumeCommandMessage(s.claudeSessionId));
+  if (action === 'fav-del-here') {
+    const removed = projectFavorites.remove(sessionKey, state.current);
+    await ctx.answerCallbackQuery({ text: removed ? 'Removed from favorites' : 'Not in favorites' });
+    await sendProjectBrowser(ctx, sessionKey, state, true);
+    return;
+  }
+
+  if (action === 'fav-add-current') {
+    const session = sessionManager.getSession(sessionKey);
+    if (!session) {
+      await ctx.answerCallbackQuery({ text: 'No current project' });
+      return;
     }
+    const added = projectFavorites.add(sessionKey, session.workingDirectory);
+    await ctx.answerCallbackQuery({ text: added ? '⭐ Added to favorites' : 'Already a favorite' });
+    await sendFavoritesScreen(ctx, sessionKey, true);
+    return;
+  }
+
+  if (action === 'fav-use') {
+    const indexPart = data.split(':')[2];
+    const index = Number.parseInt(indexPart || '', 10);
+    if (Number.isNaN(index)) {
+      await ctx.answerCallbackQuery({ text: 'Invalid selection' });
+      return;
+    }
+    const favorites = projectFavorites.list(sessionKey);
+    const fav = favorites[index];
+    if (!fav) {
+      await ctx.answerCallbackQuery({ text: 'Selection expired' });
+      await sendFavoritesScreen(ctx, sessionKey, true);
+      return;
+    }
+    if (!fs.existsSync(fav.path) || !fs.statSync(fav.path).isDirectory()) {
+      await ctx.answerCallbackQuery({ text: 'Path no longer exists', show_alert: true });
+      return;
+    }
+    await ctx.answerCallbackQuery({ text: 'Project set' });
+    await selectProjectFromCallback(ctx, sessionKey, fav.path);
+    return;
+  }
+
+  if (action === 'fav-del') {
+    const indexPart = data.split(':')[2];
+    const index = Number.parseInt(indexPart || '', 10);
+    if (Number.isNaN(index)) {
+      await ctx.answerCallbackQuery({ text: 'Invalid selection' });
+      return;
+    }
+    const favorites = projectFavorites.list(sessionKey);
+    const fav = favorites[index];
+    if (!fav) {
+      await ctx.answerCallbackQuery({ text: 'Selection expired' });
+      await sendFavoritesScreen(ctx, sessionKey, true);
+      return;
+    }
+    projectFavorites.remove(sessionKey, fav.path);
+    await ctx.answerCallbackQuery({ text: 'Removed' });
+    await sendFavoritesScreen(ctx, sessionKey, true);
+    return;
+  }
+
+  if (action === 'use') {
+    await ctx.answerCallbackQuery({ text: 'Project set' });
+    await selectProjectFromCallback(ctx, sessionKey, state.current);
     return;
   }
 
@@ -743,7 +834,7 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
       state.page = 0;
     }
     await ctx.answerCallbackQuery();
-    await sendProjectBrowser(ctx, state, true);
+    await sendProjectBrowser(ctx, sessionKey, state, true);
     return;
   }
 
@@ -752,13 +843,13 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
     if (direction === 'next') state.page += 1;
     if (direction === 'prev') state.page = Math.max(0, state.page - 1);
     await ctx.answerCallbackQuery();
-    await sendProjectBrowser(ctx, state, true);
+    await sendProjectBrowser(ctx, sessionKey, state, true);
     return;
   }
 
   if (action === 'refresh') {
     await ctx.answerCallbackQuery();
-    await sendProjectBrowser(ctx, state, true);
+    await sendProjectBrowser(ctx, sessionKey, state, true);
     return;
   }
 
@@ -773,7 +864,7 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
     const selected = entries[index];
     if (!selected) {
       await ctx.answerCallbackQuery({ text: 'Selection expired' });
-      await sendProjectBrowser(ctx, state, true);
+      await sendProjectBrowser(ctx, sessionKey, state, true);
       return;
     }
     const nextPath = path.join(state.current, selected);
@@ -792,7 +883,7 @@ export async function handleProjectCallback(ctx: Context): Promise<void> {
     state.current = resolvedPath;
     state.page = 0;
     await ctx.answerCallbackQuery();
-    await sendProjectBrowser(ctx, state, true);
+    await sendProjectBrowser(ctx, sessionKey, state, true);
     return;
   }
 }
@@ -834,7 +925,7 @@ function buildProjectBrowserText(state: ProjectBrowserState, totalDirs: number, 
   );
 }
 
-function buildProjectBrowserKeyboard(state: ProjectBrowserState, entries: string[], totalPages: number): { inline_keyboard: { text: string; callback_data: string }[][] } {
+function buildProjectBrowserKeyboard(state: ProjectBrowserState, entries: string[], totalPages: number, sessionKey: string): { inline_keyboard: { text: string; callback_data: string }[][] } {
   const rows: { text: string; callback_data: string }[][] = [];
   const pageOffset = state.page * PROJECT_BROWSER_PAGE_SIZE;
 
@@ -859,8 +950,18 @@ function buildProjectBrowserKeyboard(state: ProjectBrowserState, entries: string
     navRow.push({ text: '⬆️ Up', callback_data: 'project:up' });
   }
   navRow.push({ text: '✅ Use this folder', callback_data: 'project:use' });
-  navRow.push({ text: '✍️ Enter path', callback_data: 'project:manual' });
+  const isFav = projectFavorites.has(sessionKey, state.current);
+  navRow.push({
+    text: isFav ? '★ Unfavorite' : '⭐ Favorite',
+    callback_data: isFav ? 'project:fav-del-here' : 'project:fav-add-here',
+  });
   rows.push(navRow);
+
+  const utilRow: { text: string; callback_data: string }[] = [
+    { text: '⭐ Favorites', callback_data: 'project:favorites' },
+    { text: '✍️ Enter path', callback_data: 'project:manual' },
+  ];
+  rows.push(utilRow);
 
   const pageRow: { text: string; callback_data: string }[] = [];
   if (state.page > 0) {
@@ -878,7 +979,7 @@ function buildProjectBrowserKeyboard(state: ProjectBrowserState, entries: string
   return { inline_keyboard: rows };
 }
 
-async function sendProjectBrowser(ctx: Context, state: ProjectBrowserState, edit: boolean): Promise<void> {
+async function sendProjectBrowser(ctx: Context, sessionKey: string, state: ProjectBrowserState, edit: boolean): Promise<void> {
   const allEntries = listDirectories(state.current);
   const totalPages = Math.max(1, Math.ceil(allEntries.length / PROJECT_BROWSER_PAGE_SIZE));
   const page = Math.min(Math.max(state.page, 0), totalPages - 1);
@@ -886,7 +987,7 @@ async function sendProjectBrowser(ctx: Context, state: ProjectBrowserState, edit
 
   const pageEntries = allEntries.slice(page * PROJECT_BROWSER_PAGE_SIZE, (page + 1) * PROJECT_BROWSER_PAGE_SIZE);
   const text = buildProjectBrowserText(state, allEntries.length, totalPages);
-  const replyMarkup = buildProjectBrowserKeyboard(state, pageEntries, totalPages);
+  const replyMarkup = buildProjectBrowserKeyboard(state, pageEntries, totalPages, sessionKey);
 
   if (edit) {
     try {
@@ -898,6 +999,58 @@ async function sendProjectBrowser(ctx: Context, state: ProjectBrowserState, edit
   }
 
   await ctx.reply(text, { parse_mode: 'MarkdownV2', reply_markup: replyMarkup });
+}
+
+const FAVORITES_DISPLAY_MAX = 12;
+
+function buildFavoritesScreen(sessionKey: string): { text: string; reply_markup: { inline_keyboard: { text: string; callback_data: string }[][] } } {
+  const favorites = projectFavorites.list(sessionKey).slice(0, FAVORITES_DISPLAY_MAX);
+  const session = sessionManager.getSession(sessionKey);
+  const currentPath = session?.workingDirectory;
+  const currentIsFav = currentPath ? projectFavorites.has(sessionKey, currentPath) : false;
+
+  const lines = ['⭐ *Project Favorites*'];
+  if (currentPath) {
+    lines.push('', `*Current:* \`${esc(currentPath)}\``);
+  }
+  if (favorites.length === 0) {
+    lines.push('', '_No favorites yet\\. Browse the workspace or enter a path, then tap ⭐ to save it here\\._');
+  } else {
+    lines.push('', '_Pick a favorite, or use the buttons below\\._');
+  }
+
+  const rows: { text: string; callback_data: string }[][] = [];
+  for (let i = 0; i < favorites.length; i++) {
+    const fav = favorites[i];
+    const name = path.basename(fav.path) || fav.path;
+    rows.push([
+      { text: `📁 ${shortenName(name, 28)}`, callback_data: `project:fav-use:${i}` },
+      { text: '🗑️', callback_data: `project:fav-del:${i}` },
+    ]);
+  }
+
+  const actionRow: { text: string; callback_data: string }[] = [];
+  if (currentPath && !currentIsFav) {
+    actionRow.push({ text: '⭐ Add current', callback_data: 'project:fav-add-current' });
+  }
+  actionRow.push({ text: '🗂️ Browse', callback_data: 'project:browse' });
+  actionRow.push({ text: '✍️ Enter path', callback_data: 'project:manual' });
+  rows.push(actionRow);
+
+  return { text: lines.join('\n'), reply_markup: { inline_keyboard: rows } };
+}
+
+async function sendFavoritesScreen(ctx: Context, sessionKey: string, edit: boolean): Promise<void> {
+  const { text, reply_markup } = buildFavoritesScreen(sessionKey);
+  if (edit) {
+    try {
+      await ctx.editMessageText(text, { parse_mode: 'MarkdownV2', reply_markup });
+      return;
+    } catch {
+      // fall through
+    }
+  }
+  await ctx.reply(text, { parse_mode: 'MarkdownV2', reply_markup });
 }
 
 async function sendProjectManualPrompt(ctx: Context): Promise<void> {
@@ -930,15 +1083,6 @@ function getProjectState(sessionKey: string): ProjectBrowserState {
       existing.current = root;
       existing.page = 0;
     }
-    // Re-sync from the live session's workingDirectory. Otherwise switches
-    // performed via MCP (claudegram_switch_project) don't show up in /project's
-    // "Current:" display because the cached browse-state still points at the
-    // dir the user first opened the browser in.
-    const session = sessionManager.getSession(sessionKey);
-    if (session && isWithinRoot(root, session.workingDirectory) && existing.current !== session.workingDirectory) {
-      existing.current = session.workingDirectory;
-      existing.page = 0;
-    }
     // Refresh timestamp on access to keep active sessions alive
     projectBrowserTimestamps.set(sessionKey, Date.now());
     return existing;
@@ -960,6 +1104,21 @@ function getProjectState(sessionKey: string): ProjectBrowserState {
   return state;
 }
 
+/**
+ * Reset the browser to start at the session's current working directory.
+ * Called when the user enters the browser fresh (e.g. via the Favorites
+ * screen's "Browse" button), so MCP-driven project switches are reflected.
+ * Not called on Up/Refresh/Page/Open — those preserve the user's navigation.
+ */
+function syncProjectStateToSession(sessionKey: string): void {
+  const state = getProjectState(sessionKey);
+  const session = sessionManager.getSession(sessionKey);
+  if (session && isWithinRoot(state.root, session.workingDirectory)) {
+    state.current = session.workingDirectory;
+    state.page = 0;
+  }
+}
+
 export async function handleProject(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
@@ -968,10 +1127,9 @@ export async function handleProject(ctx: Context): Promise<void> {
   const text = ctx.message?.text || '';
   const args = text.split(' ').slice(1).join(' ').trim();
 
-  // No args - prompt for input with ForceReply
+  // No args - show favorites screen (falls through to browser if user taps Browse)
   if (!args) {
-    const state = getProjectState(sessionKey);
-    await sendProjectBrowser(ctx, state, false);
+    await sendFavoritesScreen(ctx, sessionKey, false);
     return;
   }
 
@@ -979,15 +1137,13 @@ export async function handleProject(ctx: Context): Promise<void> {
   const workspaceRoot = getWorkspaceRoot();
 
   if (args.startsWith('/') || args.startsWith('~')) {
+    // Absolute/home-relative paths are allowed to escape the workspace root —
+    // the user has explicitly typed a full path.
     projectPath = args;
     if (projectPath.startsWith('~')) {
       projectPath = path.join(process.env.HOME || '', projectPath.slice(1));
     }
     projectPath = path.resolve(projectPath);
-    if (!isPathWithinRoot(workspaceRoot, projectPath)) {
-      await replyMd(ctx, `❌ Path must be within workspace root: \`${esc(workspaceRoot)}\``);
-      return;
-    }
   } else {
     projectPath = path.join(workspaceRoot, args);
   }

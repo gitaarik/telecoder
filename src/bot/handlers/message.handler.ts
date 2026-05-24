@@ -426,17 +426,9 @@ async function handleProjectReply(ctx: Context, sessionKey: string, projectPath:
     resolvedPath = path.join(process.env.HOME || '', resolvedPath.slice(1));
   }
 
-  // Resolve to absolute path
+  // Resolve to absolute path. Manual path entry is treated as an explicit
+  // user choice and may point anywhere on disk (mirrors typing `/project <abs>`).
   resolvedPath = path.resolve(resolvedPath);
-  const workspaceRoot = getWorkspaceRoot();
-
-  if (!isPathWithinRoot(workspaceRoot, resolvedPath)) {
-    await ctx.reply(
-      `❌ Path must be within workspace root: \`${esc(workspaceRoot)}\``,
-      { parse_mode: 'MarkdownV2' }
-    );
-    return;
-  }
 
   // Check if exists
   if (!fs.existsSync(resolvedPath)) {
