@@ -20,6 +20,7 @@ import {
 // MCP subprocess back to bot-side state (Telegram API, session topic, …).
 import './mcp-bridge.js';
 import { onAsyncToolArmed, markTurnStart, markTurnEnd, teardown as teardownMonitorRelay, relayPushNotification, type AsyncToolKind } from './monitor-relay.js';
+import { relayUpdateBanner, scrapeUpdateBanner } from './update-banner-relay.js';
 import { evaluateToolCall, isPermissionGateEnabled, DENY_MARKER_START, DENY_MARKER_END } from './permission-gate.js';
 import type { Context } from 'grammy';
 import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions, type EditDiffEvent, type ToolResultEvent, type ImageAttachment } from '../providers/types.js';
@@ -141,6 +142,15 @@ interface PtySession {
    * other slash commands that don't emit a `●` glyph.
    */
   jsonlMtimeAtSubmit: number;
+  /**
+   * Set to true after we've scanned this pty's startup output for Claude
+   * Code's update banner. The banner only renders during the first TUI draw,
+   * but it lingers in the xterm scrollback for the lifetime of the pty — so
+   * without a guard we'd re-detect and re-post the same notice on every
+   * subsequent turn. Re-check happens on /clear (cleanupSession destroys
+   * this state) or after any spawn-triggering event.
+   */
+  updateBannerChecked: boolean;
 }
 
 /**
@@ -470,6 +480,7 @@ export class PtyProvider implements Provider {
 
     try {
       await this._waitForReady(session, IDLE_MS, STARTUP_MAX_MS);
+      this._maybeRelayUpdateBanner(session, sessionKey);
 
       // Snapshot the screen before submitting so the progress diff and the
       // end-of-turn extraction only see content produced by this turn — the
@@ -629,6 +640,7 @@ export class PtyProvider implements Provider {
       inflightTools: 0,
       submitTimeMs: 0,
       jsonlMtimeAtSubmit: 0,
+      updateBannerChecked: false,
     };
 
     term.onData((chunk: string) => this._onData(session, chunk));
@@ -788,6 +800,22 @@ export class PtyProvider implements Provider {
       await new Promise((r) => setTimeout(r, 50));
     }
     console.warn(`[PtyProvider] _waitForReady cap reached (${capMs}ms) without confirmed input prompt; proceeding anyway`);
+  }
+
+  /**
+   * After the first _waitForReady of this pty's lifetime, scan the rendered
+   * screen for claude's "Update available" / "Successfully updated" banner
+   * and relay it to Telegram. Guarded so we only fire once per pty spawn —
+   * the banner sits in the xterm scrollback indefinitely otherwise.
+   */
+  private _maybeRelayUpdateBanner(session: PtySession, sessionKey: string): void {
+    if (session.updateBannerChecked) return;
+    session.updateBannerChecked = true;
+    const banner = scrapeUpdateBanner(this._getScreenText(session));
+    if (!banner) return;
+    relayUpdateBanner(sessionKey, banner).catch((err) => {
+      console.error('[PtyProvider] relay update banner failed:', err instanceof Error ? err.message : err);
+    });
   }
 
   private _getScreenText(session: PtySession): string {

@@ -12,6 +12,7 @@ import { consumeAllInFlight } from './claude/in-flight-tracker.js';
 import { clearConversation } from './providers/provider-router.js';
 import { startScheduledRunner } from './claude/scheduled-runner.js';
 import { setMonitorRelayBot } from './claude/monitor-relay.js';
+import { setUpdateBannerRelayBot } from './claude/update-banner-relay.js';
 import { parseSessionKey } from './utils/session-key.js';
 import { setSessionTopic, getEffortLabel } from './bot/handlers/command.handler.js';
 import { isBotNameEnabled, rateLimitedSetMyName, notifyBotNameBlockToChat } from './telegram/botname-settings.js';
@@ -377,6 +378,11 @@ async function main() {
   // Register the bot reference for the PTY-mode Monitor relay so Monitor
   // events that fire between user turns can be posted to Telegram.
   setMonitorRelayBot(bot);
+
+  // And the update-banner relay, so claude code's "Update available" notice
+  // (printed once at PTY startup) is forwarded to the user instead of being
+  // silently consumed by the headless xterm.
+  setUpdateBannerRelayBot(bot);
 
   // Liveness heartbeat: periodically verify the bot can still reach the
   // Telegram API. If the runner has stopped or getMe fails repeatedly,
