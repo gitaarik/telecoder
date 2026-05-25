@@ -128,7 +128,7 @@ async function runScheduledTurn(ctx: Context, sessionKey: string, prompt: string
     await maybeSendVoiceReply(ctx, response.text);
     await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
   } catch (error) {
-    await messageSender.cancelStreaming(ctx);
+    await messageSender.cancelStreaming(ctx, error as Error);
     throw error;
   }
 }

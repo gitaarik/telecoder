@@ -636,7 +636,7 @@ async function handleAgentReply(
         const chatId = ctx.chat?.id;
         if (chatId !== undefined) await sendStatusLine(ctx, chatId, sessionKey, response.usage, trimmedInput);
       } catch (error) {
-        await messageSender.cancelStreaming(ctx);
+        await messageSender.cancelStreaming(ctx, error as Error);
         throw error;
       }
     });
@@ -891,7 +891,7 @@ async function handleStreamingResponse(
       lastThrottledPrompt.delete(sessionKey);
     }
   } catch (error) {
-    await messageSender.cancelStreaming(ctx);
+    await messageSender.cancelStreaming(ctx, error as Error);
     throw error;
   }
 }

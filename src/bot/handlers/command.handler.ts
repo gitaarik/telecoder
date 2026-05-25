@@ -2207,7 +2207,7 @@ export async function handlePlan(ctx: Context): Promise<void> {
         await messageSender.finishStreaming(ctx, response.text);
         await maybeSendVoiceReply(ctx, response.text);
       } catch (error) {
-        await messageSender.cancelStreaming(ctx);
+        await messageSender.cancelStreaming(ctx, error as Error);
         throw error;
       }
     });
@@ -2266,7 +2266,7 @@ export async function handleExplore(ctx: Context): Promise<void> {
         await messageSender.finishStreaming(ctx, response.text);
         await maybeSendVoiceReply(ctx, response.text);
       } catch (error) {
-        await messageSender.cancelStreaming(ctx);
+        await messageSender.cancelStreaming(ctx, error as Error);
         throw error;
       }
     });
@@ -2725,7 +2725,7 @@ export async function handleLoop(ctx: Context): Promise<void> {
         await messageSender.finishStreaming(ctx, response.text);
         await maybeSendVoiceReply(ctx, response.text);
       } catch (error) {
-        await messageSender.cancelStreaming(ctx);
+        await messageSender.cancelStreaming(ctx, error as Error);
         throw error;
       }
     });
@@ -3294,7 +3294,7 @@ export async function handleRedditActionCallback(ctx: Context): Promise<void> {
                 await messageSender.finishStreaming(ctx, response.text);
                 await maybeSendVoiceReply(ctx, response.text);
               } catch (error) {
-                await messageSender.cancelStreaming(ctx);
+                await messageSender.cancelStreaming(ctx, error as Error);
                 throw error;
               }
             } else {

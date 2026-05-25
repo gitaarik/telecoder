@@ -20,6 +20,21 @@ interface JsonlMessage {
 interface JsonlRecord {
   type?: string;
   message?: JsonlMessage;
+  /**
+   * Top-level flag Claude Code sets on a synthetic assistant record it writes
+   * when its API call fails mid-turn (socket dropped, rate limit, auth, …).
+   * The record's `message.model` is `<synthetic>`, usage is zeroed, and the
+   * single text block contains the error string ("API Error: ..."). We must
+   * filter these out everywhere we read assistant text or usage from the log,
+   * otherwise the error leaks into chat as if it were assistant prose and the
+   * status line ends up showing 0 tokens / `<synthetic>` model.
+   */
+  isApiErrorMessage?: boolean;
+}
+
+/** True if this record is the synthetic "API Error" stop record Claude Code writes when an in-flight request dies. */
+function isApiErrorRecord(rec: JsonlRecord | Record<string, unknown>): boolean {
+  return (rec as JsonlRecord).isApiErrorMessage === true;
 }
 
 /** Build the path Claude Code uses to store a session's JSONL log. */
@@ -85,6 +100,11 @@ export function readLastUsageFromJsonl(workingDirectory: string, sessionId: stri
     catch { continue; }
 
     if (rec.type === 'user') numTurns++;
+
+    // Skip the synthetic API-error record: its usage is all zeros and would
+    // wipe out the legitimate cumulative totals from the real assistant turn
+    // that ran just before it.
+    if (isApiErrorRecord(rec)) continue;
 
     const msg = rec.message as Record<string, unknown> | undefined;
     const usage = msg?.usage as Record<string, unknown> | undefined;
@@ -154,6 +174,11 @@ export function readLastAssistantTurnText(
     catch { continue; }
     const role = rec.type === 'user' ? 'user' : rec.type === 'assistant' ? 'assistant' : null;
     if (!role) continue;
+    // Synthetic API-error records carry the "API Error: ..." string as a
+    // plain text block — drop them so the error doesn't get joined into the
+    // assistant response shown to the user. The caller surfaces the error
+    // separately via readLastApiErrorFromJsonl.
+    if (isApiErrorRecord(rec)) continue;
     const text = extractText(rec.message?.content);
     records.push({ role, text });
     if (role === 'user' && text.length > 0) lastPromptIdx = records.length - 1;
@@ -168,6 +193,56 @@ export function readLastAssistantTurnText(
 
   if (assistantTexts.length === 0) return undefined;
   return assistantTexts.join('\n\n');
+}
+
+/**
+ * If the most recent assistant record after the last user prompt is the
+ * synthetic API-error record (Claude Code's stop marker when its in-flight
+ * request died), return its text. Otherwise undefined.
+ *
+ * Used by the PTY provider to detect that the turn we just resolved actually
+ * ended in an API failure and to throw rather than silently returning whatever
+ * partial assistant text was streamed before the socket dropped.
+ */
+export function readLastApiErrorFromJsonl(
+  workingDirectory: string,
+  sessionId: string,
+): string | undefined {
+  const filePath = sessionJsonlPath(workingDirectory, sessionId);
+  if (!fs.existsSync(filePath)) return undefined;
+
+  const raw = fs.readFileSync(filePath, 'utf-8');
+  const lines = raw.split('\n');
+
+  let lastPromptIdx = -1;
+  type Rec = { role: 'user' | 'assistant'; apiError: boolean; text: string };
+  const records: Rec[] = [];
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    let rec: JsonlRecord;
+    try { rec = JSON.parse(line) as JsonlRecord; }
+    catch { continue; }
+    const role = rec.type === 'user' ? 'user' : rec.type === 'assistant' ? 'assistant' : null;
+    if (!role) continue;
+    const text = extractText(rec.message?.content);
+    records.push({ role, apiError: isApiErrorRecord(rec), text });
+    if (role === 'user' && text.length > 0 && !isApiErrorRecord(rec)) {
+      lastPromptIdx = records.length - 1;
+    }
+  }
+
+  if (lastPromptIdx === -1) return undefined;
+
+  // Walk the post-prompt window newest-first: the FIRST assistant record we
+  // see going backwards is the "most recent assistant record". If that record
+  // is the API-error one, the turn ended with a failure.
+  for (let i = records.length - 1; i > lastPromptIdx; i--) {
+    if (records[i].role !== 'assistant') continue;
+    if (records[i].apiError) return records[i].text || 'API Error';
+    return undefined; // most recent assistant record is a real reply — no error
+  }
+  return undefined;
 }
 
 /**
@@ -237,6 +312,7 @@ export function readRecentExchanges(
     }
     const role = rec.type === 'user' ? 'user' : rec.type === 'assistant' ? 'assistant' : null;
     if (!role) continue;
+    if (isApiErrorRecord(rec)) continue;
 
     const text = extractText(rec.message?.content);
     if (!text) continue; // pure tool_result / tool_use / thinking — skip

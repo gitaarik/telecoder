@@ -916,7 +916,18 @@ export class MessageSender {
     }
   }
 
-  async cancelStreaming(ctx: Context): Promise<void> {
+  /**
+   * Edit the in-flight streaming message to a cancel/error banner and tear
+   * down the per-turn streaming state. `reason` is either an explicit banner
+   * string or the Error that ended the turn; an Error whose `name` is
+   * `ClaudeApiError` gets a distinct banner so users can tell a Claude Code
+   * API failure apart from a /stop they initiated themselves.
+   */
+  async cancelStreaming(ctx: Context, reason: string | Error = '⚠️ Request cancelled'): Promise<void> {
+    const banner = typeof reason === 'string'
+      ? reason
+      : (reason?.name === 'ClaudeApiError' ? '⚠️ Claude API error — turn aborted' : '⚠️ Request cancelled');
+
     const keyInfo = getSessionKeyFromCtx(ctx);
     if (!keyInfo) return;
     const { chatId, sessionKey } = keyInfo;
@@ -932,7 +943,7 @@ export class MessageSender {
           await ctx.api.editMessageText(
             chatId,
             state.messageId,
-            '⚠️ Request cancelled',
+            banner,
             { parse_mode: undefined }
           );
         } catch (error) {

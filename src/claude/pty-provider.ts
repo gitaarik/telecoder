@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
-import { claudeSessionFileExists, readLastAssistantTurnText, readLastUsageFromJsonl, sessionJsonlMtimeMs } from './session-jsonl.js';
+import { claudeSessionFileExists, readLastApiErrorFromJsonl, readLastAssistantTurnText, readLastUsageFromJsonl, sessionJsonlMtimeMs } from './session-jsonl.js';
 import { isCancelled } from './request-queue.js';
 import { getWorkspaceRoot } from '../utils/workspace-guard.js';
 import {
@@ -65,6 +65,19 @@ const STARTUP_MAX_MS = 15_000;
  * realistic typing latency from claude itself.
  */
 const NO_JSONL_FALLBACK_MS = 5_000;
+
+/**
+ * Thrown by sendToAgent when Claude Code wrote a synthetic API-error record to
+ * the session log for the just-finished turn (socket dropped, rate limit, …).
+ * Surfaced as a distinct class so message handlers can show an API-error
+ * banner instead of the generic "⚠️ Request cancelled" used for user /stop.
+ */
+export class ClaudeApiError extends Error {
+  constructor(public detail: string) {
+    super(`Claude Code API error: ${detail}`);
+    this.name = 'ClaudeApiError';
+  }
+}
 
 function resolveCwd(sessionKey: string): string {
   const session = sessionManager.getSession(sessionKey);
@@ -328,6 +341,18 @@ export class PtyProvider implements Provider {
       ?? this._extractAssistantResponse(finalScreenText);
 
     const usage = this._refreshUsageFromJsonl(sessionKey);
+
+    // If Claude Code's in-flight request died this turn it appended a
+    // synthetic `isApiErrorMessage:true` record to the session log. The JSONL
+    // readers above already filter that record out (so `assistantResponse` and
+    // `usage` reflect the last *real* assistant turn, not the zeroed
+    // synthetic), but we still need to surface the failure to the caller — a
+    // silent successful return would fire "✅ Done" as if the turn succeeded.
+    const botSession = sessionManager.getSession(sessionKey);
+    if (botSession?.claudeSessionId) {
+      const apiError = readLastApiErrorFromJsonl(botSession.workingDirectory, botSession.claudeSessionId);
+      if (apiError) throw new ClaudeApiError(apiError);
+    }
 
     return {
       text: assistantResponse,

@@ -122,7 +122,7 @@ async function handleSavedImage(
         await messageSender.finishStreaming(ctx, response.text);
         await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
       } catch (error) {
-        await messageSender.cancelStreaming(ctx);
+        await messageSender.cancelStreaming(ctx, error as Error);
         throw error;
       }
     } else {
@@ -327,7 +327,7 @@ export async function handleTextDocument(ctx: Context): Promise<void> {
           await messageSender.finishStreaming(ctx, response.text);
           await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
         } catch (error) {
-          await messageSender.cancelStreaming(ctx);
+          await messageSender.cancelStreaming(ctx, error as Error);
           throw error;
         }
       } else {
