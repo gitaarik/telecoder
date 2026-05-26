@@ -4621,10 +4621,22 @@ function getActiveTasks(sessionKey: string): TaskState[] {
   );
 }
 
-function renderTasksList(tasks: TaskState[]): { text: string; keyboard: { text: string; callback_data: string }[][] } {
+function renderTasksList(sessionKey: string, tasks: TaskState[]): { text: string; keyboard: { text: string; callback_data: string }[][] } {
   if (tasks.length === 0) {
+    // Cross-pointer: a `Bash(run_in_background=true)` shell can outlive its SDK
+    // task entry (npm release scripts, deploys), so the statusline's 🔍 counter
+    // may show > 0 while /tasks is empty. Surface that here so users know
+    // where to look next.
+    const claudePid = getPtyProvider().getSessionPid(sessionKey);
+    const shellCount = claudePid !== undefined ? getBgProcesses(claudePid).length : 0;
+    const lines = ['🔄 *Active background tasks*', '', 'None running\\.'];
+    if (shellCount > 0) {
+      const noun = shellCount === 1 ? 'shell' : 'shells';
+      lines.push('');
+      lines.push(`_🔍 ${shellCount} background ${noun} still running — see /bg\\._`);
+    }
     return {
-      text: '🔄 *Active background tasks*\n\nNone running\\.',
+      text: lines.join('\n'),
       keyboard: [[{ text: '🔄 Refresh', callback_data: 'tasks:refresh' }]],
     };
   }
@@ -4727,7 +4739,7 @@ export async function handleTasks(ctx: Context): Promise<void> {
   }
 
   const tasks = getActiveTasks(keyInfo.sessionKey);
-  const { text, keyboard } = renderTasksList(tasks);
+  const { text, keyboard } = renderTasksList(keyInfo.sessionKey, tasks);
 
   await ctx.reply(text, {
     parse_mode: 'MarkdownV2',
@@ -4746,7 +4758,7 @@ export async function handleTasksCallback(ctx: Context): Promise<void> {
 
   if (data === 'tasks:refresh' || data === 'tasks:back') {
     const tasks = getActiveTasks(sessionKey);
-    const { text, keyboard } = renderTasksList(tasks);
+    const { text, keyboard } = renderTasksList(sessionKey, tasks);
     await ctx.answerCallbackQuery().catch(() => {});
     try {
       await ctx.editMessageText(text, {
@@ -4769,7 +4781,7 @@ export async function handleTasksCallback(ctx: Context): Promise<void> {
     if (!task) {
       // Task finished or was cleared between renders — go back to the list.
       const tasks = getActiveTasks(sessionKey);
-      const { text, keyboard } = renderTasksList(tasks);
+      const { text, keyboard } = renderTasksList(sessionKey, tasks);
       await ctx.answerCallbackQuery({ text: 'Task no longer active.' }).catch(() => {});
       try {
         await ctx.editMessageText(text, {
@@ -4847,7 +4859,7 @@ function getBgProcesses(claudePid: number): ProcInfo[] {
   return result;
 }
 
-function renderBgList(claudePid: number | undefined, procs: ProcInfo[]): {
+function renderBgList(sessionKey: string, claudePid: number | undefined, procs: ProcInfo[]): {
   text: string;
   keyboard: { text: string; callback_data: string }[][];
 } {
@@ -4861,8 +4873,17 @@ function renderBgList(claudePid: number | undefined, procs: ProcInfo[]): {
     };
   }
   if (procs.length === 0) {
+    // Cross-pointer to /tasks when SDK-tracked tasks (agents, monitors) are
+    // running but no OS shells are.
+    const taskCount = getActiveTasks(sessionKey).length;
+    const lines = ['🔍 *Background processes*', '', 'None running\\.'];
+    if (taskCount > 0) {
+      const noun = taskCount === 1 ? 'task' : 'tasks';
+      lines.push('');
+      lines.push(`_🔄 ${taskCount} SDK ${noun} still running — see /tasks\\._`);
+    }
     return {
-      text: '🔍 *Background processes*\n\nNone running\\.',
+      text: lines.join('\n'),
       keyboard: [[{ text: '🔄 Refresh', callback_data: 'bg:refresh' }]],
     };
   }
@@ -4891,11 +4912,11 @@ function renderBgList(claudePid: number | undefined, procs: ProcInfo[]): {
   return { text: lines.join('\n'), keyboard };
 }
 
-async function rerenderBg(ctx: Context, claudePid: number | undefined): Promise<void> {
+async function rerenderBg(ctx: Context, sessionKey: string, claudePid: number | undefined): Promise<void> {
   // Brief grace period so killed processes drop out of /proc before we re-read.
   await new Promise((r) => setTimeout(r, 200));
   const procs = claudePid !== undefined ? getBgProcesses(claudePid) : [];
-  const { text, keyboard } = renderBgList(claudePid, procs);
+  const { text, keyboard } = renderBgList(sessionKey, claudePid, procs);
   try {
     await ctx.editMessageText(text, {
       parse_mode: 'MarkdownV2',
@@ -4917,7 +4938,7 @@ export async function handleBg(ctx: Context): Promise<void> {
   }
   const claudePid = getPtyProvider().getSessionPid(keyInfo.sessionKey);
   const procs = claudePid !== undefined ? getBgProcesses(claudePid) : [];
-  const { text, keyboard } = renderBgList(claudePid, procs);
+  const { text, keyboard } = renderBgList(keyInfo.sessionKey, claudePid, procs);
   await ctx.reply(text, {
     parse_mode: 'MarkdownV2',
     reply_markup: { inline_keyboard: keyboard },
@@ -4935,7 +4956,7 @@ export async function handleBgCallback(ctx: Context): Promise<void> {
 
   if (data === 'bg:refresh') {
     await ctx.answerCallbackQuery().catch(() => {});
-    await rerenderBg(ctx, claudePid);
+    await rerenderBg(ctx, keyInfo.sessionKey, claudePid);
     return;
   }
 
@@ -4948,7 +4969,7 @@ export async function handleBgCallback(ctx: Context): Promise<void> {
     let total = 0;
     for (const p of procs) total += killTree(p.pid);
     await ctx.answerCallbackQuery({ text: `SIGTERM sent to ${total} process(es).` }).catch(() => {});
-    await rerenderBg(ctx, claudePid);
+    await rerenderBg(ctx, keyInfo.sessionKey, claudePid);
     return;
   }
 
@@ -4962,12 +4983,12 @@ export async function handleBgCallback(ctx: Context): Promise<void> {
     // descendant of this chat's claude session.
     if (!isDescendantOf(claudePid, pid)) {
       await ctx.answerCallbackQuery({ text: `PID ${pid} no longer belongs to this session.` }).catch(() => {});
-      await rerenderBg(ctx, claudePid);
+      await rerenderBg(ctx, keyInfo.sessionKey, claudePid);
       return;
     }
     const killed = killTree(pid);
     await ctx.answerCallbackQuery({ text: `SIGTERM sent (${killed} process(es)).` }).catch(() => {});
-    await rerenderBg(ctx, claudePid);
+    await rerenderBg(ctx, keyInfo.sessionKey, claudePid);
     return;
   }
 
