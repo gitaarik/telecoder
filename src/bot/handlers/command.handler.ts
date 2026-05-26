@@ -68,6 +68,14 @@ import { isMainThread } from 'worker_threads';
 import { sanitizeError, sanitizePath } from '../../utils/sanitize.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../../utils/workspace-guard.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
+import { getPtyProvider } from '../../providers/claude-provider.js';
+import {
+  getDirectChildren,
+  describeProcess,
+  isDescendantOf,
+  killTree,
+  type ProcInfo,
+} from '../../utils/proc-children.js';
 import { taskTracker, type TaskState } from '../../telegram/task-tracker.js';
 import { readRecentExchanges, readLastAiTitle, readLastAssistantTurnText, type RecapExchange } from '../../claude/session-jsonl.js';
 import {
@@ -4741,6 +4749,182 @@ export async function handleTasksCallback(ctx: Context): Promise<void> {
         console.error('[Tasks] Failed to render detail:', err);
       }
     }
+    return;
+  }
+
+  await ctx.answerCallbackQuery().catch(() => {});
+}
+
+// ── /bg ─────────────────────────────────────────────────────────
+// List OS-level child processes of the chat's PTY claude session and offer
+// a one-tap SIGTERM. Complements /tasks (which only sees SDK-tracked tasks)
+// and rescues `Bash(run_in_background=true)` shells whose stop condition
+// will never fire.
+
+const BG_MCP_SERVER_MARKER = 'mcp-server.js';
+
+function formatBgAge(sec: number): string {
+  if (sec < 60) return `${sec}s`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m`;
+  if (sec < 86400) {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    return m > 0 ? `${h}h${m}m` : `${h}h`;
+  }
+  return `${Math.floor(sec / 86400)}d`;
+}
+
+function truncateBgCmd(cmd: string, max = 150): string {
+  if (cmd.length <= max) return cmd;
+  return cmd.substring(0, max - 1) + '…';
+}
+
+// Claude's `Bash(run_in_background=true)` shells are spawned as
+//   <shell> -c "source <snapshot> && setopt … && eval '<USER_CMD>' < /dev/null && pwd -P >| /tmp/…"
+// The wrapper is noise — pull out the real command between `eval '` and the
+// trailing `' < /dev/null`. Returns the original cmd if the pattern doesn't
+// match (e.g. the MCP server, foreign children).
+function unwrapBgCmd(cmd: string): string {
+  const evalIdx = cmd.indexOf("eval '");
+  if (evalIdx === -1) return cmd;
+  const start = evalIdx + "eval '".length;
+  const tail = cmd.indexOf("' < /dev/null", start);
+  if (tail === -1 || tail <= start) return cmd;
+  return cmd.substring(start, tail);
+}
+
+function getBgProcesses(claudePid: number): ProcInfo[] {
+  const result: ProcInfo[] = [];
+  for (const childPid of getDirectChildren(claudePid)) {
+    const info = describeProcess(childPid);
+    if (!info) continue;
+    if (info.cmd.includes(BG_MCP_SERVER_MARKER)) continue;
+    result.push(info);
+  }
+  return result;
+}
+
+function renderBgList(claudePid: number | undefined, procs: ProcInfo[]): {
+  text: string;
+  keyboard: { text: string; callback_data: string }[][];
+} {
+  if (claudePid === undefined) {
+    return {
+      text:
+        '🔍 *Background processes*\n\n' +
+        '_No active PTY session for this chat\\._\n\n' +
+        'In SDK mode, use /tasks to inspect tracked background tasks\\.',
+      keyboard: [],
+    };
+  }
+  if (procs.length === 0) {
+    return {
+      text: '🔍 *Background processes*\n\nNone running\\.',
+      keyboard: [[{ text: '🔄 Refresh', callback_data: 'bg:refresh' }]],
+    };
+  }
+
+  const lines: string[] = [`🔍 *Background processes* \\(${procs.length}\\)`, ''];
+  procs.forEach((p, i) => {
+    lines.push(`*${i + 1}\\.* \\[${esc(formatBgAge(p.ageSec))}\\] pid \`${esc(String(p.pid))}\``);
+    lines.push(`\`${esc(truncateBgCmd(unwrapBgCmd(p.cmd)))}\``);
+    lines.push('');
+  });
+  lines.push('_Tap a number to SIGTERM that process \\(and its descendants\\)\\._');
+
+  const keyboard: { text: string; callback_data: string }[][] = [];
+  let row: { text: string; callback_data: string }[] = [];
+  procs.forEach((p, i) => {
+    row.push({ text: `🛑 #${i + 1}`, callback_data: `bg:kill:${p.pid}` });
+    if (row.length === 4 || i === procs.length - 1) {
+      keyboard.push(row);
+      row = [];
+    }
+  });
+  keyboard.push([
+    { text: '🛑 Kill all', callback_data: 'bg:killall' },
+    { text: '🔄 Refresh', callback_data: 'bg:refresh' },
+  ]);
+  return { text: lines.join('\n'), keyboard };
+}
+
+async function rerenderBg(ctx: Context, claudePid: number | undefined): Promise<void> {
+  // Brief grace period so killed processes drop out of /proc before we re-read.
+  await new Promise((r) => setTimeout(r, 200));
+  const procs = claudePid !== undefined ? getBgProcesses(claudePid) : [];
+  const { text, keyboard } = renderBgList(claudePid, procs);
+  try {
+    await ctx.editMessageText(text, {
+      parse_mode: 'MarkdownV2',
+      reply_markup: { inline_keyboard: keyboard },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message.toLowerCase() : '';
+    if (!msg.includes('message is not modified')) {
+      console.error('[/bg] Failed to refresh list:', err);
+    }
+  }
+}
+
+export async function handleBg(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) {
+    await ctx.reply('❌ Could not determine chat context for /bg.');
+    return;
+  }
+  const claudePid = getPtyProvider().getSessionPid(keyInfo.sessionKey);
+  const procs = claudePid !== undefined ? getBgProcesses(claudePid) : [];
+  const { text, keyboard } = renderBgList(claudePid, procs);
+  await ctx.reply(text, {
+    parse_mode: 'MarkdownV2',
+    reply_markup: { inline_keyboard: keyboard },
+  });
+}
+
+export async function handleBgCallback(ctx: Context): Promise<void> {
+  const data = ctx.callbackQuery?.data;
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!data || !keyInfo) {
+    await ctx.answerCallbackQuery().catch(() => {});
+    return;
+  }
+  const claudePid = getPtyProvider().getSessionPid(keyInfo.sessionKey);
+
+  if (data === 'bg:refresh') {
+    await ctx.answerCallbackQuery().catch(() => {});
+    await rerenderBg(ctx, claudePid);
+    return;
+  }
+
+  if (data === 'bg:killall') {
+    if (claudePid === undefined) {
+      await ctx.answerCallbackQuery({ text: 'No active session.' }).catch(() => {});
+      return;
+    }
+    const procs = getBgProcesses(claudePid);
+    let total = 0;
+    for (const p of procs) total += killTree(p.pid);
+    await ctx.answerCallbackQuery({ text: `SIGTERM sent to ${total} process(es).` }).catch(() => {});
+    await rerenderBg(ctx, claudePid);
+    return;
+  }
+
+  if (data.startsWith('bg:kill:')) {
+    const pid = Number.parseInt(data.substring('bg:kill:'.length), 10);
+    if (claudePid === undefined || !Number.isFinite(pid)) {
+      await ctx.answerCallbackQuery({ text: 'Unknown target.' }).catch(() => {});
+      return;
+    }
+    // PIDs can be recycled — refuse to signal anything that's no longer a
+    // descendant of this chat's claude session.
+    if (!isDescendantOf(claudePid, pid)) {
+      await ctx.answerCallbackQuery({ text: `PID ${pid} no longer belongs to this session.` }).catch(() => {});
+      await rerenderBg(ctx, claudePid);
+      return;
+    }
+    const killed = killTree(pid);
+    await ctx.answerCallbackQuery({ text: `SIGTERM sent (${killed} process(es)).` }).catch(() => {});
+    await rerenderBg(ctx, claudePid);
     return;
   }
 

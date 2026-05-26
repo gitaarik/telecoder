@@ -8,6 +8,10 @@ import type { Provider, AgentOptions, LoopOptions, AgentResponse, AgentUsage, Mo
 // Instantiate both providers. The router will decide which one to use.
 const ptyProvider = new PtyProvider();
 
+export function getPtyProvider(): PtyProvider {
+  return ptyProvider;
+}
+
 function getMethod(chatId: number): 'sdk' | 'pty' {
   return userPreferences.getMethod(chatId) || 'sdk'; // Default to SDK
 }
