@@ -42,6 +42,7 @@ import { getTTSSettings, setTTSEnabled, setTTSVoice, setTTSAutoplay } from '../.
 import { getTerminalUISettings, setTerminalUIEnabled } from '../../telegram/terminal-settings.js';
 import { getBotNameSettings, setBotNameEnabled, isBotNameEnabled, rateLimitedSetMyName, notifyBotNameBlock } from '../../telegram/botname-settings.js';
 import { getTelegraphSettings, setTelegraphEnabled } from '../../telegram/telegraph-settings.js';
+import { getSuggestionsSettings, setSuggestionsEnabled } from '../../telegram/suggestions-settings.js';
 import { userPreferences } from '../../providers/user-preferences.js';
 import { projectFavorites } from '../../providers/project-favorites.js';
 import { maybeSendVoiceReply } from '../../tts/voice-reply.js';
@@ -540,6 +541,30 @@ function buildTTSMenu(sessionKey: string, mode: TTSMenuMode) {
       [
         { text: `Voice: ${settings.voice}`, callback_data: 'tts:voices' },
         { text: autoplayLabel, callback_data: 'tts:autoplay' },
+      ],
+    ],
+  };
+}
+
+function buildSuggestionsMenu(sessionKey: string) {
+  const settings = getSuggestionsSettings(sessionKey);
+  const defaultLabel = config.PROMPT_SUGGESTIONS_DEFAULT ? 'on' : 'off';
+  const statusLine = settings.enabled ? 'ON' : 'OFF';
+  const header = `💡 *Predicted Next Prompt*`;
+
+  const baseText =
+    `${header}\n\n` +
+    `Status: *${statusLine}*\n` +
+    `Default: *${esc(defaultLabel)}*\n\n` +
+    `_When enabled, claudegram surfaces Claude Code's speculative next\\-prompt as an inline button under each response\\. Tap to send it as your next message\\._\n\n` +
+    `_Takes effect on the next session spawn \\(env var is set at spawn time\\)\\._`;
+
+  return {
+    text: baseText,
+    keyboard: [
+      [
+        { text: settings.enabled ? '✓ On' : 'On', callback_data: 'sugg:on' },
+        { text: !settings.enabled ? '✓ Off' : 'Off', callback_data: 'sugg:off' },
       ],
     ],
   };
@@ -5087,4 +5112,44 @@ export async function handleMethodCallback(ctx: Context): Promise<void> {
   await ctx.editMessageText(`✅ Method set to *${esc(newMethod)}*`, {
     parse_mode: 'MarkdownV2',
   });
+}
+
+export async function handleSuggestions(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { sessionKey } = keyInfo;
+
+  const menu = buildSuggestionsMenu(sessionKey);
+  await ctx.reply(menu.text, {
+    parse_mode: 'MarkdownV2',
+    reply_markup: { inline_keyboard: menu.keyboard },
+  });
+}
+
+export async function handleSuggestionsCallback(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { sessionKey } = keyInfo;
+
+  const data = ctx.callbackQuery?.data;
+  if (!data || !data.startsWith('sugg:')) return;
+
+  if (data === 'sugg:on') {
+    setSuggestionsEnabled(sessionKey, true);
+  } else if (data === 'sugg:off') {
+    setSuggestionsEnabled(sessionKey, false);
+  }
+
+  const menu = buildSuggestionsMenu(sessionKey);
+  await ctx.answerCallbackQuery();
+  try {
+    await ctx.editMessageText(menu.text, {
+      parse_mode: 'MarkdownV2',
+      reply_markup: { inline_keyboard: menu.keyboard },
+    });
+  } catch (error) {
+    if (!(error instanceof Error && error.message.includes('message is not modified'))) {
+      console.error('[Suggestions] Failed to update menu:', error);
+    }
+  }
 }

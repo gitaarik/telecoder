@@ -59,6 +59,17 @@ const envSchema = z.object({
     .string()
     .default('true')
     .transform((val) => val.toLowerCase() === 'true'),
+  // Default for the per-chat "predicted next prompt" feature: when enabled,
+  // claudegram sets CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=1 on the PTY spawn
+  // and scrapes the ghost-text suggestion that claude renders into its input
+  // box after each turn, surfacing it as an inline button under the response.
+  // Per-chat override via /suggestions; takes effect on next session spawn.
+  // Off by default — feature relies on Anthropic's growthbook flag being on
+  // for the account, and the suggestion is a speculative API call.
+  PROMPT_SUGGESTIONS_DEFAULT: z
+    .string()
+    .default('false')
+    .transform((val) => val.toLowerCase() === 'true'),
   BOT_MODE: z.enum(['dev', 'prod']).default('dev'),
   STREAMING_MODE: z.enum(['streaming', 'wait']).default('streaming'),
   STREAMING_DEBOUNCE_MS: z

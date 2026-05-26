@@ -20,6 +20,8 @@ import {
   handleTTSCallback,
   handleTelegraph,
   handleTelegraphCallback,
+  handleSuggestions,
+  handleSuggestionsCallback,
   handleBotStatus,
   handleRestartBot,
   handleRestartBotCallback,
@@ -81,6 +83,7 @@ import {
 import { handleMessage, handleCcrThrottleCallback } from './handlers/message.handler.js';
 import { handleSchedule, handleSchedules, handleUnschedule } from './handlers/schedule.handler.js';
 import { handleForkCallback, handleAcceptCommand, handleDeclineCommand, handleForkCommand } from './handlers/fork.handler.js';
+import { handleSuggestionTapCallback } from './handlers/suggestion.handler.js';
 import { handleVoice } from './handlers/voice.handler.js';
 import { handlePhoto, handleImageDocument, handleTextDocument } from './handlers/photo.handler.js';
 import { createBatchMiddleware } from './middleware/message-batcher.js';
@@ -205,6 +208,7 @@ export async function createBot(): Promise<Bot> {
     ...(config.EXTRACT_ENABLED ? [{ command: 'extract', description: '📥 Extract text/audio/video from URL' }] : []),
     { command: 'file', description: '📎 Download a file from project' },
     { command: 'telegraph', description: '📄 View markdown with Instant View' },
+    { command: 'suggestions', description: '💡 Toggle predicted next-prompt buttons' },
     { command: 'model', description: '🤖 Switch AI model' },
     { command: 'effort', description: '🎯 Set reasoning effort level' },
     { command: 'verbosity', description: '🎚️ Set verbosity tier (quiet/normal/verbose/debug)' },
@@ -338,6 +342,7 @@ export async function createBot(): Promise<Bot> {
   // File commands
   bot.command('file', handleFile);
   bot.command('telegraph', handleTelegraph);
+  bot.command('suggestions', handleSuggestions);
 
   // Reddit
   if (config.REDDIT_ENABLED) {
@@ -382,6 +387,8 @@ export async function createBot(): Promise<Bot> {
       await handleTTSCallback(ctx);
     } else if (data.startsWith('telegraph:')) {
       await handleTelegraphCallback(ctx);
+    } else if (data.startsWith('sugg:')) {
+      await handleSuggestionsCallback(ctx);
     } else if (data.startsWith('clear:')) {
       await handleClearCallback(ctx);
     } else if (data.startsWith('project:')) {
@@ -402,6 +409,8 @@ export async function createBot(): Promise<Bot> {
       await handleMethodCallback(ctx);
     } else if (data.startsWith('ccr_throttle:')) {
       await handleCcrThrottleCallback(ctx);
+    } else if (data.startsWith('sgt:')) {
+      await handleSuggestionTapCallback(ctx);
     }
     // Note: `tasks:` callback queries are handled by the pre-sequentialize
     // bot.callbackQuery handler above so they remain responsive mid-stream.

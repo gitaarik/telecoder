@@ -27,6 +27,13 @@ export interface AgentResponse {
   sessionInit?: { model: string; sessionId: string };
   /** Present when the upstream signalled a Max usage-limit throttle. */
   throttle?: ThrottleInfo;
+  /**
+   * Speculative next-prompt suggestion scraped from claude's TUI ghost text
+   * at end-of-turn. Only populated when the chat has /suggestions enabled
+   * and Claude Code's growthbook flag for the feature is on. Surfaced to the
+   * UI layer as an inline button on the response message.
+   */
+  nextPromptSuggestion?: string;
 }
 
 export interface ImageAttachment {

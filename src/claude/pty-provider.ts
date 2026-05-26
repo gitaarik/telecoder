@@ -22,6 +22,8 @@ import './mcp-bridge.js';
 import { onAsyncToolArmed, markTurnStart, markTurnEnd, teardown as teardownMonitorRelay, relayPushNotification, type AsyncToolKind } from './monitor-relay.js';
 import { relayUpdateBanner, scrapeUpdateBanner } from './update-banner-relay.js';
 import { evaluateToolCall, isPermissionGateEnabled, DENY_MARKER_START, DENY_MARKER_END } from './permission-gate.js';
+import { scrapePromptSuggestion } from './prompt-suggestion-scraper.js';
+import { isSuggestionsEnabled } from '../telegram/suggestions-settings.js';
 import type { Context } from 'grammy';
 import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions, type EditDiffEvent, type ToolResultEvent, type ImageAttachment } from '../providers/types.js';
 
@@ -314,6 +316,10 @@ export class PtyProvider implements Provider {
    */
   private usageCache = new Map<string, AgentUsage>();
 
+  getSessionPid(sessionKey: string): number | undefined {
+    return this.sessions.get(sessionKey)?.term.pid;
+  }
+
   async sendToAgent(sessionKey: string, message: string, options?: AgentOptions): Promise<AgentResponse> {
     const commandWrapped = wrapCommandPrompt(message, options?.command);
     const { prompt: promptToSend, tempPaths } = stageImagesForPty(commandWrapped, options?.images);
@@ -364,11 +370,39 @@ export class PtyProvider implements Provider {
       if (apiError) throw new ClaudeApiError(apiError);
     }
 
+    const nextPromptSuggestion = await this._awaitPromptSuggestion(sessionKey);
+
     return {
       text: assistantResponse,
       toolsUsed: [], // PTY provider does not have tool usage information
       usage,
+      ...(nextPromptSuggestion ? { nextPromptSuggestion } : {}),
     };
+  }
+
+  /**
+   * After end-of-turn extraction completes, poll the xterm buffer briefly
+   * for Claude Code's ghost-text prompt suggestion. The probe showed it
+   * arrives within ~500ms of the last byte; we already waited
+   * POST_STOP_SETTLE_MS (200ms) before reaching here, so a single fast poll
+   * with a short cap is plenty. Returns null when:
+   *   - the chat hasn't opted in (we never set the env var, so claude won't
+   *     have generated one)
+   *   - the suggestion didn't arrive within the deadline (rate limit, growth-
+   *     book gate off, API error during speculation, etc.)
+   *   - the input box is showing the deterministic "Try ..." placeholder
+   */
+  private async _awaitPromptSuggestion(sessionKey: string): Promise<string | null> {
+    if (!isSuggestionsEnabled(sessionKey)) return null;
+    const session = this.sessions.get(sessionKey);
+    if (!session) return null;
+    const deadline = Date.now() + 1500;
+    while (Date.now() < deadline) {
+      const found = scrapePromptSuggestion(session.xterm);
+      if (found) return found;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return null;
   }
 
   /**
@@ -614,6 +648,12 @@ export class PtyProvider implements Provider {
         // which has no clickable buttons in Telegram and just clutters the
         // chat — there's no real user at a TUI to respond.
         CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: '1',
+        // Enable Claude Code's speculative next-prompt feature when the chat
+        // has opted in. Suggestion is rendered as ghost text in the input box;
+        // the scraper picks it up at end-of-turn (see prompt-suggestion-scraper).
+        // Spawn-time only — toggling /suggestions mid-session has no effect
+        // until the PTY is respawned.
+        ...(isSuggestionsEnabled(sessionKey) ? { CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: '1' } : {}),
       },
     });
 

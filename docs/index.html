@@ -1726,6 +1726,11 @@
             <p>Sessions auto-restore after any restart (planned or crash) with a "Resumed previous session" banner. If a task was interrupted, the bot proactively says so. /resume and /continue still work for older sessions.</p>
           </div>
           <div class="feature-card" data-category="session">
+            <div class="feature-icon">💡</div>
+            <h3>Predicted Next Prompt</h3>
+            <p>Opt in with /suggestions to scrape Claude Code's ghost-text prompt suggestion from the TUI at end-of-turn and surface it as an inline button under each response. Tap to send it as your next message. Free — the suggestion piggybacks on Claude Code's own speculation, no extra API call.</p>
+          </div>
+          <div class="feature-card" data-category="session">
             <div class="feature-icon">🔄</div>
             <h3>Hot Reload</h3>
             <p>Rebuild and restart the bot with /rebuildbot. Sessions are automatically restored — no manual button clicks needed.</p>
@@ -2054,6 +2059,10 @@
             <div class="command-row">
               <code class="command-code">/botname</code>
               <span class="command-desc">Toggle dynamic bot name (shows project and topic)</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/suggestions</code>
+              <span class="command-desc">Toggle predicted next-prompt buttons. When on, claudegram scrapes Claude Code's ghost-text suggestion from the TUI at end-of-turn and surfaces it as a tappable inline button under each response. Takes effect on next session spawn.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/topic &lt;text&gt;</code>

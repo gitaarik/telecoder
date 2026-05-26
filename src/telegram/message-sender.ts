@@ -20,10 +20,36 @@ import { actionLogger } from './action-logger.js';
 import { sessionManager } from '../claude/session-manager.js';
 import { sessionJsonlPath } from '../claude/session-jsonl.js';
 import { messageOffsets, countJsonlLines } from '../claude/message-offsets.js';
+import { storeSuggestion } from '../claude/pending-suggestions.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
 const FORK_KEYBOARD = { inline_keyboard: [[{ text: '🍴 Fork', callback_data: 'fork:pick' }]] };
+
+/**
+ * Truncate a suggestion text for inline button display. Telegram inline
+ * button labels render best at <= ~40 chars; longer ones wrap awkwardly on
+ * narrow screens.
+ */
+function formatSuggestionLabel(text: string): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  return flat.length > 38 ? `💡 ${flat.slice(0, 36)}…` : `💡 ${flat}`;
+}
+
+/**
+ * Register a suggestion in the pending-suggestions store and return the
+ * options bag `attachForkButton` expects for adding the inline button.
+ * Returns an empty options object when the suggestion is missing or blank
+ * (caller still gets just the fork button).
+ */
+function buildSuggestionAttachOpts(
+  sessionKey: string,
+  suggestion: string | undefined,
+): { suggestionId?: string; suggestionText?: string } {
+  if (!suggestion || !suggestion.trim()) return {};
+  const id = storeSuggestion(sessionKey, suggestion);
+  return { suggestionId: id, suggestionText: suggestion };
+}
 
 export interface ToolOperation {
   name: string;
@@ -197,6 +223,7 @@ export class MessageSender {
     ctx: Context,
     sessionKey: string,
     messageId: number | null | undefined,
+    options: { suggestionId?: string; suggestionText?: string } = {},
   ): Promise<void> {
     if (!messageId) return;
     const session = sessionManager.getSession(sessionKey);
@@ -213,11 +240,24 @@ export class MessageSender {
       conversationId: session.conversationId,
     });
 
+    // When a prompt suggestion is available, attach it on a row above the
+    // fork button so the suggestion is the primary call-to-action and fork
+    // stays available as the secondary affordance.
+    const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+    if (options.suggestionId && options.suggestionText) {
+      rows.push([{
+        text: formatSuggestionLabel(options.suggestionText),
+        callback_data: `sgt:${options.suggestionId}`,
+      }]);
+    }
+    rows.push([{ text: '🍴 Fork', callback_data: 'fork:pick' }]);
+    const replyMarkup = rows.length === 1 ? FORK_KEYBOARD : { inline_keyboard: rows };
+
     try {
       await ctx.api.editMessageReplyMarkup(
         ctx.chat!.id,
         messageId,
-        { reply_markup: FORK_KEYBOARD },
+        { reply_markup: replyMarkup },
       );
     } catch (err) {
       // "message is not modified" or "message to edit not found" — non-fatal.
@@ -868,7 +908,11 @@ export class MessageSender {
     state.content = content;
   }
 
-  async finishStreaming(ctx: Context, finalContent: string): Promise<void> {
+  async finishStreaming(
+    ctx: Context,
+    finalContent: string,
+    options: { nextPromptSuggestion?: string } = {},
+  ): Promise<void> {
     const keyInfo = getSessionKeyFromCtx(ctx);
     if (!keyInfo) return;
     const { chatId, sessionKey } = keyInfo;
@@ -923,7 +967,7 @@ export class MessageSender {
               const summary = finalContent.substring(0, 200).replace(/[#*_`\[\]]/g, '') + '...';
               const message = `📄 *Response ready:*\n\n${escapeMarkdownV2(summary)}\n\n[Open in Instant View](${escapeMarkdownV2(pageUrl)})`;
               await ctx.api.editMessageText(chatId, state.messageId, message, { parse_mode: 'MarkdownV2' });
-              await this.attachForkButton(ctx, sessionKey, state.messageId);
+              await this.attachForkButton(ctx, sessionKey, state.messageId, buildSuggestionAttachOpts(sessionKey, options.nextPromptSuggestion));
               // Early exit on success
               this.streamStates.delete(sessionKey);
               return;
@@ -964,7 +1008,7 @@ export class MessageSender {
       }
     }
 
-    await this.attachForkButton(ctx, sessionKey, lastMessageId);
+    await this.attachForkButton(ctx, sessionKey, lastMessageId, buildSuggestionAttachOpts(sessionKey, options.nextPromptSuggestion));
 
     this.streamStates.delete(sessionKey);
 

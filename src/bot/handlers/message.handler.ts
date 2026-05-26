@@ -633,7 +633,7 @@ async function handleAgentReply(
           });
         }
 
-        await messageSender.finishStreaming(ctx, response.text);
+        await messageSender.finishStreaming(ctx, response.text, { nextPromptSuggestion: response.nextPromptSuggestion });
         await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
         await maybeSendVoiceReply(ctx, response.text);
 
@@ -829,6 +829,28 @@ export async function handleCcrThrottleCallback(ctx: Context): Promise<void> {
   }
 }
 
+/**
+ * Entry point used by callback-triggered prompts (suggestion-tap, CCR
+ * throttle retry). Mirrors what handleMessage does after queueRequest:
+ * picks streaming vs wait based on the chat's current mode and dispatches
+ * through the same code path a typed message would take. fireAutoTopic is
+ * fired so the bot name still tracks the topic the user implicitly chose.
+ */
+export async function dispatchPromptFromCallback(
+  ctx: Context,
+  sessionKey: string,
+  chatId: number,
+  message: string,
+  streamingMode: 'streaming' | 'wait',
+): Promise<void> {
+  fireAutoTopic(ctx, sessionKey, message);
+  if (streamingMode === 'streaming') {
+    await handleStreamingResponse(ctx, sessionKey, message);
+  } else {
+    await handleWaitResponse(ctx, sessionKey, chatId, message);
+  }
+}
+
 async function handleStreamingResponse(
   ctx: Context,
   sessionKey: string,
@@ -859,7 +881,7 @@ async function handleStreamingResponse(
       telegramCtx: ctx,
     });
 
-    await messageSender.finishStreaming(ctx, response.text);
+    await messageSender.finishStreaming(ctx, response.text, { nextPromptSuggestion: response.nextPromptSuggestion });
     await maybeSendVoiceReply(ctx, response.text);
 
     // Completion notification for long tasks (streaming edits don't trigger push notifications)
