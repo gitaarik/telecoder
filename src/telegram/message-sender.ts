@@ -17,8 +17,13 @@ import type { TaskEvent, ToolResultEvent, EditDiffEvent } from '../providers/typ
 import { getSessionKeyFromCtx, parseSessionKey } from '../utils/session-key.js';
 import { resolveVerbosityFlags } from '../utils/verbosity.js';
 import { actionLogger } from './action-logger.js';
+import { sessionManager } from '../claude/session-manager.js';
+import { sessionJsonlPath } from '../claude/session-jsonl.js';
+import { messageOffsets, countJsonlLines } from '../claude/message-offsets.js';
 import * as fs from 'fs';
 import * as path from 'path';
+
+const FORK_KEYBOARD = { inline_keyboard: [[{ text: '🍴 Fork', callback_data: 'fork:pick' }]] };
 
 export interface ToolOperation {
   name: string;
@@ -125,9 +130,14 @@ export class MessageSender {
    * Send a message with hybrid approach:
    * - Short content: MarkdownV2 inline
    * - Long content or tables: Telegraph page link
+   *
+   * Returns the message_id of the last Telegram message posted, or null if
+   * nothing was sent (every attempt failed). Callers that want to attach the
+   * /fork button use this to know which message to anchor onto.
    */
-  async sendMessage(ctx: Context, text: string): Promise<void> {
+  async sendMessage(ctx: Context, text: string): Promise<number | null> {
     const keyInfo = getSessionKeyFromCtx(ctx);
+    let lastMessageId: number | null = null;
     // Check if we should use Telegraph for this content
     if (shouldUseTelegraph(text, keyInfo?.sessionKey)) {
       const pageUrl = await createTelegraphPage('Claude Response', text);
@@ -138,8 +148,8 @@ export class MessageSender {
         const message = `📄 *Full response available:*\n\n${escapeMarkdownV2(summary)}\n\n[Open in Instant View](${escapeMarkdownV2(pageUrl)})`;
 
         try {
-          await ctx.reply(message, { parse_mode: 'MarkdownV2' });
-          return;
+          const sent = await ctx.reply(message, { parse_mode: 'MarkdownV2' });
+          return sent.message_id;
         } catch (error) {
           console.error('[Telegraph] Failed to send link, falling back to chunks:', error);
         }
@@ -151,18 +161,69 @@ export class MessageSender {
 
     for (const part of parts) {
       try {
-        await ctx.reply(part, { parse_mode: 'MarkdownV2' });
+        const sent = await ctx.reply(part, { parse_mode: 'MarkdownV2' });
+        lastMessageId = sent.message_id;
       } catch (error) {
         // MarkdownV2 failed for this part — fallback to plain text for just this part
         console.error('MarkdownV2 send failed for part, falling back to plain text:', error);
         try {
           // Try to send this specific part as plain text
-          await ctx.reply(part.replace(/\\(.)/g, '$1'), { parse_mode: undefined });
+          const sent = await ctx.reply(part.replace(/\\(.)/g, '$1'), { parse_mode: undefined });
+          lastMessageId = sent.message_id;
         } catch (plainError) {
           console.error('Plain text send also failed for part:', plainError);
           // Last resort: send error message
-          await ctx.reply('⚠️ Message formatting error', { parse_mode: undefined });
+          try {
+            const sent = await ctx.reply('⚠️ Message formatting error', { parse_mode: undefined });
+            lastMessageId = sent.message_id;
+          } catch { /* give up */ }
         }
+      }
+    }
+    return lastMessageId;
+  }
+
+  /**
+   * Attach a "🍴 Fork" button to a past assistant message and record the
+   * JSONL truncation point that corresponds to it. Idempotent: calling this
+   * twice on the same message just re-records the offset (Telegram returns
+   * "message is not modified" on the second edit, which we swallow).
+   *
+   * Safe to call when there's no active claudeSessionId or JSONL yet — we
+   * silently skip in that case so the assistant turn isn't blocked by a
+   * fork-tracking edge case.
+   */
+  async attachForkButton(
+    ctx: Context,
+    sessionKey: string,
+    messageId: number | null | undefined,
+  ): Promise<void> {
+    if (!messageId) return;
+    const session = sessionManager.getSession(sessionKey);
+    if (!session?.claudeSessionId) return;
+
+    const jsonlPath = sessionJsonlPath(session.workingDirectory, session.claudeSessionId);
+    const lineCount = countJsonlLines(jsonlPath);
+    if (lineCount === 0) return;
+
+    messageOffsets.record(sessionKey, messageId, {
+      claudeSessionId: session.claudeSessionId,
+      projectPath: session.workingDirectory,
+      lineCount,
+      conversationId: session.conversationId,
+    });
+
+    try {
+      await ctx.api.editMessageReplyMarkup(
+        ctx.chat!.id,
+        messageId,
+        { reply_markup: FORK_KEYBOARD },
+      );
+    } catch (err) {
+      // "message is not modified" or "message to edit not found" — non-fatal.
+      const msg = err instanceof Error ? err.message.toLowerCase() : '';
+      if (!msg.includes('not modified') && !msg.includes('not found') && !msg.includes('message_id_invalid')) {
+        console.debug('[Fork] attachForkButton edit failed:', err instanceof Error ? err.message : err);
       }
     }
   }
@@ -537,6 +598,29 @@ export class MessageSender {
   }
 
   /**
+   * If action-log mode is on for this chat AND the verbosity tier shows tool
+   * output, lazily initialize the logger and hand off to `forward`. Returns
+   * true when the action log took the message — callers fall through to the
+   * direct-post path when it returns false.
+   */
+  private async routeToActionLog(
+    ctx: Context,
+    forward: (sessionKey: string) => Promise<void>,
+  ): Promise<boolean> {
+    const chatId = ctx.chat?.id;
+    if (chatId === undefined) return false;
+    const flags = resolveVerbosityFlags(chatId);
+    if (!flags.useActionLog || !(flags.showToolResults || flags.showDiffs)) return false;
+    const sessionKey = getSessionKeyFromCtx(ctx)?.sessionKey;
+    if (!sessionKey) return false;
+    if (!actionLogger.isActive(sessionKey)) {
+      await actionLogger.initialize(ctx, sessionKey);
+    }
+    await forward(sessionKey);
+    return true;
+  }
+
+  /**
    * Post a truncated preview of a tool's result. In action log mode, adds to
    * the consolidated log; otherwise sends as its own Telegram message.
    * Sent only when the chat's verbosity tier resolves `showToolResults: true`
@@ -550,23 +634,8 @@ export class MessageSender {
     maxLines: number,
     maxChars: number,
   ): Promise<void> {
-    const keyInfo = getSessionKeyFromCtx(ctx);
-    const sessionKey = keyInfo?.sessionKey;
-
-    // Check if action logging should be used based on current verbosity flags
-    const chatId = ctx.chat?.id;
-    if (chatId !== undefined) {
-      const flags = resolveVerbosityFlags(chatId);
-      const shouldUseActionLog = flags.useActionLog && (flags.showToolResults || flags.showDiffs);
-
-      if (shouldUseActionLog && sessionKey) {
-        // Initialize action logger if not already active
-        if (!actionLogger.isActive(sessionKey)) {
-          await actionLogger.initialize(ctx, sessionKey);
-        }
-        await actionLogger.addToolResult(ctx, sessionKey, event, maxLines, maxChars);
-        return;
-      }
+    if (await this.routeToActionLog(ctx, (sk) => actionLogger.addToolResult(ctx, sk, event, maxLines, maxChars))) {
+      return;
     }
 
     // Fall back to original behavior
@@ -613,23 +682,8 @@ export class MessageSender {
    * can contain anything that would break MarkdownV2 parsing.
    */
   async postEditDiff(ctx: Context, event: EditDiffEvent, maxLines: number): Promise<void> {
-    const keyInfo = getSessionKeyFromCtx(ctx);
-    const sessionKey = keyInfo?.sessionKey;
-
-    // Check if action logging should be used based on current verbosity flags
-    const chatId = ctx.chat?.id;
-    if (chatId !== undefined) {
-      const flags = resolveVerbosityFlags(chatId);
-      const shouldUseActionLog = flags.useActionLog && (flags.showToolResults || flags.showDiffs);
-
-      if (shouldUseActionLog && sessionKey) {
-        // Initialize action logger if not already active
-        if (!actionLogger.isActive(sessionKey)) {
-          await actionLogger.initialize(ctx, sessionKey);
-        }
-        await actionLogger.addEditDiff(ctx, sessionKey, event, maxLines);
-        return;
-      }
+    if (await this.routeToActionLog(ctx, (sk) => actionLogger.addEditDiff(ctx, sk, event, maxLines))) {
+      return;
     }
 
     // Fall back to original behavior
@@ -827,6 +881,11 @@ export class MessageSender {
     this.stopSpinnerAnimation(state);
     state.currentOperation = null;
 
+    // Track the last Telegram message we posted in this turn so the /fork
+    // button can be anchored to the final user-visible message (so a tap
+    // forks AT that point, not at some earlier chunk).
+    let lastMessageId: number | null = state.messageId;
+
     if (state.messageId) {
       const hasInterveningPosts = (this.interveningPostsThisStream.get(sessionKey) ?? 0) > 0;
       const actionLogWasActive = actionLogger.isActive(sessionKey);
@@ -852,7 +911,8 @@ export class MessageSender {
           } catch (err) {
             console.debug('[Stream] Pointer edit failed:', err instanceof Error ? err.message : err);
           }
-          await this.sendMessage(ctx, finalContent);
+          const sentId = await this.sendMessage(ctx, finalContent);
+          if (sentId) lastMessageId = sentId;
         }
       } else {
         // Original behavior: No intervening posts, so edit the main message directly.
@@ -863,6 +923,7 @@ export class MessageSender {
               const summary = finalContent.substring(0, 200).replace(/[#*_`\[\]]/g, '') + '...';
               const message = `📄 *Response ready:*\n\n${escapeMarkdownV2(summary)}\n\n[Open in Instant View](${escapeMarkdownV2(pageUrl)})`;
               await ctx.api.editMessageText(chatId, state.messageId, message, { parse_mode: 'MarkdownV2' });
+              await this.attachForkButton(ctx, sessionKey, state.messageId);
               // Early exit on success
               this.streamStates.delete(sessionKey);
               return;
@@ -879,10 +940,12 @@ export class MessageSender {
 
           for (let i = 1; i < parts.length; i++) {
             try {
-              await ctx.reply(parts[i], { parse_mode: 'MarkdownV2' });
+              const sent = await ctx.reply(parts[i], { parse_mode: 'MarkdownV2' });
+              lastMessageId = sent.message_id;
             } catch (partError) {
               console.error(`MarkdownV2 failed for part ${i + 1}:`, partError);
-              await ctx.reply(parts[i].replace(/\\(.)/g, '$1'), { parse_mode: undefined });
+              const sent = await ctx.reply(parts[i].replace(/\\(.)/g, '$1'), { parse_mode: undefined });
+              lastMessageId = sent.message_id;
             }
           }
         } catch (mdError) {
@@ -894,11 +957,14 @@ export class MessageSender {
               try {
                 await ctx.api.deleteMessage(chatId, state.messageId);
               } catch { /* ignore */ }
-              await this.sendMessage(ctx, finalContent);
+              const sentId = await this.sendMessage(ctx, finalContent);
+              lastMessageId = sentId ?? null;
             }
         }
       }
     }
+
+    await this.attachForkButton(ctx, sessionKey, lastMessageId);
 
     this.streamStates.delete(sessionKey);
 

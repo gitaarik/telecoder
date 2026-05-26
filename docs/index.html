@@ -1815,6 +1815,11 @@
             <h3>Missed-Reply Catch-up</h3>
             <p>After every turn, Claudegram cross-checks what it sent against Claude Code's canonical session log and auto-posts anything the extractor missed (pure tool-call turns, multi-block lossy screen-scrape, early end-of-turn flushes). Hit /sync any time to manually re-check — bypasses the queue so it works during hung turns.</p>
           </div>
+          <div class="feature-card" data-category="session">
+            <div class="feature-icon">🍴</div>
+            <h3>Conversation Forks</h3>
+            <p>Every assistant message gets a 🍴 Fork button that hands the conversation up to that point off to a sibling bot from your multi-bot setup. Pick a target, confirm, then open that bot — your next message triggers an accept/decline prompt. Accepting loads the truncated transcript into the target bot (its prior conversation stays in /resume history); declining discards. Lets you branch off a long thread to explore a different angle without losing the original.</p>
+          </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon">🔔</div>
             <h3>Scheduled Tasks</h3>
@@ -1960,6 +1965,18 @@
             <div class="command-row">
               <code class="command-code">/sync</code>
               <span class="command-desc">Resend the latest assistant reply from the session log if Telegram missed any of it</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/fork</code>
+              <span class="command-desc">Fork the current conversation to a sibling bot (alternative to tapping the 🍴 Fork button on a past assistant message)</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/accept</code>
+              <span class="command-desc">Accept a pending fork from another bot — loads the forked transcript into this bot (your current conversation stays in /resume history)</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/decline</code>
+              <span class="command-desc">Discard a pending fork from another bot without loading it</span>
             </div>
             <div class="command-row">
               <code class="command-code">/schedule &lt;when&gt; &lt;prompt&gt;</code>

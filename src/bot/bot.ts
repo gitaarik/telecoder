@@ -80,6 +80,7 @@ import {
 } from './handlers/command.handler.js';
 import { handleMessage, handleCcrThrottleCallback } from './handlers/message.handler.js';
 import { handleSchedule, handleSchedules, handleUnschedule } from './handlers/schedule.handler.js';
+import { handleForkCallback, handleAcceptCommand, handleDeclineCommand, handleForkCommand } from './handlers/fork.handler.js';
 import { handleVoice } from './handlers/voice.handler.js';
 import { handlePhoto, handleImageDocument, handleTextDocument } from './handlers/photo.handler.js';
 import { createBatchMiddleware } from './middleware/message-batcher.js';
@@ -185,6 +186,9 @@ export async function createBot(): Promise<Bot> {
     { command: 'explore', description: '🔍 Explore codebase' },
     { command: 'loop', description: '🔄 Run in loop mode' },
     { command: 'sessions', description: '📚 View saved sessions' },
+    { command: 'fork', description: '🍴 Fork this conversation to another bot' },
+    { command: 'accept', description: '📦 Accept a pending fork from another bot' },
+    { command: 'decline', description: '🚫 Discard a pending fork' },
     { command: 'recap', description: '📋 Recap last messages of current session' },
     { command: 'sync', description: '📨 Resend any missed reply from the session log' },
     { command: 'handoff', description: '📦 Export the session as a markdown handoff document' },
@@ -261,6 +265,11 @@ export async function createBot(): Promise<Bot> {
   // call. If the callback got queued, it'd deadlock behind the query that's
   // waiting for it.
   bot.callbackQuery(/^q:/, handleAskUserCallback);
+  // /fork callbacks bypass sequentialize too: the user often taps Fork on a
+  // past message while a turn is running. Picker UI is non-destructive (it
+  // just shows another message), and accept/decline operate on file state,
+  // not the live agent, so they don't need to wait in line.
+  bot.callbackQuery(/^fork:/, handleForkCallback);
   // Menu buttons for /restartbot and /rebuildbot must bypass sequentialize
   // for the same reason their parent commands do: users tap these precisely
   // when the bot is hung, so the callback can't be queued behind the stuck
@@ -311,6 +320,12 @@ export async function createBot(): Promise<Bot> {
   bot.command('continue', handleContinue);
   bot.command('sessions', handleSessions);
   bot.command('recap', handleRecap);
+
+  // Fork: /fork forks from current state; /accept and /decline are the
+  // slash-command equivalents of the target-side inline buttons.
+  bot.command('fork', handleForkCommand);
+  bot.command('accept', handleAcceptCommand);
+  bot.command('decline', handleDeclineCommand);
 
   // Loop mode
   bot.command('loop', handleLoop);

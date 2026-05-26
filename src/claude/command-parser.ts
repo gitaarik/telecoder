@@ -65,6 +65,9 @@ export function getAvailableCommands(): string {
         '• `/teleport` \\- Move session to terminal \\(forked\\)',
         '• `/clear` \\- Clear session and start fresh',
         '• `/status` \\- Show current session info',
+        '• `/fork` \\- Fork current conversation to another bot',
+        '• `/accept` \\- Accept a pending fork from another bot',
+        '• `/decline` \\- Discard a pending fork',
       ],
     },
     {

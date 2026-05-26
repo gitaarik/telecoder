@@ -13,6 +13,7 @@ import { clearConversation } from './providers/provider-router.js';
 import { startScheduledRunner } from './claude/scheduled-runner.js';
 import { setMonitorRelayBot } from './claude/monitor-relay.js';
 import { setUpdateBannerRelayBot } from './claude/update-banner-relay.js';
+import { startPendingForkWatcher } from './bot/handlers/fork.handler.js';
 import { parseSessionKey } from './utils/session-key.js';
 import { setSessionTopic, getEffortLabel } from './bot/handlers/command.handler.js';
 import { isBotNameEnabled, rateLimitedSetMyName, notifyBotNameBlockToChat } from './telegram/botname-settings.js';
@@ -383,6 +384,15 @@ async function main() {
   // (printed once at PTY startup) is forwarded to the user instead of being
   // silently consumed by the headless xterm.
   setUpdateBannerRelayBot(bot);
+
+  // Watch for cross-bot fork handoffs landing in our pending-forks file and
+  // proactively DM the user so they don't have to message us first to see
+  // the offer.
+  try {
+    startPendingForkWatcher(bot);
+  } catch (err) {
+    console.error('[Fork] Failed to start pending-fork watcher:', err);
+  }
 
   // Liveness heartbeat: periodically verify the bot can still reach the
   // Telegram API. If the runner has stopped or getMe fails repeatedly,

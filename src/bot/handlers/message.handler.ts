@@ -27,6 +27,7 @@ import { readLastAiTitle, readLastAssistantTurnText } from '../../claude/session
 import { executeVReddit } from '../../reddit/vreddit.js';
 import { detectPlatform, isValidUrl } from '../../media/extract.js';
 import { maybeSendVoiceReply } from '../../tts/voice-reply.js';
+import { offerPendingForkIfAny } from './fork.handler.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getWorkspaceRoot, isPathWithinRoot } from '../../utils/workspace-guard.js';
@@ -417,6 +418,14 @@ export async function handleMessage(ctx: Context): Promise<void> {
 
   // Skip if this is a Claude command (handled by command handler)
   if (isClaudeCommand(text)) {
+    return;
+  }
+
+  // If a /fork from another bot is sitting in our pending-forks file, the
+  // user's first non-command message triggers the accept/decline prompt and
+  // gets held back. /accept and /decline (handled above as commands) bypass
+  // this — slash commands route to the command handler, not handleMessage.
+  if (await offerPendingForkIfAny(ctx)) {
     return;
   }
 
@@ -897,7 +906,8 @@ async function handleWaitResponse(
     });
     messageSender.stopTypingInterval(typingInterval);
 
-    await messageSender.sendMessage(ctx, response.text);
+    const sentId = await messageSender.sendMessage(ctx, response.text);
+    await messageSender.attachForkButton(ctx, sessionKey, sentId);
     await maybeSendVoiceReply(ctx, response.text);
 
     // Context visibility notifications
