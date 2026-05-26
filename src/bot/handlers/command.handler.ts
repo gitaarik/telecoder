@@ -4435,6 +4435,24 @@ function buildStatusLineMarkdown(
     }
     stats.push(`💰 $${usage.totalCostUsd.toFixed(2)}`);
   }
+
+  // Activity counters — only rendered when non-zero so quiet turns stay quiet.
+  // Tasks/monitors come from the SDK-side tracker; bg shells from the PTY
+  // session's /proc children, so the count auto-falls-back to 0 in SDK mode.
+  if (sessionKey) {
+    const bg = taskTracker.getBackgroundedTasks(sessionKey);
+    const monitorCount = bg.filter((t) => t.taskType === 'monitor_mcp').length;
+    const taskCount = bg.length - monitorCount;
+    if (taskCount > 0) stats.push(`🔄 ${taskCount}`);
+    if (monitorCount > 0) stats.push(`📡 ${monitorCount}`);
+
+    const claudePid = getPtyProvider().getSessionPid(sessionKey);
+    if (claudePid !== undefined) {
+      const shellCount = getBgProcesses(claudePid).length;
+      if (shellCount > 0) stats.push(`🔍 ${shellCount}`);
+    }
+  }
+
   tail.push(`_${esc(stats.join(' · '))}_`);
 
   sections.push(tail.join('\n'));
