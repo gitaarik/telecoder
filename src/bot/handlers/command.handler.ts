@@ -619,6 +619,13 @@ export async function handleClear(ctx: Context): Promise<void> {
   if (!keyInfo) return;
   const { sessionKey } = keyInfo;
 
+  // After a bot restart the in-memory session map is empty; without this
+  // pull-from-disk, startNewConversation silently no-ops and the project is
+  // dropped, forcing the user to /project again. The default auto-restore
+  // age cap doesn't apply here — the user is explicitly invoking /clear, so
+  // any restorable project on disk should come back.
+  sessionManager.getOrRestoreSession(sessionKey, Number.MAX_SAFE_INTEGER);
+
   const text = ctx.message?.text || '';
   const arg = text.split(' ').slice(1).join(' ').trim().toLowerCase();
   const skipConfirm = arg === '-y' || arg === '--yes' || arg === 'yes' || arg === 'force';
@@ -672,6 +679,9 @@ export async function handleClearCallback(ctx: Context): Promise<void> {
   const action = data.replace('clear:', '');
 
   if (action === 'confirm') {
+    // Same restore-from-disk guard as handleClear: a bot restart between the
+    // confirm prompt and the tap would otherwise drop the project on confirm.
+    sessionManager.getOrRestoreSession(sessionKey, Number.MAX_SAFE_INTEGER);
     // Preserve the working directory (project) — only wipe the conversation,
     // matching Claude Code's /clear semantics.
     clearConversation(sessionKey);

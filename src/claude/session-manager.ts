@@ -28,7 +28,7 @@ function resolveWorkingDirectory(storedPath: string): string {
   return home;
 }
 
-interface Session {
+export interface Session {
   conversationId: string;
   claudeSessionId?: string;
   workingDirectory: string;

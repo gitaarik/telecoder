@@ -1,7 +1,7 @@
 import { Context } from 'grammy';
 import { sendToAgent, sendLoopToAgent, clearConversation, setActiveProvider, getActiveProviderName, type AgentUsage } from '../../providers/provider-router.js';
-import type { ThrottleInfo } from '../../providers/types.js';
-import { sessionManager } from '../../claude/session-manager.js';
+import type { ThrottleInfo, ToolResultEvent, EditDiffEvent } from '../../providers/types.js';
+import { sessionManager, type Session } from '../../claude/session-manager.js';
 import { config } from '../../config.js';
 import { messageSender } from '../../telegram/message-sender.js';
 import { isDuplicate, markProcessed } from '../../telegram/deduplication.js';
@@ -72,6 +72,58 @@ function fireAutoTopic(ctx: Context, sessionKey: string, userMessage: string): v
   })();
 }
 
+
+/**
+ * Build the `onToolResult` callback passed to the provider runner. Resolves
+ * verbosity flags lazily on each event so a /verbosity change mid-turn takes
+ * effect immediately, and short-circuits when the chat opts out of tool
+ * previews entirely.
+ */
+function makeToolResultHandler(ctx: Context): (event: ToolResultEvent) => Promise<void> | undefined {
+  return (event) => {
+    const cid = ctx.chat?.id;
+    if (cid === undefined) return;
+    const flags = resolveVerbosityFlags(cid);
+    if (!flags.showToolResults) return;
+    return messageSender.postToolResult(ctx, event, flags.toolResultMaxLines, flags.toolResultMaxChars);
+  };
+}
+
+/** Companion to `makeToolResultHandler` for Edit/Write diff previews. */
+function makeEditDiffHandler(ctx: Context): (event: EditDiffEvent) => Promise<void> | undefined {
+  return (event) => {
+    const cid = ctx.chat?.id;
+    if (cid === undefined) return;
+    const flags = resolveVerbosityFlags(cid);
+    if (!flags.showDiffs) return;
+    return messageSender.postEditDiff(ctx, event, flags.diffMaxLines);
+  };
+}
+
+/**
+ * Resolve the session for this turn — restoring from disk if the bot was
+ * restarted since the last message. Posts a "no project set" message and
+ * returns null when no session exists, or a "↩️ Resumed previous session"
+ * notice when one was just rehydrated from disk. Callers should early-return
+ * on null.
+ */
+async function requireSession(ctx: Context, sessionKey: string): Promise<Session | null> {
+  const { session, restored } = sessionManager.getOrRestoreSession(sessionKey);
+  if (!session) {
+    await ctx.reply(
+      '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
+      { parse_mode: 'MarkdownV2' },
+    );
+    return null;
+  }
+  if (restored) {
+    await ctx.reply(
+      `↩️ Resumed previous session: *${esc(path.basename(session.workingDirectory))}*`,
+      { parse_mode: 'MarkdownV2' },
+    );
+  }
+  return session;
+}
 
 /**
  * After a turn's main response has been sent to Telegram, compare what we
@@ -469,20 +521,8 @@ async function handleProjectReply(ctx: Context, sessionKey: string, projectPath:
 async function handleFileReply(ctx: Context, sessionKey: string, filePath: string): Promise<void> {
   const trimmedPath = filePath.trim();
 
-  const { session, restored } = sessionManager.getOrRestoreSession(sessionKey);
-  if (!session) {
-    await ctx.reply(
-      '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
-      { parse_mode: 'MarkdownV2' }
-    );
-    return;
-  }
-  if (restored) {
-    await ctx.reply(
-      `↩️ Resumed previous session: *${esc(path.basename(session.workingDirectory))}*`,
-      { parse_mode: 'MarkdownV2' }
-    );
-  }
+  const session = await requireSession(ctx, sessionKey);
+  if (!session) return;
 
   const fullPath = trimmedPath.startsWith('/')
     ? trimmedPath
@@ -530,20 +570,7 @@ async function handleAgentReply(
   input: string,
   mode: 'plan' | 'explore' | 'loop'
 ): Promise<void> {
-  const { session, restored } = sessionManager.getOrRestoreSession(sessionKey);
-  if (!session) {
-    await ctx.reply(
-      '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
-      { parse_mode: 'MarkdownV2' }
-    );
-    return;
-  }
-  if (restored) {
-    await ctx.reply(
-      `↩️ Resumed previous session: *${esc(path.basename(session.workingDirectory))}*`,
-      { parse_mode: 'MarkdownV2' }
-    );
-  }
+  if (!await requireSession(ctx, sessionKey)) return;
 
   const trimmedInput = input.trim();
   if (!trimmedInput) {
@@ -571,20 +598,8 @@ async function handleAgentReply(
             onProgress: (progressText) => {
               messageSender.updateStream(ctx, progressText);
             },
-            onToolResult: (event) => {
-              const cid = ctx.chat?.id;
-              if (cid === undefined) return;
-              const flags = resolveVerbosityFlags(cid);
-              if (!flags.showToolResults) return;
-              return messageSender.postToolResult(ctx, event, flags.toolResultMaxLines, flags.toolResultMaxChars);
-            },
-            onEditDiff: (event) => {
-              const cid = ctx.chat?.id;
-              if (cid === undefined) return;
-              const flags = resolveVerbosityFlags(cid);
-              if (!flags.showDiffs) return;
-              return messageSender.postEditDiff(ctx, event, flags.diffMaxLines);
-            },
+            onToolResult: makeToolResultHandler(ctx),
+            onEditDiff: makeEditDiffHandler(ctx),
             abortController,
             telegramCtx: ctx,
           });
@@ -601,20 +616,8 @@ async function handleAgentReply(
             },
             onTaskEvent: (event) => messageSender.notifyTaskEvent(ctx, sessionKey, event),
             onSubTurnResponse: (text) => messageSender.postSubTurnResponse(ctx, text),
-            onToolResult: (event) => {
-              const cid = ctx.chat?.id;
-              if (cid === undefined) return;
-              const flags = resolveVerbosityFlags(cid);
-              if (!flags.showToolResults) return;
-              return messageSender.postToolResult(ctx, event, flags.toolResultMaxLines, flags.toolResultMaxChars);
-            },
-            onEditDiff: (event) => {
-              const cid = ctx.chat?.id;
-              if (cid === undefined) return;
-              const flags = resolveVerbosityFlags(cid);
-              if (!flags.showDiffs) return;
-              return messageSender.postEditDiff(ctx, event, flags.diffMaxLines);
-            },
+            onToolResult: makeToolResultHandler(ctx),
+            onEditDiff: makeEditDiffHandler(ctx),
             abortController,
             command: mode,
             telegramCtx: ctx,
@@ -651,20 +654,8 @@ async function handleAgentReply(
 async function handleTelegraphReply(ctx: Context, sessionKey: string, filePath: string): Promise<void> {
   const trimmedPath = filePath.trim();
 
-  const { session, restored } = sessionManager.getOrRestoreSession(sessionKey);
-  if (!session) {
-    await ctx.reply(
-      '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
-      { parse_mode: 'MarkdownV2' }
-    );
-    return;
-  }
-  if (restored) {
-    await ctx.reply(
-      `↩️ Resumed previous session: *${esc(path.basename(session.workingDirectory))}*`,
-      { parse_mode: 'MarkdownV2' }
-    );
-  }
+  const session = await requireSession(ctx, sessionKey);
+  if (!session) return;
 
   const fullPath = trimmedPath.startsWith('/')
     ? trimmedPath
@@ -853,20 +844,8 @@ async function handleStreamingResponse(
       },
       onTaskEvent: (event) => messageSender.notifyTaskEvent(ctx, sessionKey, event),
       onSubTurnResponse: (text) => messageSender.postSubTurnResponse(ctx, text),
-      onToolResult: (event) => {
-        const cid = ctx.chat?.id;
-        if (cid === undefined) return;
-        const flags = resolveVerbosityFlags(cid);
-        if (!flags.showToolResults) return;
-        return messageSender.postToolResult(ctx, event, flags.toolResultMaxLines, flags.toolResultMaxChars);
-      },
-      onEditDiff: (event) => {
-        const cid = ctx.chat?.id;
-        if (cid === undefined) return;
-        const flags = resolveVerbosityFlags(cid);
-        if (!flags.showDiffs) return;
-        return messageSender.postEditDiff(ctx, event, flags.diffMaxLines);
-      },
+      onToolResult: makeToolResultHandler(ctx),
+      onEditDiff: makeEditDiffHandler(ctx),
       abortController,
       telegramCtx: ctx,
     });
@@ -913,16 +892,8 @@ async function handleWaitResponse(
     const response = await sendToAgent(sessionKey, message, {
       abortController,
       telegramCtx: ctx,
-      onToolResult: (event) => {
-        const flags = resolveVerbosityFlags(chatId);
-        if (!flags.showToolResults) return;
-        return messageSender.postToolResult(ctx, event, flags.toolResultMaxLines, flags.toolResultMaxChars);
-      },
-      onEditDiff: (event) => {
-        const flags = resolveVerbosityFlags(chatId);
-        if (!flags.showDiffs) return;
-        return messageSender.postEditDiff(ctx, event, flags.diffMaxLines);
-      },
+      onToolResult: makeToolResultHandler(ctx),
+      onEditDiff: makeEditDiffHandler(ctx),
     });
     messageSender.stopTypingInterval(typingInterval);
 
