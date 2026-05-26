@@ -15,6 +15,7 @@ import { config as loadEnv } from 'dotenv';
 import * as path from 'path';
 import * as os from 'os';
 import { fileURLToPath } from 'url';
+import { stripJsonComments, expandName } from './utils/instance-config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
@@ -44,26 +45,6 @@ interface InstanceEntry {
 interface InstancesConfig {
   defaults?: Record<string, string>;
   instances: InstanceEntry[];
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Strip full-line // comments (lines whose non-whitespace content starts with //). */
-function stripJsonComments(text: string): string {
-  return text.replace(/^\s*\/\/.*$/gm, '');
-}
-
-function padNumber(n: number, total: number): string {
-  const digits = String(total).length;
-  return String(n).padStart(digits, '0');
-}
-
-function expandName(template: string, index: number, total: number): string {
-  return template
-    .replace(/\{n\}/g, String(index))
-    .replace(/\{N\}/g, padNumber(index, total));
 }
 
 // ---------------------------------------------------------------------------
@@ -201,6 +182,10 @@ function buildWorkerEnv(inst: ResolvedInstance): Record<string, string> {
 
   // Tag for log prefixing inside the worker
   env.CLAUDEGRAM_INSTANCE_NAME = inst.name;
+
+  // Workers use this to enumerate sibling bots (e.g. for /fork). Mirrors the
+  // launcher's own --config resolution so a custom config path still works.
+  env.CLAUDEGRAM_INSTANCES_CONFIG = configPath;
 
   return env;
 }
