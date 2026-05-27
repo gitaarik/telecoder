@@ -540,18 +540,19 @@ export class MessageSender {
       ? task.description.substring(0, 97) + '...'
       : task.description;
     const text = `📡 Monitor "${escapeMarkdownV2(description)}" armed`;
-    let posted = false;
+    let posted: { message_id: number } | null = null;
     try {
-      await ctx.reply(text, { parse_mode: 'MarkdownV2' });
-      posted = true;
+      posted = await ctx.reply(text, { parse_mode: 'MarkdownV2' });
     } catch (error) {
       console.error('[Task] Failed to post monitor armed:', error instanceof Error ? error.message : error);
       try {
-        await ctx.reply(`📡 Monitor "${task.description}" armed`);
-        posted = true;
+        posted = await ctx.reply(`📡 Monitor "${task.description}" armed`);
       } catch { /* ignore */ }
     }
-    if (posted) this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
+    if (posted) {
+      task.armedMessageId = posted.message_id;
+      this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
+    }
   }
 
   private async postMonitorEvent(ctx: Context, task: TaskState, eventText: string): Promise<void> {
@@ -801,18 +802,48 @@ export class MessageSender {
     if (task.error) {
       lines.push(`⚠️ ${escapeMarkdownV2(task.error)}`);
     }
+    const body = lines.join('\n');
+    const fallbackBody = isMonitor
+      ? `${statusIcon} Monitor "${task.description}" ${verb} after ${duration}${task.error ? `\n⚠️ ${task.error}` : ''}`
+      : `${statusIcon} Background task "${task.description}" ${verb} in ${duration}${task.error ? `\n⚠️ ${task.error}` : ''}`;
+
+    // If we still know the armed-message id, edit it in place so the chat
+    // doesn't keep showing a stale "armed" line. Only post a fresh message
+    // (which triggers a Telegram notification and lands at the bottom of the
+    // chat) when the task ran long enough that the user likely walked away —
+    // matching sendCompletionNotification's threshold — or when there's an
+    // error the user needs to see.
+    const chatId = ctx.chat?.id;
+    const longRunning = elapsedMs >= config.NOTIFICATION_THRESHOLD_SECONDS * 1000;
+    const shouldEdit = task.armedMessageId !== undefined && chatId !== undefined;
+    const shouldPostFresh = !shouldEdit || longRunning || !!task.error;
+
+    if (shouldEdit) {
+      try {
+        await ctx.api.editMessageText(chatId!, task.armedMessageId!, body, { parse_mode: 'MarkdownV2' });
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        // "message is not modified" is benign; everything else falls back to
+        // posting a fresh message so the user still learns about completion.
+        if (!/not modified/i.test(msg)) {
+          console.error('[Task] Failed to edit armed message:', msg);
+          try {
+            await ctx.api.editMessageText(chatId!, task.armedMessageId!, fallbackBody);
+          } catch { /* fall through to fresh post if posting was already gated */ }
+        }
+      }
+    }
+
+    if (!shouldPostFresh) return;
 
     let posted = false;
     try {
-      await ctx.reply(lines.join('\n'), { parse_mode: 'MarkdownV2' });
+      await ctx.reply(body, { parse_mode: 'MarkdownV2' });
       posted = true;
     } catch (error) {
       console.error('[Task] Failed to post completion message:', error instanceof Error ? error.message : error);
       try {
-        const fallback = isMonitor
-          ? `${statusIcon} Monitor "${task.description}" ${verb} after ${duration}`
-          : `${statusIcon} Background task "${task.description}" ${verb} in ${duration}`;
-        await ctx.reply(fallback);
+        await ctx.reply(fallbackBody);
         posted = true;
       } catch { /* ignore */ }
     }

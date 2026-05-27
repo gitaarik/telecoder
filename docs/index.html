@@ -1838,7 +1838,7 @@
           <div class="feature-card" data-category="core">
             <div class="feature-icon">📡</div>
             <h3>Async Event Relay</h3>
-            <p>In PTY mode, claudegram surfaces task-notifications from <code>Monitor</code>, <code>Bash(run_in_background=true)</code>, and <code>Task</code> subagents to Telegram between turns. Each event posts as a "📡 Monitor — ...", "⚙️ Backgrounded: ...", or "🤖 Subagent started: ..." header, with the raw event payload (▸ trigger line) and Claude's analysis. <code>PushNotification</code> is also relayed as "🔔 &lt;message&gt;". Useful for "tail this log and tell me when it errors", "build the docs in the background", or "delegate Y to a subagent" tasks.</p>
+            <p>In PTY mode, claudegram surfaces task-notifications from <code>Monitor</code>, <code>Bash(run_in_background=true)</code>, and <code>Task</code> subagents to Telegram between turns. Each event posts as a "📡 Monitor — ...", "⚙️ Backgrounded: ...", or "🤖 Subagent started: ..." header, with the raw event payload (▸ trigger line) and Claude's analysis. When a backgrounded task or subagent finishes, the original "started" message is edited in place to "✅ Backgrounded: ... (12s)" so the chat doesn't stay stuck on a stale "in progress" line — short tasks edit silently, longer ones (≥ <code>NOTIFICATION_THRESHOLD_SECONDS</code>) and failures also post a fresh message so Telegram pings you. <code>PushNotification</code> is also relayed as "🔔 &lt;message&gt;". Useful for "tail this log and tell me when it errors", "build the docs in the background", or "delegate Y to a subagent" tasks.</p>
           </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon">🌐</div>
@@ -1863,7 +1863,7 @@
           <div class="feature-card" data-category="core">
             <div class="feature-icon">🔄</div>
             <h3>Background Tasks</h3>
-            <p>Long-running subagents run in the background while Claude keeps responding. A compact counter shows how many tasks are active, and a notification arrives when each one finishes.</p>
+            <p>Long-running subagents run in the background while Claude keeps responding. A compact counter shows how many tasks are active. When a task finishes, the original "started" message is edited in place to show the status and duration; tasks that ran longer than <code>NOTIFICATION_THRESHOLD_SECONDS</code> (default 60s) or that errored also post a fresh notification so Telegram pings you.</p>
           </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon">📡</div>

@@ -3,6 +3,7 @@ import type { Bot } from 'grammy';
 import { sessionJsonlPath } from './session-jsonl.js';
 import { parseSessionKey } from '../utils/session-key.js';
 import { convertToTelegramMarkdown } from '../telegram/markdown.js';
+import { config } from '../config.js';
 
 /**
  * PTY-mode Monitor relay. When claude calls its built-in Monitor tool, events
@@ -38,10 +39,26 @@ interface MonitorState {
    * notification that triggered it.
    */
   pendingNotification: TaskNotification | null;
+  /**
+   * Armed-message bookkeeping keyed by tool_use_id. Populated by
+   * onAsyncToolArmed → postArmed when an async tool fires; consumed by
+   * handleChange when its terminal task-notification arrives so the original
+   * "armed" Telegram message gets edited in place instead of going stale.
+   */
+  armedTasks: Map<string, ArmedTask>;
+}
+
+interface ArmedTask {
+  messageId: number;
+  kind: AsyncToolKind;
+  description: string;
+  startedAt: number;
 }
 
 interface TaskNotification {
   taskId: string;
+  toolUseId: string;
+  status: string;
   summary: string;
   event: string;
 }
@@ -70,11 +87,15 @@ function parseTaskNotification(rec: { origin?: { kind?: string }; message?: { co
   if (!isNotif && !text.includes('<task-notification>')) return null;
 
   const taskIdMatch = text.match(/<task-id>([^<]*)<\/task-id>/);
+  const toolUseIdMatch = text.match(/<tool-use-id>([^<]*)<\/tool-use-id>/);
+  const statusMatch = text.match(/<status>([^<]*)<\/status>/);
   const summaryMatch = text.match(/<summary>([\s\S]*?)<\/summary>/);
   const eventMatch = text.match(/<event>([\s\S]*?)<\/event>/);
 
   return {
     taskId: taskIdMatch?.[1].trim() ?? '',
+    toolUseId: toolUseIdMatch?.[1].trim() ?? '',
+    status: statusMatch?.[1].trim() ?? '',
     summary: summaryMatch?.[1].trim() ?? '',
     event: eventMatch?.[1].trim() ?? '',
   };
@@ -131,6 +152,7 @@ export function onAsyncToolArmed(
   cwd: string,
   claudeSessionId: string,
   description: string,
+  toolUseId?: string,
 ): void {
   let state = states.get(sessionKey);
   if (!state) {
@@ -144,6 +166,7 @@ export function onAsyncToolArmed(
       inTurn: true,
       pendingRead: null,
       pendingNotification: null,
+      armedTasks: new Map(),
     };
     states.set(sessionKey, state);
     startWatching(state);
@@ -156,7 +179,16 @@ export function onAsyncToolArmed(
     startWatching(state);
   }
   state.descriptions.push(description);
-  postArmed(sessionKey, kind, description);
+  postArmed(sessionKey, kind, description).then((messageId) => {
+    if (messageId !== null && toolUseId) {
+      state!.armedTasks.set(toolUseId, {
+        messageId,
+        kind,
+        description,
+        startedAt: Date.now(),
+      });
+    }
+  }).catch(() => { /* postArmed already logs */ });
 }
 
 export function markTurnStart(sessionKey: string): void {
@@ -167,6 +199,15 @@ export function markTurnStart(sessionKey: string): void {
 export function markTurnEnd(sessionKey: string): void {
   const state = states.get(sessionKey);
   if (!state) return;
+  // Drain any pending JSONL writes while inTurn is still true so terminal
+  // task-notifications that landed during the turn get edit-in-place
+  // treatment before the cursor jumps forward. Cancel the coalesce timer so
+  // it doesn't fire later with the position already past the data.
+  if (state.pendingRead) {
+    clearTimeout(state.pendingRead);
+    state.pendingRead = null;
+  }
+  handleChange(state);
   state.inTurn = false;
   // Snap to current end so the user-turn's own assistant text doesn't get
   // re-emitted as a monitor event — the turn pipeline already delivered it.
@@ -239,11 +280,6 @@ function handleChange(state: MonitorState): void {
   }
   state.jsonlPosition = size;
 
-  // During an active user-turn, the normal pipeline handles assistant text.
-  // We've already advanced the position so post-turn events won't re-process
-  // this content.
-  if (state.inTurn) return;
-
   for (const line of chunk.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -259,6 +295,22 @@ function handleChange(state: MonitorState): void {
     if (typed.type === 'user') {
       const notif = parseTaskNotification(typed);
       if (notif) {
+        // Terminal notifications (status set + matching armed entry) always
+        // get edit-in-place treatment, even during an active user-turn.
+        // A backgrounded task can complete at any moment; without this, a
+        // completion that lands mid-turn would leave the armed message stuck
+        // on "in progress" forever — markTurnEnd would snap the JSONL cursor
+        // past the notification and the watcher would never revisit it.
+        if (notif.status && notif.toolUseId && state.armedTasks.has(notif.toolUseId)) {
+          handleTerminalNotification(state, notif).catch((err) => {
+            console.error('[Monitor] terminal notification handler failed:', err instanceof Error ? err.message : err);
+          });
+          continue;
+        }
+        // Non-terminal event notifications stay gated on !inTurn — during a
+        // user-turn the turn pipeline owns the model's response, and the
+        // watcher must not race it.
+        if (state.inTurn) continue;
         // Two notifications in a row without a paired response = orphan;
         // flush the first one alone before tracking the new trigger.
         if (state.pendingNotification) {
@@ -267,6 +319,8 @@ function handleChange(state: MonitorState): void {
         state.pendingNotification = notif;
       }
     } else if (typed.type === 'assistant') {
+      // Assistant text during an active turn belongs to the turn pipeline.
+      if (state.inTurn) continue;
       const text = extractAssistantText(typed.message?.content);
       if (!text) continue;
       postMonitorMessage(state.sessionKey, state.pendingNotification, text);
@@ -303,16 +357,119 @@ export function relayPushNotification(sessionKey: string, message: string): void
   sendFormatted(chatId, threadOpts, `🔔 ${preview}`, 'push').catch(() => {});
 }
 
-function postArmed(sessionKey: string, kind: AsyncToolKind, description: string): void {
-  if (!botRef) return;
+async function postArmed(sessionKey: string, kind: AsyncToolKind, description: string): Promise<number | null> {
+  if (!botRef) return null;
   const { chatId, threadId } = parseSessionKey(sessionKey);
   const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};
   const preview = description.length > 200 ? description.slice(0, 197) + '...' : description;
-  const header =
-    kind === 'monitor' ? '📡 Monitor armed' :
+  const header = armedHeader(kind);
+  return await sendFormattedReturnId(chatId, threadOpts, `${header}: ${preview}`, 'armed');
+}
+
+function armedHeader(kind: AsyncToolKind): string {
+  return kind === 'monitor' ? '📡 Monitor armed' :
     kind === 'bash_background' ? '⚙️ Backgrounded' :
     '🤖 Subagent started';
-  sendFormatted(chatId, threadOpts, `${header}: ${preview}`, 'armed').catch(() => {});
+}
+
+/**
+ * Variant of sendFormatted that returns the resulting message_id (or null on
+ * failure) so callers can edit the message in place later.
+ */
+async function sendFormattedReturnId(
+  chatId: number,
+  threadOpts: { message_thread_id?: number },
+  text: string,
+  context: string,
+): Promise<number | null> {
+  if (!botRef) return null;
+  const converted = convertToTelegramMarkdown(text);
+  try {
+    const msg = await botRef.api.sendMessage(chatId, converted, { ...threadOpts, parse_mode: 'MarkdownV2' });
+    return msg.message_id;
+  } catch (mdErr) {
+    console.error(`[Monitor] MarkdownV2 send failed (${context}), falling back to plain text:`, mdErr instanceof Error ? mdErr.message : mdErr);
+    try {
+      const msg = await botRef.api.sendMessage(chatId, text, threadOpts);
+      return msg.message_id;
+    } catch (plainErr) {
+      console.error(`[Monitor] plain text send also failed (${context}):`, plainErr instanceof Error ? plainErr.message : plainErr);
+      return null;
+    }
+  }
+}
+
+function formatDuration(elapsedMs: number): string {
+  const seconds = Math.max(0, Math.round(elapsedMs / 1000));
+  return seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
+}
+
+function completionIcon(kind: AsyncToolKind, status: string): string {
+  if (status === 'failed') return '❌';
+  if (status === 'killed' || status === 'stopped') return '🛑';
+  // completed (or unknown) — keep the kind's badge but flip Monitor's ⚡ feel
+  // to the same 📡 it had while armed; backgrounded/subagent get ✅.
+  return kind === 'monitor' ? '📡' : '✅';
+}
+
+function completionLabel(kind: AsyncToolKind): string {
+  return kind === 'monitor' ? 'Monitor' :
+    kind === 'bash_background' ? 'Backgrounded' :
+    'Subagent';
+}
+
+/**
+ * Called when a task-notification's status indicates the task is done.
+ * Edits the original armed message in place ("⚙️ Backgrounded: foo" →
+ * "✅ Backgrounded: foo (12s)") and, when the task ran long enough that
+ * the user might've scrolled away — or when it errored — also posts a
+ * fresh chat message so Telegram raises a notification.
+ *
+ * Returns true when the notification was consumed as a completion; the
+ * caller then skips the event-payload pairing path so we don't double-post.
+ */
+async function handleTerminalNotification(
+  state: MonitorState,
+  notif: TaskNotification,
+): Promise<boolean> {
+  const armed = state.armedTasks.get(notif.toolUseId);
+  if (!armed) return false;
+  state.armedTasks.delete(notif.toolUseId);
+  if (!botRef) return true;
+
+  const elapsedMs = Date.now() - armed.startedAt;
+  const duration = formatDuration(elapsedMs);
+  const icon = completionIcon(armed.kind, notif.status);
+  const label = completionLabel(armed.kind);
+  const preview = armed.description.length > 200
+    ? armed.description.slice(0, 197) + '...'
+    : armed.description;
+  const isError = notif.status === 'failed' || notif.status === 'killed';
+  const longRunning = elapsedMs >= config.NOTIFICATION_THRESHOLD_SECONDS * 1000;
+
+  const body = `${icon} ${label}: ${preview} (${duration})`;
+
+  const { chatId, threadId } = parseSessionKey(state.sessionKey);
+  const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};
+
+  try {
+    await botRef.api.editMessageText(
+      chatId,
+      armed.messageId,
+      convertToTelegramMarkdown(body),
+      { parse_mode: 'MarkdownV2' },
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/not modified/i.test(msg)) {
+      console.error('[Monitor] failed to edit armed message:', msg);
+    }
+  }
+
+  if (longRunning || isError) {
+    await sendFormatted(chatId, threadOpts, body, 'completion');
+  }
+  return true;
 }
 
 function stripSummaryPrefix(summary: string): string {

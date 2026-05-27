@@ -24,6 +24,13 @@ export interface TaskState {
   outputFile?: string;
   finalSummary?: string;
   error?: string;
+  /**
+   * message_id of the chat message announcing the task started ("📡 Monitor
+   * armed", "⚙️ Backgrounded", "🤖 Subagent started"). When the task finishes,
+   * completion handlers edit this message in place so the chat doesn't keep
+   * showing a stale "in progress" line.
+   */
+  armedMessageId?: number;
 }
 
 class TaskTracker {

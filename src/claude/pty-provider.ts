@@ -1219,8 +1219,9 @@ registerIpcHandler('/hook/preToolUse', async (turn, body) => {
       toolInput.prompt ??
       asyncKind,
     );
+    const toolUseId = typeof body.tool_use_id === 'string' ? body.tool_use_id : undefined;
     if (session?.claudeSessionId) {
-      onAsyncToolArmed(asyncKind, turn.sessionKey, session.workingDirectory, session.claudeSessionId, description);
+      onAsyncToolArmed(asyncKind, turn.sessionKey, session.workingDirectory, session.claudeSessionId, description, toolUseId);
     }
   }
 
