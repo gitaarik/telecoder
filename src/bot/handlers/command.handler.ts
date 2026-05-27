@@ -1883,6 +1883,32 @@ export async function handleRestartCallback(ctx: Context): Promise<void> {
   }
 }
 
+export async function handleStartupCallback(ctx: Context): Promise<void> {
+  const data = ctx.callbackQuery?.data;
+  if (!data) return;
+
+  await ctx.answerCallbackQuery();
+
+  // Remove the inline keyboard so the buttons can't be tapped twice.
+  try {
+    await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } });
+  } catch {
+    // ignore — message may have been edited or deleted
+  }
+
+  if (data === 'startup:continue') {
+    await handleContinue(ctx);
+    return;
+  }
+
+  if (data === 'startup:fresh') {
+    // No session is in memory at this point — the next user message will
+    // naturally start a new conversation. Just acknowledge the choice.
+    await replyMd(ctx, '🆕 Starting fresh\\. Send a message to begin a new session\\.');
+    return;
+  }
+}
+
 type RebuildScope = 'one' | 'all';
 
 async function performRebuild(ctx: Context, scope: RebuildScope): Promise<void> {

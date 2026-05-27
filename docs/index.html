@@ -1723,7 +1723,7 @@
           <div class="feature-card" data-category="session">
             <div class="feature-icon">💾</div>
             <h3>Session Persistence</h3>
-            <p>Sessions auto-restore after any restart (planned or crash) with a "Resumed previous session" banner. If a task was interrupted, the bot proactively says so. /resume and /continue still work for older sessions.</p>
+            <p>Sessions auto-restore after any restart (planned, crash, or cold start). Recent sessions (under an hour) are silently reattached so your next message just continues. Sessions idle between 1h and 7d get a "Continue or start fresh?" prompt. Older sessions stay parked behind /resume and /continue.</p>
           </div>
           <div class="feature-card" data-category="session">
             <div class="feature-icon">💡</div>

@@ -26,6 +26,7 @@ import {
   handleRestartBot,
   handleRestartBotCallback,
   handleRestartCallback,
+  handleStartupCallback,
   handleContext,
   handlePing,
   handleCancel,
@@ -401,6 +402,8 @@ export async function createBot(): Promise<Bot> {
       await handleRedditActionCallback(ctx);
     } else if (data.startsWith('restart:')) {
       await handleRestartCallback(ctx);
+    } else if (data.startsWith('startup:')) {
+      await handleStartupCallback(ctx);
     } else if (data.startsWith('effort:')) {
       await handleEffortCallback(ctx);
     } else if (data.startsWith('verbosity:')) {

@@ -96,11 +96,11 @@ export function requestRestartAll(autoResume = false): boolean {
 
 const RELOAD_MARKER_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
 
-async function autoResumeAfterReload(bot: Bot): Promise<void> {
+async function autoResumeAfterReload(bot: Bot): Promise<boolean> {
   const markerFile = getReloadMarkerPath();
   if (!fs.existsSync(markerFile)) {
     console.log(`[AutoResume] No reload marker at ${markerFile} — skipping auto-resume`);
-    return;
+    return false;
   }
 
   let marker: { timestamp: string };
@@ -110,7 +110,7 @@ async function autoResumeAfterReload(bot: Bot): Promise<void> {
   } catch (err) {
     console.warn(`[AutoResume] Marker file ${markerFile} is unreadable, deleting:`, err instanceof Error ? err.message : err);
     try { fs.unlinkSync(markerFile); } catch {}
-    return;
+    return false;
   }
 
   // Validate timestamp freshness
@@ -118,7 +118,7 @@ async function autoResumeAfterReload(bot: Bot): Promise<void> {
   if (age > RELOAD_MARKER_MAX_AGE_MS || age < 0) {
     console.log(`[AutoResume] Stale marker (age=${age}ms, max=${RELOAD_MARKER_MAX_AGE_MS}ms), ignoring`);
     try { fs.unlinkSync(markerFile); } catch {}
-    return;
+    return false;
   }
 
   console.log(`[AutoResume] Found fresh marker (age=${Math.round(age / 1000)}s), evaluating sessions for restore`);
@@ -269,6 +269,125 @@ async function autoResumeAfterReload(bot: Bot): Promise<void> {
     `[AutoResume] Done: restored=${resumed}/${activeSessions.size}` +
     (skipSummary ? `, skipped(${skipSummary})` : '')
   );
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Cold-start auto-continue
+// ---------------------------------------------------------------------------
+
+// Sessions idle less than this are silently restored in memory on startup.
+// Matches the default `sessionManager.getOrRestoreSession` cutoff so the eager
+// restore here has the same "is this the same conversation" semantics as the
+// lazy restore on next message.
+const STARTUP_SILENT_RESTORE_MS = 60 * 60 * 1000; // 1h
+// Sessions idle between the silent cutoff and this get a Telegram prompt asking
+// whether to continue or start fresh. Anything older is left untouched — the
+// user can still /continue explicitly if they want it.
+const STARTUP_PROMPT_CUTOFF_MS = 7 * 24 * 60 * 60 * 1000; // 7d
+
+function formatRelativeIdle(ms: number): string {
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  return `${day}d ago`;
+}
+
+/**
+ * Cold-start auto-continue. For every chat with a prior session belonging to
+ * this instance:
+ *   - idle < 1h          → silently restore in memory (no chat noise)
+ *   - 1h ≤ idle ≤ 7d     → post a Telegram prompt with Continue / Start fresh
+ *   - idle > 7d          → skip (user can /continue manually)
+ *
+ * Skipped when the reload-marker path already handled startup, or when the
+ * session is already live in memory (notifyInterruptedSessions restored it).
+ */
+async function autoContinueOnStartup(bot: Bot): Promise<void> {
+  const activeSessions = sessionHistory.getAllActiveSessions();
+  const allowedIds = new Set([
+    ...config.ALLOWED_USER_IDS,
+    ...config.ALLOWED_GROUP_IDS,
+  ]);
+
+  let silent = 0;
+  let prompted = 0;
+  const skipped: Record<string, number> = { notAllowed: 0, alreadyLive: 0, noClaudeSessionId: 0, tooOld: 0, threw: 0 };
+
+  for (const [sessionKey, entry] of activeSessions) {
+    const { chatId, threadId } = parseSessionKey(sessionKey);
+
+    if (!allowedIds.has(chatId)) {
+      skipped.notAllowed++;
+      continue;
+    }
+    if (sessionManager.getSession(sessionKey)) {
+      skipped.alreadyLive++;
+      continue;
+    }
+    if (!entry.claudeSessionId) {
+      skipped.noClaudeSessionId++;
+      continue;
+    }
+
+    const idleMs = Date.now() - new Date(entry.lastActivity).getTime();
+    if (idleMs < 0) {
+      skipped.tooOld++;
+      continue;
+    }
+
+    if (idleMs < STARTUP_SILENT_RESTORE_MS) {
+      try {
+        sessionManager.resumeLastSession(sessionKey);
+        silent++;
+      } catch (err) {
+        console.error(`[AutoContinue] Silent restore failed for ${sessionKey}:`, err);
+        skipped.threw++;
+      }
+      continue;
+    }
+
+    if (idleMs > STARTUP_PROMPT_CUTOFF_MS) {
+      skipped.tooOld++;
+      continue;
+    }
+
+    const projectName = entry.projectName || path.basename(entry.projectPath || '');
+    const relative = formatRelativeIdle(idleMs);
+    const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};
+    const text =
+      `🔄 Previous session for *${escapeMarkdownV2(projectName)}* — last active ${escapeMarkdownV2(relative)}\\.\n` +
+      `Continue where you left off, or start fresh?`;
+    try {
+      await bot.api.sendMessage(chatId, text, {
+        parse_mode: 'MarkdownV2',
+        ...threadOpts,
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '▶️ Continue', callback_data: 'startup:continue' },
+            { text: '🆕 Start fresh', callback_data: 'startup:fresh' },
+          ]],
+        },
+      });
+      prompted++;
+    } catch (err) {
+      console.error(`[AutoContinue] Failed to prompt ${sessionKey}:`, err);
+      skipped.threw++;
+    }
+  }
+
+  const skipSummary = Object.entries(skipped)
+    .filter(([, n]) => n > 0)
+    .map(([k, n]) => `${k}=${n}`)
+    .join(', ');
+  console.log(
+    `[AutoContinue] silent=${silent}, prompted=${prompted}, total=${activeSessions.size}` +
+    (skipSummary ? `, skipped(${skipSummary})` : '')
+  );
 }
 
 /**
@@ -354,8 +473,9 @@ async function main() {
   const runner = run(bot);
 
   // Auto-resume sessions after /rebuildbot or /restartbot
+  let markerHandled = false;
   try {
-    await autoResumeAfterReload(bot);
+    markerHandled = await autoResumeAfterReload(bot);
   } catch (err) {
     console.error('[AutoResume] Failed:', err);
   }
@@ -365,6 +485,17 @@ async function main() {
     await notifyInterruptedSessions(bot);
   } catch (err) {
     console.error('[InFlight] Failed:', err);
+  }
+
+  // Cold-start auto-continue. Skipped when a reload marker was just consumed
+  // (those chats already saw the full "Reloaded and session restored" recap
+  // and don't need a follow-up prompt).
+  if (!markerHandled) {
+    try {
+      await autoContinueOnStartup(bot);
+    } catch (err) {
+      console.error('[AutoContinue] Failed:', err);
+    }
   }
 
   // Re-arm persisted scheduled tasks (/schedule). Runs after session
