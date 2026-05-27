@@ -795,6 +795,12 @@ export async function sendToAgent(
     let hadBackgroundedTask = false;
     let inSubTurn = false;
     let subTurnBuffer = '';
+    // Insert a visual separator between text blocks that had a tool_use
+    // between them, so the streaming bubble preserves the model's natural
+    // beats. The TUI gets this for free because tool calls render inline;
+    // we send tool calls to the action log, so without this the narration
+    // collapses into one wall of text.
+    let pendingTextSeparator = false;
 
     // Process response messages
     for await (const responseMessage of response) {
@@ -839,6 +845,10 @@ export async function sendToAgent(
             if (inSubTurn) {
               subTurnBuffer += block.text;
             } else {
+              if (pendingTextSeparator && fullText.length > 0) {
+                fullText += '\n\n───\n\n';
+              }
+              pendingTextSeparator = false;
               fullText += block.text;
               onProgress?.(fullText);
               // Flush immediately on first text so early restarts have something
@@ -848,6 +858,7 @@ export async function sendToAgent(
               }
             }
           } else if (block.type === 'tool_use') {
+            pendingTextSeparator = true;
             const toolInput = 'input' in block ? block.input as Record<string, unknown> : {};
             const inputSummary = toolInput.command
               ? String(toolInput.command).substring(0, 150)
