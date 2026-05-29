@@ -183,7 +183,7 @@ export async function relayCatchUpIfMissed(
   }
 }
 
-function extractRedditUrl(text: string): string | null {
+export function extractRedditUrl(text: string): string | null {
   const matches = text.match(/https?:\/\/\S+/gi);
   if (!matches) return null;
   for (const match of matches) {
@@ -283,7 +283,7 @@ async function sendSessionInitNotification(
   }
 }
 
-function getAutoVRedditUrl(text: string): string | null {
+export function getAutoVRedditUrl(text: string): string | null {
   if (!config.VREDDIT_ENABLED) return null;
 
   const trimmed = text.trim();
@@ -727,7 +727,7 @@ async function handleTelegraphReply(ctx: Context, sessionKey: string, filePath: 
 // new successful query.
 const lastThrottledPrompt = new Map<string, string>();
 
-function formatResetIn(resetAt?: number): string {
+export function formatResetIn(resetAt?: number): string {
   if (!resetAt) return '';
   const ms = resetAt - Date.now();
   if (ms <= 0) return '';

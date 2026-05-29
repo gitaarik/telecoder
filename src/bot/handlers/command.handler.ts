@@ -309,7 +309,7 @@ export function resumeCommandMessage(sessionId: string): string {
 }
 
 /** Truncate a string to fit within `maxBytes` UTF-8 bytes without splitting a codepoint. */
-function truncateToBytes(s: string, maxBytes: number): string {
+export function truncateToBytes(s: string, maxBytes: number): string {
   if (Buffer.byteLength(s, 'utf8') <= maxBytes) return s;
   let out = '';
   for (const ch of s) {
@@ -389,7 +389,7 @@ function botctlExists(): boolean {
 
 type TTSMenuMode = 'main' | 'voices';
 
-function parseContextOutput(raw: string): string {
+export function parseContextOutput(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) {
     return '⚠️ No context output received.';
