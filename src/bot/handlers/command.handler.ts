@@ -4297,7 +4297,7 @@ const EFFORT_LEVELS: { id: EffortLevel; label: string; description: string }[] =
   { id: 'low', label: '🐇 Low', description: 'Minimal thinking, fastest' },
   { id: 'medium', label: '⚖️ Medium', description: 'Balanced speed/quality' },
   { id: 'high', label: '🧠 High', description: 'Deep reasoning (default)' },
-  { id: 'xhigh', label: '🔬 XHigh', description: 'Extra deep (Opus 4.7)' },
+  { id: 'xhigh', label: '🔬 XHigh', description: 'Extra deep (Opus 4.8)' },
   { id: 'max', label: '🚀 Max', description: 'Maximum effort' },
 ];
 
@@ -4390,7 +4390,7 @@ function shortenModelName(model: string): string {
   // Strip "vendor/" prefix (OpenRouter / CCR style: "anthropic/claude-4-sonnet-...")
   const slashIdx = model.lastIndexOf('/');
   const stripped = slashIdx >= 0 ? model.substring(slashIdx + 1) : model;
-  // claude-opus-4-7 → opus-4-7; trim trailing -YYYYMMDD release tags.
+  // claude-opus-4-8 → opus-4-8; trim trailing -YYYYMMDD release tags.
   return stripped.replace(/^claude-/, '').replace(/-\d{8}$/, '');
 }
 

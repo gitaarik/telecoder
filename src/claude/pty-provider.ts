@@ -352,9 +352,22 @@ export class PtyProvider implements Provider {
     // log has every text block as a structured record, so joining them gives
     // the user the full reply. Falls back to screen scrape if the log isn't
     // available (very rare — Stop hook fires after claude flushes records).
-    const assistantResponse =
-      this._readAssistantResponseFromJsonl(sessionKey)
-      ?? this._extractAssistantResponse(finalScreenText);
+    const fromJsonl = this._readAssistantResponseFromJsonl(sessionKey);
+
+    // First-turn-in-fresh-cwd failure: claude's TUI is still rendering the
+    // welcome banner when _waitForReady's ❯ check trips, our prompt+Enter
+    // gets swallowed by the not-yet-receptive editor, the NO_JSONL_FALLBACK
+    // timer resolves the turn after 5s, and the screen scrape returns the
+    // welcome banner as if it were a reply. Refuse to do that — throw a
+    // clear error so the user sees a retry-worthy failure instead of
+    // "Done — full response below ↓" followed by `Welcome back Rik!`.
+    if (!fromJsonl && looksLikeWelcomeBanner(finalScreenText)) {
+      throw new Error(
+        "Claude TUI was still on the welcome screen at end-of-turn — your message wasn't received. Please send it again.",
+      );
+    }
+
+    const assistantResponse = fromJsonl ?? this._extractAssistantResponse(finalScreenText);
 
     const usage = this._refreshUsageFromJsonl(sessionKey);
 
@@ -437,12 +450,12 @@ export class PtyProvider implements Provider {
       cacheWriteTokens: snapshot.cacheWriteTokens,
       totalCostUsd: 0,
       // PTY mode runs claude with the user's 1m-context entitlement (the banner
-      // reads "Opus 4.7 (1M context) · Claude Max"). Hardcoding 1_000_000 is
+      // reads "Opus 4.8 (1M context) · Claude Max"). Hardcoding 1_000_000 is
       // a reasonable default — the bot's % calculation just needs *some* sane
       // denominator.
       contextWindow: 1_000_000,
       numTurns: snapshot.numTurns,
-      model: snapshot.model || 'claude-opus-4-7',
+      model: snapshot.model || 'claude-opus-4-8',
     };
     this.usageCache.set(sessionKey, usage);
     return usage;
@@ -532,15 +545,42 @@ export class PtyProvider implements Provider {
       // Submit handling for claude's TUI input editor:
       //
       // claude v2.1.143 integrated an Nvim-style multi-line editor (the
-      // status bar shows "ctrl+g to edit in Nvim"). Writing `prompt + '\r'`
-      // in a single term.write produces a bulk-input that the editor seems
-      // to treat as a paste — the CR/LF inside gets buffered as content
-      // rather than firing the submit action, so our prompt would just sit
-      // in the input box. Splitting the write into "type the chars" then a
-      // brief settle then a separate "press Enter" makes the trailing CR
-      // look like a real keystroke and triggers submit.
-      session.term.write(prompt);
-      await new Promise((r) => setTimeout(r, 100));
+      // status bar shows "ctrl+g to edit in Nvim"). It uses a size/timing
+      // heuristic to decide whether stdin is a paste vs typing, and on a
+      // freshly-spawned PTY (where claude is still mid-init when our prompt
+      // arrives) that heuristic occasionally folds the trailing \r into the
+      // paste buffer instead of treating it as Enter — the prompt then sits
+      // in the input box unsent, the model never runs, and the welcome
+      // banner is what survives end-of-turn extraction.
+      //
+      // Three-part defence:
+      //   1. Wrap the prompt in bracketed-paste markers (xterm DECSET 2004).
+      //      Claude's editor parses them and strips them, so the model sees
+      //      the same payload as before, but the END marker unambiguously
+      //      closes the paste — the next byte (\r) is then a real keystroke.
+      //   2. Echo-verify: poll the screen until the first chars of our
+      //      prompt actually appear in the input box. Confirms claude's
+      //      input loop is actually consuming our bytes.
+      //   3. Retry loop: if echo-verify misses (claude's input loop wasn't
+      //      receptive yet — happens on first-launch of a fresh PTY when
+      //      ❯ is drawn before the editor is wired up), wait a beat and
+      //      write again. The needle match is content-based so a duplicate
+      //      write still resolves on the first burst's bytes if they finally
+      //      arrive late; otherwise the second write gets a fresh chance.
+      //      The welcome-banner guard in sendToAgent is the final safety net.
+      const ECHO_CAP_MS = 2_000;
+      const MAX_ATTEMPTS = 3;
+      const RETRY_BACKOFF_MS = 750;
+      let echoed = false;
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        if (attempt > 0) {
+          console.warn(`[PtyProvider] echo-verify miss on attempt ${attempt}/${MAX_ATTEMPTS}, retrying write`);
+          await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
+        }
+        session.term.write(`\x1b[200~${prompt}\x1b[201~`);
+        echoed = await this._waitForPromptEcho(session, prompt, ECHO_CAP_MS);
+        if (echoed) break;
+      }
       session.term.write('\r');
 
       return await this._awaitEndOfTurn(session);
@@ -843,6 +883,35 @@ export class PtyProvider implements Provider {
   }
 
   /**
+   * Poll the xterm buffer until the first chars of `prompt` appear on screen —
+   * proves claude's editor actually consumed our paste before we send \r.
+   * Returns true on echo confirmed, false on cap-hit. Caller retries the
+   * write on false; the welcome-banner guard in sendToAgent is the final
+   * safety net if every retry misses.
+   *
+   * Needle is the leading non-whitespace slice of the first line — short
+   * enough to survive line wrapping in the 120-col input box, long enough
+   * to be distinctive. Returns true immediately when the needle would be
+   * too short to be a meaningful match (very short prompts can race the
+   * \r submit, but they also rarely fall victim to the paste heuristic so
+   * the retry loop isn't load-bearing for them).
+   */
+  private async _waitForPromptEcho(session: PtySession, prompt: string, capMs: number): Promise<boolean> {
+    const firstLine = prompt.replace(/^\s+/, '').split(/\r?\n/, 1)[0] ?? '';
+    const needle = firstLine.slice(0, 24);
+    if (needle.length < 4) {
+      await new Promise((r) => setTimeout(r, 100));
+      return true;
+    }
+    const deadline = Date.now() + capMs;
+    while (Date.now() < deadline) {
+      if (this._getScreenText(session).includes(needle)) return true;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    return false;
+  }
+
+  /**
    * After the first _waitForReady of this pty's lifetime, scan the rendered
    * screen for claude's "Update available" / "Successfully updated" banner
    * and relay it to Telegram. Guarded so we only fire once per pty spawn —
@@ -989,7 +1058,7 @@ export class PtyProvider implements Provider {
   }
 
   getModel(chatId: number): string {
-    return 'claude-opus-4-7'; // Default
+    return 'claude-opus-4-8'; // Default
   }
 
   clearModel(chatId: number): void {
@@ -1006,7 +1075,7 @@ export class PtyProvider implements Provider {
 
   async getAvailableModels(chatId: number): Promise<ModelInfo[]> {
     return Promise.resolve([
-      { id: 'claude-opus-4-7', label: 'Opus 4.7 (via PTY)', description: 'Claude Code CLI' }
+      { id: 'claude-opus-4-8', label: 'Opus 4.8 (via PTY)', description: 'Claude Code CLI' }
     ]);
   }
 }
@@ -1077,6 +1146,17 @@ Read ${tempPaths.length === 1 ? 'it' : 'them'} with the Read tool to see ${tempP
  * directive — claude will follow it on subscription-side too, matching the
  * SDK-mode user experience for the common case.
  */
+/**
+ * True if the xterm buffer is still showing Claude Code's first-launch welcome
+ * screen. The two greeting strings only render together at startup — after any
+ * prompt submits and the model produces output, they scroll out of the visible
+ * buffer. Used by sendToAgent to detect the "prompt swallowed during TUI
+ * startup" failure mode and throw instead of returning the banner as a reply.
+ */
+function looksLikeWelcomeBanner(screenText: string): boolean {
+  return screenText.includes('Welcome back') && screenText.includes('Tips for getting started');
+}
+
 function wrapCommandPrompt(message: string, command: AgentOptions['command']): string {
   if (command === 'explore') {
     return `Explore the codebase and answer: ${message}`;

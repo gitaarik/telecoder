@@ -79,7 +79,7 @@ try {
       allowDangerouslySkipPermissions: true,
       settingSources: ['project'],
       abortController: controller,
-      model: 'claude-opus-4-7',
+      model: 'claude-opus-4-8',
       ...(bundled ? { pathToClaudeCodeExecutable: bundled } : {}),
     },
   });
