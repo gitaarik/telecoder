@@ -91,6 +91,24 @@ async function replyMd(ctx: Context, text: string): Promise<void> {
   await ctx.reply(text, { parse_mode: 'MarkdownV2' });
 }
 
+/**
+ * Resolve the session-key info and callback-data for a callback-query handler,
+ * gated on the data starting with `prefix`. Returns null (so the caller can
+ * early-return) when there is no session key, no callback data, or the data
+ * doesn't match the prefix. Folds the repeated keyInfo + data guard preamble
+ * that every prefix-scoped callback handler shares.
+ */
+export function parseCallback(
+  ctx: Context,
+  prefix: string,
+): { chatId: number; threadId?: number; sessionKey: string; data: string } | null {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return null;
+  const data = ctx.callbackQuery?.data;
+  if (!data || !data.startsWith(prefix)) return null;
+  return { ...keyInfo, data };
+}
+
 function buildFeatureDisabledMessage(feature: string): string {
   return `⚠️ ${feature} feature is disabled in configuration.`;
 }
@@ -243,12 +261,9 @@ export async function handleBotName(ctx: Context): Promise<void> {
 }
 
 export async function handleBotNameCallback(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const data = ctx.callbackQuery?.data;
-  if (!data || !data.startsWith('botname:')) return;
+  const cb = parseCallback(ctx, 'botname:');
+  if (!cb) return;
+  const { sessionKey, data } = cb;
 
   const newState = data.replace('botname:', '') === 'on';
   setBotNameEnabled(sessionKey, newState);
@@ -696,12 +711,9 @@ export async function handleClear(ctx: Context): Promise<void> {
 }
 
 export async function handleClearCallback(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const data = ctx.callbackQuery?.data;
-  if (!data || !data.startsWith('clear:')) return;
+  const cb = parseCallback(ctx, 'clear:');
+  if (!cb) return;
+  const { sessionKey, data } = cb;
 
   const action = data.replace('clear:', '');
 
@@ -761,11 +773,9 @@ async function selectProjectFromCallback(ctx: Context, sessionKey: string, proje
 }
 
 export async function handleProjectCallback(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-  const data = ctx.callbackQuery?.data;
-  if (!data || !data.startsWith('project:')) return;
+  const cb = parseCallback(ctx, 'project:');
+  if (!cb) return;
+  const { sessionKey, data } = cb;
 
   const state = getProjectState(sessionKey);
   const action = data.split(':')[1] || '';
@@ -1496,12 +1506,9 @@ export async function handleTerminalUI(ctx: Context): Promise<void> {
 }
 
 export async function handleTerminalUICallback(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const data = ctx.callbackQuery?.data;
-  if (!data || !data.startsWith('terminalui:')) return;
+  const cb = parseCallback(ctx, 'terminalui:');
+  if (!cb) return;
+  const { sessionKey, data } = cb;
 
   const newState = data.replace('terminalui:', '') === 'on';
   setTerminalUIEnabled(sessionKey, newState);
@@ -1581,12 +1588,9 @@ export async function handleTTSCallback(ctx: Context): Promise<void> {
 }
 
 export async function handleTelegraphCallback(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const data = ctx.callbackQuery?.data;
-  if (!data || !data.startsWith('telegraph:')) return;
+  const cb = parseCallback(ctx, 'telegraph:');
+  if (!cb) return;
+  const { sessionKey, data } = cb;
 
   // Don't allow enabling if global config is disabled
   if (data === 'telegraph:on') {
@@ -2104,12 +2108,9 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
 }
 
 export async function handleModelCallback(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { chatId } = keyInfo;
-
-  const data = ctx.callbackQuery?.data;
-  if (!data || !data.startsWith('model:')) return;
+  const cb = parseCallback(ctx, 'model:');
+  if (!cb) return;
+  const { chatId, data } = cb;
 
   const model = data.replace('model:', '');
 
@@ -2385,12 +2386,9 @@ export async function handleResume(ctx: Context): Promise<void> {
 }
 
 export async function handleResumeCallback(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const data = ctx.callbackQuery?.data;
-  if (!data || !data.startsWith('resume:')) return;
+  const cb = parseCallback(ctx, 'resume:');
+  if (!cb) return;
+  const { sessionKey, data } = cb;
 
   const conversationId = data.replace('resume:', '');
   const session = sessionManager.resumeSession(sessionKey, conversationId);
@@ -3252,12 +3250,9 @@ export async function executeRedditFetch(
  * Handle inline keyboard callbacks for Reddit action picker (File / Chat / Both).
  */
 export async function handleRedditActionCallback(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const data = ctx.callbackQuery?.data;
-  if (!data || !data.startsWith('reddit_action:')) return;
+  const cb = parseCallback(ctx, 'reddit_action:');
+  if (!cb) return;
+  const { sessionKey, data } = cb;
 
   const action = data.replace('reddit_action:', '');
 
@@ -3503,12 +3498,9 @@ export async function handleMediumCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const data = ctx.callbackQuery?.data;
-  if (!data || !data.startsWith('medium:')) return;
+  const cb = parseCallback(ctx, 'medium:');
+  if (!cb) return;
+  const { sessionKey, data } = cb;
 
   const action = data.replace('medium:', '');
 
