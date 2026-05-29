@@ -50,13 +50,14 @@ const POST_STOP_SETTLE_MS = 200;
 /**
  * Absolute wall-clock cap for a single turn — safety net for a genuinely
  * wedged pty. Substantive investigative turns (multi-step Bash, deep code
- * reads) can legitimately run several minutes; 30 min is long enough to let
- * those finish while still being a sane upper bound. Note that the inflight
- * gate and bullet-count gate already prevent the *idle-fallback* from firing
- * prematurely — this timer only fires if neither Stop nor any other resolve
- * path triggers for the full duration.
+ * reads) can legitimately run several minutes; the default (2 h, via
+ * CLAUDE_PTY_HARD_TIMEOUT_MS) is long enough to let those finish while still
+ * being a sane upper bound. Raise the env var for unusually long turns. Note
+ * that the inflight gate and bullet-count gate already prevent the
+ * *idle-fallback* from firing prematurely — this timer only fires if neither
+ * Stop nor any other resolve path triggers for the full duration.
  */
-const MAX_TURN_MS = 30 * 60_000;
+const MAX_TURN_MS = config.CLAUDE_PTY_HARD_TIMEOUT_MS;
 const STARTUP_MAX_MS = 15_000;
 /**
  * Idle + prompt-visible safety net for prompts that produce no JSONL activity.

@@ -260,6 +260,14 @@ const envSchema = z.object({
     .string()
     .default('180000')
     .transform((val) => parseInt(val, 10)), // 0 = disabled, default 3 minutes
+  // Absolute wall-clock cap for a single PTY turn (ms). The turn is killed
+  // with a "turn exceeded" error if it runs longer. Default 2 h — long
+  // enough for genuinely intensive multi-step work; raise it if you regularly
+  // hit the cap on legitimately long turns.
+  CLAUDE_PTY_HARD_TIMEOUT_MS: z
+    .string()
+    .default('7200000')
+    .transform((val) => parseInt(val, 10)),
   // HTTP proxy for Telegram API requests (e.g. socks5://127.0.0.1:1080 or http://proxy:8080)
   TELEGRAM_PROXY_URL: z.string().optional(),
   // Completion notification (send a new message after long streaming tasks)
