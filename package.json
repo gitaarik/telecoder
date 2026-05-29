@@ -10,7 +10,10 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "start:multi": "node dist/launcher.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "keywords": [
     "telegram",
@@ -44,7 +47,9 @@
   },
   "devDependencies": {
     "@types/node": "^20.17.14",
+    "@vitest/coverage-v8": "^4.1.7",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.7"
   }
 }

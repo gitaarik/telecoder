@@ -24,3 +24,6 @@ MEDIUM_*.md
 scripts/medium_fetch.py
 scripts/medium_login.py
 PENDING_ACTIONS.md
+
+# Test coverage output
+coverage/
