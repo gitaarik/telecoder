@@ -9,6 +9,7 @@ export default defineConfig({
       CLAUDEGRAM_ENV_PATH: '/nonexistent/claudegram-test.env',
       TELEGRAM_BOT_TOKEN: '123456789:TEST_TOKEN',
       ALLOWED_USER_IDS: '1,2,3',
+      ALLOWED_GROUP_IDS: '-1009990001',
       WORKSPACE_DIR: '/tmp/claudegram-test-workspace',
       // Force the SSRF guard on regardless of the developer's shell/.env.
       ALLOW_PRIVATE_NETWORK_URLS: 'false',
