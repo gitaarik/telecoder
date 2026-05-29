@@ -117,15 +117,24 @@ function buildBotDisplayName(sessionKey: string): string {
   return parts.join(' — ').slice(0, 64);
 }
 
+/**
+ * Push a display name to Telegram (rate-limited) and surface any block notice.
+ * Swallows errors — a failed name update should never break the calling flow.
+ * `context` is used only for the debug log so failures are attributable.
+ */
+async function pushBotName(ctx: Context, name: string, context: string): Promise<void> {
+  try {
+    const result = await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), name);
+    await notifyBotNameBlock(ctx, result);
+  } catch (err) {
+    console.debug(`[Bot] Failed to set bot name (${context}):`, err instanceof Error ? err.message : err);
+  }
+}
+
 /** Update the Telegram bot display name to reflect the active project and topic. */
 async function updateBotName(ctx: Context, sessionKey: string, projectPath: string): Promise<void> {
   if (!isBotNameEnabled(sessionKey)) return;
-  try {
-    const result = await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), buildBotDisplayName(sessionKey));
-    await notifyBotNameBlock(ctx, result);
-  } catch (err) {
-    console.error('[Bot] Failed to update bot name:', err);
-  }
+  await pushBotName(ctx, buildBotDisplayName(sessionKey), 'update');
 }
 
 /**
@@ -135,12 +144,7 @@ async function updateBotName(ctx: Context, sessionKey: string, projectPath: stri
 export async function clearTopicAndRefreshBotName(ctx: Context, sessionKey: string): Promise<void> {
   setSessionTopic(sessionKey, '');
   if (!isBotNameEnabled(sessionKey)) return;
-  try {
-    const result = await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), buildBotDisplayName(sessionKey));
-    await notifyBotNameBlock(ctx, result);
-  } catch (err) {
-    console.debug('[Topic] Failed to refresh bot name after topic clear:', err instanceof Error ? err.message : err);
-  }
+  await pushBotName(ctx, buildBotDisplayName(sessionKey), 'topic clear');
 }
 
 /**
@@ -159,12 +163,7 @@ export async function restoreTopicAndRefreshBotName(ctx: Context, sessionKey: st
   }
   setSessionTopic(sessionKey, topic || '');
   if (!isBotNameEnabled(sessionKey)) return;
-  try {
-    const result = await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), buildBotDisplayName(sessionKey));
-    await notifyBotNameBlock(ctx, result);
-  } catch (err) {
-    console.debug('[Topic] Failed to refresh bot name after topic restore:', err instanceof Error ? err.message : err);
-  }
+  await pushBotName(ctx, buildBotDisplayName(sessionKey), 'topic restore');
 }
 
 /**
@@ -267,12 +266,7 @@ export async function handleBotNameCallback(ctx: Context): Promise<void> {
 
   // Reset bot name to base when disabling
   if (!newState) {
-    try {
-      const result = await rateLimitedSetMyName(ctx.api, (n) => ctx.api.setMyName(n), config.BOT_NAME);
-      await notifyBotNameBlock(ctx, result);
-    } catch (err) {
-      console.error('[Bot] Failed to reset bot name:', err);
-    }
+    await pushBotName(ctx, config.BOT_NAME, 'disable reset');
   }
 }
 
