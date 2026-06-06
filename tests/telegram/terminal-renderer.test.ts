@@ -53,10 +53,10 @@ describe('elideToolOutput', () => {
     expect(elideToolOutput(out, 20, 2000)).toBe(out);
   });
 
-  it('keeps the TAIL when truncating by lines (errors/summaries live at the end)', () => {
+  it('keeps the TAIL of error output (failures live at the end)', () => {
     const lines = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`);
     lines[99] = '3 failing'; // the line you actually care about
-    const out = elideToolOutput(lines.join('\n'), 20, 100000);
+    const out = elideToolOutput(lines.join('\n'), 20, 100000, { isError: true });
     expect(out).toContain('3 failing'); // tail survived — plain head truncation would drop it
     expect(out).toContain('line 1'); // some head context kept
     expect(out).toContain('more lines]'); // middle marker
@@ -64,24 +64,36 @@ describe('elideToolOutput', () => {
     expect(out.split('\n').length).toBeLessThanOrEqual(20);
   });
 
-  it('weights toward the tail — keeps more trailing than leading lines', () => {
+  it('weights error output toward the tail — more trailing than leading lines', () => {
     const lines = Array.from({ length: 100 }, (_, i) => `L${i + 1}`);
-    const out = elideToolOutput(lines.join('\n'), 12, 100000).split('\n');
-    const headKept = out.filter((l) => /^L[1-9]$|^L1[0-9]$/.test(l) && Number(l.slice(1)) <= 50).length;
-    const tailKept = out.filter((l) => /^L\d+$/.test(l) && Number(l.slice(1)) > 50).length;
+    const out = elideToolOutput(lines.join('\n'), 12, 100000, { isError: true }).split('\n');
+    const kept = out.filter((l) => /^L\d+$/.test(l)).map((l) => Number(l.slice(1)));
+    const headKept = kept.filter((n) => n <= 50).length;
+    const tailKept = kept.filter((n) => n > 50).length;
     expect(tailKept).toBeGreaterThan(headKept);
+  });
+
+  it('weights successful output toward the HEAD — more leading than trailing lines', () => {
+    const lines = Array.from({ length: 100 }, (_, i) => `L${i + 1}`);
+    const out = elideToolOutput(lines.join('\n'), 12, 100000).split('\n'); // default: success
+    const kept = out.filter((l) => /^L\d+$/.test(l)).map((l) => Number(l.slice(1)));
+    const headKept = kept.filter((n) => n <= 50).length;
+    const tailKept = kept.filter((n) => n > 50).length;
+    expect(headKept).toBeGreaterThan(tailKept);
+    // ...but a trailing slice is still kept so a final summary line survives.
+    expect(tailKept).toBeGreaterThan(0);
   });
 
   it('reports the correct hidden-line count', () => {
     const lines = Array.from({ length: 30 }, (_, i) => `r${i}`);
     const out = elideToolOutput(lines.join('\n'), 10, 100000);
-    // 30 total, keep head+tail = 9, marker line → 21 hidden.
+    // 30 total, keep head+tail = 9, marker line → 21 hidden (independent of bias).
     expect(out).toContain('[+21 more lines]');
   });
 
-  it('char-caps a single very long line toward the middle, preserving the tail', () => {
+  it('char-caps a single very long error line toward the middle, preserving the tail', () => {
     const longLine = 'ERR_HEAD ' + 'x'.repeat(5000) + ' ERR_TAIL';
-    const out = elideToolOutput(longLine, 20, 500);
+    const out = elideToolOutput(longLine, 20, 500, { isError: true });
     expect(out.length).toBeLessThanOrEqual(500);
     expect(out).toContain('ERR_HEAD');
     expect(out).toContain('ERR_TAIL'); // tail of the line survives

@@ -703,8 +703,9 @@ export class MessageSender {
     const label = event.toolName ? stripMcpServerPrefix(event.toolName) : 'tool';
     const verb = event.isError ? 'error' : 'result';
 
-    // Tail-biased truncation so errors/summaries at the end survive (see elideToolOutput).
-    const body = elideToolOutput(cleaned || '(no output)', maxLines, maxChars);
+    // Tail-biased for errors (failures land at the end), head-biased for
+    // success — middle elided either way (see elideToolOutput).
+    const body = elideToolOutput(cleaned || '(no output)', maxLines, maxChars, { isError: event.isError });
 
     const detail = event.toolName && event.input
       ? extractToolDetail(event.toolName, event.input, true)

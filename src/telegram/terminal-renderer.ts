@@ -312,22 +312,32 @@ function elideMiddle(text: string, maxLen: number): string {
  * Truncate tool/command output for display (action log + inline tool-result
  * posts), bounded by both a line cap and a char cap.
  *
- * Unlike command *input*, output is TAIL-biased: errors, test summaries and
- * result lines land at the END, so plain head-only truncation drops exactly
- * what the reader needs. We keep a small head (~1/3) for context and a larger
- * tail (~2/3) for the payoff, with a `[+N more lines]` marker between them. The
- * char cap is a secondary guard (e.g. one very long line) and also elides
- * toward the middle so the tail survives. The marker is embedded inline — the
- * caller appends no separate trailer.
+ * Unlike command *input*, output truncation is direction-sensitive and keyed on
+ * `isError`. Errors, test summaries and result lines land at the END of output,
+ * so error output is TAIL-biased (~1/3 head, ~2/3 tail) — plain head-only
+ * truncation drops exactly what the reader needs. Successful output is
+ * HEAD-biased (~2/3 head, ~1/3 tail): you usually want the start (a file dump,
+ * an `ls`), but the trailing slice still preserves a final summary line. Either
+ * way a `[+N more lines]` marker sits between head and tail. The char cap is a
+ * secondary guard (e.g. one very long line) and also elides toward the middle
+ * with the same bias so the important side survives. The marker is embedded
+ * inline — the caller appends no separate trailer.
  */
-export function elideToolOutput(content: string, maxLines: number, maxChars: number): string {
+export function elideToolOutput(
+  content: string,
+  maxLines: number,
+  maxChars: number,
+  opts: { isError?: boolean } = {},
+): string {
+  // Fraction of the budget given to the head. Errors lean tail; success leans head.
+  const headFraction = opts.isError ? 1 / 3 : 2 / 3;
   let text = content;
 
   const lines = text.split('\n');
   if (lines.length > maxLines) {
     if (maxLines >= 3) {
       const budget = maxLines - 1; // reserve one line for the marker
-      const headCount = Math.max(1, Math.floor(budget / 3));
+      const headCount = Math.min(budget - 1, Math.max(1, Math.round(budget * headFraction)));
       const tailCount = budget - headCount;
       const hidden = lines.length - headCount - tailCount;
       text = [
@@ -336,21 +346,22 @@ export function elideToolOutput(content: string, maxLines: number, maxChars: num
         ...lines.slice(lines.length - tailCount),
       ].join('\n');
     } else {
-      // Too few lines allowed to bother with a head — keep the tail, where
-      // errors and summaries live.
-      const tailCount = Math.max(1, maxLines - 1);
-      const tail = lines.slice(lines.length - tailCount);
-      text = [`[+${lines.length - tail.length} more lines]`, ...tail].join('\n');
+      // Too few lines allowed to bother with a head — keep whichever side the
+      // bias favors (tail for errors, head for success).
+      const keep = Math.max(1, maxLines - 1);
+      const slice = opts.isError ? lines.slice(lines.length - keep) : lines.slice(0, keep);
+      const marker = `[+${lines.length - slice.length} more lines]`;
+      text = (opts.isError ? [marker, ...slice] : [...slice, marker]).join('\n');
     }
   }
 
   if (text.length > maxChars) {
     const marker = '\n[chars truncated]\n';
     if (maxChars <= marker.length) {
-      text = text.slice(text.length - maxChars); // keep the tail
+      text = opts.isError ? text.slice(text.length - maxChars) : text.slice(0, maxChars);
     } else {
       const budget = maxChars - marker.length;
-      const headLen = Math.floor(budget / 3);
+      const headLen = Math.round(budget * headFraction);
       const tailLen = budget - headLen;
       text = text.slice(0, headLen).trimEnd() + marker + text.slice(text.length - tailLen).trimStart();
     }

@@ -95,9 +95,9 @@ export class ActionLogger {
     const label = event.toolName ? stripMcpServerPrefix(event.toolName) : 'tool';
     const status = event.isError ? 'error' : 'completed';
 
-    // Tail-biased truncation: errors/summaries/result lines live at the END of
-    // command output, so we keep the tail and elide the middle (see elideToolOutput).
-    const content = elideToolOutput(cleaned || '(no output)', maxLines, maxChars);
+    // Tail-biased for errors (failures land at the end), head-biased for
+    // success — middle elided either way (see elideToolOutput).
+    const content = elideToolOutput(cleaned || '(no output)', maxLines, maxChars, { isError: event.isError });
 
     const detail = event.toolName && event.input
       ? extractToolDetail(event.toolName, event.input, true)
