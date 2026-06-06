@@ -17,9 +17,15 @@ export function convertToTelegramMarkdown(text: string): string {
     //   telegram-markdown-v2 library leaves *** intact and Telegram then misinterprets
     //   it as an unterminated bold/italic entity.
     const { text: stripped, blocks } = extractExpandableBlocks(text);
-    const preprocessed = preprocessOutsideCode(stripped);
+    // Pull out `>` blockquote regions too — the telegram-markdown-v2 library
+    // doesn't understand them: it escapes the `>` marker and double-escapes the
+    // line content, so quotes render as raw escaped markdown. We convert their
+    // inner markdown ourselves and re-emit proper `>`-prefixed lines afterward.
+    const { text: noQuotes, blocks: quoteBlocks } = extractBlockquotes(stripped);
+    const preprocessed = preprocessOutsideCode(noQuotes);
     const converted = convert(preprocessed, 'escape');
-    return restoreExpandableBlocks(converted, blocks);
+    const withQuotes = restoreBlockquotes(converted, quoteBlocks);
+    return restoreExpandableBlocks(withQuotes, blocks);
   } catch (error) {
     console.error('Markdown conversion error:', error);
     // Fallback: escape special characters manually
@@ -77,6 +83,67 @@ function restoreExpandableBlocks(text: string, blocks: string[]): string {
   let result = text;
   blocks.forEach((body, idx) => {
     result = result.replace(expandablePlaceholder(idx), buildExpandableSyntax(body));
+  });
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Blockquotes
+// ---------------------------------------------------------------------------
+//
+// Telegram MarkdownV2 blockquotes are lines prefixed with an unescaped `>`:
+//   >First line
+//   >Second line
+// The telegram-markdown-v2 library treats `>` as a character to escape and
+// double-escapes the line's content (escaping the backslashes its own escaping
+// already added), so a quote renders as literal `\.`/`\-`/`*bold*` garbage.
+// We extract contiguous `>` regions before convert(), recursively convert their
+// inner markdown through the normal pipeline (so bold/italic/links/escaping all
+// work), then re-prefix each resulting line with `>`.
+
+const BLOCKQUOTE_LINE_RE = /^ {0,3}>/;
+const blockquotePlaceholder = (i: number) => `XCGBLOCKQUOTEBLOCK${i}ENDX`;
+
+function extractBlockquotes(text: string): { text: string; blocks: string[] } {
+  const blocks: string[] = [];
+  // Only extract outside fenced code so `>` inside code examples stays literal.
+  const parts = text.split(/(```[\s\S]*?```)/g);
+  const processed = parts.map((segment, idx) => {
+    if (idx % 2 === 1) return segment;
+    const lines = segment.split('\n');
+    const out: string[] = [];
+    let i = 0;
+    while (i < lines.length) {
+      if (BLOCKQUOTE_LINE_RE.test(lines[i])) {
+        const inner: string[] = [];
+        while (i < lines.length && BLOCKQUOTE_LINE_RE.test(lines[i])) {
+          // Strip up to 3 leading spaces, the `>`, and one optional space.
+          inner.push(lines[i].replace(/^ {0,3}>[ ]?/, ''));
+          i++;
+        }
+        const blockIdx = blocks.length;
+        blocks.push(inner.join('\n'));
+        out.push(blockquotePlaceholder(blockIdx));
+      } else {
+        out.push(lines[i]);
+        i++;
+      }
+    }
+    return out.join('\n');
+  });
+  return { text: processed.join(''), blocks };
+}
+
+function restoreBlockquotes(text: string, blocks: string[]): string {
+  let result = text;
+  blocks.forEach((inner, idx) => {
+    // Recursively convert the inner markdown (terminates: the `>` prefixes are
+    // already stripped, so no blockquote region is re-extracted at this level).
+    const convertedInner = convertToTelegramMarkdown(inner).replace(/\n+$/, '');
+    const quoted = convertedInner.split('\n').map((l) => `>${l}`).join('\n');
+    // Function replacer so `$` in the quoted content isn't treated as a
+    // replacement pattern.
+    result = result.replace(blockquotePlaceholder(idx), () => quoted);
   });
   return result;
 }
