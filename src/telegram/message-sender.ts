@@ -11,6 +11,7 @@ import {
   renderBackgroundFooter,
   extractToolDetail,
   formatBashCommandBlock,
+  elideToolOutput,
   TOOL_ICONS,
 } from './terminal-renderer.js';
 import { taskTracker, type TaskState } from './task-tracker.js';
@@ -702,17 +703,8 @@ export class MessageSender {
     const label = event.toolName ? stripMcpServerPrefix(event.toolName) : 'tool';
     const verb = event.isError ? 'error' : 'result';
 
-    let body = cleaned || '(no output)';
-    let trailer = '';
-    const lines = body.split('\n');
-    if (lines.length > maxLines) {
-      body = lines.slice(0, maxLines).join('\n');
-      trailer = `\n[truncated: showing ${maxLines} of ${lines.length} lines]`;
-    }
-    if (body.length > maxChars) {
-      body = body.substring(0, maxChars);
-      trailer = `\n[truncated to ${maxChars} chars]`;
-    }
+    // Tail-biased truncation so errors/summaries at the end survive (see elideToolOutput).
+    const body = elideToolOutput(cleaned || '(no output)', maxLines, maxChars);
 
     const detail = event.toolName && event.input
       ? extractToolDetail(event.toolName, event.input, true)
@@ -721,7 +713,7 @@ export class MessageSender {
       ? `${event.toolName === 'Bash' ? '$ ' : ''}${detail}\n`
       : '';
 
-    const text = `${icon} ${label} ${verb}\n${detailLine}${body}${trailer}`;
+    const text = `${icon} ${label} ${verb}\n${detailLine}${body}`;
     try {
       await ctx.reply(text, { parse_mode: undefined });
       this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);

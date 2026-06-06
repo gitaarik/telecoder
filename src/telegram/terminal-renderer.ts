@@ -309,6 +309,57 @@ function elideMiddle(text: string, maxLen: number): string {
 }
 
 /**
+ * Truncate tool/command output for display (action log + inline tool-result
+ * posts), bounded by both a line cap and a char cap.
+ *
+ * Unlike command *input*, output is TAIL-biased: errors, test summaries and
+ * result lines land at the END, so plain head-only truncation drops exactly
+ * what the reader needs. We keep a small head (~1/3) for context and a larger
+ * tail (~2/3) for the payoff, with a `[+N more lines]` marker between them. The
+ * char cap is a secondary guard (e.g. one very long line) and also elides
+ * toward the middle so the tail survives. The marker is embedded inline — the
+ * caller appends no separate trailer.
+ */
+export function elideToolOutput(content: string, maxLines: number, maxChars: number): string {
+  let text = content;
+
+  const lines = text.split('\n');
+  if (lines.length > maxLines) {
+    if (maxLines >= 3) {
+      const budget = maxLines - 1; // reserve one line for the marker
+      const headCount = Math.max(1, Math.floor(budget / 3));
+      const tailCount = budget - headCount;
+      const hidden = lines.length - headCount - tailCount;
+      text = [
+        ...lines.slice(0, headCount),
+        `[+${hidden} more lines]`,
+        ...lines.slice(lines.length - tailCount),
+      ].join('\n');
+    } else {
+      // Too few lines allowed to bother with a head — keep the tail, where
+      // errors and summaries live.
+      const tailCount = Math.max(1, maxLines - 1);
+      const tail = lines.slice(lines.length - tailCount);
+      text = [`[+${lines.length - tail.length} more lines]`, ...tail].join('\n');
+    }
+  }
+
+  if (text.length > maxChars) {
+    const marker = '\n[chars truncated]\n';
+    if (maxChars <= marker.length) {
+      text = text.slice(text.length - maxChars); // keep the tail
+    } else {
+      const budget = maxChars - marker.length;
+      const headLen = Math.floor(budget / 3);
+      const tailLen = budget - headLen;
+      text = text.slice(0, headLen).trimEnd() + marker + text.slice(text.length - tailLen).trimStart();
+    }
+  }
+
+  return text;
+}
+
+/**
  * Truncate a URL for display
  */
 function truncateUrl(url: string | undefined, maxLen: number = 40): string | undefined {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatBashCommandBlock } from '../../src/telegram/terminal-renderer.js';
+import { formatBashCommandBlock, elideToolOutput } from '../../src/telegram/terminal-renderer.js';
 
 describe('formatBashCommandBlock', () => {
   it('returns undefined for empty or whitespace-only input', () => {
@@ -44,5 +44,47 @@ describe('formatBashCommandBlock', () => {
     expect(out).toContain('…');
     expect(out).toContain('cat <<EOF');
     expect(out).toContain('EOF');
+  });
+});
+
+describe('elideToolOutput', () => {
+  it('returns content unchanged when within both caps', () => {
+    const out = 'line 1\nline 2\nline 3';
+    expect(elideToolOutput(out, 20, 2000)).toBe(out);
+  });
+
+  it('keeps the TAIL when truncating by lines (errors/summaries live at the end)', () => {
+    const lines = Array.from({ length: 100 }, (_, i) => `line ${i + 1}`);
+    lines[99] = '3 failing'; // the line you actually care about
+    const out = elideToolOutput(lines.join('\n'), 20, 100000);
+    expect(out).toContain('3 failing'); // tail survived — plain head truncation would drop it
+    expect(out).toContain('line 1'); // some head context kept
+    expect(out).toContain('more lines]'); // middle marker
+    // Roughly respects the line budget (head + marker + tail).
+    expect(out.split('\n').length).toBeLessThanOrEqual(20);
+  });
+
+  it('weights toward the tail — keeps more trailing than leading lines', () => {
+    const lines = Array.from({ length: 100 }, (_, i) => `L${i + 1}`);
+    const out = elideToolOutput(lines.join('\n'), 12, 100000).split('\n');
+    const headKept = out.filter((l) => /^L[1-9]$|^L1[0-9]$/.test(l) && Number(l.slice(1)) <= 50).length;
+    const tailKept = out.filter((l) => /^L\d+$/.test(l) && Number(l.slice(1)) > 50).length;
+    expect(tailKept).toBeGreaterThan(headKept);
+  });
+
+  it('reports the correct hidden-line count', () => {
+    const lines = Array.from({ length: 30 }, (_, i) => `r${i}`);
+    const out = elideToolOutput(lines.join('\n'), 10, 100000);
+    // 30 total, keep head+tail = 9, marker line → 21 hidden.
+    expect(out).toContain('[+21 more lines]');
+  });
+
+  it('char-caps a single very long line toward the middle, preserving the tail', () => {
+    const longLine = 'ERR_HEAD ' + 'x'.repeat(5000) + ' ERR_TAIL';
+    const out = elideToolOutput(longLine, 20, 500);
+    expect(out.length).toBeLessThanOrEqual(500);
+    expect(out).toContain('ERR_HEAD');
+    expect(out).toContain('ERR_TAIL'); // tail of the line survives
+    expect(out).toContain('chars truncated');
   });
 });

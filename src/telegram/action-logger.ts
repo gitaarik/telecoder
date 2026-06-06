@@ -6,7 +6,7 @@
 
 import { Context, GrammyError } from 'grammy';
 import { escapeMarkdownV2 } from './markdown.js';
-import { getToolIcon, extractToolDetail } from './terminal-renderer.js';
+import { getToolIcon, extractToolDetail, elideToolOutput } from './terminal-renderer.js';
 import { createTelegraphPage } from './telegraph.js';
 import { isTelegraphEnabled } from './telegraph-settings.js';
 import type { ToolResultEvent, EditDiffEvent } from '../providers/types.js';
@@ -95,19 +95,9 @@ export class ActionLogger {
     const label = event.toolName ? stripMcpServerPrefix(event.toolName) : 'tool';
     const status = event.isError ? 'error' : 'completed';
 
-    let content = cleaned || '(no output)';
-    let trailer = '';
-
-    // Truncate content similar to original postToolResult
-    const lines = content.split('\n');
-    if (lines.length > maxLines) {
-      content = lines.slice(0, maxLines).join('\n');
-      trailer = `\n[+${lines.length - maxLines} more lines]`;
-    }
-    if (content.length > maxChars) {
-      content = content.substring(0, maxChars);
-      trailer = `\n[truncated to ${maxChars} chars]`;
-    }
+    // Tail-biased truncation: errors/summaries/result lines live at the END of
+    // command output, so we keep the tail and elide the middle (see elideToolOutput).
+    const content = elideToolOutput(cleaned || '(no output)', maxLines, maxChars);
 
     const detail = event.toolName && event.input
       ? extractToolDetail(event.toolName, event.input, true)
@@ -123,7 +113,7 @@ export class ActionLogger {
       icon,
       title: `${label} ${event.isError ? 'error' : 'result'}`,
       subtitle,
-      content: content + trailer,
+      content,
       status
     };
 
