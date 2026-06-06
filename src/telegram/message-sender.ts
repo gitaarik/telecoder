@@ -10,6 +10,7 @@ import {
   renderStatusLine,
   renderBackgroundFooter,
   extractToolDetail,
+  formatBashCommandBlock,
   TOOL_ICONS,
 } from './terminal-renderer.js';
 import { taskTracker, type TaskState } from './task-tracker.js';
@@ -54,6 +55,12 @@ function buildSuggestionAttachOpts(
 export interface ToolOperation {
   name: string;
   detail?: string;
+  /**
+   * Multi-line command body rendered beneath the status header while the tool
+   * runs (Bash only). Shown in a separate block so the header — and its live
+   * timer — stay on one clean line.
+   */
+  commandBlock?: string;
 }
 
 interface StreamState {
@@ -453,8 +460,16 @@ export class MessageSender {
 
     const { chatId } = parseSessionKey(sessionKey);
     const verbose = resolveVerbosityFlags(chatId).terminalUiVerbose;
-    const detail = input ? extractToolDetail(toolName, input, verbose) : undefined;
-    state.currentOperation = { name: toolName, detail };
+    if (toolName === 'Bash') {
+      // Show the full command in a block beneath the header (capped per the
+      // verbose flag) instead of just its first line on the `→` row — a leading
+      // `cd` otherwise hides the slow work the timer is actually counting.
+      const command = typeof input?.command === 'string' ? input.command : undefined;
+      state.currentOperation = { name: toolName, commandBlock: formatBashCommandBlock(command, verbose) };
+    } else {
+      const detail = input ? extractToolDetail(toolName, input, verbose) : undefined;
+      state.currentOperation = { name: toolName, detail };
+    }
     state.operationStartTime = Date.now();
     state.spinnerIndex += 1;
 
@@ -879,6 +894,12 @@ export class MessageSender {
       const elapsedMs = now - state.operationStartTime;
       const pausedMs = state.lastRateLimitDurationMs > 0 ? state.lastRateLimitDurationMs : undefined;
       parts.push(renderStatusLine(state.spinnerIndex, icon, action, detail ? detail.trim() : undefined, elapsedMs, pausedMs));
+      // Bash commands render their (possibly multi-line) command in a separate
+      // block below the header so the timer stays on a clean single line. The
+      // `$ ` prefix marks the first line like a shell paste.
+      if (state.currentOperation.commandBlock) {
+        parts.push(`$ ${state.currentOperation.commandBlock}`);
+      }
     }
 
     // If nothing to show, show thinking indicator

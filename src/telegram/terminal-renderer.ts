@@ -269,6 +269,45 @@ function truncateCommand(command: string | undefined, maxLen: number = 50): stri
   return firstLine.substring(0, maxLen - 3) + '...';
 }
 
+// Caps for the live Bash command block (terminal UI). While a command runs,
+// this block is the user's only window into what's executing, so we show the
+// command in full rather than just its first line. Non-verbose applies a tight
+// readability cap; verbose only truncates at a high failsafe ceiling — well
+// under Telegram's 4096-char message limit, leaving room for the status header
+// and background-task footer that share the message. Either way, long commands
+// are elided in the MIDDLE so the leading setup (e.g. `cd …`) and the trailing
+// work the command is actually spending time on both stay visible.
+const BASH_BLOCK_CAP_COMPACT = 300;
+const BASH_BLOCK_CAP_VERBOSE = 3500;
+
+/**
+ * Format a Bash command for the live status block. Newlines are preserved so
+ * the command reads like a shell paste; the result is capped per the `verbose`
+ * flag with a middle ellipsis when it exceeds the cap. Returns undefined for
+ * empty/whitespace input (so callers can omit the block entirely).
+ */
+export function formatBashCommandBlock(command: string | undefined, verbose: boolean): string | undefined {
+  if (!command) return undefined;
+  const trimmed = command.trim();
+  if (!trimmed) return undefined;
+  const cap = verbose ? BASH_BLOCK_CAP_VERBOSE : BASH_BLOCK_CAP_COMPACT;
+  if (trimmed.length <= cap) return trimmed;
+  return elideMiddle(trimmed, cap);
+}
+
+/**
+ * Truncate `text` to at most `maxLen` chars by dropping the middle and
+ * inserting an ellipsis marker, keeping ~60% head and ~40% tail.
+ */
+function elideMiddle(text: string, maxLen: number): string {
+  const marker = '\n  …\n';
+  if (maxLen <= marker.length) return text.slice(0, maxLen);
+  const budget = maxLen - marker.length;
+  const headLen = Math.ceil(budget * 0.6);
+  const tailLen = budget - headLen;
+  return text.slice(0, headLen).trimEnd() + marker + text.slice(text.length - tailLen).trimStart();
+}
+
 /**
  * Truncate a URL for display
  */
