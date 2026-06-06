@@ -14,7 +14,6 @@ import * as path from 'path';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../utils/workspace-guard.js';
-import { isBotNameEnabled, rateLimitedSetMyName } from '../telegram/botname-settings.js';
 import { setSessionTopic, clearTopicAndRefreshBotName } from '../bot/handlers/command.handler.js';
 import { createPendingQuestion } from './ask-user.js';
 
@@ -401,7 +400,7 @@ function sendFileTool(toolsCtx: McpToolsContext) {
 function setTopicTool(toolsCtx: McpToolsContext) {
   return tool(
     'claudegram_set_topic',
-    'Update the conversation topic shown in the bot display name. Call this proactively when the work topic changes. Pass an empty string to clear. Keep topics very short (1-4 words).',
+    'Update the conversation topic shown in the status line. Call this proactively when the work topic changes. Pass an empty string to clear. Keep topics very short (1-4 words).',
     {
       topic: z.string().describe(
         'Short topic label (1-4 words, e.g. "auth refactor", "CI fix", "dark mode"). Empty string to clear.'
@@ -411,28 +410,20 @@ function setTopicTool(toolsCtx: McpToolsContext) {
       try {
         const { sessionKey } = toolsCtx;
 
-        if (!isBotNameEnabled(sessionKey)) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: 'Dynamic bot name is disabled for this session. Topic not updated.',
-            }],
-          };
-        }
-
+        // The topic lives in the status line, not the Telegram bot display name
+        // (which only carries BOT_NAME — project). So we update in-memory +
+        // persistent topic state and DO NOT call setMyName. Telegram rate-limits
+        // setMyName brutally — firing it on every proactive topic change is what
+        // trips multi-hour 429 flood-waits. Mirrors the /topic command handler.
         const trimmedTopic = topic.trim();
-        const displayName = setSessionTopic(sessionKey, trimmedTopic);
-
-        if (isBotNameEnabled(sessionKey)) {
-          await rateLimitedSetMyName(toolsCtx.telegramCtx.api, (n) => toolsCtx.telegramCtx.api.setMyName(n), displayName);
-        }
+        setSessionTopic(sessionKey, trimmedTopic);
 
         return {
           content: [{
             type: 'text' as const,
             text: trimmedTopic
-              ? `Topic set to "${trimmedTopic}". Bot name: ${displayName}`
-              : `Topic cleared. Bot name: ${displayName}`,
+              ? `Topic set to "${trimmedTopic}".`
+              : 'Topic cleared.',
           }],
         };
       } catch (error) {
