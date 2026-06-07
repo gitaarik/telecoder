@@ -103,9 +103,14 @@ export function isBotNameEnabled(sessionKey: string): boolean {
 
 const MIN_NAME_UPDATE_INTERVAL_MS = 60_000; // 1 minute soft cooldown
 const COOLDOWN_FILE = path.join(SETTINGS_DIR, 'setmyname-cooldowns.json');
+const LAST_SENT_FILE = path.join(SETTINGS_DIR, 'setmyname-lastsent.json');
 
 const cooldownsSchema = z.object({
   cooldowns: z.record(z.string(), z.object({ blockedUntil: z.number() })),
+});
+
+const lastSentSchema = z.object({
+  names: z.record(z.string(), z.string()),
 });
 
 // Per-bot persistent 429 cooldowns. Telegram's setMyName limit is much
@@ -157,6 +162,57 @@ function setBlockedUntil(blockedUntil: number): void {
   saveCooldowns();
 }
 
+// Per-bot last successfully-sent display name, persisted to disk. The in-memory
+// dedup (`state.lastSentName`) is reset on every restart, so without this the
+// first name push after a restart always hits Telegram even when the name is
+// unchanged — and since the topic moved to the status line the name is now
+// effectively static, making nearly every post-restart push a wasted quota
+// slot. Persisting it lets the `no_change` short-circuit survive restarts.
+const lastSentNameByBot: Map<string, string> = new Map();
+
+function loadLastSentNames(): void {
+  ensureDirectory();
+  if (!fs.existsSync(LAST_SENT_FILE)) return;
+  try {
+    const raw = fs.readFileSync(LAST_SENT_FILE, 'utf-8');
+    const result = lastSentSchema.safeParse(JSON.parse(raw));
+    if (!result.success) {
+      console.warn('[BotName] Invalid last-sent file, starting fresh:', result.error.message);
+      return;
+    }
+    for (const [botId, name] of Object.entries(result.data.names)) {
+      lastSentNameByBot.set(botId, name);
+    }
+  } catch (err) {
+    console.error('[BotName] Failed to load last-sent names:', err);
+  }
+}
+
+function saveLastSentNames(): void {
+  ensureDirectory();
+  const names: Record<string, string> = {};
+  for (const [botId, name] of lastSentNameByBot.entries()) {
+    names[botId] = name;
+  }
+  try {
+    atomicWriteFileSync(LAST_SENT_FILE, JSON.stringify({ names }, null, 2), { mode: 0o600 });
+  } catch (err) {
+    console.error('[BotName] Failed to save last-sent names:', err);
+  }
+}
+
+loadLastSentNames();
+
+function getPersistedLastSentName(): string | null {
+  return lastSentNameByBot.get(BOT_ID) ?? null;
+}
+
+function setPersistedLastSentName(name: string): void {
+  if (lastSentNameByBot.get(BOT_ID) === name) return;
+  lastSentNameByBot.set(BOT_ID, name);
+  saveLastSentNames();
+}
+
 /** Parse Telegram's retry_after (seconds) from a Grammy/HTTP error. */
 function extractRetryAfterMs(err: unknown): number | undefined {
   if (err instanceof GrammyError && err.error_code === 429) {
@@ -190,7 +246,9 @@ const nameRateStates: WeakMap<object, NameRateState> = new WeakMap();
 function getRateState(key: object): NameRateState {
   let state = nameRateStates.get(key);
   if (!state) {
-    state = { lastUpdateTime: 0, lastSentName: null, pendingName: null, pendingApiCall: null, pendingTimer: null };
+    // Seed lastSentName from disk so the `no_change` dedup survives restarts —
+    // otherwise the first push after every restart re-sends an unchanged name.
+    state = { lastUpdateTime: 0, lastSentName: getPersistedLastSentName(), pendingName: null, pendingApiCall: null, pendingTimer: null };
     nameRateStates.set(key, state);
   }
   return state;
@@ -223,6 +281,7 @@ async function callAndHandle429(
   try {
     await apiCall(name);
     state.lastSentName = name;
+    setPersistedLastSentName(name);
     return { kind: 'sent' };
   } catch (err) {
     const retryAfterMs = extractRetryAfterMs(err);
