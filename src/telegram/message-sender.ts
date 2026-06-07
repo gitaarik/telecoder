@@ -5,6 +5,7 @@ import { shouldUseTelegraph, createTelegraphPage, createTelegraphFromFile } from
 import { isTerminalUIEnabled } from './terminal-settings.js';
 import {
   getSpinnerFrame,
+  getThinkingVerb,
   getToolIcon,
   getToolAction,
   renderStatusLine,
@@ -363,7 +364,7 @@ export class MessageSender {
     const actionLogEnabled = verbosityFlags.useActionLog && (verbosityFlags.showToolResults || verbosityFlags.showDiffs);
 
 
-    const initialText = `${getSpinnerFrame(0)} ${TOOL_ICONS.thinking} Processing...`;
+    const initialText = `${getSpinnerFrame(0)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...`;
     const message = await ctx.reply(initialText, { parse_mode: undefined });
 
     // Start continuous typing indicator
@@ -897,7 +898,7 @@ export class MessageSender {
 
     // If nothing to show, show thinking indicator
     if (parts.length === 0) {
-      parts.push(`${getSpinnerFrame(state.spinnerIndex)} ${TOOL_ICONS.thinking} Thinking...`);
+      parts.push(`${getSpinnerFrame(state.spinnerIndex)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...`);
     }
 
     // Append compact footer when SDK background tasks are running.
