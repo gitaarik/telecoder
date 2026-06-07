@@ -82,6 +82,9 @@ interface StreamState {
   operationStartTime: number;
   rateLimitedUntil: number;
   lastRateLimitDurationMs: number;
+  // Claude Code's live spinner tip (PTY mode), mirrored under the status line.
+  // Null when no tip is currently on screen.
+  tip: string | null;
   // TodoWrite live-checklist rendering: id of the per-turn message we
   // edit on every TodoWrite call. Reset to null at the start of each turn
   // so the next TodoWrite posts a fresh checklist below the prior one.
@@ -388,6 +391,7 @@ export class MessageSender {
       operationStartTime: now,
       rateLimitedUntil: 0,
       lastRateLimitDurationMs: 0,
+      tip: null,
       todoMessageId: null,
       todoLastRendered: '',
       actionLogEnabled,
@@ -901,6 +905,12 @@ export class MessageSender {
       parts.push(`${getSpinnerFrame(state.spinnerIndex)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...`);
     }
 
+    // Mirror Claude Code's live spinner tip under the status line, as the TUI
+    // shows it. Scraped from the PTY render; null when no tip is on screen.
+    if (state.tip) {
+      parts.push(`  ⎿ 💡 ${state.tip}`);
+    }
+
     // Append compact footer when SDK background tasks are running.
     const backgroundedTasks = taskTracker.getBackgroundedTasks(state.sessionKey);
     const footer = renderBackgroundFooter(backgroundedTasks);
@@ -952,6 +962,24 @@ export class MessageSender {
     if (!state || !state.messageId) return;
 
     state.content = content;
+  }
+
+  /**
+   * Mirror Claude Code's live spinner tip (PTY mode) under the status line.
+   * Pass null to clear it. Attempts an immediate flush so the tip appears
+   * promptly; the flush respects the normal edit throttle, and the periodic
+   * spinner refresh picks it up otherwise.
+   */
+  updateTip(ctx: Context, tip: string | null): void {
+    const keyInfo = getSessionKeyFromCtx(ctx);
+    if (!keyInfo) return;
+
+    const state = this.streamStates.get(keyInfo.sessionKey);
+    if (!state || !state.messageId || !state.terminalMode) return;
+    if (state.tip === tip) return;
+
+    state.tip = tip;
+    this.flushTerminalUpdate(ctx, state).catch(() => {});
   }
 
   async finishStreaming(

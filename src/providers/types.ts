@@ -126,6 +126,13 @@ export interface EditDiffEvent {
 
 export interface AgentOptions {
   onProgress?: (text: string) => void;
+  /**
+   * Called when Claude Code's live spinner tip changes (PTY mode only). The
+   * tip text is scraped from the rendered TUI and mirrored under the Telegram
+   * status indicator; null clears it when no tip is on screen. SDK-backed
+   * providers don't render a TUI, so they never invoke this.
+   */
+  onTip?: (tip: string | null) => void;
   onToolStart?: (toolName: string, input?: Record<string, unknown>) => void;
   onToolEnd?: () => void;
   /** Lifecycle events for SDK background tasks (task_started/progress/updated/notification) */

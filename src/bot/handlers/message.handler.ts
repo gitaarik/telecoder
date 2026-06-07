@@ -608,6 +608,9 @@ async function handleAgentReply(
             onProgress: (progressText) => {
               messageSender.updateStream(ctx, progressText);
             },
+            onTip: (tip) => {
+              messageSender.updateTip(ctx, tip);
+            },
             onToolResult: makeToolResultHandler(ctx),
             onEditDiff: makeEditDiffHandler(ctx),
             abortController,
@@ -617,6 +620,9 @@ async function handleAgentReply(
           response = await sendToAgent(sessionKey, trimmedInput, {
             onProgress: (progressText) => {
               messageSender.updateStream(ctx, progressText);
+            },
+            onTip: (tip) => {
+              messageSender.updateTip(ctx, tip);
             },
             onToolStart: (toolName, input) => {
               messageSender.updateToolOperation(sessionKey, toolName, input, ctx);
@@ -868,6 +874,9 @@ async function handleStreamingResponse(
     const response = await sendToAgent(sessionKey, message, {
       onProgress: (progressText) => {
         messageSender.updateStream(ctx, progressText);
+      },
+      onTip: (tip) => {
+        messageSender.updateTip(ctx, tip);
       },
       onToolStart: (toolName, input) => {
         messageSender.updateToolOperation(sessionKey, toolName, input, ctx);

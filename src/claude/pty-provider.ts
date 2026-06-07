@@ -23,6 +23,7 @@ import { onAsyncToolArmed, markTurnStart, markTurnEnd, teardown as teardownMonit
 import { relayUpdateBanner, scrapeUpdateBanner } from './update-banner-relay.js';
 import { evaluateToolCall, isPermissionGateEnabled, DENY_MARKER_START, DENY_MARKER_END } from './permission-gate.js';
 import { scrapePromptSuggestion } from './prompt-suggestion-scraper.js';
+import { scrapeTip } from './tip-scraper.js';
 import { isSuggestionsEnabled } from '../telegram/suggestions-settings.js';
 import type { Context } from 'grammy';
 import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions, type EditDiffEvent, type ToolResultEvent, type ImageAttachment } from '../providers/types.js';
@@ -111,6 +112,10 @@ interface PtySession {
   idleTimer: NodeJS.Timeout | null;
   hardTimer: NodeJS.Timeout | null;
   onProgress?: (progress: string) => void;
+  /** Forwards Claude Code's live spinner tip to the Telegram status line. */
+  onTip?: (tip: string | null) => void;
+  /** Last tip value pushed via onTip; gates redundant callbacks. */
+  lastTip: string | null;
   lastScreenText: string;
   /**
    * True once the current turn's Stop hook has fired. While true, the
@@ -601,6 +606,7 @@ export class PtyProvider implements Provider {
       if (existing.cwd === requiredCwd) {
         // Reuse the live pty so claude keeps prior turns in context.
         existing.onProgress = options?.onProgress;
+        existing.onTip = options?.onTip;
         return existing;
       }
       // Workspace changed under us — restart cleanly.
@@ -716,6 +722,8 @@ export class PtyProvider implements Provider {
       idleTimer: null,
       hardTimer: null,
       onProgress: options?.onProgress,
+      onTip: options?.onTip,
+      lastTip: null,
       lastScreenText: '',
       stopReceived: false,
       inflightTools: 0,
@@ -758,6 +766,18 @@ export class PtyProvider implements Provider {
             }
         }
         session.lastScreenText = newScreenText;
+    }
+
+    // Mirror Claude Code's live spinner tip into the Telegram status line.
+    // The tip is drawn in place at the bottom of the TUI, so it doesn't reach
+    // the append-only onProgress diff above — scrape it directly and only fire
+    // when it actually changes (including when it clears to null).
+    if (session.onTip) {
+      const tip = scrapeTip(session.xterm);
+      if (tip !== session.lastTip) {
+        session.lastTip = tip;
+        session.onTip(tip);
+      }
     }
 
     if (session.endOfTurnResolver) {
@@ -850,6 +870,9 @@ export class PtyProvider implements Provider {
       // killed mid-tool).
       session.stopReceived = false;
       session.inflightTools = 0;
+      // Each turn gets a fresh Telegram status message (StreamState.tip starts
+      // null), so clear lastTip to force a re-push of the current tip.
+      session.lastTip = null;
       session.endOfTurnResolver = resolve;
       session.endOfTurnRejector = reject;
       session.idleTimer = setTimeout(() => this._checkEndOfTurn(session), IDLE_MS);
