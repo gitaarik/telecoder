@@ -338,3 +338,46 @@ export function readRecentExchanges(
 
   return exchanges.slice(-n);
 }
+
+/**
+ * True if the session log contains a thinking block whose `signature` looks
+ * fabricated rather than a genuine Anthropic signature. CCR mints placeholder
+ * signatures for DeepSeek's reasoning — a Unix-ms timestamp (e.g.
+ * "1780826242641") or an empty string — because DeepSeek has no signature
+ * concept. Genuine Anthropic signatures are long base64 blobs (60+ chars,
+ * mixed case with +//=). Replaying a fabricated one against the real Anthropic
+ * API trips `400 Invalid signature in thinking block`, so the agent uses this
+ * to fork a poisoned session instead of resuming it.
+ *
+ * Heuristic and cheap (a single regex sweep). Used only as a last-resort guard
+ * for sessions with no recorded owner provider (e.g. created before ownership
+ * tracking existed, or after a restart dropped the in-memory owner).
+ */
+/**
+ * Classify a thinking-block `signature` value as fabricated (not from the real
+ * Anthropic API). CCR uses an empty string or a Unix-ms timestamp as a
+ * placeholder for DeepSeek's reasoning; genuine Anthropic signatures are long
+ * base64 blobs containing non-digit characters.
+ */
+export function isForeignThinkingSignature(sig: string): boolean {
+  return sig.length === 0 || /^\d+$/.test(sig);
+}
+
+export function hasForeignThinkingSignatures(workingDirectory: string, sessionId: string): boolean {
+  const filePath = sessionJsonlPath(workingDirectory, sessionId);
+  if (!fs.existsSync(filePath)) return false;
+
+  let raw: string;
+  try {
+    raw = fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    return false;
+  }
+
+  const sigRe = /"signature"\s*:\s*"([^"]*)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = sigRe.exec(raw)) !== null) {
+    if (isForeignThinkingSignature(m[1])) return true;
+  }
+  return false;
+}

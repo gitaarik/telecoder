@@ -34,6 +34,7 @@ import {
   type AgentTimer,
 } from '../utils/agent-timer.js';
 import { userPreferences } from '../providers/user-preferences.js';
+import { hasForeignThinkingSignatures } from './session-jsonl.js';
 import { BoundedMap } from '../utils/bounded-map.js';
 import { parseSessionKey } from '../utils/session-key.js';
 import { resolveBundledClaudeBin } from '../utils/resolve-claude-bin.js';
@@ -51,6 +52,17 @@ const conversationHistory = new BoundedMap<string, ConversationMessage[]>(1000);
 
 // Track Claude Code session IDs per session for conversation continuity
 const chatSessionIds = new BoundedMap<string, string>(1000);
+
+// Plain-text context to prepend to the next turn's prompt, set when a provider
+// switch starts a fresh session (the old session can't be resumed on a
+// different backend). Consumed and cleared on the next send so the new backend
+// keeps continuity of context without inheriting foreign-signed thinking blocks.
+const pendingCarryOver = new BoundedMap<string, string>(1000);
+
+/** Queue a one-shot context preamble for the next turn of `sessionKey`. */
+export function setPendingCarryOver(sessionKey: string, preamble: string): void {
+  pendingCarryOver.set(sessionKey, preamble);
+}
 
 // Track current model per session (default: opus)
 // chatModels is intentionally unbounded — it's backed by persistent preferences
@@ -389,7 +401,7 @@ export async function sendToAgent(
   message: string,
   options: AgentOptions = {}
 ): Promise<AgentResponse> {
-  const { onProgress, onToolStart, onToolEnd, onTaskEvent, onSubTurnResponse, onToolResult, onEditDiff, abortController, command, model, images, executableOverride } = options;
+  const { onProgress, onToolStart, onToolEnd, onTaskEvent, onSubTurnResponse, onToolResult, onEditDiff, abortController, command, model, images, executableOverride, providerName } = options;
 
   async function emitTaskEvent(event: TaskEvent): Promise<void> {
     try {
@@ -469,6 +481,14 @@ export async function sendToAgent(
     prompt = `Explore the codebase and answer: ${message}`;
   }
 
+  // Prepend any one-shot carry-over context queued by a provider switch. This
+  // is plain text (no thinking blocks), so it's safe to replay on any backend.
+  const carryOver = pendingCarryOver.get(sessionKey);
+  if (carryOver) {
+    pendingCarryOver.delete(sessionKey);
+    prompt = `${carryOver}\n\n${prompt}`;
+  }
+
   // Add user message to history
   history.push({
     role: 'user',
@@ -521,7 +541,36 @@ export async function sendToAgent(
   try {
     const controller = abortController || new AbortController();
 
-    const existingSessionId = chatSessionIds.get(sessionKey) || session.claudeSessionId;
+    let existingSessionId = chatSessionIds.get(sessionKey) || session.claudeSessionId;
+
+    // Cross-backend resume guard. A Claude session created by one provider
+    // can't be safely resumed by another: DeepSeek-via-CCR mints placeholder
+    // thinking-block signatures that the real Anthropic API rejects with
+    // `400 Invalid signature in thinking block`. Switch paths normally fork
+    // the session for us, but this is the last-resort net for paths that
+    // didn't (legacy sessions, post-restart in-memory loss). When a mismatch
+    // is detected we abandon the old session id and start fresh instead.
+    if (existingSessionId && providerName) {
+      const owner = session.ownerProvider;
+      const ownerMismatch = owner !== undefined && owner !== providerName;
+      // No recorded owner (legacy / restarted): fall back to a content scan,
+      // but only when resuming on real Anthropic — CCR/DeepSeek ignore sigs.
+      const poisonedForAnthropic =
+        owner === undefined &&
+        providerName === 'claude' &&
+        hasForeignThinkingSignatures(session.workingDirectory, existingSessionId);
+
+      if (ownerMismatch || poisonedForAnthropic) {
+        logAt(
+          'basic',
+          `[Claude] Refusing cross-backend resume of ${existingSessionId} ` +
+            `(owner=${owner ?? 'unknown'}, now=${providerName}${poisonedForAnthropic ? ', foreign thinking signatures' : ''}); starting fresh session.`,
+        );
+        chatSessionIds.delete(sessionKey);
+        sessionManager.startNewConversation(sessionKey);
+        existingSessionId = undefined;
+      }
+    }
 
     // Log session resume if applicable
     if (existingSessionId) {
@@ -947,7 +996,7 @@ export async function sendToAgent(
           };
           // Store session ID early so it's available for recovery if the query hangs
           chatSessionIds.set(sessionKey, sysMsg.session_id);
-          sessionManager.setClaudeSessionId(sessionKey, sysMsg.session_id);
+          sessionManager.setClaudeSessionId(sessionKey, sysMsg.session_id, providerName);
           logAt('basic', `[Claude] SESSION INIT: model=${sysMsg.model}, session=${sysMsg.session_id}`);
 
           // Detect SDK-driven sub-turns. The first init in a query is the
@@ -1128,7 +1177,7 @@ export async function sendToAgent(
           // Only store session_id on successful results (not on error_during_execution)
           if ('session_id' in responseMessage && responseMessage.session_id) {
             chatSessionIds.set(sessionKey, responseMessage.session_id);
-            sessionManager.setClaudeSessionId(sessionKey, responseMessage.session_id);
+            sessionManager.setClaudeSessionId(sessionKey, responseMessage.session_id, providerName);
             logAt('basic', `[Claude] Stored session ${responseMessage.session_id} for session ${sessionKey}`);
           }
 
@@ -1312,6 +1361,7 @@ IMPORTANT: When you have fully completed this task, respond with the word "DONE"
         model: options.model,
         telegramCtx: options.telegramCtx,
         executableOverride: options.executableOverride,
+        providerName: options.providerName,
       });
 
       combinedText += response.text;

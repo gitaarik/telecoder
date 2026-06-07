@@ -163,6 +163,14 @@ export interface AgentOptions {
    * ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN before exec'ing real claude.
    */
   executableOverride?: string;
+  /**
+   * Name of the provider issuing this turn. Set by the provider router so the
+   * agent can (a) record which backend owns the resumed Claude session and
+   * (b) refuse to resume a session created by a different backend — replaying
+   * DeepSeek-via-CCR thinking blocks against the real Anthropic API trips a
+   * `400 Invalid signature in thinking block`.
+   */
+  providerName?: ProviderName;
 }
 
 export interface LoopOptions extends AgentOptions {

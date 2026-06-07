@@ -8,6 +8,11 @@ import { atomicWriteFileSync } from '../utils/atomic-write.js';
 const sessionHistoryEntrySchema = z.object({
   conversationId: z.string(),
   claudeSessionId: z.string().optional(),
+  // Which provider backend (claude / ccr / opencode) created this Claude
+  // session. Used to refuse cross-backend resumes — a session whose thinking
+  // blocks were minted by DeepSeek-via-CCR can't be replayed against the real
+  // Anthropic API. Optional for backward compatibility with pre-existing files.
+  ownerProvider: z.string().optional(),
   projectPath: z.string(),
   projectName: z.string(),
   lastMessagePreview: z.string(),
@@ -115,7 +120,8 @@ class SessionHistory {
     conversationId: string,
     projectPath: string,
     lastMessagePreview: string = '',
-    claudeSessionId?: string
+    claudeSessionId?: string,
+    ownerProvider?: string
   ): void {
     if (!this.data.sessions[sessionKey]) {
       this.data.sessions[sessionKey] = [];
@@ -133,6 +139,7 @@ class SessionHistory {
     const entry: SessionHistoryEntry = {
       conversationId,
       claudeSessionId: claudeSessionId ?? existingEntry?.claudeSessionId,
+      ownerProvider: ownerProvider ?? existingEntry?.ownerProvider,
       projectPath,
       projectName,
       lastMessagePreview: lastMessagePreview.substring(0, MAX_PREVIEW_CHARS),
@@ -233,13 +240,19 @@ class SessionHistory {
     this.save();
   }
 
-  updateClaudeSessionId(sessionKey: string, conversationId: string, claudeSessionId: string): void {
+  updateClaudeSessionId(
+    sessionKey: string,
+    conversationId: string,
+    claudeSessionId: string,
+    ownerProvider?: string,
+  ): void {
     const history = this.data.sessions[sessionKey];
     if (!history) return;
 
     const entry = history.find((e) => e.conversationId === conversationId);
     if (entry) {
       entry.claudeSessionId = claudeSessionId;
+      if (ownerProvider) entry.ownerProvider = ownerProvider;
       entry.lastActivity = new Date().toISOString();
       this.save();
     }

@@ -31,6 +31,9 @@ function resolveWorkingDirectory(storedPath: string): string {
 export interface Session {
   conversationId: string;
   claudeSessionId?: string;
+  /** Provider backend that created `claudeSessionId` (claude / ccr / opencode).
+   * Lets the agent refuse to resume a session on a different backend. */
+  ownerProvider?: string;
   workingDirectory: string;
   createdAt: Date;
   lastActivity: Date;
@@ -139,6 +142,7 @@ class SessionManager {
     const session: Session = {
       conversationId: historyEntry.conversationId,
       claudeSessionId: historyEntry.claudeSessionId,
+      ownerProvider: historyEntry.ownerProvider,
       workingDirectory: resolvedPath,
       createdAt: new Date(historyEntry.createdAt),
       lastActivity: new Date(),
@@ -184,12 +188,22 @@ class SessionManager {
     return sessionHistory.getHistory(sessionKey, limit);
   }
 
-  setClaudeSessionId(sessionKey: string, claudeSessionId: string): void {
+  setClaudeSessionId(sessionKey: string, claudeSessionId: string, ownerProvider?: string): void {
     const session = this.sessions.get(sessionKey);
     if (!session) return;
     session.claudeSessionId = claudeSessionId;
+    // Pin ownership the first time a session id is established. Don't overwrite
+    // a known owner on subsequent turns of the same session.
+    if (ownerProvider && !session.ownerProvider) {
+      session.ownerProvider = ownerProvider;
+    }
     session.lastActivity = new Date();
-    sessionHistory.updateClaudeSessionId(sessionKey, session.conversationId, claudeSessionId);
+    sessionHistory.updateClaudeSessionId(
+      sessionKey,
+      session.conversationId,
+      claudeSessionId,
+      session.ownerProvider,
+    );
   }
 
   /**

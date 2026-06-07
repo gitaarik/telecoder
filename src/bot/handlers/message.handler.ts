@@ -1,5 +1,6 @@
 import { Context } from 'grammy';
-import { sendToAgent, sendLoopToAgent, clearConversation, setActiveProvider, getActiveProviderName, type AgentUsage } from '../../providers/provider-router.js';
+import { sendToAgent, sendLoopToAgent, clearConversation, getActiveProviderName, type AgentUsage } from '../../providers/provider-router.js';
+import { switchProvider } from '../../providers/provider-switch.js';
 import type { ThrottleInfo, ToolResultEvent, EditDiffEvent } from '../../providers/types.js';
 import { sessionManager, type Session } from '../../claude/session-manager.js';
 import { config } from '../../config.js';
@@ -794,10 +795,11 @@ export async function handleCcrThrottleCallback(ctx: Context): Promise<void> {
     }
     const pending = lastThrottledPrompt.get(sessionKey);
     if (getActiveProviderName(chatId) !== 'ccr') {
-      await setActiveProvider(chatId, 'ccr');
-      // Drop the Anthropic-side session_id so the retry doesn't try to
-      // resume a session the new backend doesn't know about.
-      clearConversation(sessionKey);
+      // Fork onto a fresh CCR session, carrying over a summary so the retry
+      // keeps context. A direct resume would replay the Anthropic session's
+      // thinking blocks; CCR tolerates that, but forking keeps the two
+      // backends' sessions cleanly separated for the eventual switch back.
+      await switchProvider(sessionKey, chatId, 'ccr');
     }
     lastThrottledPrompt.delete(sessionKey);
 

@@ -103,7 +103,8 @@ export async function sendToAgent(
   options?: AgentOptions
 ): Promise<AgentResponse> {
   const chatId = parseSessionKey(sessionKey).chatId;
-  return getProvider(chatId).sendToAgent(sessionKey, message, options);
+  const providerName = getActiveProviderName(chatId);
+  return getProvider(chatId).sendToAgent(sessionKey, message, { ...options, providerName });
 }
 
 export async function sendLoopToAgent(
@@ -112,7 +113,8 @@ export async function sendLoopToAgent(
   options?: LoopOptions
 ): Promise<AgentResponse> {
   const chatId = parseSessionKey(sessionKey).chatId;
-  return getProvider(chatId).sendLoopToAgent(sessionKey, message, options);
+  const providerName = getActiveProviderName(chatId);
+  return getProvider(chatId).sendLoopToAgent(sessionKey, message, { ...options, providerName });
 }
 
 export function clearConversation(sessionKey: string): void {

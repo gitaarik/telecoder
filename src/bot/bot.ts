@@ -35,6 +35,7 @@ import {
   handleModelCallback,
   handleProviderCommand,
   handleProviderCallback,
+  handleProviderSwitchCallback,
   handleCcrCommand,
   handlePlan,
   handleExplore,
@@ -372,6 +373,8 @@ export async function createBot(): Promise<Bot> {
 
     if (data.startsWith('resume:')) {
       await handleResumeCallback(ctx);
+    } else if (data.startsWith('provider_switch:')) {
+      await handleProviderSwitchCallback(ctx);
     } else if (data.startsWith('provider:')) {
       await handleProviderCallback(ctx);
     } else if (data.startsWith('model:')) {

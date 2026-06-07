@@ -23,6 +23,7 @@ import {
   type EffortLevel,
   type AgentUsage,
 } from '../../providers/provider-router.js';
+import { switchProvider, switchRequiresConfirm } from '../../providers/provider-switch.js';
 import { config, getReloadMarkerPath } from '../../config.js';
 import { messageSender } from '../../telegram/message-sender.js';
 import { getUptimeFormatted } from '../middleware/stale-filter.js';
@@ -2185,14 +2186,27 @@ export async function handleCcrCommand(ctx: Context): Promise<void> {
 
   const active = getActiveProviderName(chatId);
   const next: ProviderName = active === 'ccr' ? 'claude' : 'ccr';
-  await setActiveProvider(chatId, next);
+  const sessionKey = getSessionKeyFromCtx(ctx)?.sessionKey;
+
+  // If a live session owned by the other backend would be abandoned, confirm
+  // first (switching starts a fresh session — sessions can't cross backends).
+  if (sessionKey && switchRequiresConfirm(sessionKey, next)) {
+    await ctx.reply(buildSwitchConfirmText(chatId, next), {
+      parse_mode: 'MarkdownV2',
+      reply_markup: { inline_keyboard: buildSwitchConfirmKeyboard(next) },
+    });
+    return;
+  }
+
+  // switchProvider forks the session (clears the stale session_id and carries
+  // over a summary) so the next message starts clean on the new backend.
+  if (sessionKey) {
+    await switchProvider(sessionKey, chatId, next);
+  } else {
+    await setActiveProvider(chatId, next);
+  }
   // Clear model — Claude and CCR share labels but CCR's mapping is different.
   clearModel(chatId);
-
-  // Drop the Anthropic-side session_id so the next message starts fresh on
-  // the new backend (resume of a stale session_id errors on CCR's target).
-  const sessionKeyInfo = getSessionKeyFromCtx(ctx);
-  if (sessionKeyInfo) clearConversation(sessionKeyInfo.sessionKey);
 
   const label = next === 'ccr' ? 'CCR \\(routed\\)' : 'Claude \\(Max\\)';
   await replyMd(ctx, `🔌 Switched provider to *${label}*\\.\n\n_Sticky — use /ccr again or /provider to switch back\\._`);
@@ -2213,12 +2227,93 @@ export async function handleProviderCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  await setActiveProvider(chatId, provider);
+  if (provider === getActiveProviderName(chatId)) {
+    await ctx.answerCallbackQuery({ text: `Already using ${provider}` });
+    return;
+  }
+
+  const sessionKey = getSessionKeyFromCtx(ctx)?.sessionKey;
+
+  // If a live session owned by a different backend would be abandoned, confirm
+  // first — switching starts a fresh session (sessions can't cross backends).
+  if (sessionKey && switchRequiresConfirm(sessionKey, provider)) {
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText(buildSwitchConfirmText(chatId, provider), {
+      parse_mode: 'MarkdownV2',
+      reply_markup: { inline_keyboard: buildSwitchConfirmKeyboard(provider) },
+    });
+    return;
+  }
+
+  // No live session (or already owned by target): switch transparently.
+  if (sessionKey) {
+    await switchProvider(sessionKey, chatId, provider);
+  } else {
+    await setActiveProvider(chatId, provider);
+  }
   clearModel(chatId); // Models differ between providers
 
   await ctx.answerCallbackQuery({ text: `Switched to ${provider}!` });
   await ctx.editMessageText(
     `✅ Provider set to *${esc(provider)}*\n\n_Model selection cleared \\— use /model to pick a model\\._`,
+    { parse_mode: 'MarkdownV2' }
+  );
+}
+
+/** MarkdownV2 confirmation body shown before a destructive provider switch. */
+function buildSwitchConfirmText(chatId: number, target: ProviderName): string {
+  const current = getActiveProviderName(chatId);
+  return (
+    `🔀 *Switch to ${esc(target)}?*\n\n` +
+    `Your current conversation runs on *${esc(current)}*\\. Sessions can't move ` +
+    `between model backends, so I'll start a *fresh session* on ${esc(target)} and ` +
+    `carry over a short summary of this conversation for continuity\\.\n\n` +
+    `Continue?`
+  );
+}
+
+function buildSwitchConfirmKeyboard(target: ProviderName) {
+  return [
+    [
+      { text: '✓ Switch & carry over', callback_data: `provider_switch:${target}` },
+      { text: '✗ Cancel', callback_data: 'provider_switch:cancel' },
+    ],
+  ];
+}
+
+/** Handles the confirm/cancel buttons from a provider-switch prompt. */
+export async function handleProviderSwitchCallback(ctx: Context): Promise<void> {
+  const chatId = ctx.chat?.id;
+  if (!chatId) return;
+
+  const data = ctx.callbackQuery?.data;
+  if (!data || !data.startsWith('provider_switch:')) return;
+  const target = data.replace('provider_switch:', '');
+
+  if (target === 'cancel') {
+    await ctx.answerCallbackQuery({ text: 'Cancelled' });
+    await ctx.editMessageReplyMarkup({ reply_markup: undefined });
+    return;
+  }
+
+  const providers = getAvailableProviders();
+  if (!providers.includes(target as ProviderName)) {
+    await ctx.answerCallbackQuery({ text: 'Invalid provider' });
+    return;
+  }
+  const provider = target as ProviderName;
+
+  const sessionKey = getSessionKeyFromCtx(ctx)?.sessionKey;
+  if (sessionKey) {
+    await switchProvider(sessionKey, chatId, provider);
+  } else {
+    await setActiveProvider(chatId, provider);
+  }
+  clearModel(chatId);
+
+  await ctx.answerCallbackQuery({ text: `Switched to ${provider}!` });
+  await ctx.editMessageText(
+    `✅ Provider set to *${esc(provider)}*\\. Started a fresh session with a summary of the previous conversation carried over\\.\n\n_Model selection cleared \\— use /model to pick a model\\._`,
     { parse_mode: 'MarkdownV2' }
   );
 }
