@@ -495,6 +495,25 @@ async function runClaudeContext(sessionId: string, cwd: string): Promise<string>
   });
 }
 
+async function getClaudeVersion(): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(
+      config.CLAUDE_EXECUTABLE_PATH,
+      ['--version'],
+      { timeout: 10_000, maxBuffer: 64 * 1024, env: process.env },
+      (error, stdout, stderr) => {
+        if (error) {
+          resolve(null);
+          return;
+        }
+        const line = (stdout || stderr || '').trim().split('\n')[0]?.trim() ?? '';
+        const match = line.match(/\d+\.\d+\.\d+\S*/);
+        resolve(match ? match[0] : line || null);
+      }
+    );
+  });
+}
+
 async function runClaudeUpdate(): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
@@ -1722,6 +1741,41 @@ export async function handleContext(ctx: Context): Promise<void> {
 }
 
 export async function handleUpdate(ctx: Context): Promise<void> {
+  const version = await getClaudeVersion();
+  const prompt = version
+    ? `⬆️ Update Claude Code? (currently ${version})`
+    : '⬆️ Update Claude Code?';
+  await ctx.reply(prompt, {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: '✅ Update', callback_data: 'update:confirm' },
+          { text: '❌ Cancel', callback_data: 'update:cancel' },
+        ],
+      ],
+    },
+  });
+}
+
+export async function handleUpdateCallback(ctx: Context): Promise<void> {
+  const data = ctx.callbackQuery?.data;
+  if (!data) return;
+
+  await ctx.answerCallbackQuery();
+
+  // Remove the menu keyboard so it can't be tapped twice
+  try {
+    await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } });
+  } catch {
+    // ignore — message may have been edited or deleted
+  }
+
+  if (data === 'update:cancel') {
+    await ctx.reply('❌ Update cancelled.');
+    return;
+  }
+  if (data !== 'update:confirm') return;
+
   const chatId = ctx.chat?.id;
   const ack = await ctx.reply('⬆️ Updating Claude Code…', { parse_mode: undefined });
 

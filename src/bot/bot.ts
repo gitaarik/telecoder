@@ -29,6 +29,7 @@ import {
   handleStartupCallback,
   handleContext,
   handleUpdate,
+  handleUpdateCallback,
   handlePing,
   handleCancel,
   handleCommands,
@@ -411,6 +412,8 @@ export async function createBot(): Promise<Bot> {
       await handleRestartCallback(ctx);
     } else if (data.startsWith('startup:')) {
       await handleStartupCallback(ctx);
+    } else if (data.startsWith('update:')) {
+      await handleUpdateCallback(ctx);
     } else if (data.startsWith('effort:')) {
       await handleEffortCallback(ctx);
     } else if (data.startsWith('verbosity:')) {
