@@ -495,6 +495,29 @@ async function runClaudeContext(sessionId: string, cwd: string): Promise<string>
   });
 }
 
+async function runClaudeUpdate(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      config.CLAUDE_EXECUTABLE_PATH,
+      ['update'],
+      {
+        // `claude update` may download and install a new binary — give it room.
+        timeout: 180_000,
+        maxBuffer: 2 * 1024 * 1024,
+        env: process.env,
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          const message = (stderr || error.message).trim();
+          reject(new Error(message || 'Failed to run claude update'));
+          return;
+        }
+        resolve((stdout || stderr || '').trim());
+      }
+    );
+  });
+}
+
 function buildTTSMenu(sessionKey: string, mode: TTSMenuMode) {
   const settings = getTTSSettings(sessionKey);
   const hasKey = config.TTS_PROVIDER === 'groq' ? !!config.GROQ_API_KEY : !!config.OPENAI_API_KEY;
@@ -1694,6 +1717,33 @@ export async function handleContext(ctx: Context): Promise<void> {
       await ctx.api.deleteMessage(chatId, ack.message_id);
     } catch {
       // ignore cleanup errors
+    }
+  }
+}
+
+export async function handleUpdate(ctx: Context): Promise<void> {
+  const chatId = ctx.chat?.id;
+  const ack = await ctx.reply('⬆️ Updating Claude Code…', { parse_mode: undefined });
+
+  try {
+    const raw = await runClaudeUpdate();
+    const body = raw || 'Update finished — no output.';
+    await messageSender.sendMessage(ctx, `## ⬆️ Claude Code Update\n\n\`\`\`\n${body}\n\`\`\``);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    const hint = /not found|enoent/i.test(message)
+      ? '\n\nThe `claude` executable could not be found on PATH. Check `CLAUDE_EXECUTABLE_PATH`.'
+      : /npm|installed via/i.test(message)
+        ? '\n\nThis install may be managed by npm — update it there instead.'
+        : '';
+    await messageSender.sendMessage(ctx, `❌ Update failed:\n\n\`\`\`\n${message}\n\`\`\`${hint}`);
+  } finally {
+    if (chatId !== undefined) {
+      try {
+        await ctx.api.deleteMessage(chatId, ack.message_id);
+      } catch {
+        // ignore cleanup errors
+      }
     }
   }
 }

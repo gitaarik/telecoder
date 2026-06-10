@@ -28,6 +28,7 @@ import {
   handleRestartCallback,
   handleStartupCallback,
   handleContext,
+  handleUpdate,
   handlePing,
   handleCancel,
   handleCommands,
@@ -187,6 +188,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'restartbot', description: '🔁 Restart the bot' },
     { command: 'rebuildbot', description: '🔄 Rebuild and restart with session restore' },
     { command: 'context', description: '🧠 Show Claude context usage' },
+    { command: 'update', description: '⬆️ Update the Claude Code CLI' },
     { command: 'plan', description: '📋 Start planning mode' },
     { command: 'explore', description: '🔍 Explore codebase' },
     { command: 'loop', description: '🔄 Run in loop mode' },
@@ -307,6 +309,7 @@ export async function createBot(): Promise<Bot> {
   bot.command('tts', handleTTS);
   bot.command('botstatus', handleBotStatus);
   bot.command('context', handleContext);
+  bot.command('update', handleUpdate);
 
   bot.command('commands', handleCommands);
   bot.command('model', handleModelCommand);
