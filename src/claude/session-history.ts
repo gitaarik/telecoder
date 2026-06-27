@@ -20,6 +20,15 @@ const sessionHistoryEntrySchema = z.object({
   topic: z.string().optional(),
   createdAt: z.string(),
   lastActivity: z.string(),
+  // Startup continue/fresh prompt bookkeeping. `startupPromptedAt` records the
+  // `lastActivity` value we last posted (or refreshed) a prompt for, so a bot
+  // restart inside the same idle window doesn't stack a second prompt. It only
+  // re-arms when a genuine new turn moves `lastActivity`. `startupPromptMessageId`
+  // is the Telegram id of that still-standing prompt — kept so we can refresh
+  // its "last active Xh ago" text in place across restarts, and cleared once the
+  // user answers so we don't resurrect the buttons on a message they acted on.
+  startupPromptedAt: z.string().optional(),
+  startupPromptMessageId: z.number().optional(),
 });
 
 // Zod schema for the full session history file
@@ -268,6 +277,49 @@ class SessionHistory {
       entry.lastActivity = new Date().toISOString();
       this.save();
     }
+  }
+
+  /**
+   * Record that the startup continue/fresh prompt was posted for the active
+   * entry's current `lastActivity`. Does NOT touch `lastActivity` itself, so the
+   * marker stays valid until a real turn moves it — at which point the prompt
+   * naturally re-arms for the next idle period.
+   */
+  markStartupPrompted(sessionKey: string, messageId: number): void {
+    const entry = this.data.sessions[sessionKey]?.[0];
+    if (!entry) return;
+    entry.startupPromptedAt = entry.lastActivity;
+    entry.startupPromptMessageId = messageId;
+    this.save();
+  }
+
+  /**
+   * Treat the active session as freshly engaged: bump `lastActivity` to now and
+   * drop any standing startup-prompt marker. Used when the user explicitly
+   * resumes via the startup prompt, so the session falls back into the silent
+   * restore window and stays warm across restarts.
+   */
+  touchActivity(sessionKey: string): void {
+    const entry = this.data.sessions[sessionKey]?.[0];
+    if (!entry) return;
+    entry.lastActivity = new Date().toISOString();
+    entry.startupPromptedAt = undefined;
+    entry.startupPromptMessageId = undefined;
+    this.save();
+  }
+
+  /**
+   * The user answered (or dismissed) the startup prompt. Keep the "prompted for
+   * this activity" marker so restarts stay quiet, but drop the message id so we
+   * don't try to refresh — and thereby re-arm the buttons on — a message they've
+   * already acted on.
+   */
+  resolveStartupPrompt(sessionKey: string): void {
+    const entry = this.data.sessions[sessionKey]?.[0];
+    if (!entry) return;
+    entry.startupPromptedAt = entry.lastActivity;
+    entry.startupPromptMessageId = undefined;
+    this.save();
   }
 
   clearHistory(sessionKey: string): void {

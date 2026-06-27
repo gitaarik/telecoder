@@ -1999,14 +1999,22 @@ export async function handleStartupCallback(ctx: Context): Promise<void> {
     // ignore — message may have been edited or deleted
   }
 
+  const keyInfo = getSessionKeyFromCtx(ctx);
+
   if (data === 'startup:continue') {
+    // Continuing counts as engaging with the session: refresh its activity so a
+    // subsequent restart silently restores it (and stays quiet) instead of
+    // re-prompting about an hours-stale session.
+    if (keyInfo) sessionHistory.touchActivity(keyInfo.sessionKey);
     await handleContinue(ctx);
     return;
   }
 
   if (data === 'startup:fresh') {
-    // No session is in memory at this point — the next user message will
-    // naturally start a new conversation. Just acknowledge the choice.
+    // Mark the prompt resolved so a later restart stays quiet rather than
+    // re-asking about a session the user has chosen to abandon. No session is in
+    // memory — the next user message naturally starts a new conversation.
+    if (keyInfo) sessionHistory.resolveStartupPrompt(keyInfo.sessionKey);
     await replyMd(ctx, '🆕 Starting fresh\\. Send a message to begin a new session\\.');
     return;
   }
@@ -5184,8 +5192,8 @@ export async function handleShellsCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  if (data.startsWith('bg:kill:')) {
-    const pid = Number.parseInt(data.substring('bg:kill:'.length), 10);
+  if (data.startsWith('shells:kill:')) {
+    const pid = Number.parseInt(data.substring('shells:kill:'.length), 10);
     if (claudePid === undefined || !Number.isFinite(pid)) {
       await ctx.answerCallbackQuery({ text: 'Unknown target.' }).catch(() => {});
       return;
