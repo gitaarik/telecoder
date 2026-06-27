@@ -1878,7 +1878,7 @@
           <div class="feature-card" data-category="core">
             <div class="feature-icon">🔍</div>
             <h3>Background Process Reaper</h3>
-            <p><code>/bg</code> lists the actual OS-level shells the PTY claude session has spawned — every <code>Bash(run_in_background=true)</code> poller and Monitor loop, with cmdline and age. One tap SIGTERMs the chosen process plus its descendants, rescuing sessions whose watcher will never fire.</p>
+            <p><code>/shells</code> lists the actual OS-level shells the PTY claude session has spawned — every <code>Bash(run_in_background=true)</code> poller and Monitor loop, with cmdline and age. One tap SIGTERMs the chosen process plus its descendants, rescuing sessions whose watcher will never fire.</p>
           </div>
         </div>
       </div>
@@ -2046,7 +2046,7 @@
               <span class="command-desc">List active background tasks; tap a number to view details</span>
             </div>
             <div class="command-row">
-              <code class="command-code">/bg</code>
+              <code class="command-code">/shells</code>
               <span class="command-desc">List OS-level background shells spawned by the PTY claude session (e.g. <code>Bash(run_in_background=true)</code> pollers, Monitor loops). Each row shows age, PID, and the cmdline so you can decide before tapping — buttons SIGTERM that process and its descendants. Rescues sessions hung on a watcher whose condition will never fire.</span>
             </div>
             <div class="command-row">

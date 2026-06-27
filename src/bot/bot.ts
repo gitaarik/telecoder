@@ -77,8 +77,8 @@ import {
   handleEffortCallback,
   handleTasks,
   handleTasksCallback,
-  handleBg,
-  handleBgCallback,
+  handleShells,
+  handleShellsCallback,
   handleVerbosity,
   handleVerbosityCallback,
   handleMethodCommand,
@@ -220,7 +220,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'method', description: '🛰️ Switch Claude transport (SDK / PTY)' },
     { command: 'btw', description: '💬 Side question without interrupting' },
     { command: 'tasks', description: '🔄 List active background tasks' },
-    { command: 'bg', description: '🔍 List & kill background shells (PTY mode)' },
+    { command: 'shells', description: '🔍 List & kill background shells (PTY mode)' },
     ...(config.OPENCODE_ENABLED || config.CCR_ENABLED ? [{ command: 'provider', description: '🔌 Switch AI provider' }] : []),
     ...(config.CCR_ENABLED ? [{ command: 'ccr', description: '🔌 Toggle CCR routing (alt providers)' }] : []),
     { command: 'mode', description: '⚙️ Toggle streaming mode' },
@@ -252,7 +252,7 @@ export async function createBot(): Promise<Bot> {
   bot.command('rebuildbot', handleRebuild);
   bot.command('btw', handleBtw); // Side question — must bypass queue to work mid-task
   bot.command('tasks', handleTasks); // Read-only; must bypass queue so it works mid-stream
-  bot.command('bg', handleBg); // Lists/kills OS-level bg processes; must bypass queue to rescue hung sessions
+  bot.command('shells', handleShells); // Lists/kills OS-level bg processes; must bypass queue to rescue hung sessions
   // /sync exists for the "I think a reply went missing" scenario, which by
   // definition includes hung or sluggish turns — gating it on sequentialize
   // would queue it behind the very turn the user wants to inspect.
@@ -267,9 +267,9 @@ export async function createBot(): Promise<Bot> {
   // /tasks inline-keyboard buttons (view/back/refresh) also need to bypass
   // sequentialize so they're responsive while a stream is active.
   bot.callbackQuery(/^tasks:/, handleTasksCallback);
-  // /bg kill buttons must also bypass sequentialize — the whole point is to
+  // /shells kill buttons must also bypass sequentialize — the whole point is to
   // rescue a session whose current turn is hung waiting on a bg shell.
-  bot.callbackQuery(/^bg:/, handleBgCallback);
+  bot.callbackQuery(/^shells:/, handleShellsCallback);
   // claudegram_ask_user button taps MUST bypass sequentialize: the agent
   // query is mid-flight and waiting on this exact tap to complete the tool
   // call. If the callback got queued, it'd deadlock behind the query that's

@@ -4844,7 +4844,7 @@ function renderTasksList(sessionKey: string, tasks: TaskState[]): { text: string
     if (shellCount > 0) {
       const noun = shellCount === 1 ? 'shell' : 'shells';
       lines.push('');
-      lines.push(`_🔍 ${shellCount} background ${noun} still running — see /bg\\._`);
+      lines.push(`_🔍 ${shellCount} background ${noun} still running — see /shells\\._`);
     }
     return {
       text: lines.join('\n'),
@@ -5021,7 +5021,7 @@ export async function handleTasksCallback(ctx: Context): Promise<void> {
   await ctx.answerCallbackQuery().catch(() => {});
 }
 
-// ── /bg ─────────────────────────────────────────────────────────
+// ── /shells ─────────────────────────────────────────────────────
 // List OS-level child processes of the chat's PTY claude session and offer
 // a one-tap SIGTERM. Complements /tasks (which only sees SDK-tracked tasks)
 // and rescues `Bash(run_in_background=true)` shells whose stop condition
@@ -5095,7 +5095,7 @@ function renderBgList(sessionKey: string, claudePid: number | undefined, procs: 
     }
     return {
       text: lines.join('\n'),
-      keyboard: [[{ text: '🔄 Refresh', callback_data: 'bg:refresh' }]],
+      keyboard: [[{ text: '🔄 Refresh', callback_data: 'shells:refresh' }]],
     };
   }
 
@@ -5110,15 +5110,15 @@ function renderBgList(sessionKey: string, claudePid: number | undefined, procs: 
   const keyboard: { text: string; callback_data: string }[][] = [];
   let row: { text: string; callback_data: string }[] = [];
   procs.forEach((p, i) => {
-    row.push({ text: `🛑 #${i + 1}`, callback_data: `bg:kill:${p.pid}` });
+    row.push({ text: `🛑 #${i + 1}`, callback_data: `shells:kill:${p.pid}` });
     if (row.length === 4 || i === procs.length - 1) {
       keyboard.push(row);
       row = [];
     }
   });
   keyboard.push([
-    { text: '🛑 Kill all', callback_data: 'bg:killall' },
-    { text: '🔄 Refresh', callback_data: 'bg:refresh' },
+    { text: '🛑 Kill all', callback_data: 'shells:killall' },
+    { text: '🔄 Refresh', callback_data: 'shells:refresh' },
   ]);
   return { text: lines.join('\n'), keyboard };
 }
@@ -5136,15 +5136,15 @@ async function rerenderBg(ctx: Context, sessionKey: string, claudePid: number | 
   } catch (err) {
     const msg = err instanceof Error ? err.message.toLowerCase() : '';
     if (!msg.includes('message is not modified')) {
-      console.error('[/bg] Failed to refresh list:', err);
+      console.error('[/shells] Failed to refresh list:', err);
     }
   }
 }
 
-export async function handleBg(ctx: Context): Promise<void> {
+export async function handleShells(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) {
-    await ctx.reply('❌ Could not determine chat context for /bg.');
+    await ctx.reply('❌ Could not determine chat context for /shells.');
     return;
   }
   const claudePid = getPtyProvider().getSessionPid(keyInfo.sessionKey);
@@ -5156,7 +5156,7 @@ export async function handleBg(ctx: Context): Promise<void> {
   });
 }
 
-export async function handleBgCallback(ctx: Context): Promise<void> {
+export async function handleShellsCallback(ctx: Context): Promise<void> {
   const data = ctx.callbackQuery?.data;
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!data || !keyInfo) {
@@ -5165,13 +5165,13 @@ export async function handleBgCallback(ctx: Context): Promise<void> {
   }
   const claudePid = getPtyProvider().getSessionPid(keyInfo.sessionKey);
 
-  if (data === 'bg:refresh') {
+  if (data === 'shells:refresh') {
     await ctx.answerCallbackQuery().catch(() => {});
     await rerenderBg(ctx, keyInfo.sessionKey, claudePid);
     return;
   }
 
-  if (data === 'bg:killall') {
+  if (data === 'shells:killall') {
     if (claudePid === undefined) {
       await ctx.answerCallbackQuery({ text: 'No active session.' }).catch(() => {});
       return;
