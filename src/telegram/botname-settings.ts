@@ -329,7 +329,16 @@ export async function rateLimitedSetMyName(
   // No-op if the name we already sent matches — most auto-topic calls re-emit
   // the same topic for follow-up messages, and Telegram counts those toward
   // the rate limit even though the visible name doesn't change.
-  if (state.lastSentName === name) return { status: 'no_change' };
+  if (state.lastSentName === name) {
+    // A queued (different) name from an earlier switch is now superseded — the
+    // currently-desired name already matches what's shown. Cancel the stale
+    // timer so it doesn't fire a wasted setMyName for a name we've moved past
+    // (e.g. switch A→B→A within the soft interval).
+    if (state.pendingTimer) { clearTimeout(state.pendingTimer); state.pendingTimer = null; }
+    state.pendingName = null;
+    state.pendingApiCall = null;
+    return { status: 'no_change' };
+  }
 
   const elapsed = now - state.lastUpdateTime;
 
