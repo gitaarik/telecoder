@@ -137,7 +137,7 @@ async function autoResumeAfterReload(bot: Bot): Promise<boolean> {
   let resumed = 0;
   const skipped: Record<string, number> = { notAllowed: 0, idle: 0, noClaudeSessionId: 0, resumeReturnedUndefined: 0, threw: 0 };
 
-  for (const [sessionKey, entry] of activeSessions) {
+  for (const [sessionKey, newest] of activeSessions) {
     const { chatId, threadId } = parseSessionKey(sessionKey);
 
     // Only resume sessions belonging to this bot instance
@@ -147,7 +147,21 @@ async function autoResumeAfterReload(bot: Bot): Promise<boolean> {
       continue;
     }
 
-    // Only resume sessions with recent activity (within last hour)
+    // Resume the most recent entry that actually carries a claudeSessionId. The
+    // newest entry can be a stub from a conversation that never finished init
+    // (a query interrupted by the rebuild itself, an aborted /clear) — falling
+    // back past it restores the healthy session sitting one slot back instead
+    // of going silent on the whole chat.
+    const entry = sessionHistory.getLastResumableSession(sessionKey);
+    if (!entry) {
+      console.log(`[AutoResume] skip ${sessionKey}: no history entry has a claudeSessionId (newest conversationId=${newest.conversationId}, project=${newest.projectName}) — no completed session to resume`);
+      skipped.noClaudeSessionId++;
+      continue;
+    }
+
+    // Only resume sessions with recent activity (within last hour). Measured
+    // against the resumable entry, not a fresher stub, so we don't revive a
+    // long-stale conversation just because an aborted one touched the chat.
     const lastActivity = new Date(entry.lastActivity).getTime();
     const idleMs = Date.now() - lastActivity;
     if (idleMs > 60 * 60 * 1000) {
@@ -156,17 +170,10 @@ async function autoResumeAfterReload(bot: Bot): Promise<boolean> {
       continue;
     }
 
-    // Only resume sessions that have a Claude session ID
-    if (!entry.claudeSessionId) {
-      console.log(`[AutoResume] skip ${sessionKey}: entry has no claudeSessionId (conversationId=${entry.conversationId}, project=${entry.projectName}) — likely a session that never completed init`);
-      skipped.noClaudeSessionId++;
-      continue;
-    }
-
     try {
-      const session = sessionManager.resumeLastSession(sessionKey);
+      const session = sessionManager.resumeSession(sessionKey, entry.conversationId);
       if (!session) {
-        console.warn(`[AutoResume] skip ${sessionKey}: sessionManager.resumeLastSession returned undefined (history entry exists with claudeSessionId=${entry.claudeSessionId})`);
+        console.warn(`[AutoResume] skip ${sessionKey}: sessionManager.resumeSession returned undefined (history entry exists with claudeSessionId=${entry.claudeSessionId})`);
         skipped.resumeReturnedUndefined++;
         continue;
       }

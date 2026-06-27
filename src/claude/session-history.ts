@@ -178,6 +178,18 @@ class SessionHistory {
     return history?.[0];
   }
 
+  /**
+   * Most recent entry that actually carries a claudeSessionId — i.e. one that
+   * can be resumed against Claude. History is newest-first, so `find` returns
+   * the latest resumable entry. Skips past "stub" entries left by conversations
+   * that never finished init (a query interrupted by a rebuild, an aborted
+   * /clear), which would otherwise mask a healthy session sitting one slot back.
+   */
+  getLastResumableSession(sessionKey: string): SessionHistoryEntry | undefined {
+    const history = this.data.sessions[sessionKey];
+    return history?.find((entry) => !!entry.claudeSessionId);
+  }
+
   getSessionByConversationId(
     sessionKey: string,
     conversationId: string
