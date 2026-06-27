@@ -24,6 +24,14 @@ const projectRoot = path.resolve(__dirname, '..');
 // for too long, the launcher force-terminates and respawns it.
 const HEARTBEAT_CHECK_MS = 30_000;
 const HEARTBEAT_TIMEOUT_MS = 90_000;
+// If the monitor's own interval fires this much later than scheduled, the
+// launcher's event loop was frozen (host stall) — every worker will look
+// silent for that reason, so we skip the round instead of mass-restarting.
+const HEARTBEAT_STALL_SLACK_MS = 30_000;
+// When >1 worker is silent at once it's almost certainly the host, not the
+// bots. Hold off this many consecutive checks before restarting them, so a
+// transient stall doesn't trigger a fleet-wide thundering-herd respawn.
+const HEARTBEAT_MASS_SILENCE_LIMIT = 3;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -322,20 +330,66 @@ for (const inst of instances) {
 // Heartbeat monitor — detect stuck workers and auto-respawn them
 // ---------------------------------------------------------------------------
 
+let lastHeartbeatCheck = Date.now();
+let consecutiveMassSilence = 0;
 setInterval(() => {
   const now = Date.now();
-  for (const inst of instances) {
-    const worker = workers.get(inst.name);
-    if (!worker) continue;
+  const sinceLastCheck = now - lastHeartbeatCheck;
+  lastHeartbeatCheck = now;
 
-    const last = lastHeartbeat.get(inst.name) ?? 0;
-    const silentMs = now - last;
-    if (silentMs > HEARTBEAT_TIMEOUT_MS) {
-      console.error(`[Launcher] ${inst.name} missed heartbeat (${Math.round(silentMs / 1000)}s silent) — force-restarting`);
-      pendingRestarts.add(inst.name);
-      worker.terminate();
-    }
+  // Guard 1 — self-stall: if our own interval fired far later than scheduled,
+  // the launcher's event loop was frozen (host memory/CPU stall). Every
+  // worker's "silence" is an artifact of that freeze, not a hung worker, and
+  // their lastHeartbeat baselines haven't had a fair chance to update. Skip
+  // this round and re-baseline so workers get a grace tick to check back in.
+  if (sinceLastCheck > HEARTBEAT_CHECK_MS + HEARTBEAT_STALL_SLACK_MS) {
+    console.warn(`[Launcher] heartbeat monitor stalled for ${Math.round(sinceLastCheck / 1000)}s (expected ${Math.round(HEARTBEAT_CHECK_MS / 1000)}s) — host was likely frozen; skipping this round to let workers recover`);
+    consecutiveMassSilence = 0;
+    return;
   }
+
+  const silent: string[] = [];
+  for (const inst of instances) {
+    if (!workers.get(inst.name)) continue;
+    const last = lastHeartbeat.get(inst.name) ?? 0;
+    if (now - last > HEARTBEAT_TIMEOUT_MS) silent.push(inst.name);
+  }
+
+  if (silent.length === 0) {
+    consecutiveMassSilence = 0;
+    return;
+  }
+
+  // Guard 2 — mass silence: more than one worker silent in the same tick is
+  // almost always a host-level problem, not independent per-bot hangs.
+  // Restarting them all at once loses every session and dumps respawn load
+  // onto an already-struggling host. Hold off a few rounds first; only if it
+  // persists do we restart, and then staggered to avoid a thundering herd.
+  if (silent.length > 1) {
+    consecutiveMassSilence++;
+    if (consecutiveMassSilence < HEARTBEAT_MASS_SILENCE_LIMIT) {
+      console.error(`[Launcher] ${silent.length} workers silent simultaneously (${silent.join(', ')}) — likely a host-level stall (load/memory); holding off ${consecutiveMassSilence}/${HEARTBEAT_MASS_SILENCE_LIMIT} before restarting`);
+      return;
+    }
+    console.error(`[Launcher] ${silent.length} workers still silent after ${consecutiveMassSilence} checks — restarting them staggered`);
+    let delay = 0;
+    for (const name of silent) {
+      pendingRestarts.add(name);
+      const w = workers.get(name);
+      setTimeout(() => w?.terminate(), delay);
+      delay += 1000;
+    }
+    consecutiveMassSilence = 0;
+    return;
+  }
+
+  // Single worker silent — genuinely stuck, restart just that one.
+  consecutiveMassSilence = 0;
+  const name = silent[0];
+  const last = lastHeartbeat.get(name) ?? 0;
+  console.error(`[Launcher] ${name} missed heartbeat (${Math.round((now - last) / 1000)}s silent) — force-restarting`);
+  pendingRestarts.add(name);
+  workers.get(name)!.terminate();
 }, HEARTBEAT_CHECK_MS).unref();
 
 // ---------------------------------------------------------------------------
