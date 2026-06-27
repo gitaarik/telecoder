@@ -51,6 +51,22 @@ interface ForkOfferTexts {
 }
 
 /**
+ * Build the fork-target picker rows: this bot itself (a fresh branch of the
+ * current conversation) first, then every sibling bot, then Cancel. Self is
+ * always offered so you can branch a thread without needing a second bot.
+ */
+function buildTargetKeyboard(anchorMsgId: number): Array<Array<{ text: string; callback_data: string }>> {
+  const rows: Array<Array<{ text: string; callback_data: string }>> = [
+    [{ text: `🌱 New branch here (${BOT_NAME})`, callback_data: `fork:to:${BOT_ID}:${anchorMsgId}` }],
+  ];
+  for (const b of listSiblingBots(BOT_ID)) {
+    rows.push([{ text: b.name, callback_data: `fork:to:${b.botId}:${anchorMsgId}` }]);
+  }
+  rows.push([{ text: 'Cancel', callback_data: 'fork:cancel' }]);
+  return rows;
+}
+
+/**
  * Compose the "fork received" message + inline keyboard. Shared between the
  * lazy in-message path (reply in current chat) and the proactive watcher
  * (DMs the user without waiting for them to type).
@@ -126,28 +142,16 @@ async function onPick(ctx: Context): Promise<void> {
     return;
   }
 
-  const siblings = listSiblingBots(BOT_ID);
-  if (siblings.length === 0) {
-    await ctx.answerCallbackQuery({ text: 'No other bots configured.' });
-    await ctx.reply(
-      '🍴 *Fork*\n\nThere are no other bots configured to fork to\\.\nAdd a second token to `instances.json` to enable forking\\.',
-      { parse_mode: 'MarkdownV2', reply_parameters: { message_id: msgId } },
-    );
-    return;
-  }
-
   await ctx.answerCallbackQuery();
 
   const projectLabel = path.basename(offset.projectPath);
-  const keyboard = siblings.map((b) => [{ text: b.name, callback_data: `fork:to:${b.botId}:${msgId}` }]);
-  keyboard.push([{ text: 'Cancel', callback_data: 'fork:cancel' }]);
 
   await ctx.reply(
-    `🍴 *Fork conversation*\n\nFrom this point in *${esc(projectLabel)}* — pick a bot to hand off to:`,
+    `🍴 *Fork conversation*\n\nFrom this point in *${esc(projectLabel)}* — pick where to branch it:`,
     {
       parse_mode: 'MarkdownV2',
       reply_parameters: { message_id: msgId },
-      reply_markup: { inline_keyboard: keyboard },
+      reply_markup: { inline_keyboard: buildTargetKeyboard(msgId) },
     },
   );
 }
@@ -173,11 +177,15 @@ async function onTo(ctx: Context, targetBotId: string, sourceMsgId: number): Pro
   await ctx.answerCallbackQuery();
 
   const projectLabel = path.basename(offset.projectPath);
-  const text =
-    `🍴 *Fork to ${esc(target.name)}?*\n\n` +
-    `This will copy the conversation in *${esc(projectLabel)}* up to that point and hand it off to *${esc(target.name)}*\\.\n\n` +
-    `When you open *${esc(target.name)}* and send any message, you'll get a prompt to accept the fork\\. ` +
-    `Accepting replaces *${esc(target.name)}*'s current conversation \\(saved to its /resume history\\)\\.`;
+  const isSelf = targetBotId === BOT_ID;
+  const text = isSelf
+    ? `🍴 *Branch into a new conversation?*\n\n` +
+      `This copies *${esc(projectLabel)}* up to that point into a fresh conversation on this bot\\. ` +
+      `Your current conversation is saved to /resume history, and you continue from the branch point\\.`
+    : `🍴 *Fork to ${esc(target.name)}?*\n\n` +
+      `This will copy the conversation in *${esc(projectLabel)}* up to that point and hand it off to *${esc(target.name)}*\\.\n\n` +
+      `When you open *${esc(target.name)}* and send any message, you'll get a prompt to accept the fork\\. ` +
+      `Accepting replaces *${esc(target.name)}*'s current conversation \\(saved to its /resume history\\)\\.`;
 
   try {
     await ctx.editMessageText(text, {
@@ -252,6 +260,16 @@ async function onConfirm(ctx: Context, targetBotId: string, sourceMsgId: number)
     assistantPreview,
     createdAt: new Date().toISOString(),
   };
+
+  // Self-fork: branch within this same bot/chat. The pending-fork handoff
+  // (and its accept/decline prompt) only exists to cross bots — here the
+  // source and target are the same conversation, so load the branch right
+  // now. loadFork saves the current conversation to /resume history first.
+  if (targetBotId === BOT_ID) {
+    await loadFork(ctx, keyInfo.sessionKey, fork);
+    await ctx.answerCallbackQuery({ text: 'Branched.' });
+    return;
+  }
 
   // Key the pending fork by Telegram user id, not sessionKey: each bot has
   // its own DM with the user with a different chatId, so the target bot
@@ -385,24 +403,13 @@ export async function handleForkCommand(ctx: Context): Promise<void> {
     conversationId: session.conversationId,
   });
 
-  const siblings = listSiblingBots(BOT_ID);
-  if (siblings.length === 0) {
-    await ctx.reply(
-      '🍴 *Fork*\n\nThere are no other bots configured to fork to\\.\nAdd a second token to `instances.json` to enable forking\\.',
-      { parse_mode: 'MarkdownV2' },
-    );
-    return;
-  }
-
   const projectLabel = path.basename(session.workingDirectory);
-  const keyboard = siblings.map((b) => [{ text: b.name, callback_data: `fork:to:${b.botId}:${anchorMsgId}` }]);
-  keyboard.push([{ text: 'Cancel', callback_data: 'fork:cancel' }]);
 
   await ctx.reply(
-    `🍴 *Fork conversation*\n\nFrom the current state of *${esc(projectLabel)}* — pick a bot to hand off to:`,
+    `🍴 *Fork conversation*\n\nFrom the current state of *${esc(projectLabel)}* — pick where to branch it:`,
     {
       parse_mode: 'MarkdownV2',
-      reply_markup: { inline_keyboard: keyboard },
+      reply_markup: { inline_keyboard: buildTargetKeyboard(anchorMsgId) },
     },
   );
 }
@@ -480,15 +487,14 @@ async function loadFork(ctx: Context, sessionKey: string, fork: PendingFork): Pr
   }
 
   const projectLabel = path.basename(fork.projectPath);
+  const doneText = fork.fromBotId === BOT_ID
+    ? `✅ Branched into a new conversation (${projectLabel}). Your previous thread is in /resume. Send a message to continue from the branch point.`
+    : `✅ Fork loaded from ${fork.fromBotName} (${projectLabel}). Send a message to continue from where it left off.`;
   try {
     if (ctx.callbackQuery) {
-      await ctx.editMessageText(
-        `✅ Fork loaded from ${fork.fromBotName} (${projectLabel}). Send a message to continue from where it left off.`,
-      );
+      await ctx.editMessageText(doneText);
     } else {
-      await ctx.reply(
-        `✅ Fork loaded from ${fork.fromBotName} (${projectLabel}). Send a message to continue from where it left off.`,
-      );
+      await ctx.reply(doneText);
     }
   } catch { /* ignore */ }
 }

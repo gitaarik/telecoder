@@ -1828,7 +1828,7 @@
           <div class="feature-card" data-category="session">
             <div class="feature-icon">🍴</div>
             <h3>Conversation Forks</h3>
-            <p>Every assistant message gets a 🍴 Fork button that hands the conversation up to that point off to a sibling bot from your multi-bot setup. Pick a target, confirm, then open that bot — your next message triggers an accept/decline prompt. Accepting loads the truncated transcript into the target bot (its prior conversation stays in /resume history); declining discards. Lets you branch off a long thread to explore a different angle without losing the original.</p>
+            <p>Every assistant message gets a 🍴 Fork button that branches the conversation up to that point. Pick "New branch here" to fork into a fresh conversation on the <em>same</em> bot — your current thread is saved to /resume history and you continue from the branch point. Or pick a sibling bot from your multi-bot setup to hand it off: open that bot and your next message triggers an accept/decline prompt (accepting loads the truncated transcript, its prior conversation stays in /resume history). Either way you explore a different angle without losing the original.</p>
           </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon">🔔</div>
@@ -1978,7 +1978,7 @@
             </div>
             <div class="command-row">
               <code class="command-code">/fork</code>
-              <span class="command-desc">Fork the current conversation to a sibling bot (alternative to tapping the 🍴 Fork button on a past assistant message)</span>
+              <span class="command-desc">Fork the current conversation — into a new branch on this same bot, or hand it off to a sibling bot (alternative to tapping the 🍴 Fork button on a past assistant message)</span>
             </div>
             <div class="command-row">
               <code class="command-code">/accept</code>
