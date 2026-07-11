@@ -169,9 +169,13 @@ if (process.env.CLAUDEGRAM_MEDIUM_ENABLED === 'true') {
 // ── claudegram_ask_user (IPC: long-poll on Telegram button tap) ──────
 server.tool(
   'claudegram_ask_user',
-  'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or 10 minutes pass. Keep the question short and the options crisp — labels must be ≤ 60 chars. Prefer this over the built-in AskUserQuestion when interacting through claudegram.',
+  'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or 10 minutes pass. Keep the question short and the options crisp — labels must be ≤ 60 chars. Prefer this over the built-in AskUserQuestion when interacting through claudegram. IMPORTANT: if the user needs information to decide (a comparison, trade-offs, findings, rationale), put it in the `context` field — it renders in the SAME message as the buttons. Do NOT write that explanation as prose before calling this tool: text you emit before an ask_user call is not delivered to the user until after they answer, so they would be choosing blind.',
   {
     question: z.string().describe('The question to display to the user. Keep concise (1-2 sentences).'),
+    context: z
+      .string()
+      .optional()
+      .describe('Optional multi-line explanation shown above the buttons in the same message (e.g. a comparison table, trade-offs, findings the user needs to make an informed choice). Put decision-relevant detail here, not in prose before the call — that prose is not shown until after the user answers.'),
     options: z
       .array(
         z.object({
@@ -183,9 +187,9 @@ server.tool(
       .max(8)
       .describe('Between 2 and 8 options for the user to choose from.'),
   },
-  async ({ question, options }) => {
+  async ({ question, context, options }) => {
     try {
-      const result = await ipc<{ success: boolean; message: string }>('/mcp/ask_user', { question, options });
+      const result = await ipc<{ success: boolean; message: string }>('/mcp/ask_user', { question, context, options });
       return {
         content: [{ type: 'text' as const, text: result.message }],
         isError: !result.success,

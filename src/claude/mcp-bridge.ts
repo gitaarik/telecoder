@@ -22,7 +22,7 @@ import { InputFile, type Context } from 'grammy';
 import { registerIpcHandler } from './ipc-server.js';
 import { sessionManager } from './session-manager.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../utils/workspace-guard.js';
-import { createPendingQuestion } from './ask-user.js';
+import { createPendingQuestion, buildAskUserMessageText } from './ask-user.js';
 import { createPendingPoll } from './poll-user.js';
 import { scheduler } from './scheduler.js';
 
@@ -60,6 +60,7 @@ registerIpcHandler('/mcp/set_topic', async (turn, body) => {
 // return the chosen label to claude. Times out at 10 min via createPendingQuestion's default.
 registerIpcHandler('/mcp/ask_user', async (turn, body) => {
   const question = String(body.question ?? '').trim();
+  const context = typeof body.context === 'string' ? body.context : undefined;
   const rawOptions = Array.isArray(body.options) ? body.options : [];
   const options = rawOptions
     .map((o): { label: string; description?: string } | null => {
@@ -85,28 +86,21 @@ registerIpcHandler('/mcp/ask_user', async (turn, body) => {
   const optionLabels = options.map((o) => o.label);
   const { id, promise } = createPendingQuestion(optionLabels, undefined, turn.sessionKey);
 
-  const lines: string[] = [`❓ ${question}`];
-  const annotated = options.filter((o) => o.description);
-  if (annotated.length > 0) {
-    lines.push('');
-    for (const o of options) {
-      if (o.description) lines.push(`• ${o.label} — ${o.description}`);
-    }
-  }
+  const messageText = buildAskUserMessageText(question, options, context);
 
   const keyboard = options.map((o, idx) => [{
     text: o.label.length > 60 ? o.label.slice(0, 57) + '…' : o.label,
     callback_data: `q:${id}:${idx}`,
   }]);
 
-  // Plain text (no parse_mode): model-supplied question/label/description text
-  // can contain stray underscores, asterisks, or backticks (e.g. URL params
-  // like `f_WT=2`) that break legacy Markdown parsing — Telegram returns 400,
-  // grammy throws, the IPC server returns 500, and the model just sees the
-  // tool fail. The bold on labels was a nice-to-have; the button itself shows
-  // the label clearly.
+  // Plain text (no parse_mode): model-supplied question/context/label/
+  // description text can contain stray underscores, asterisks, or backticks
+  // (e.g. URL params like `f_WT=2`) that break legacy Markdown parsing —
+  // Telegram returns 400, grammy throws, the IPC server returns 500, and the
+  // model just sees the tool fail. The bold on labels was a nice-to-have; the
+  // button itself shows the label clearly.
   const threadId = ctx.message?.is_topic_message ? ctx.message?.message_thread_id : undefined;
-  await ctx.api.sendMessage(ctx.chat.id, lines.join('\n'), {
+  await ctx.api.sendMessage(ctx.chat.id, messageText, {
     reply_markup: { inline_keyboard: keyboard },
     ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
   });

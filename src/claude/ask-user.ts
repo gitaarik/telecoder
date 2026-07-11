@@ -25,6 +25,61 @@ export interface AskUserAnswer {
   index: number;
 }
 
+export interface AskUserOption {
+  label: string;
+  description?: string;
+}
+
+/**
+ * Max characters of `context` we render into the question message. Keeps the
+ * whole message comfortably under Telegram's 4096-char limit even alongside a
+ * long question and eight annotated options; overflow is clipped with an
+ * ellipsis rather than letting sendMessage 400 on us.
+ */
+const MAX_CONTEXT_LEN = 3500;
+
+/**
+ * Build the plain-text body for an ask_user Telegram message, shared by SDK
+ * mode (mcp-tools.ts) and PTY/IPC mode (mcp-bridge.ts) so both render
+ * identically.
+ *
+ * Layout:
+ *   ❓ <question>
+ *
+ *   <context>              ← only when provided; the model's decision rationale
+ *
+ *   • Label — description  ← only options that carry a per-option description
+ *
+ * The `context` block is the fix for the "user is asked to choose before the
+ * explanation is shown" bug: prose the model emits *before* calling ask_user
+ * isn't delivered until end-of-turn (after the tap), so decision-relevant
+ * information must ride inside the question message itself.
+ */
+export function buildAskUserMessageText(
+  question: string,
+  options: AskUserOption[],
+  context?: string,
+): string {
+  const lines: string[] = [`❓ ${question}`];
+
+  const ctx = context?.trim();
+  if (ctx) {
+    const clipped = ctx.length > MAX_CONTEXT_LEN ? ctx.slice(0, MAX_CONTEXT_LEN - 1) + '…' : ctx;
+    lines.push('');
+    lines.push(clipped);
+  }
+
+  const annotated = options.filter((o) => o.description);
+  if (annotated.length > 0) {
+    lines.push('');
+    for (const o of options) {
+      if (o.description) lines.push(`• ${o.label} — ${o.description}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
 interface PendingEntry {
   resolve: (answer: AskUserAnswer | null) => void;
   timer: NodeJS.Timeout;

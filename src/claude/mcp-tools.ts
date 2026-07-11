@@ -15,7 +15,7 @@ import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../utils/workspace-guard.js';
 import { setSessionTopic, clearTopicAndRefreshBotName } from '../bot/handlers/command.handler.js';
-import { createPendingQuestion } from './ask-user.js';
+import { createPendingQuestion, buildAskUserMessageText } from './ask-user.js';
 
 // Lazy imports to avoid circular deps and unnecessary module loading
 async function importReddit() {
@@ -476,9 +476,13 @@ function publishTelegraphTool(_toolsCtx: McpToolsContext) {
 function askUserTool(toolsCtx: McpToolsContext) {
   return tool(
     'claudegram_ask_user',
-    'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or 10 minutes pass. Keep the question short and the options crisp — labels must be ≤ 60 chars.',
+    'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or 10 minutes pass. Keep the question short and the options crisp — labels must be ≤ 60 chars. IMPORTANT: if the user needs information to decide (a comparison, trade-offs, findings, rationale), put it in the `context` field — it renders in the SAME message as the buttons. Do NOT write that explanation as prose before calling this tool: text you emit before an ask_user call is not delivered to the user until after they answer, so they would be choosing blind.',
     {
       question: z.string().describe('The question to display to the user. Keep concise (1-2 sentences).'),
+      context: z
+        .string()
+        .optional()
+        .describe('Optional multi-line explanation shown above the buttons in the same message (e.g. a comparison table, trade-offs, findings the user needs to make an informed choice). Put decision-relevant detail here, not in prose before the call — that prose is not shown until after the user answers.'),
       options: z
         .array(
           z.object({
@@ -490,7 +494,7 @@ function askUserTool(toolsCtx: McpToolsContext) {
         .max(8)
         .describe('Between 2 and 8 options for the user to choose from.'),
     },
-    async ({ question, options }) => {
+    async ({ question, context, options }) => {
       try {
         const ctx = toolsCtx.telegramCtx;
         if (!ctx?.chat?.id) {
@@ -503,29 +507,20 @@ function askUserTool(toolsCtx: McpToolsContext) {
         const optionLabels = options.map((o) => o.label);
         const { id, promise } = createPendingQuestion(optionLabels, undefined, toolsCtx.sessionKey);
 
-        const lines: string[] = [`❓ ${question}`];
-        const annotated = options.filter((o) => o.description);
-        if (annotated.length > 0) {
-          lines.push('');
-          for (const o of options) {
-            if (o.description) {
-              lines.push(`• ${o.label} — ${o.description}`);
-            }
-          }
-        }
+        const messageText = buildAskUserMessageText(question, options, context);
 
         const keyboard = options.map((o, idx) => [{
           text: o.label.length > 60 ? o.label.slice(0, 57) + '…' : o.label,
           callback_data: `q:${id}:${idx}`,
         }]);
 
-        // Plain text (no parse_mode): model-supplied question/label/description
-        // text can contain stray underscores, asterisks, or backticks (e.g.
-        // URL params like `f_WT=2`) that break legacy Markdown parsing —
-        // Telegram returns 400 and the tool fails with no useful signal to
-        // the model. Button labels still surface the choice clearly.
+        // Plain text (no parse_mode): model-supplied question/context/label/
+        // description text can contain stray underscores, asterisks, or
+        // backticks (e.g. URL params like `f_WT=2`) that break legacy Markdown
+        // parsing — Telegram returns 400 and the tool fails with no useful
+        // signal to the model. Button labels still surface the choice clearly.
         const threadId = ctx.message?.is_topic_message ? ctx.message?.message_thread_id : undefined;
-        await ctx.api.sendMessage(ctx.chat.id, lines.join('\n'), {
+        await ctx.api.sendMessage(ctx.chat.id, messageText, {
           reply_markup: { inline_keyboard: keyboard },
           ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
         });
