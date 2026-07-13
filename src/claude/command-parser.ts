@@ -113,6 +113,7 @@ export function getAvailableCommands(): string {
     commands: [
       '• `/tts` \\- Toggle voice replies',
       '• `/context` \\- Show Claude context usage',
+      '• `/compact` \\- Compact the context window \\(native Claude Code, passes through\\)',
       '• `/botstatus` \\- Show bot process status',
       '• `/restartbot` \\- Restart the bot process',
       '• `/rebuildbot` \\- Rebuild and restart with auto\\-resume',
