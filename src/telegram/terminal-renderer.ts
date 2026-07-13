@@ -400,6 +400,7 @@ export function extractToolDetail(toolName: string, input: Record<string, unknow
     case 'WebSearch':
       return verbose ? (str('url') || str('query')) : truncateUrl(str('url') || str('query'));
     case 'Task':
+    case 'Agent': // subagent tool — renamed Task→Agent in newer Claude Code builds
       return verbose ? str('description') : truncateCommand(str('description'));
     case 'mcp__claudegram-tools__claudegram_ask_user':
       return verbose ? str('question') : truncateCommand(str('question'));

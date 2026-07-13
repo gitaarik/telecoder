@@ -24,6 +24,7 @@ import { config } from '../config.js';
 import { AgentWatchdog } from './agent-watchdog.js';
 import { hasPendingQuestionForSession } from './ask-user.js';
 import { createClaudegramMcpServer } from './mcp-tools.js';
+import { isSubagentTool } from './subagent-tools.js';
 import { getSessionTopic, getMsSinceTopicSet } from '../bot/handlers/command.handler.js';
 import {
   createAgentTimer,
@@ -954,8 +955,8 @@ export async function sendToAgent(
               if (isMonitorCall) monitorToolUseIds.add(block.id);
               logAt('verbose', `[Claude] BACKGROUND TASK LAUNCH: tool=${block.name} tool_use_id=${block.id}`);
             }
-            // Special logging for Task tool (subagents) - always log at basic level
-            if (block.name === 'Task') {
+            // Special logging for the subagent tool (Task/Agent) - always log at basic level
+            if (isSubagentTool(block.name)) {
               const taskDesc = toolInput.description || toolInput.prompt || 'unnamed task';
               const subagentType = toolInput.subagent_type || 'unknown';
               logAt('basic', `[Claude] SUBAGENT START: ${subagentType} — ${String(taskDesc).substring(0, 100)}`);

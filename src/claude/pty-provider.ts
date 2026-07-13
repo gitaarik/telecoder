@@ -20,6 +20,7 @@ import {
 // MCP subprocess back to bot-side state (Telegram API, session topic, …).
 import './mcp-bridge.js';
 import { onAsyncToolArmed, markTurnStart, markTurnEnd, teardown as teardownMonitorRelay, relayPushNotification, type AsyncToolKind } from './monitor-relay.js';
+import { isSubagentTool } from './subagent-tools.js';
 import { relayUpdateBanner, scrapeUpdateBanner } from './update-banner-relay.js';
 import { evaluateToolCall, isPermissionGateEnabled, DENY_MARKER_START, DENY_MARKER_END } from './permission-gate.js';
 import { scrapePromptSuggestion } from './prompt-suggestion-scraper.js';
@@ -225,7 +226,7 @@ function buildMcpToolsSystemPromptNote(): string {
   // claudegram_* tools, but PTY mode wires up a relay so task-notifications
   // that arrive after the user-turn ends still reach Telegram. Mention it so
   // the model confidently uses these tools when they're the right fit.
-  tools.push('- Async built-ins (Monitor, `Bash(run_in_background=true)`, `Task`) — supported in claudegram PTY mode. Task-notifications that fire between user turns are relayed to Telegram with a "📡 Monitor — ...", "⚙️ Backgrounded: ...", or "🤖 Subagent started: ..." header, paired with the actual event payload and your response. Use these freely for "watch X", "run X in background while continuing", or "delegate Y to a subagent" tasks.');
+  tools.push('- Async built-ins (Monitor, `Bash(run_in_background=true)`, `Task`/`Agent`) — supported in claudegram PTY mode. Task-notifications that fire between user turns are relayed to Telegram with a "📡 Monitor — ...", "⚙️ Backgrounded: ...", or "🤖 Subagent started: ..." header, paired with the actual event payload and your response. Use these freely for "watch X", "run X in background while continuing", or "delegate Y to a subagent" tasks.');
   tools.push('- PushNotification (built-in) — supported in claudegram PTY mode. The message text is relayed to Telegram as "🔔 <message>". Use the normal rules: only when the user might have walked away and there\'s something they\'d act on now.');
   tools.push('- For scheduled/recurring tasks, prefer claudegram_loop / claudegram_schedule over the built-in CronCreate / ScheduleWakeup / RemoteTrigger — those don\'t reach back into Telegram.');
   tools.push('- *Destructive-op safety:* before running anything irreversible — `rm -rf` on real paths, `sudo`, `git push --force` on shared branches, `DROP TABLE` / `TRUNCATE` against real DBs, `terraform destroy`, mass file rewrites — call `claudegram_ask_user` with a one-line summary of what you\'re about to do and "Confirm" / "Cancel" options. This bot runs unsupervised in Telegram and the user can\'t intervene mid-tool. When in doubt, ask.');
@@ -1304,13 +1305,13 @@ registerIpcHandler('/hook/preToolUse', async (turn, body) => {
   // still get routed to Telegram. Three async tool families need this:
   //   - Monitor (continuous event stream)
   //   - Bash with run_in_background=true (single completion notification)
-  //   - Task (subagent — completion notification)
+  //   - Task/Agent (subagent — completion notification)
   // Each is backgrounded: PostToolUse fires almost immediately, the user-turn
   // returns, and the actual outcome arrives later as a task-notification.
   const asyncKind: AsyncToolKind | null =
     toolName === 'Monitor' ? 'monitor' :
     (toolName === 'Bash' && toolInput.run_in_background === true) ? 'bash_background' :
-    toolName === 'Task' ? 'subagent' :
+    isSubagentTool(toolName) ? 'subagent' :
     null;
   if (asyncKind) {
     const session = sessionManager.getSession(turn.sessionKey);
