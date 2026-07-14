@@ -404,6 +404,24 @@ export async function sendToAgent(
 ): Promise<AgentResponse> {
   const { onProgress, onToolStart, onToolEnd, onTaskEvent, onSubTurnResponse, onToolResult, onEditDiff, abortController, command, model, images, executableOverride, providerName } = options;
 
+  // Native `/compact` is a Claude Code CLI slash command handled by the
+  // interactive TUI — it only works in PTY mode. In SDK mode we reach this
+  // function with the raw string prompt, and the SDK has no manual-compact
+  // control (its control requests need streaming input, which we don't use),
+  // so "/compact" would just be sent to the model as literal text and echoed
+  // back — no compaction happens. Intercept it here and explain, rather than
+  // forwarding a confusing no-op. Automatic compaction near the context limit
+  // still works in SDK mode and emits a compact_boundary as usual.
+  if (/^\/compact(\s|$)/.test(message.trim())) {
+    return {
+      text:
+        '⚠️ `/compact` only works in PTY mode — switch with /method.\n\n' +
+        'In SDK mode (the default) manual compaction isn\'t available, but the context ' +
+        'is compacted automatically as it approaches the limit.',
+      toolsUsed: [],
+    };
+  }
+
   async function emitTaskEvent(event: TaskEvent): Promise<void> {
     try {
       await onTaskEvent?.(event);

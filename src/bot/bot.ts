@@ -189,6 +189,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'restartbot', description: '🔁 Restart the bot' },
     { command: 'rebuildbot', description: '🔄 Rebuild and restart with session restore' },
     { command: 'context', description: '🧠 Show Claude context usage' },
+    { command: 'compact', description: '🗜️ Compact the context window' },
     { command: 'update', description: '⬆️ Update the Claude Code CLI' },
     { command: 'plan', description: '📋 Start planning mode' },
     { command: 'explore', description: '🔍 Explore codebase' },
