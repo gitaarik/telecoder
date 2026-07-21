@@ -38,6 +38,7 @@ import {
 import { listSiblingBots, findBotById } from '../../utils/instances.js';
 import { sessionJsonlPath } from '../../claude/session-jsonl.js';
 import { sessionManager } from '../../claude/session-manager.js';
+import { clearConversation } from '../../providers/provider-router.js';
 import { sessionHistory } from '../../claude/session-history.js';
 import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
 import { restoreTopicAndRefreshBotName } from './command.handler.js';
@@ -477,6 +478,17 @@ async function loadFork(ctx: Context, sessionKey: string, fork: PendingFork): Pr
     sessionManager.setWorkingDirectory(sessionKey, fork.projectPath);
   }
   sessionManager.setClaudeSessionId(sessionKey, newSessionId);
+
+  // Sever any live process bound to the old session. In PTY mode a long-lived
+  // `claude` process is reused as long as its cwd is unchanged (see
+  // PtyProvider._getOrCreateSession) — so a same-project fork would otherwise
+  // keep serving the pre-fork session and silently ignore the branch we just
+  // loaded. Tearing it down (exactly what /clear does) forces the next turn to
+  // respawn with `--resume <newSessionId>` onto the forked transcript. Order
+  // matters: this must run AFTER setClaudeSessionId, since clearConversation
+  // leaves sessionManager's session id untouched — only the live process and
+  // in-memory provider state are dropped.
+  clearConversation(sessionKey);
 
   // Restore the source topic AND (if the project changed) refresh the bot's
   // Telegram display name so the user sees the new project reflected in the
