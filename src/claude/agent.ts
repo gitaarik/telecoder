@@ -25,6 +25,7 @@ import { AgentWatchdog } from './agent-watchdog.js';
 import { hasPendingQuestionForSession } from './ask-user.js';
 import { createClaudegramMcpServer } from './mcp-tools.js';
 import { isSubagentTool } from './subagent-tools.js';
+import { isNativeCompactCommand } from './command-parser.js';
 import { getSessionTopic, getMsSinceTopicSet } from '../bot/handlers/command.handler.js';
 import {
   createAgentTimer,
@@ -412,7 +413,7 @@ export async function sendToAgent(
   // back — no compaction happens. Intercept it here and explain, rather than
   // forwarding a confusing no-op. Automatic compaction near the context limit
   // still works in SDK mode and emits a compact_boundary as usual.
-  if (/^\/compact(\s|$)/.test(message.trim())) {
+  if (isNativeCompactCommand(message)) {
     return {
       text:
         '⚠️ `/compact` only works in PTY mode — switch with /method.\n\n' +

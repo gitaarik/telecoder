@@ -6,7 +6,8 @@ import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
-import { claudeSessionFileExists, readLastApiErrorFromJsonl, readLastAssistantTurnText, readLastUsageFromJsonl, sessionJsonlMtimeMs } from './session-jsonl.js';
+import { claudeSessionFileExists, readLastApiErrorFromJsonl, readLastAssistantTurnText, readLastCompactionFromJsonl, readLastUsageFromJsonl, sessionJsonlMtimeMs, type CompactionInfo } from './session-jsonl.js';
+import { isNativeCompactCommand } from './command-parser.js';
 import { isCancelled } from './request-queue.js';
 import { getWorkspaceRoot } from '../utils/workspace-guard.js';
 import {
@@ -42,6 +43,17 @@ const MCP_SERVER_JS = path.resolve(PROVIDER_DIR, '../bin/mcp-server.js');
 const COLS = 120;
 const ROWS = 40;
 const IDLE_MS = 1200;
+
+/**
+ * Compact "12.3k" / "1.2M" token count for user-facing messages. Kept local to
+ * avoid importing from the bot handler layer (which imports the providers back,
+ * closing a require cycle). Mirrors fmtTokens in message.handler.ts.
+ */
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k';
+  return String(n);
+}
 /**
  * Short window we wait *after* the Stop hook fires before extracting the
  * screen. Stop fires when claude finishes the response, but the TUI is
@@ -331,6 +343,14 @@ export class PtyProvider implements Provider {
     const commandWrapped = wrapCommandPrompt(message, options?.command);
     const { prompt: promptToSend, tempPaths } = stageImagesForPty(commandWrapped, options?.images);
 
+    // Timestamp of the newest compaction already on disk before this turn.
+    // Any compaction with a later timestamp afterward was produced by this turn
+    // — a manual `/compact` or an auto-compaction that fired near the limit —
+    // and we surface it to the caller (compaction renders no `●`, so it's
+    // invisible to screen scraping otherwise). See _resolveCompaction below.
+    const preCompact = this._readLastCompaction(sessionKey);
+    const compactionBeforeMs = preCompact?.timestampMs ?? 0;
+
     let finalScreenText: string;
     try {
       finalScreenText = await this._runPtyTurn(sessionKey, promptToSend, options);
@@ -392,12 +412,57 @@ export class PtyProvider implements Provider {
 
     const nextPromptSuggestion = await this._awaitPromptSuggestion(sessionKey);
 
+    // Did a compaction land this turn? A newer compact_boundary than the one we
+    // saw at submit time means yes. `/compact` writes no assistant prose, so
+    // `assistantResponse` would otherwise be the *previous* turn's reply scraped
+    // back out of the JSONL — the "I get the same response again" symptom. For a
+    // manual compact we replace that stale text with a real confirmation; for an
+    // auto-compaction that rode along with a normal turn we keep the assistant's
+    // reply and just attach the notification via `compaction`.
+    const postCompact = this._readLastCompaction(sessionKey);
+    const compactedThisTurn =
+      !!postCompact && postCompact.timestampMs > compactionBeforeMs;
+    const isManualCompact = isNativeCompactCommand(message);
+
+    let text = assistantResponse;
+    let compaction: { trigger: 'manual' | 'auto'; preTokens: number } | undefined;
+    if (compactedThisTurn && postCompact) {
+      compaction = { trigger: postCompact.trigger, preTokens: postCompact.preTokens };
+      if (isManualCompact) {
+        text = this._formatCompactionConfirmation(postCompact);
+        // The confirmation text already carries the token detail; drop the
+        // separate generic notification so the user gets one clean message.
+        compaction = undefined;
+      }
+    } else if (isManualCompact) {
+      // Command ran but no boundary was recorded — Claude Code skips compaction
+      // when the context is already small. Say so instead of echoing stale text.
+      text = 'ℹ️ Nothing to compact — the context is already small enough.';
+    }
+
     return {
-      text: assistantResponse,
+      text,
       toolsUsed: [], // PTY provider does not have tool usage information
       usage,
+      ...(compaction ? { compaction } : {}),
       ...(nextPromptSuggestion ? { nextPromptSuggestion } : {}),
     };
+  }
+
+  /** Newest compaction boundary on disk for this session, if any. */
+  private _readLastCompaction(sessionKey: string): CompactionInfo | undefined {
+    const botSession = sessionManager.getSession(sessionKey);
+    if (!botSession?.claudeSessionId) return undefined;
+    return readLastCompactionFromJsonl(botSession.workingDirectory, botSession.claudeSessionId);
+  }
+
+  /** One-line manual `/compact` confirmation with the token reduction. */
+  private _formatCompactionConfirmation(c: CompactionInfo): string {
+    const before = fmtTokens(c.preTokens);
+    // postTokens is absent on older Claude Code builds — omit the arrow then.
+    return c.postTokens > 0
+      ? `🗜️ Context compacted — ${before} → ${fmtTokens(c.postTokens)} tokens.`
+      : `🗜️ Context compacted — was ${before} tokens.`;
   }
 
   /**

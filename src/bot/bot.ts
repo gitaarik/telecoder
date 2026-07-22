@@ -311,6 +311,13 @@ export async function createBot(): Promise<Bot> {
   bot.command('tts', handleTTS);
   bot.command('botstatus', handleBotStatus);
   bot.command('context', handleContext);
+  // /compact is a native Claude Code slash command, not a bot command — route it
+  // through the normal message pipeline (handleMessage), which forwards it to
+  // the active provider. The PTY provider runs the real compaction and reports
+  // the token reduction; the SDK provider explains it's PTY-only. Registering it
+  // here (rather than relying on fall-through to the text handler) makes dispatch
+  // explicit and lets grammY match the group-chat `/compact@BotName` form.
+  bot.command('compact', handleMessage);
   bot.command('update', handleUpdate);
 
   bot.command('commands', handleCommands);

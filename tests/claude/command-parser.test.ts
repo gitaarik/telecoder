@@ -3,6 +3,8 @@ import {
   parseClaudeCommand,
   isClaudeCommand,
   getAvailableCommands,
+  stripCommandBotMention,
+  isNativeCompactCommand,
 } from '../../src/claude/command-parser.js';
 
 describe('parseClaudeCommand', () => {
@@ -59,6 +61,40 @@ describe('isClaudeCommand', () => {
   it('is false for plain text and unknown commands', () => {
     expect(isClaudeCommand('hello')).toBe(false);
     expect(isClaudeCommand('/unknown')).toBe(false);
+  });
+});
+
+describe('stripCommandBotMention', () => {
+  it('strips a @BotName mention from a bare command', () => {
+    expect(stripCommandBotMention('/compact@MyBot')).toBe('/compact');
+  });
+
+  it('strips the mention but keeps the command args', () => {
+    expect(stripCommandBotMention('/compact@MyBot keep the plan')).toBe('/compact keep the plan');
+  });
+
+  it('leaves a command without a mention untouched', () => {
+    expect(stripCommandBotMention('/compact keep the plan')).toBe('/compact keep the plan');
+  });
+
+  it('leaves ordinary text and slash-paths untouched', () => {
+    expect(stripCommandBotMention('email me @ someone please')).toBe('email me @ someone please');
+    expect(stripCommandBotMention('/some/path@host')).toBe('/some/path@host');
+  });
+});
+
+describe('isNativeCompactCommand', () => {
+  it('matches /compact and its @mention / args forms', () => {
+    expect(isNativeCompactCommand('/compact')).toBe(true);
+    expect(isNativeCompactCommand('  /compact  ')).toBe(true);
+    expect(isNativeCompactCommand('/compact@MyBot')).toBe(true);
+    expect(isNativeCompactCommand('/compact focus on the bug')).toBe(true);
+  });
+
+  it('does not match look-alikes or plain text', () => {
+    expect(isNativeCompactCommand('/compacted')).toBe(false);
+    expect(isNativeCompactCommand('please /compact')).toBe(false);
+    expect(isNativeCompactCommand('compact')).toBe(false);
   });
 });
 

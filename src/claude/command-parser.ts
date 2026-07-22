@@ -40,6 +40,29 @@ export function isClaudeCommand(message: string): boolean {
   return CLAUDE_COMMANDS.includes(commandPart as ClaudeCommand);
 }
 
+/**
+ * Telegram appends `@BotName` to slash commands sent in group chats
+ * (`/compact@MyBot`, `/compact@MyBot keep the plan`). Strip the mention off the
+ * leading command token so downstream command detection — and the PTY TUI,
+ * which would otherwise type `/compact@MyBot` verbatim — see a clean `/compact`.
+ * Only touches a genuine `/word@word` command token; leaves ordinary messages
+ * (and slash-prefixed paths like `/some/path@host`) untouched.
+ */
+export function stripCommandBotMention(text: string): string {
+  const m = text.match(/^\/(\w+)@\w+(\s[\s\S]*)?$/);
+  return m ? '/' + m[1] + (m[2] ?? '') : text;
+}
+
+/**
+ * True if `text` is the native Claude Code `/compact` slash command (optionally
+ * with a `@BotName` mention or trailing custom-instructions argument). Single
+ * source of truth shared by the SDK interceptor (agent.ts) and the PTY provider
+ * so both agree on what counts as a manual compaction request.
+ */
+export function isNativeCompactCommand(text: string): boolean {
+  return /^\/compact(?:@\w+)?(?:\s|$)/.test(text.trim());
+}
+
 // Returns MarkdownV2 escaped command list
 export function getAvailableCommands(): string {
   const sections: Array<{ title: string; commands: string[] }> = [
@@ -113,7 +136,7 @@ export function getAvailableCommands(): string {
     commands: [
       '• `/tts` \\- Toggle voice replies',
       '• `/context` \\- Show Claude context usage',
-      '• `/compact` \\- Compact the context window \\(native Claude Code, passes through\\)',
+      '• `/compact` \\- Compact the context window \\(PTY mode; reports the token reduction\\)',
       '• `/botstatus` \\- Show bot process status',
       '• `/restartbot` \\- Restart the bot process',
       '• `/rebuildbot` \\- Rebuild and restart with auto\\-resume',

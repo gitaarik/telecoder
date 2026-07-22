@@ -125,6 +125,70 @@ export function readLastUsageFromJsonl(workingDirectory: string, sessionId: stri
   return lastUsage;
 }
 
+export interface CompactionInfo {
+  trigger: 'manual' | 'auto';
+  preTokens: number;
+  postTokens: number;
+  /** Epoch ms parsed from the record's `timestamp`, or 0 if unparseable. */
+  timestampMs: number;
+}
+
+/** First numeric value among `keys` on `obj`, or 0. Tolerates snake/camel drift. */
+function numField(obj: Record<string, unknown> | undefined, ...keys: string[]): number {
+  if (!obj) return 0;
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === 'number') return v;
+  }
+  return 0;
+}
+
+/**
+ * Return the most recent `compact_boundary` record from a session log, or
+ * undefined if the log has none. Claude Code appends one of these whenever the
+ * context is compacted — manually (`/compact`) or automatically near the limit
+ * — but renders no `●` glyph for it, so PTY-mode screen scraping can't see that
+ * a compaction happened. Reading it back from the JSONL lets the PTY provider
+ * surface the same "Context Compacted" feedback the SDK path already gives.
+ *
+ * On-disk shape (Claude Code 2.1.x):
+ *   {"type":"system","subtype":"compact_boundary",
+ *    "compactMetadata":{"trigger":"manual","preTokens":445116,"postTokens":15617,...},
+ *    "timestamp":"2026-07-22T07:09:43.860Z"}
+ * Older builds used snake_case `compact_metadata`/`pre_tokens`; both are handled.
+ */
+export function readLastCompactionFromJsonl(
+  workingDirectory: string,
+  sessionId: string,
+): CompactionInfo | undefined {
+  const filePath = sessionJsonlPath(workingDirectory, sessionId);
+  if (!fs.existsSync(filePath)) return undefined;
+
+  let raw: string;
+  try { raw = fs.readFileSync(filePath, 'utf-8'); }
+  catch { return undefined; }
+
+  let last: CompactionInfo | undefined;
+  for (const line of raw.split('\n')) {
+    // Cheap pre-filter — these records are rare, skip the JSON.parse otherwise.
+    if (!line.includes('compact_boundary')) continue;
+    let rec: Record<string, unknown>;
+    try { rec = JSON.parse(line) as Record<string, unknown>; }
+    catch { continue; }
+    if (rec.type !== 'system' || rec.subtype !== 'compact_boundary') continue;
+
+    const meta = (rec.compactMetadata ?? rec.compact_metadata) as Record<string, unknown> | undefined;
+    const ts = typeof rec.timestamp === 'string' ? Date.parse(rec.timestamp) : NaN;
+    last = {
+      trigger: meta?.trigger === 'auto' ? 'auto' : 'manual',
+      preTokens: numField(meta, 'preTokens', 'pre_tokens'),
+      postTokens: numField(meta, 'postTokens', 'post_tokens'),
+      timestampMs: Number.isNaN(ts) ? 0 : ts,
+    };
+  }
+  return last;
+}
+
 /** Pull joined text from a record's content blocks, ignoring tool/thinking blocks. */
 function extractText(content: JsonlMessage['content']): string {
   if (typeof content === 'string') return content.trim();

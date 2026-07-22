@@ -15,7 +15,7 @@ import {
   cancelRequest,
   clearQueue,
 } from '../../claude/request-queue.js';
-import { isClaudeCommand } from '../../claude/command-parser.js';
+import { isClaudeCommand, stripCommandBotMention } from '../../claude/command-parser.js';
 import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
 import { createTelegraphFromFile } from '../../telegram/telegraph.js';
 import { getStreamingMode, executeRedditFetch, executeMediumFetch, showExtractMenu, projectStatusSuffix, resumeCommandMessage, setSessionTopic, getSessionTopic, clearTopicAndRefreshBotName, sendStatusLine } from './command.handler.js';
@@ -302,12 +302,18 @@ export function getAutoVRedditUrl(text: string): string | null {
 
 export async function handleMessage(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
-  const text = ctx.message?.text;
+  const rawText = ctx.message?.text;
   const messageId = ctx.message?.message_id;
   const messageDate = ctx.message?.date;
 
-  if (!keyInfo || !text || !messageId || !messageDate) return;
+  if (!keyInfo || !rawText || !messageId || !messageDate) return;
   const { chatId, sessionKey } = keyInfo;
+
+  // In group chats Telegram appends `@BotName` to slash commands
+  // (`/compact@MyBot`). Strip it so command detection below — and native
+  // slash commands forwarded to the agent, like /compact — see a clean token
+  // rather than one the PTY TUI would type verbatim. No-op for ordinary text.
+  const text = stripCommandBotMention(rawText);
 
   // Filter stale messages (sent before bot started)
   if (isStaleMessage(messageDate)) {
