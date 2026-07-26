@@ -2032,11 +2032,11 @@
             </div>
             <div class="command-row">
               <code class="command-code">/model</code>
-              <span class="command-desc">Switch AI model (provider-aware)</span>
+              <span class="command-desc">Switch AI model (provider-aware). Works in both SDK and PTY mode; in PTY mode Claude Code restarts on your next message to pick it up, keeping the conversation. Reports the model that actually served the last turn rather than a default.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/effort &lt;level&gt;</code>
-              <span class="command-desc">Set reasoning effort (low/medium/high/xhigh/max/auto). Enable /statusline to see the current level's icon (🐇/⚖️/🧠/🔬/🚀) after each turn.</span>
+              <span class="command-desc">Set reasoning effort (low/medium/high/xhigh/max/auto). Works in both SDK and PTY mode; in PTY mode Claude Code restarts on your next message to pick it up, keeping the conversation. Enable /statusline to see the current level's icon (🐇/⚖️/🧠/🔬/🚀) after each turn.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/verbosity &lt;tier&gt;</code>
@@ -2151,7 +2151,7 @@
           <div class="commands-grid">
             <div class="command-row">
               <code class="command-code">/context</code>
-              <span class="command-desc">Show current context window usage</span>
+              <span class="command-desc">Show current context window usage. When it has to ask the CLI directly it does so on a throwaway fork, so the live conversation's transcript is never written to.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/compact</code>

@@ -10,6 +10,8 @@ import { claudeSessionFileExists, readLastApiErrorFromJsonl, readLastAssistantTu
 import { isNativeCompactCommand } from './command-parser.js';
 import { isCancelled } from './request-queue.js';
 import { getWorkspaceRoot } from '../utils/workspace-guard.js';
+import { parseSessionKey } from '../utils/session-key.js';
+import { userPreferences } from '../providers/user-preferences.js';
 import {
   getIpcPort,
   registerActiveTurn,
@@ -527,7 +529,11 @@ export class PtyProvider implements Provider {
       // denominator.
       contextWindow: 1_000_000,
       numTurns: snapshot.numTurns,
-      model: snapshot.model || 'claude-opus-4-8',
+      // Report what actually served the turn. If the log has no model on it,
+      // say so rather than inventing one — claude picks its own default.
+      model: snapshot.model
+        || userPreferences.getModel(parseSessionKey(sessionKey).chatId)
+        || 'Claude Code default',
     };
     this.usageCache.set(sessionKey, usage);
     return usage;
@@ -703,9 +709,19 @@ export class PtyProvider implements Provider {
       CLAUDEGRAM_WORKSPACE_ROOT: getWorkspaceRoot(),
     }));
 
+    // /effort and /model are per-chat preferences the CLI accepts as flags.
+    // They can only be applied at spawn, so changing either tears the pty down
+    // (see handleEffort / handleModelCommand) to force a respawn — context
+    // survives because the next spawn resumes the same session id.
+    const { chatId } = parseSessionKey(sessionKey);
+    const effort = userPreferences.getEffort(chatId);
+    const model = userPreferences.getModel(chatId);
+
     const args = [
       '--dangerously-skip-permissions',
       ...(resuming ? ['--resume', claudeSessionId] : ['--session-id', claudeSessionId]),
+      ...(effort ? ['--effort', effort] : []),
+      ...(model ? ['--model', model] : []),
       // Exclude user-level settings. This keeps PTY mode predictable —
       // most importantly it drops `editorMode: "vim"` which makes \r insert
       // a newline instead of submitting (we saw prompts pile up in the
@@ -1144,15 +1160,40 @@ export class PtyProvider implements Provider {
   }
 
   setModel(chatId: number, model: string): void {
-    console.log(`[PtyProvider] Setting model to ${model} for chat ${chatId} is not supported.`);
+    // Applied as `--model` on the next spawn; the caller tears the pty down so
+    // that happens on the next turn rather than whenever the session restarts.
+    userPreferences.setModel(chatId, model);
   }
 
+  /**
+   * The model actually serving this chat, read from the last usage record in
+   * the session log. Falls back to the pending preference (set but not yet
+   * spawned), then to an honest placeholder — claude picks its own default and
+   * we genuinely don't know which until a turn has been written.
+   */
   getModel(chatId: number): string {
-    return 'claude-opus-4-8'; // Default
+    const cached = this._findUsageForChat(chatId);
+    if (cached?.model) return cached.model;
+    return userPreferences.getModel(chatId) ?? 'Claude Code default';
   }
 
   clearModel(chatId: number): void {
-    // No-op
+    userPreferences.clearModel(chatId);
+  }
+
+  /**
+   * usageCache is keyed by session key (chat, or chat:thread for forum topics)
+   * but the Provider model API only gets a chat id — so match the plain chat
+   * key first, then any thread under it.
+   */
+  private _findUsageForChat(chatId: number): AgentUsage | undefined {
+    const direct = this.usageCache.get(String(chatId));
+    if (direct) return direct;
+    const prefix = `${chatId}:`;
+    for (const [key, usage] of this.usageCache) {
+      if (key.startsWith(prefix)) return usage;
+    }
+    return undefined;
   }
 
   getCachedUsage(sessionKey: string): AgentUsage | undefined {
@@ -1164,8 +1205,12 @@ export class PtyProvider implements Provider {
   }
 
   async getAvailableModels(chatId: number): Promise<ModelInfo[]> {
+    // The same aliases the CLI accepts for --model. Matches SDK mode's list so
+    // /model offers the same choices whichever method the chat is on.
     return Promise.resolve([
-      { id: 'claude-opus-4-8', label: 'Opus 4.8 (via PTY)', description: 'Claude Code CLI' }
+      { id: 'opus', label: 'opus', description: 'Most capable (default)' },
+      { id: 'sonnet', label: 'sonnet', description: 'Balanced' },
+      { id: 'haiku', label: 'haiku', description: 'Fast & light' },
     ]);
   }
 }

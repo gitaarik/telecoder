@@ -476,8 +476,15 @@ async function runClaudeContext(sessionId: string, cwd: string): Promise<string>
   }
   return new Promise((resolve, reject) => {
     execFile(
-      config.CLAUDE_EXECUTABLE_PATH,
-      ['-p', '--resume', sessionId, '/context'],
+      // Match the binary PTY mode spawns — CLAUDE_BIN and CLAUDE_EXECUTABLE_PATH
+      // can point at different installs, and this resumes a PTY-written session.
+      process.env.CLAUDE_BIN || config.CLAUDE_EXECUTABLE_PATH,
+      // --fork-session + --no-session-persistence are load-bearing: a bare
+      // `-p --resume <id>` CONTINUES that session and appends its own turn to
+      // the JSONL. In PTY mode <id> is the *live* session, so /context would
+      // inject a stray turn into the real conversation while the pty process
+      // is writing the same file.
+      ['-p', '--resume', sessionId, '--fork-session', '--no-session-persistence', '/context'],
       {
         cwd,
         timeout: 20_000,
@@ -2218,13 +2225,14 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
   }
 
   setModel(chatId, args);
-  await replyMd(ctx, `✅ Model set to *${esc(args)}*`);
+  const restarted = restartPtyForSettingChange(chatId, keyInfo.sessionKey);
+  await replyMd(ctx, `✅ Model set to *${esc(args)}*${restarted ? PTY_RESTART_NOTE : ''}`);
 }
 
 export async function handleModelCallback(ctx: Context): Promise<void> {
   const cb = parseCallback(ctx, 'model:');
   if (!cb) return;
-  const { chatId, data } = cb;
+  const { chatId, sessionKey, data } = cb;
 
   const model = data.replace('model:', '');
 
@@ -2238,13 +2246,14 @@ export async function handleModelCallback(ctx: Context): Promise<void> {
   }
 
   setModel(chatId, model);
+  const restarted = restartPtyForSettingChange(chatId, sessionKey);
 
   const modelInfo = models.find(m => m.id === model);
   const displayName = modelInfo?.label || model;
 
   await ctx.answerCallbackQuery({ text: `Model set to ${displayName}!` });
   await ctx.editMessageText(
-    `✅ Model set to *${esc(displayName)}*`,
+    `✅ Model set to *${esc(displayName)}*${restarted ? PTY_RESTART_NOTE : ''}`,
     { parse_mode: 'MarkdownV2' }
   );
 }
@@ -4660,6 +4669,25 @@ function formatBtwElapsed(ms: number): string {
   return `${Math.floor(seconds / 60)}m${String(seconds % 60).padStart(2, '0')}s`;
 }
 
+/**
+ * PTY mode hands /effort and /model to claude as spawn flags, so a change only
+ * lands on a fresh process. Drop the live pty: the next turn respawns with
+ * `--resume` onto the same session id, so the conversation survives — only the
+ * running process goes. Same move /fork makes to pick up a loaded branch.
+ *
+ * Returns true when a restart was actually queued, so the caller can say so
+ * instead of claiming a setting took effect that hasn't yet.
+ */
+function restartPtyForSettingChange(chatId: number, sessionKey: string): boolean {
+  if (getActiveProviderName(chatId) !== 'claude') return false;
+  if (userPreferences.getMethod(chatId) !== 'pty') return false;
+  getPtyProvider().clearConversation(sessionKey);
+  return true;
+}
+
+/** Escaped MarkdownV2 note appended when a pty restart is pending. */
+const PTY_RESTART_NOTE = '\n\n_Claude Code restarts on your next message to pick this up \\(the conversation is kept\\)\\._';
+
 // ── /effort ──────────────────────────────────────────────────────
 
 const EFFORT_LEVELS: { id: EffortLevel; label: string; description: string }[] = [
@@ -4673,7 +4701,7 @@ const EFFORT_LEVELS: { id: EffortLevel; label: string; description: string }[] =
 export async function handleEffort(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
-  const { chatId } = keyInfo;
+  const { chatId, sessionKey } = keyInfo;
 
   const text = ctx.message?.text || '';
   const args = text.split(' ').slice(1).join(' ').trim().toLowerCase();
@@ -4705,7 +4733,8 @@ export async function handleEffort(ctx: Context): Promise<void> {
 
   if (args === 'auto' || args === 'default' || args === 'reset') {
     clearEffort(chatId);
-    await replyMd(ctx, '✅ Effort reset to *auto* \\(SDK default\\)');
+    const restarted = restartPtyForSettingChange(chatId, sessionKey);
+    await replyMd(ctx, `✅ Effort reset to *auto* \\(CLI default\\)${restarted ? PTY_RESTART_NOTE : ''}`);
     return;
   }
 
@@ -4715,14 +4744,15 @@ export async function handleEffort(ctx: Context): Promise<void> {
   }
 
   setEffort(chatId, args);
+  const restarted = restartPtyForSettingChange(chatId, sessionKey);
   const info = EFFORT_LEVELS.find(l => l.id === args);
-  await replyMd(ctx, `✅ Effort set to *${esc(info?.label || args)}*`);
+  await replyMd(ctx, `✅ Effort set to *${esc(info?.label || args)}*${restarted ? PTY_RESTART_NOTE : ''}`);
 }
 
 export async function handleEffortCallback(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
-  const { chatId } = keyInfo;
+  const { chatId, sessionKey } = keyInfo;
 
   const data = ctx.callbackQuery?.data;
   if (!data || !data.startsWith('effort:')) return;
@@ -4731,8 +4761,12 @@ export async function handleEffortCallback(ctx: Context): Promise<void> {
 
   if (level === 'auto') {
     clearEffort(chatId);
+    const restarted = restartPtyForSettingChange(chatId, sessionKey);
     await ctx.answerCallbackQuery({ text: 'Effort reset to auto!' });
-    await ctx.editMessageText('✅ Effort reset to *auto* \\(SDK default\\)', { parse_mode: 'MarkdownV2' });
+    await ctx.editMessageText(
+      `✅ Effort reset to *auto* \\(CLI default\\)${restarted ? PTY_RESTART_NOTE : ''}`,
+      { parse_mode: 'MarkdownV2' },
+    );
     return;
   }
 
@@ -4742,12 +4776,16 @@ export async function handleEffortCallback(ctx: Context): Promise<void> {
   }
 
   setEffort(chatId, level);
+  const restarted = restartPtyForSettingChange(chatId, sessionKey);
 
   const info = EFFORT_LEVELS.find(l => l.id === level);
   const displayName = info?.label || level;
 
   await ctx.answerCallbackQuery({ text: `Effort set to ${displayName}!` });
-  await ctx.editMessageText(`✅ Effort set to *${esc(displayName)}*`, { parse_mode: 'MarkdownV2' });
+  await ctx.editMessageText(
+    `✅ Effort set to *${esc(displayName)}*${restarted ? PTY_RESTART_NOTE : ''}`,
+    { parse_mode: 'MarkdownV2' },
+  );
 }
 
 // ── /statusline ─────────────────────────────────────────────────
