@@ -676,6 +676,16 @@ export class MessageSender {
     const sessionKey = getSessionKeyFromCtx(ctx)?.sessionKey;
     if (!sessionKey) return false;
     if (!actionLogger.isActive(sessionKey)) {
+      // No log for this session. Only open one if a turn is actually
+      // streaming — otherwise this is a straggler arriving after the turn
+      // ended and the log was collapsed and cleaned up (5s after finishStream),
+      // and initializing here would start a *second*, live-looking action log
+      // below the collapsed summary. Stragglers post as their own message
+      // instead, matching what postMonitorEvent already does.
+      if (!this.streamStates.has(sessionKey)) {
+        console.debug(`[ActionLog] Straggler for ${sessionKey} after log cleanup — posting directly instead of opening a new log`);
+        return false;
+      }
       await actionLogger.initialize(ctx, sessionKey);
     }
     await forward(sessionKey);
