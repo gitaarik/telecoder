@@ -1781,6 +1781,11 @@
             <p>/project opens with your favorite projects — one tap to switch. ⭐ from inside the workspace browser to add the current folder, or use ✍️ Enter path to point at any directory on disk (escapes the workspace root). Favorites persist across restarts in ~/.claudegram/project-favorites.json.</p>
           </div>
           <div class="feature-card" data-category="session">
+            <div class="feature-icon">💬</div>
+            <h3>Side Questions</h3>
+            <p>/btw answers a question about the running task without interrupting it. SDK mode asks the live query directly; PTY mode forks the session into a read-only, non-persisted copy that sees the transcript up to the current moment — the working turn never pauses and the transcript is never written to.</p>
+          </div>
+          <div class="feature-card" data-category="session">
             <div class="feature-icon">🚀</div>
             <h3>Teleport to Terminal</h3>
             <p>Move your conversation from Telegram to a terminal session with /teleport. Fork and continue in both places.</p>
@@ -2039,7 +2044,7 @@
             </div>
             <div class="command-row">
               <code class="command-code">/btw &lt;question&gt;</code>
-              <span class="command-desc">Ask a side question without interrupting the current task</span>
+              <span class="command-desc">Ask a side question without interrupting the current task. Works in both modes: SDK mode uses the live query's side-question channel, PTY mode answers from a read-only, non-persisted fork of the running session — so the transcript is never touched and the turn keeps going.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/tasks</code>

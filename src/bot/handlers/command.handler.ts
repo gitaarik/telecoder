@@ -80,6 +80,7 @@ import {
 } from '../../utils/proc-children.js';
 import { taskTracker, type TaskState } from '../../telegram/task-tracker.js';
 import { readRecentExchanges, readLastAiTitle, readLastAssistantTurnText, type RecapExchange } from '../../claude/session-jsonl.js';
+import { askForkedSideQuestion } from '../../claude/side-question.js';
 import {
   VERBOSITY_INFO,
   isValidVerbosityLevel,
@@ -4447,7 +4448,7 @@ export async function executeExtract(ctx: Context, url: string, mode: ExtractMod
 export async function handleBtw(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
+  const { sessionKey, chatId } = keyInfo;
 
   const text = ctx.message?.text || '';
   const question = text.replace(/^\/btw\s*/i, '').trim();
@@ -4457,9 +4458,24 @@ export async function handleBtw(ctx: Context): Promise<void> {
     return;
   }
 
+  // PTY mode has no SDK Query to hang askSideQuestion off — answer from a
+  // read-only fork of the live session instead. Only Claude sessions have a
+  // resumable JSONL transcript; ccr/opencode fall through to the SDK path.
+  const usesPty = getActiveProviderName(chatId) === 'claude'
+    && userPreferences.getMethod(chatId) === 'pty';
+  if (usesPty) {
+    await handleBtwViaFork(ctx, sessionKey, question);
+    return;
+  }
+
   const activeQuery = getActiveQuery(sessionKey);
   if (!activeQuery) {
-    await ctx.reply('No active session. Send your question as a regular message instead.', { parse_mode: undefined });
+    // The query object only exists while a turn is in flight — this is not a
+    // statement about whether the conversation itself exists.
+    await ctx.reply(
+      'No turn is running right now, so there is nothing to ask alongside. Send your question as a regular message instead.',
+      { parse_mode: undefined }
+    );
     return;
   }
 
@@ -4481,6 +4497,46 @@ export async function handleBtw(ctx: Context): Promise<void> {
     const msg = error instanceof Error ? error.message : 'Unknown error';
     console.error('[btw] Error:', msg);
     await ctx.reply(`Failed to answer side question: ${msg}`, { parse_mode: undefined });
+  }
+}
+
+/**
+ * PTY-mode `/btw`: shell out to a forked, non-persisted copy of the live
+ * claude session so the running turn is never interrupted or mutated.
+ */
+async function handleBtwViaFork(ctx: Context, sessionKey: string, question: string): Promise<void> {
+  const session = sessionManager.getSession(sessionKey);
+  if (!session?.claudeSessionId) {
+    await ctx.reply(
+      'No conversation to ask about yet. Send a message first, then /btw can answer alongside it.',
+      { parse_mode: undefined }
+    );
+    return;
+  }
+
+  const ack = await ctx.reply('💬 Asking on the side...', { parse_mode: undefined });
+
+  try {
+    const result = await askForkedSideQuestion({
+      question,
+      sessionId: session.claudeSessionId,
+      cwd: session.workingDirectory,
+    });
+    if (!result.response) {
+      await ctx.reply("I don't have enough context to answer that.", { parse_mode: undefined });
+      return;
+    }
+    await messageSender.sendMessage(ctx, result.response);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[btw] Fork error:', sanitizeError(error));
+    await ctx.reply(`Failed to answer side question: ${msg}`, { parse_mode: undefined });
+  } finally {
+    try {
+      await ctx.api.deleteMessage(ctx.chat!.id, ack.message_id);
+    } catch {
+      // ignore cleanup errors
+    }
   }
 }
 
