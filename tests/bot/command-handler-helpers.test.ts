@@ -3,6 +3,8 @@ import {
   truncateToBytes,
   parseContextOutput,
   resumeCommandMessage,
+  btwLabel,
+  formatSideAnswer,
 } from '../../src/bot/handlers/command.handler.js';
 
 describe('truncateToBytes', () => {
@@ -66,5 +68,43 @@ describe('parseContextOutput', () => {
     expect(out).toContain('### Estimated usage by category');
     expect(out).toContain('**System prompt:** 2.5k (1.2%)');
     expect(out).toContain('**Messages:** 7.5k (3.8%)');
+  });
+});
+
+describe('btwLabel', () => {
+  it('leaves a short question intact', () => {
+    expect(btwLabel('what about the RAG plans?')).toBe('what about the RAG plans?');
+  });
+
+  it('collapses newlines and runs of whitespace', () => {
+    expect(btwLabel('what about\n\n  the   plans?  ')).toBe('what about the plans?');
+  });
+
+  it('strips formatting characters that would unbalance the italic run', () => {
+    expect(btwLabel('what about *this* and _that_ and `code` and [links]'))
+      .toBe('what about this and that and code and links');
+  });
+
+  it('truncates to 80 characters with an ellipsis', () => {
+    const out = btwLabel('x'.repeat(200));
+    expect(out).toHaveLength(80);
+    expect(out.endsWith('…')).toBe(true);
+  });
+
+  it('does not truncate a question exactly at the limit', () => {
+    const exact = 'y'.repeat(80);
+    expect(btwLabel(exact)).toBe(exact);
+  });
+});
+
+describe('formatSideAnswer', () => {
+  it('labels the answer so it cannot be mistaken for the running turn', () => {
+    const out = formatSideAnswer('what about the RAG plans?', 'Looks solid.');
+    expect(out).toBe('💬 **/btw** — _what about the RAG plans?_\n\nLooks solid.');
+  });
+
+  it('sanitizes the echoed question inside the italic run', () => {
+    const out = formatSideAnswer('why *this* way?', 'Because.');
+    expect(out).toBe('💬 **/btw** — _why this way?_\n\nBecause.');
   });
 });
