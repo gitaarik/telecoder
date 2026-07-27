@@ -16,17 +16,29 @@ fi
 
 LOG_FILE="${ROOT_DIR}/claudegram.${MODE}.log"
 
+# Match this checkout by its actual path rather than a hardcoded directory
+# name, so renaming the folder doesn't silently break process detection.
+# Metacharacters are escaped because pgrep -f treats the pattern as an ERE.
+ROOT_DIR_RE="$(printf '%s' "${ROOT_DIR}" | sed 's/[].^$*+?(){}|[\\]/\\&/g')"
+
 DEV_PATTERNS=(
   "tsx watch src/index.ts"
-  "node .*claudegram/node_modules/.bin/tsx"
+  "node .*${ROOT_DIR_RE}/node_modules/\.bin/tsx"
   "tsx/dist/loader"
   "npm run dev"
   "npm exec tsx watch src/index.ts"
+  # Multi-instance launcher (npm run dev:multi)
+  "tsx src/launcher.ts"
+  "npm run dev:multi"
 )
 
 PROD_PATTERNS=(
   "node .*dist/index.js"
   "npm start"
+  # Multi-instance launcher (npm run start:multi) — without these, botctl
+  # reports "not running" while the launcher-based bot is very much running.
+  "node .*dist/launcher\.js"
+  "npm run start:multi"
 )
 
 ALL_PATTERNS=(
@@ -34,12 +46,32 @@ ALL_PATTERNS=(
   "${PROD_PATTERNS[@]}"
 )
 
+# The patterns above are generic — "npm run dev" or "tsx/dist/loader" match
+# any project on the machine, and these pids get killed. Restrict matches to
+# processes actually running out of this checkout.
+#
+# Needs /proc, so on systems without it (macOS) verification is skipped and
+# the old, broader behaviour applies.
+HAVE_PROC=0
+[[ -d /proc/self ]] && HAVE_PROC=1
+
+function pid_in_checkout() {
+  local pid="$1" cwd
+  [[ "${HAVE_PROC}" -eq 1 ]] || return 0
+  # Unreadable cwd means the process belongs to another user, so not ours.
+  cwd="$(readlink -e "/proc/${pid}/cwd" 2>/dev/null || true)"
+  [[ -n "${cwd}" ]] || return 1
+  [[ "${cwd}" == "${ROOT_DIR}" || "${cwd}" == "${ROOT_DIR}/"* ]]
+}
+
 function list_pids_for_patterns() {
   local -a patterns=("$@")
   local pids=()
   for pattern in "${patterns[@]}"; do
     while IFS= read -r pid; do
-      [[ -n "${pid}" ]] && pids+=("${pid}")
+      [[ -n "${pid}" ]] || continue
+      pid_in_checkout "${pid}" || continue
+      pids+=("${pid}")
     done < <(pgrep -f "${pattern}" || true)
   done
 
