@@ -37,7 +37,11 @@ When a new contributor makes significant contributions (check `git shortlog -sn`
 Before committing, verify that `docs/index.html` reflects ALL:
 - Feature cards for every user-facing feature
 - Command rows for every bot command in `src/bot/handlers/command.handler.ts`
-- Contributor cards for every contributor with 3+ commits
+- Contributor cards for every contributor with 3+ commits **whose GitHub account still
+  exists** — a deleted account gives a 404 avatar and a dead link, so leave it off the
+  page. The credit stays in the git history either way. Verify with
+  `curl -o /dev/null -w '%{http_code}' https://github.com/<user>.png` (302 = fine,
+  404 = gone).
 
 ## Code Style
 
