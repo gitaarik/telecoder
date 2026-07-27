@@ -50,6 +50,8 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 - Streaming responses with live-updating messages
 - Model picker: Sonnet · Opus · Haiku
 - Plan mode, explore mode, loop mode
+- Provider router — Claude Code (SDK or PTY), CCR, or OpenCode, with
+  one-tap failover when Max throttles ([details](#providers))
 
 ### Reddit Integration
 - `/reddit` — posts, subreddits, user profiles
@@ -107,6 +109,67 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 </td>
 </tr>
 </table>
+
+---
+
+## Providers
+
+Claude Code is the primary backend and gets the deepest support — but it isn't the
+only one. A provider router sits behind every message, so when Max throttles or you
+want a different model, the bot keeps working instead of stopping.
+
+| Provider | What it is | Enable |
+|----------|------------|--------|
+| `claude` | Claude Code itself, over one of two transports (`/method`): **SDK** (default, Claude Agent SDK) or **PTY** (drives the real `claude` CLI in a pseudo-terminal) | on by default |
+| `ccr` | The same `claude` binary, routed through a local [Claude Code Router](https://github.com/musistudio/claude-code-router) proxy so non-Anthropic models can back it | `CCR_ENABLED=true` |
+| `opencode` | An [OpenCode](https://opencode.ai) server — 75+ LLM providers. Embedded by default, or point it at one you already run | `OPENCODE_ENABLED=true` |
+
+`/provider` opens a picker listing the enabled backends. `/ccr` is a one-tap toggle
+between Claude and CCR for the common "I'm throttled, keep going" case. Both are
+sticky — the choice holds until you switch back.
+
+### Throttle failover
+
+When a Max usage-limit throttle is detected mid-turn, the bot doesn't just surface
+the error — it offers a **🔌 Switch to CCR & retry** button, with the reset time when
+one can be parsed from the response. One tap moves the session to CCR and replays the
+message you just sent. Set `CCR_AUTO_PROMPT_ON_THROTTLE=false` for a plain error instead.
+
+If the CCR proxy isn't reachable, `CCR_AUTOSTART=true` runs `ccr start` in the background
+rather than letting the request hang on a refused connection.
+
+### Switching mid-conversation
+
+Sessions can't cross backends — one model can't replay another's thinking blocks, and
+attempting it fails with a signature error. So a switch that would abandon a live session
+asks for confirmation first, then **forks**: a fresh session starts on the new backend,
+carrying a plain-text summary of the conversation so far. The model preference is cleared
+at the same time, since `opus`/`sonnet`/`haiku` don't map 1:1 once CCR's router decides
+the real backend per request.
+
+### What stays behind on the alternates
+
+The alternate providers run the agent; they don't inherit every part of the Claude Code
+integration:
+
+- **PTY transport** — `ccr` and `opencode` always take the SDK path, along with the
+  PTY-only features layered on it
+- **`/teleport`** — needs a resumable Claude session on disk, so it's declined on OpenCode
+- **`/context`** — falls back to the Claude CLI when there's no cached usage, so on
+  OpenCode you get numbers only after the first reply
+
+```bash
+# .env
+CCR_ENABLED=true
+CCR_BASE_URL=http://localhost:3456
+CCR_AUTH_TOKEN=your_ccr_token
+CCR_AUTO_PROMPT_ON_THROTTLE=true
+CCR_AUTOSTART=false
+
+OPENCODE_ENABLED=true
+# OPENCODE_BASE_URL=http://localhost:4096   # external server
+# OPENCODE_PORT=4096                        # embedded server port
+```
 
 ---
 
@@ -170,6 +233,9 @@ Open your bot in Telegram → `/start`
 | `/loop` | Run iteratively until task complete |
 | `/model` | Switch Sonnet / Opus / Haiku |
 | `/mode` | Toggle streaming / wait |
+| `/method` | Switch Claude transport (SDK / PTY) |
+| `/provider` | Switch backend — Claude / CCR / OpenCode (shown when either alternate is enabled) |
+| `/ccr` | Sticky toggle between Claude and CCR routing (shown when `CCR_ENABLED`) |
 | `/verbosity` | Pick verbosity tier (quiet / normal / verbose / debug) |
 | `/terminalui` | Toggle terminal-style display |
 
@@ -285,6 +351,20 @@ All config lives in `.env`. See [`.env.example`](.env.example) for the full anno
 | `DANGEROUS_MODE` | `false` | Auto-approve all tool permissions |
 | `CANCEL_ON_NEW_MESSAGE` | `false` | Auto-cancel running query on new message |
 | `CLAUDE_SDK_LOG_LEVEL` | `off` | SDK log level: off, basic, verbose, trace |
+
+### Providers
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CCR_ENABLED` | `false` | Enable `/ccr` and CCR in `/provider` |
+| `CCR_BASE_URL` | `http://localhost:3456` | Where CCR's local proxy listens |
+| `CCR_AUTH_TOKEN` | — | CCR's local auth token |
+| `CCR_AUTO_PROMPT_ON_THROTTLE` | `true` | Offer a one-tap CCR retry on Max throttle |
+| `CCR_AUTOSTART` | `false` | Run `ccr start` when the proxy isn't reachable |
+| `CCR_BINARY` | `ccr` | Path or name of the `ccr` binary for autostart |
+| `OPENCODE_ENABLED` | `false` | Enable OpenCode in `/provider` |
+| `OPENCODE_BASE_URL` | — | External OpenCode server (embedded if unset) |
+| `OPENCODE_PORT` | `4096` | Port for the embedded OpenCode server |
 
 ### Reddit
 
