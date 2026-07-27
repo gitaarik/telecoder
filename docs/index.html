@@ -3,20 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TeleCoder - Claude Code via Telegram</title>
+  <title>TeleCoder — Claude Code from Telegram</title>
+  <meta name="description" content="Drive a full Claude Code agent from Telegram. Runs on your own machine, and routes to CCR or OpenCode when your usage limit hits.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230c0a07'/%3E%3Ccircle cx='17' cy='32' r='7' fill='%23ffb000'/%3E%3Crect x='30' y='25' width='25' height='14' rx='7' fill='%23ffb000'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-deep: #0a0a0f;
-      --bg-surface: #12121a;
-      --neon-cyan: #00ffd5;
-      --neon-magenta: #ff006e;
-      --neon-amber: #ffbe0b;
-      --text-primary: #e8e8ed;
-      --text-muted: #6b6b7b;
-      --glass-bg: rgba(18, 18, 26, 0.7);
+      --bg-deep: #0c0a07;
+      --bg-surface: #17130d;
+      --signal-amber: #ffb000;
+      --signal-ember: #ff5c39;
+      --signal-gold: #ffd166;
+      --text-primary: #f2ece1;
+      --text-muted: #8d8474;
+      --glass-bg: rgba(23, 19, 13, 0.72);
       --glass-border: rgba(255, 255, 255, 0.08);
       --glow-cyan: 0 0 20px rgba(0, 255, 213, 0.4), 0 0 40px rgba(0, 255, 213, 0.2);
       --glow-magenta: 0 0 20px rgba(255, 0, 110, 0.4), 0 0 40px rgba(255, 0, 110, 0.2);
@@ -36,7 +38,7 @@
     }
 
     body {
-      font-family: 'Outfit', sans-serif;
+      font-family: 'Space Grotesk', sans-serif;
       background: var(--bg-deep);
       color: var(--text-primary);
       min-height: 100vh;
@@ -157,10 +159,10 @@
     }
 
     .nav-logo {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'IBM Plex Mono', monospace;
       font-size: 1.25rem;
       font-weight: 700;
-      color: var(--neon-cyan);
+      color: var(--signal-amber);
       text-decoration: none;
       display: flex;
       align-items: center;
@@ -189,7 +191,7 @@
     }
 
     .nav-links a:hover {
-      color: var(--neon-cyan);
+      color: var(--signal-amber);
     }
 
     /* Hero Section */
@@ -212,9 +214,9 @@
       background: var(--glass-bg);
       border: 1px solid var(--glass-border);
       border-radius: 100px;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'IBM Plex Mono', monospace;
       font-size: 0.75rem;
-      color: var(--neon-cyan);
+      color: var(--signal-amber);
       margin-bottom: 2rem;
       opacity: 0;
       animation: fadeInUp 0.8s ease 0.3s forwards;
@@ -223,7 +225,7 @@
     .badge-dot {
       width: 6px;
       height: 6px;
-      background: var(--neon-cyan);
+      background: var(--signal-amber);
       border-radius: 50%;
       animation: blink 1.5s ease-in-out infinite;
     }
@@ -243,7 +245,7 @@
     }
 
     .hero-title .highlight {
-      background: linear-gradient(135deg, var(--neon-cyan) 0%, var(--neon-magenta) 100%);
+      background: linear-gradient(135deg, var(--signal-amber) 0%, var(--signal-ember) 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
@@ -294,7 +296,7 @@
     }
 
     .btn-primary {
-      background: linear-gradient(135deg, var(--neon-cyan) 0%, #00b894 100%);
+      background: linear-gradient(135deg, var(--signal-amber) 0%, #00b894 100%);
       color: var(--bg-deep);
       box-shadow: var(--glow-cyan);
     }
@@ -312,7 +314,7 @@
     }
 
     .btn-secondary:hover {
-      border-color: var(--neon-cyan);
+      border-color: var(--signal-amber);
       background: rgba(0, 255, 213, 0.1);
     }
 
@@ -363,7 +365,7 @@
       width: 40px;
       height: 40px;
       border-radius: 50%;
-      background: linear-gradient(135deg, var(--neon-cyan) 0%, #0088cc 100%);
+      background: linear-gradient(135deg, var(--signal-amber) 0%, #0088cc 100%);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -468,9 +470,9 @@
       background: rgba(0,0,0,0.3);
       padding: 0.125rem 0.375rem;
       border-radius: 4px;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'IBM Plex Mono', monospace;
       font-size: 0.85rem;
-      color: var(--neon-cyan);
+      color: var(--signal-amber);
     }
 
     .chat-message .success {
@@ -487,10 +489,10 @@
     }
 
     .chat-message.terminal {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'IBM Plex Mono', monospace;
       font-size: 0.85rem;
       background: rgba(0, 255, 213, 0.1);
-      border-left: 2px solid var(--neon-cyan);
+      border-left: 2px solid var(--signal-amber);
     }
 
     .telegram-input {
@@ -580,9 +582,9 @@
     }
 
     .section-tag {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'IBM Plex Mono', monospace;
       font-size: 0.875rem;
-      color: var(--neon-magenta);
+      color: var(--signal-ember);
       text-transform: uppercase;
       letter-spacing: 0.1em;
       margin-bottom: 1rem;
@@ -591,6 +593,24 @@
     .section-title {
       font-size: clamp(2rem, 5vw, 3rem);
       font-weight: 700;
+    }
+
+    .section-subtitle {
+      max-width: 46rem;
+      margin: 1rem auto 0;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    .section-subtitle a {
+      color: var(--signal-amber);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(255, 176, 0, 0.35);
+    }
+
+    .section-subtitle a:hover {
+      border-bottom-color: var(--signal-amber);
     }
 
     .features-grid {
@@ -666,14 +686,14 @@
     }
 
     .feature-tab:hover {
-      border-color: var(--neon-cyan);
+      border-color: var(--signal-amber);
       color: var(--text-primary);
     }
 
     .feature-tab.active {
       background: linear-gradient(135deg, rgba(0, 255, 213, 0.2) 0%, rgba(255, 0, 110, 0.1) 100%);
-      border-color: var(--neon-cyan);
-      color: var(--neon-cyan);
+      border-color: var(--signal-amber);
+      color: var(--signal-amber);
     }
 
     .feature-card.hidden {
@@ -711,7 +731,7 @@
     }
 
     .flow-node:hover {
-      border-color: var(--neon-cyan);
+      border-color: var(--signal-amber);
       box-shadow: var(--glow-cyan);
     }
 
@@ -720,13 +740,13 @@
     }
 
     .flow-node-label {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'IBM Plex Mono', monospace;
       font-size: 0.85rem;
       color: var(--text-primary);
     }
 
     .flow-arrow {
-      color: var(--neon-cyan);
+      color: var(--signal-amber);
       font-size: 1.5rem;
       animation: arrowPulse 1.5s ease-in-out infinite;
     }
@@ -766,14 +786,14 @@
     }
 
     .command-row:hover {
-      border-color: var(--neon-amber);
+      border-color: var(--signal-gold);
       background: rgba(255, 190, 11, 0.05);
     }
 
     .command-code {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'IBM Plex Mono', monospace;
       font-size: 0.95rem;
-      color: var(--neon-amber);
+      color: var(--signal-gold);
     }
 
     .command-desc {
@@ -813,10 +833,10 @@
     }
 
     .footer-logo {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'IBM Plex Mono', monospace;
       font-size: 1.5rem;
       font-weight: 700;
-      color: var(--neon-cyan);
+      color: var(--signal-amber);
       margin-bottom: 1rem;
     }
 
@@ -840,7 +860,7 @@
     }
 
     .footer-links a:hover {
-      color: var(--neon-cyan);
+      color: var(--signal-amber);
     }
 
     /* Responsive */
@@ -909,7 +929,7 @@
     }
 
     ::-webkit-scrollbar-thumb:hover {
-      background: var(--neon-cyan);
+      background: var(--signal-amber);
     }
 
     /* Getting Started Section */
@@ -935,7 +955,7 @@
     .prerequisites-card h3 {
       font-size: 1.25rem;
       margin-bottom: 1.25rem;
-      color: var(--neon-cyan);
+      color: var(--signal-amber);
     }
 
     .prereq-grid {
@@ -952,7 +972,7 @@
       background: rgba(0, 255, 213, 0.1);
       border: 1px solid rgba(0, 255, 213, 0.2);
       border-radius: 100px;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'IBM Plex Mono', monospace;
       font-size: 0.85rem;
       color: var(--text-primary);
     }
@@ -966,7 +986,7 @@
       margin-top: 1rem;
       padding: 0.75rem 1rem;
       background: rgba(255, 190, 11, 0.1);
-      border-left: 3px solid var(--neon-amber);
+      border-left: 3px solid var(--signal-gold);
       border-radius: 0 8px 8px 0;
       font-size: 0.9rem;
       color: var(--text-muted);
@@ -984,7 +1004,7 @@
     .quick-start-card h3 {
       font-size: 1.25rem;
       margin-bottom: 1.25rem;
-      color: var(--neon-magenta);
+      color: var(--signal-ember);
     }
 
     .code-block {
@@ -1004,7 +1024,7 @@
     }
 
     .code-header span {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'IBM Plex Mono', monospace;
       font-size: 0.8rem;
       color: var(--text-muted);
     }
@@ -1021,8 +1041,8 @@
     }
 
     .copy-btn:hover {
-      border-color: var(--neon-cyan);
-      color: var(--neon-cyan);
+      border-color: var(--signal-amber);
+      color: var(--signal-amber);
     }
 
     .copy-btn.copied {
@@ -1037,7 +1057,7 @@
 
     .code-content pre {
       margin: 0;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'IBM Plex Mono', monospace;
       font-size: 0.9rem;
       line-height: 1.6;
       color: var(--text-primary);
@@ -1048,7 +1068,7 @@
     }
 
     .code-content .command {
-      color: var(--neon-cyan);
+      color: var(--signal-amber);
     }
 
     .steps-card {
@@ -1100,9 +1120,9 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(135deg, var(--neon-cyan) 0%, var(--neon-magenta) 100%);
+      background: linear-gradient(135deg, var(--signal-amber) 0%, var(--signal-ember) 100%);
       border-radius: 50%;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'IBM Plex Mono', monospace;
       font-size: 0.85rem;
       font-weight: 700;
       color: var(--bg-deep);
@@ -1124,9 +1144,9 @@
       background: rgba(0, 255, 213, 0.1);
       padding: 0.125rem 0.375rem;
       border-radius: 4px;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'IBM Plex Mono', monospace;
       font-size: 0.85rem;
-      color: var(--neon-cyan);
+      color: var(--signal-amber);
     }
 
     .config-card {
@@ -1141,7 +1161,7 @@
     .config-card h3 {
       font-size: 1.25rem;
       margin-bottom: 1.25rem;
-      color: var(--neon-amber);
+      color: var(--signal-gold);
     }
 
     .config-table-wrapper {
@@ -1162,7 +1182,7 @@
     }
 
     .config-table th {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'IBM Plex Mono', monospace;
       font-size: 0.8rem;
       text-transform: uppercase;
       letter-spacing: 0.05em;
@@ -1188,12 +1208,12 @@
     }
 
     .config-table .var-name {
-      font-family: 'JetBrains Mono', monospace;
-      color: var(--neon-amber);
+      font-family: 'IBM Plex Mono', monospace;
+      color: var(--signal-gold);
     }
 
     .config-table .required-yes {
-      color: var(--neon-cyan);
+      color: var(--signal-amber);
     }
 
     .config-table .required-no {
@@ -1201,14 +1221,14 @@
     }
 
     .config-table .required-optional {
-      color: var(--neon-magenta);
+      color: var(--signal-ember);
     }
 
     .config-note {
       margin-top: 1rem;
       padding: 0.75rem 1rem;
       background: rgba(255, 0, 110, 0.1);
-      border-left: 3px solid var(--neon-magenta);
+      border-left: 3px solid var(--signal-ember);
       border-radius: 0 8px 8px 0;
       font-size: 0.9rem;
       color: var(--text-muted);
@@ -1267,7 +1287,7 @@
 
     .contributor-card:hover {
       transform: translateY(-5px);
-      border-color: var(--neon-cyan);
+      border-color: var(--signal-amber);
       box-shadow: var(--glow-cyan);
     }
 
@@ -1280,7 +1300,7 @@
     }
 
     .contributor-card:hover .contributor-avatar {
-      border-color: var(--neon-cyan);
+      border-color: var(--signal-amber);
     }
 
     .contributor-name {
@@ -1291,8 +1311,8 @@
 
     .contributor-role {
       font-size: 0.85rem;
-      color: var(--neon-cyan);
-      font-family: 'JetBrains Mono', monospace;
+      color: var(--signal-amber);
+      font-family: 'IBM Plex Mono', monospace;
     }
 
     @media (max-width: 768px) {
@@ -1336,14 +1356,16 @@
     <section class="hero">
       <div class="hero-badge">
         <span class="badge-dot"></span>
-        Open Source
+        Open source · MIT · self-hosted
       </div>
       <h1 class="hero-title">
         <span class="highlight">Claude Code</span><br>
-        via Telegram
+        from Telegram
       </h1>
       <p class="hero-subtitle">
-        Your personal AI agent, running on your machine, controlled from Telegram.
+        A full coding agent on your own machine, driven from your phone. It keeps
+        working while you're away, pages you when it's done, and falls back to
+        another provider when your usage limit runs out.
       </p>
       <div class="hero-buttons">
         <a href="https://github.com/gitaarik/telecoder" class="btn btn-primary">
@@ -1356,248 +1378,44 @@
       </div>
     </section>
 
-    <section id="getting-started" class="getting-started-section">
+    <section id="why" class="features-section">
       <div class="container">
         <div class="section-header">
-          <p class="section-tag">Installation</p>
-          <h2 class="section-title">Getting Started</h2>
+          <p class="section-tag">Why TeleCoder</p>
+          <h2 class="section-title">Built to keep going</h2>
         </div>
-        <div class="getting-started-content">
-          <div class="prerequisites-card">
-            <h3>Prerequisites</h3>
-            <div class="prereq-grid">
-              <span class="prereq-badge">Node.js v18+</span>
-              <span class="prereq-badge">npm</span>
-              <span class="prereq-badge">Telegram account</span>
-              <span class="prereq-badge optional">Anthropic API key</span>
-              <span class="prereq-badge optional">Claude Max subscription</span>
-            </div>
-            <div class="prereq-note">
-              <strong>Note:</strong> On macOS, TeleCoder uses <code>caffeinate</code> to prevent sleep during long operations.
-            </div>
+        <div class="features-grid">
+          <div class="feature-card">
+            <div class="feature-icon">🔌</div>
+            <h3>Survives your usage limit</h3>
+            <p>When Claude Max throttles mid-turn, TeleCoder doesn't just report the
+            error — it offers a one-tap switch to Claude Code Router and replays the
+            message you just sent. A provider router sits behind every message, so
+            Claude, CCR and OpenCode are all reachable from <code>/provider</code>.</p>
           </div>
-
-          <div class="quick-start-card">
-            <h3>Quick Start</h3>
-            <div class="code-block">
-              <div class="code-header">
-                <span>Terminal</span>
-                <button type="button" class="copy-btn" onclick="copyCode(this)">Copy</button>
-              </div>
-              <div class="code-content">
-                <pre><span class="command">git clone</span> https://github.com/gitaarik/telecoder.git
-<span class="command">cd</span> telecoder
-<span class="command">npm install</span>
-<span class="command">cp</span> .env.example .env
-<span class="comment"># Edit .env with your credentials</span>
-<span class="command">npm run dev</span></pre>
-              </div>
-            </div>
+          <div class="feature-card">
+            <div class="feature-icon">🛰️</div>
+            <h3>Two transports, one agent</h3>
+            <p>Run against the Claude Agent SDK, or drive the real <code>claude</code>
+            CLI in a pseudo-terminal with <code>/method</code> — built for the policy
+            split between programmatic usage and a Pro/Max subscription. Session
+            resume, forks and <code>/compact</code> work either way.</p>
           </div>
-
-          <div class="steps-card">
-            <h3>Step-by-Step Setup</h3>
-            <div class="steps-grid">
-              <div class="step-item">
-                <span class="step-number">1</span>
-                <div class="step-content">
-                  <h4>Clone the repository</h4>
-                  <p>Download the project using <code>git clone</code></p>
-                </div>
-              </div>
-              <div class="step-item">
-                <span class="step-number">2</span>
-                <div class="step-content">
-                  <h4>Install dependencies</h4>
-                  <p>Run <code>npm install</code> in the project directory</p>
-                </div>
-              </div>
-              <div class="step-item">
-                <span class="step-number">3</span>
-                <div class="step-content">
-                  <h4>Create Telegram bot</h4>
-                  <p>Message <code>@BotFather</code> on Telegram and use <code>/newbot</code> to get your token</p>
-                </div>
-              </div>
-              <div class="step-item">
-                <span class="step-number">4</span>
-                <div class="step-content">
-                  <h4>Get your Telegram user ID</h4>
-                  <p>Message <code>@userinfobot</code> on Telegram to get your numeric user ID</p>
-                </div>
-              </div>
-              <div class="step-item">
-                <span class="step-number">5</span>
-                <div class="step-content">
-                  <h4>Configure environment</h4>
-                  <p>Copy <code>.env.example</code> to <code>.env</code> and fill in your credentials</p>
-                </div>
-              </div>
-              <div class="step-item">
-                <span class="step-number">6</span>
-                <div class="step-content">
-                  <h4>Run the bot</h4>
-                  <p>Start with <code>npm run dev</code> for development or <code>npm start</code> for production</p>
-                </div>
-              </div>
-              <div class="step-item">
-                <span class="step-number">7</span>
-                <div class="step-content">
-                  <h4>Verify it works</h4>
-                  <p>Send a message to your bot on Telegram and check for a response</p>
-                </div>
-              </div>
-            </div>
+          <div class="feature-card">
+            <div class="feature-icon">📟</div>
+            <h3>It pages you</h3>
+            <p>Long tasks run in the background and ping you when they finish;
+            short ones edit their own message in place so the chat stays quiet.
+            Monitor output, subagent lifecycle and plan mode all surface as they
+            happen instead of arriving in one wall of text at the end.</p>
           </div>
-
-          <div class="config-card">
-            <h3>Configuration</h3>
-            <div class="config-table-wrapper">
-            <table class="config-table">
-              <thead>
-                <tr>
-                  <th>Variable</th>
-                  <th>Description</th>
-                  <th>Required</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr><td colspan="3" style="color: var(--neon-cyan); font-weight: 600; padding-top: 1.25rem;">Core</td></tr>
-                <tr>
-                  <td class="var-name">TELEGRAM_BOT_TOKEN</td>
-                  <td>Bot token from BotFather</td>
-                  <td class="required-yes">Yes</td>
-                </tr>
-                <tr>
-                  <td class="var-name">ALLOWED_USER_IDS</td>
-                  <td>Comma-separated Telegram user IDs</td>
-                  <td class="required-yes">Yes</td>
-                </tr>
-                <tr>
-                  <td class="var-name">ANTHROPIC_API_KEY</td>
-                  <td>Your Anthropic API key</td>
-                  <td class="required-optional">Optional*</td>
-                </tr>
-                <tr>
-                  <td class="var-name">WORKSPACE_DIR</td>
-                  <td>Default workspace path for projects</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
-                  <td class="var-name">STREAMING_MODE</td>
-                  <td><code>streaming</code> or <code>wait</code> for responses</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
-                  <td class="var-name">BOT_MODE</td>
-                  <td><code>dev</code> or <code>prod</code></td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
-                  <td class="var-name">DANGEROUS_MODE</td>
-                  <td>Auto-approve all tool permissions (default: false)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr><td colspan="3" style="color: var(--neon-cyan); font-weight: 600; padding-top: 1.25rem;">API Keys</td></tr>
-                <tr>
-                  <td class="var-name">OPENAI_API_KEY</td>
-                  <td>For OpenAI TTS voices</td>
-                  <td class="required-optional">For TTS</td>
-                </tr>
-                <tr>
-                  <td class="var-name">GROQ_API_KEY</td>
-                  <td>For voice transcription &amp; Orpheus TTS</td>
-                  <td class="required-optional">For voice</td>
-                </tr>
-                <tr>
-                  <td class="var-name">REDDIT_CLIENT_ID</td>
-                  <td>Reddit OAuth2 app client ID</td>
-                  <td class="required-optional">For Reddit</td>
-                </tr>
-                <tr>
-                  <td class="var-name">REDDIT_CLIENT_SECRET</td>
-                  <td>Reddit OAuth2 app client secret</td>
-                  <td class="required-optional">For Reddit</td>
-                </tr>
-                <tr>
-                  <td class="var-name">REDDIT_USERNAME</td>
-                  <td>Reddit bot account username</td>
-                  <td class="required-optional">For Reddit</td>
-                </tr>
-                <tr>
-                  <td class="var-name">REDDIT_PASSWORD</td>
-                  <td>Reddit bot account password</td>
-                  <td class="required-optional">For Reddit</td>
-                </tr>
-                <tr><td colspan="3" style="color: var(--neon-cyan); font-weight: 600; padding-top: 1.25rem;">Feature Flags</td></tr>
-                <tr>
-                  <td class="var-name">TTS_ENABLED</td>
-                  <td>Enable text-to-speech (default: true)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
-                  <td class="var-name">REDDIT_ENABLED</td>
-                  <td>Enable /reddit command (default: true)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
-                  <td class="var-name">VREDDIT_ENABLED</td>
-                  <td>Enable /vreddit command (default: true)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
-                  <td class="var-name">MEDIUM_ENABLED</td>
-                  <td>Enable /medium command (default: true)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
-                  <td class="var-name">TRANSCRIBE_ENABLED</td>
-                  <td>Enable voice transcription (default: true)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
-                  <td class="var-name">EXTRACT_ENABLED</td>
-                  <td>Enable /extract command (default: true)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr><td colspan="3" style="color: var(--neon-cyan); font-weight: 600; padding-top: 1.25rem;">TTS Configuration</td></tr>
-                <tr>
-                  <td class="var-name">TTS_PROVIDER</td>
-                  <td><code>openai</code> or <code>groq</code> (default: groq)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
-                  <td class="var-name">TTS_VOICE</td>
-                  <td>Default voice name (default: coral)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
-                  <td class="var-name">TTS_SPEED</td>
-                  <td>Playback speed multiplier (default: 1.0)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr><td colspan="3" style="color: var(--neon-cyan); font-weight: 600; padding-top: 1.25rem;">Display &amp; Behavior</td></tr>
-                <tr>
-                  <td class="var-name">TERMINAL_UI_DEFAULT</td>
-                  <td>Terminal-style display on by default (default: true)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
-                  <td class="var-name">MAX_LOOP_ITERATIONS</td>
-                  <td>Max iterations for /loop mode (default: 5)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
-                  <td class="var-name">CANCEL_ON_NEW_MESSAGE</td>
-                  <td>Auto-cancel running query on new message (default: false)</td>
-                  <td class="required-no">No</td>
-                </tr>
-              </tbody>
-            </table>
-            </div>
-            <div class="config-note">
-              *<code>ANTHROPIC_API_KEY</code> is optional if using a Claude Max subscription with <code>claude</code> CLI configured. All feature flags default to <code>true</code> — disabled features auto-hide from the Telegram menu.
-            </div>
+          <div class="feature-card">
+            <div class="feature-icon">🎛️</div>
+            <h3>Many bots, one process</h3>
+            <p>A multi-instance launcher runs several bots side by side with
+            per-bot session scoping, each with its own project, model and
+            reasoning effort — and a watchdog that notices when a query hangs
+            instead of leaving you staring at a silent chat.</p>
           </div>
         </div>
       </div>
@@ -1889,6 +1707,255 @@
       </div>
     </section>
 
+    <section id="getting-started" class="getting-started-section">
+      <div class="container">
+        <div class="section-header">
+          <p class="section-tag">Installation</p>
+          <h2 class="section-title">Getting Started</h2>
+        </div>
+        <div class="getting-started-content">
+          <div class="prerequisites-card">
+            <h3>Prerequisites</h3>
+            <div class="prereq-grid">
+              <span class="prereq-badge">Node.js v18+</span>
+              <span class="prereq-badge">npm</span>
+              <span class="prereq-badge">Telegram account</span>
+              <span class="prereq-badge optional">Anthropic API key</span>
+              <span class="prereq-badge optional">Claude Max subscription</span>
+              <span class="prereq-badge optional">CCR</span>
+              <span class="prereq-badge optional">OpenCode</span>
+            </div>
+            <div class="prereq-note">
+              <strong>Note:</strong> On macOS, TeleCoder uses <code>caffeinate</code> to prevent sleep during long operations.
+            </div>
+          </div>
+
+          <div class="quick-start-card">
+            <h3>Quick Start</h3>
+            <div class="code-block">
+              <div class="code-header">
+                <span>Terminal</span>
+                <button type="button" class="copy-btn" onclick="copyCode(this)">Copy</button>
+              </div>
+              <div class="code-content">
+                <pre><span class="command">git clone</span> https://github.com/gitaarik/telecoder.git
+<span class="command">cd</span> telecoder
+<span class="command">npm install</span>
+<span class="command">cp</span> .env.example .env
+<span class="comment"># Edit .env with your credentials</span>
+<span class="command">npm run dev</span></pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="steps-card">
+            <h3>Step-by-Step Setup</h3>
+            <div class="steps-grid">
+              <div class="step-item">
+                <span class="step-number">1</span>
+                <div class="step-content">
+                  <h4>Clone the repository</h4>
+                  <p>Download the project using <code>git clone</code></p>
+                </div>
+              </div>
+              <div class="step-item">
+                <span class="step-number">2</span>
+                <div class="step-content">
+                  <h4>Install dependencies</h4>
+                  <p>Run <code>npm install</code> in the project directory</p>
+                </div>
+              </div>
+              <div class="step-item">
+                <span class="step-number">3</span>
+                <div class="step-content">
+                  <h4>Create Telegram bot</h4>
+                  <p>Message <code>@BotFather</code> on Telegram and use <code>/newbot</code> to get your token</p>
+                </div>
+              </div>
+              <div class="step-item">
+                <span class="step-number">4</span>
+                <div class="step-content">
+                  <h4>Get your Telegram user ID</h4>
+                  <p>Message <code>@userinfobot</code> on Telegram to get your numeric user ID</p>
+                </div>
+              </div>
+              <div class="step-item">
+                <span class="step-number">5</span>
+                <div class="step-content">
+                  <h4>Configure environment</h4>
+                  <p>Copy <code>.env.example</code> to <code>.env</code> and fill in your credentials</p>
+                </div>
+              </div>
+              <div class="step-item">
+                <span class="step-number">6</span>
+                <div class="step-content">
+                  <h4>Run the bot</h4>
+                  <p>Start with <code>npm run dev</code> for development or <code>npm start</code> for production</p>
+                </div>
+              </div>
+              <div class="step-item">
+                <span class="step-number">7</span>
+                <div class="step-content">
+                  <h4>Verify it works</h4>
+                  <p>Send a message to your bot on Telegram and check for a response</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="config-card">
+            <h3>Configuration</h3>
+            <div class="config-table-wrapper">
+            <table class="config-table">
+              <thead>
+                <tr>
+                  <th>Variable</th>
+                  <th>Description</th>
+                  <th>Required</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="3" style="color: var(--signal-amber); font-weight: 600; padding-top: 1.25rem;">Core</td></tr>
+                <tr>
+                  <td class="var-name">TELEGRAM_BOT_TOKEN</td>
+                  <td>Bot token from BotFather</td>
+                  <td class="required-yes">Yes</td>
+                </tr>
+                <tr>
+                  <td class="var-name">ALLOWED_USER_IDS</td>
+                  <td>Comma-separated Telegram user IDs</td>
+                  <td class="required-yes">Yes</td>
+                </tr>
+                <tr>
+                  <td class="var-name">ANTHROPIC_API_KEY</td>
+                  <td>Your Anthropic API key</td>
+                  <td class="required-optional">Optional*</td>
+                </tr>
+                <tr>
+                  <td class="var-name">WORKSPACE_DIR</td>
+                  <td>Default workspace path for projects</td>
+                  <td class="required-no">No</td>
+                </tr>
+                <tr>
+                  <td class="var-name">STREAMING_MODE</td>
+                  <td><code>streaming</code> or <code>wait</code> for responses</td>
+                  <td class="required-no">No</td>
+                </tr>
+                <tr>
+                  <td class="var-name">BOT_MODE</td>
+                  <td><code>dev</code> or <code>prod</code></td>
+                  <td class="required-no">No</td>
+                </tr>
+                <tr>
+                  <td class="var-name">DANGEROUS_MODE</td>
+                  <td>Auto-approve all tool permissions (default: false)</td>
+                  <td class="required-no">No</td>
+                </tr>
+                <tr><td colspan="3" style="color: var(--signal-amber); font-weight: 600; padding-top: 1.25rem;">API Keys</td></tr>
+                <tr>
+                  <td class="var-name">OPENAI_API_KEY</td>
+                  <td>For OpenAI TTS voices</td>
+                  <td class="required-optional">For TTS</td>
+                </tr>
+                <tr>
+                  <td class="var-name">GROQ_API_KEY</td>
+                  <td>For voice transcription &amp; Orpheus TTS</td>
+                  <td class="required-optional">For voice</td>
+                </tr>
+                <tr>
+                  <td class="var-name">REDDIT_CLIENT_ID</td>
+                  <td>Reddit OAuth2 app client ID</td>
+                  <td class="required-optional">For Reddit</td>
+                </tr>
+                <tr>
+                  <td class="var-name">REDDIT_CLIENT_SECRET</td>
+                  <td>Reddit OAuth2 app client secret</td>
+                  <td class="required-optional">For Reddit</td>
+                </tr>
+                <tr>
+                  <td class="var-name">REDDIT_USERNAME</td>
+                  <td>Reddit bot account username</td>
+                  <td class="required-optional">For Reddit</td>
+                </tr>
+                <tr>
+                  <td class="var-name">REDDIT_PASSWORD</td>
+                  <td>Reddit bot account password</td>
+                  <td class="required-optional">For Reddit</td>
+                </tr>
+                <tr><td colspan="3" style="color: var(--signal-amber); font-weight: 600; padding-top: 1.25rem;">Feature Flags</td></tr>
+                <tr>
+                  <td class="var-name">TTS_ENABLED</td>
+                  <td>Enable text-to-speech (default: true)</td>
+                  <td class="required-no">No</td>
+                </tr>
+                <tr>
+                  <td class="var-name">REDDIT_ENABLED</td>
+                  <td>Enable /reddit command (default: true)</td>
+                  <td class="required-no">No</td>
+                </tr>
+                <tr>
+                  <td class="var-name">VREDDIT_ENABLED</td>
+                  <td>Enable /vreddit command (default: true)</td>
+                  <td class="required-no">No</td>
+                </tr>
+                <tr>
+                  <td class="var-name">MEDIUM_ENABLED</td>
+                  <td>Enable /medium command (default: true)</td>
+                  <td class="required-no">No</td>
+                </tr>
+                <tr>
+                  <td class="var-name">TRANSCRIBE_ENABLED</td>
+                  <td>Enable voice transcription (default: true)</td>
+                  <td class="required-no">No</td>
+                </tr>
+                <tr>
+                  <td class="var-name">EXTRACT_ENABLED</td>
+                  <td>Enable /extract command (default: true)</td>
+                  <td class="required-no">No</td>
+                </tr>
+                <tr><td colspan="3" style="color: var(--signal-amber); font-weight: 600; padding-top: 1.25rem;">TTS Configuration</td></tr>
+                <tr>
+                  <td class="var-name">TTS_PROVIDER</td>
+                  <td><code>openai</code> or <code>groq</code> (default: groq)</td>
+                  <td class="required-no">No</td>
+                </tr>
+                <tr>
+                  <td class="var-name">TTS_VOICE</td>
+                  <td>Default voice name (default: coral)</td>
+                  <td class="required-no">No</td>
+                </tr>
+                <tr>
+                  <td class="var-name">TTS_SPEED</td>
+                  <td>Playback speed multiplier (default: 1.0)</td>
+                  <td class="required-no">No</td>
+                </tr>
+                <tr><td colspan="3" style="color: var(--signal-amber); font-weight: 600; padding-top: 1.25rem;">Display &amp; Behavior</td></tr>
+                <tr>
+                  <td class="var-name">TERMINAL_UI_DEFAULT</td>
+                  <td>Terminal-style display on by default (default: true)</td>
+                  <td class="required-no">No</td>
+                </tr>
+                <tr>
+                  <td class="var-name">MAX_LOOP_ITERATIONS</td>
+                  <td>Max iterations for /loop mode (default: 5)</td>
+                  <td class="required-no">No</td>
+                </tr>
+                <tr>
+                  <td class="var-name">CANCEL_ON_NEW_MESSAGE</td>
+                  <td>Auto-cancel running query on new message (default: false)</td>
+                  <td class="required-no">No</td>
+                </tr>
+              </tbody>
+            </table>
+            </div>
+            <div class="config-note">
+              *<code>ANTHROPIC_API_KEY</code> is optional if using a Claude Max subscription with <code>claude</code> CLI configured. All feature flags default to <code>true</code> — disabled features auto-hide from the Telegram menu.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="architecture-section">
       <div class="container">
         <div class="section-header">
@@ -1907,8 +1974,13 @@
           </div>
           <span class="flow-arrow">→</span>
           <div class="flow-node">
+            <span class="flow-node-icon">🔌</span>
+            <span class="flow-node-label">Provider router</span>
+          </div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-node">
             <span class="flow-node-icon">🧠</span>
-            <span class="flow-node-label">Claude SDK</span>
+            <span class="flow-node-label">Claude Code · CCR · OpenCode</span>
           </div>
           <span class="flow-arrow">→</span>
           <div class="flow-node">
@@ -2195,6 +2267,10 @@
         <div class="section-header">
           <p class="section-tag">Community</p>
           <h2 class="section-title">Contributors</h2>
+          <p class="section-subtitle">TeleCoder began in February 2026 as a fork of
+          <a href="https://github.com/NachoSEO/claudegram">Claudegram</a> by Nacho
+          Mascort, and is maintained independently today. That project is the
+          foundation this one is built on.</p>
         </div>
         <div class="contributors-grid">
           <a href="https://github.com/NachoSEO" class="contributor-card" target="_blank" rel="noopener noreferrer">
@@ -2238,7 +2314,8 @@
 
     <footer>
       <div class="footer-logo">⚡ TeleCoder</div>
-      <p class="footer-text">Built with Claude Agent SDK and grammY</p>
+      <p class="footer-text">Built with Claude Agent SDK and grammY · MIT licensed<br>
+      Forked from <a href="https://github.com/NachoSEO/claudegram">Claudegram</a> by Nacho Mascort</p>
       <div class="footer-links">
         <a href="https://github.com/gitaarik/telecoder">GitHub</a>
         <a href="#getting-started">Documentation</a>
@@ -2253,7 +2330,8 @@
     const canvas = document.getElementById('matrix-canvas');
     const ctx = canvas.getContext('2d');
 
-    const chars = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    // Morse: the telegraph lineage the name is borrowed from.
+    const chars = '·−·−··−·−−·−·';
     const charArray = chars.split('');
     const fontSize = 14;
     let columns;
@@ -2269,11 +2347,11 @@
     window.addEventListener('resize', resizeCanvas);
 
     function drawMatrix() {
-      ctx.fillStyle = 'rgba(10, 10, 15, 0.05)';
+      ctx.fillStyle = 'rgba(12, 10, 7, 0.05)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      ctx.fillStyle = '#00ffd5';
-      ctx.font = fontSize + 'px JetBrains Mono, monospace';
+      ctx.fillStyle = '#ffb000';
+      ctx.font = fontSize + 'px IBM Plex Mono, monospace';
 
       for (let i = 0; i < drops.length; i++) {
         const char = charArray[Math.floor(Math.random() * charArray.length)];
@@ -2478,7 +2556,9 @@
 
     // Feature tabs filtering
     const featureTabs = document.querySelectorAll('.feature-tab');
-    const featureCards = document.querySelectorAll('.feature-card');
+    // Scoped to #features: .feature-card is reused in the lead section,
+    // and an unscoped query hides those cards on every tab but 'All'.
+    const featureCards = document.querySelectorAll('#features .feature-card');
 
     featureTabs.forEach(tab => {
       tab.addEventListener('click', () => {
