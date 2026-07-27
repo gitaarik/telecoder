@@ -91,7 +91,7 @@ import { handleSuggestionTapCallback } from './handlers/suggestion.handler.js';
 import { handleVoice } from './handlers/voice.handler.js';
 import { handlePhoto, handleImageDocument, handleTextDocument } from './handlers/photo.handler.js';
 import { createBatchMiddleware } from './middleware/message-batcher.js';
-import { resolvePendingQuestion } from '../claude/ask-user.js';
+import { resolvePendingQuestion, appendAnsweredFooter, buildAnswerConfirmation } from '../claude/ask-user.js';
 import { resolvePendingPoll } from '../claude/poll-user.js';
 
 // Resolve sequentialize constraint: same-chat updates are ordered,
@@ -112,19 +112,53 @@ async function handleAskUserCallback(ctx: Context): Promise<void> {
   }
 
   await ctx.answerCallbackQuery();
-  // Strip the keyboard so the user can't tap again, leave the question text
-  // visible with a footer showing what they picked.
+
+  const message = ctx.callbackQuery?.message as
+    | {
+        text?: string;
+        message_id?: number;
+        reply_markup?: { inline_keyboard?: Array<Array<{ text?: string }>> };
+      }
+    | undefined;
+  const buttonText = message?.reply_markup?.inline_keyboard?.[idx]?.[0]?.text ?? `option ${idx + 1}`;
+
+  // Strip the keyboard so the user can't tap again, and mark the chosen option
+  // in place so the question doesn't read as unanswered.
+  //
+  // Plain text: buttonText is model-supplied and may contain unbalanced
+  // Markdown punctuation (underscores in URL params, stray asterisks, …)
+  // which would 400 the edit.
   try {
-    const original = (ctx.callbackQuery?.message as { text?: string } | undefined)?.text ?? '';
-    const buttonText = (ctx.callbackQuery?.message as { reply_markup?: { inline_keyboard?: Array<Array<{ text?: string }>> } } | undefined)
-      ?.reply_markup?.inline_keyboard?.[idx]?.[0]?.text ?? `option ${idx + 1}`;
-    // Plain text: buttonText is model-supplied and may contain unbalanced
-    // Markdown punctuation (underscores in URL params, stray asterisks, …)
-    // which would 400 the edit. The try/catch below would swallow it, but
-    // we'd rather just show the confirmation reliably.
-    await ctx.editMessageText(`${original}\n\n✅ You picked: ${buttonText}`);
+    const answered = appendAnsweredFooter(message?.text ?? '', buttonText);
+    if (answered !== null) await ctx.editMessageText(answered);
+    else await ctx.editMessageReplyMarkup();
   } catch {
-    // Edit may fail if message changed shape — non-fatal.
+    // Edit may fail if the message changed shape. Losing the footer is
+    // cosmetic; leaving a live keyboard on a resolved question is not, so
+    // retry the keyboard removal on its own.
+    try {
+      await ctx.editMessageReplyMarkup();
+    } catch {
+      // Non-fatal — a second tap is rejected by resolvePendingQuestion anyway.
+    }
+  }
+
+  // The answer also goes out as its own message. See buildAnswerConfirmation:
+  // an edit is silent, anonymous, and buried at the bottom of a long question,
+  // so the choice never really lands in the conversation. Replying to the
+  // question keeps the two linked even when several questions are open at once.
+  try {
+    await ctx.reply(
+      buildAnswerConfirmation(buttonText, {
+        isPrivate: ctx.chat?.type === 'private',
+        who: ctx.from?.first_name,
+      }),
+      message?.message_id === undefined
+        ? undefined
+        : { reply_parameters: { message_id: message.message_id, allow_sending_without_reply: true } },
+    );
+  } catch {
+    // Non-fatal — the in-place footer above already recorded the choice.
   }
 }
 

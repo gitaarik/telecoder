@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { buildAskUserMessageText } from '../../src/claude/ask-user.js';
+import {
+  buildAskUserMessageText,
+  appendAnsweredFooter,
+  buildAnswerConfirmation,
+} from '../../src/claude/ask-user.js';
 
 describe('buildAskUserMessageText', () => {
   it('renders just the question when there is no context and no option descriptions', () => {
@@ -45,5 +49,39 @@ describe('buildAskUserMessageText', () => {
     expect(text.length).toBeLessThan(4000);
     expect(text.endsWith('…')).toBe(true);
     expect(text.startsWith('❓ Pick\n\nxxx')).toBe(true);
+  });
+});
+
+describe('appendAnsweredFooter', () => {
+  it('marks the chosen option below the question', () => {
+    expect(appendAnsweredFooter('❓ Pick one', 'Option A')).toBe('❓ Pick one\n\n✅ Answered: Option A');
+  });
+
+  it('declines when the footer would push the edit past Telegram\'s limit', () => {
+    expect(appendAnsweredFooter('x'.repeat(4090), 'Option A')).toBeNull();
+  });
+
+  it('accepts a question that still has room for the footer', () => {
+    const original = 'x'.repeat(4000);
+    expect(appendAnsweredFooter(original, 'A')?.length).toBe(original.length + '\n\n✅ Answered: A'.length);
+  });
+
+  it('declines when there is no original text to append to', () => {
+    expect(appendAnsweredFooter('', 'Option A')).toBeNull();
+  });
+});
+
+describe('buildAnswerConfirmation', () => {
+  it('uses second person in a private chat', () => {
+    expect(buildAnswerConfirmation('Rebase', { isPrivate: true, who: 'Rik' })).toBe('✅ You picked: Rebase');
+  });
+
+  it('names the person who tapped in a group', () => {
+    expect(buildAnswerConfirmation('Rebase', { isPrivate: false, who: 'Rik' })).toBe('✅ Rik picked: Rebase');
+  });
+
+  it('falls back to a placeholder when the tapper has no usable name', () => {
+    expect(buildAnswerConfirmation('Rebase', { isPrivate: false, who: '  ' })).toBe('✅ Someone picked: Rebase');
+    expect(buildAnswerConfirmation('Rebase', { isPrivate: false })).toBe('✅ Someone picked: Rebase');
   });
 });

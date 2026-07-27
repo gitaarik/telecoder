@@ -38,6 +38,9 @@ export interface AskUserOption {
  */
 const MAX_CONTEXT_LEN = 3500;
 
+/** Telegram's hard cap on a text message / message edit. */
+const MAX_MESSAGE_LEN = 4096;
+
 /**
  * Build the plain-text body for an ask_user Telegram message, shared by SDK
  * mode (mcp-tools.ts) and PTY/IPC mode (mcp-bridge.ts) so both render
@@ -78,6 +81,42 @@ export function buildAskUserMessageText(
   }
 
   return lines.join('\n');
+}
+
+/**
+ * Rewrite an answered question's text so it no longer reads as unanswered once
+ * the keyboard is stripped. Returns `null` when the footer won't fit (or there
+ * is no original text to append to) — the caller should then drop the keyboard
+ * on its own and let the separate confirmation message carry the answer.
+ *
+ * The length check is not theoretical: `context` may be up to
+ * {@link MAX_CONTEXT_LEN} chars, so a long question plus annotated options can
+ * sit close enough to Telegram's 4096-char ceiling that appending a footer
+ * tips the edit into a 400 — which would leave a live-looking keyboard on a
+ * question that has already been resolved.
+ */
+export function appendAnsweredFooter(original: string, label: string): string | null {
+  if (!original) return null;
+  const footer = `\n\n✅ Answered: ${label}`;
+  if (original.length + footer.length > MAX_MESSAGE_LEN) return null;
+  return original + footer;
+}
+
+/**
+ * The confirmation sent as its own message once a question is answered.
+ *
+ * Editing the question in place is silent and anonymous: Telegram raises no
+ * notification for an edit, and the footer says nothing about who tapped. In a
+ * group that means the rest of the chat never sees a decision was made. A
+ * standalone message replying to the question puts the answer in the
+ * conversation flow the way a typed reply would be, and names the person.
+ */
+export function buildAnswerConfirmation(
+  label: string,
+  opts: { isPrivate: boolean; who?: string },
+): string {
+  const who = opts.isPrivate ? 'You' : opts.who?.trim() || 'Someone';
+  return `✅ ${who} picked: ${label}`;
 }
 
 interface PendingEntry {
