@@ -443,7 +443,7 @@
       box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.1);
       opacity: 0;
       transform: translateY(50px);
-      transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     .telegram-phone.visible {
@@ -704,6 +704,17 @@
     .section-title {
       font-size: clamp(2rem, 5vw, 3rem);
       font-weight: 700;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .telegram-phone, .feature-card, .command-row, .step-item, .contributor-card,
+      .hero-badge, .hero-title, .hero-subtitle, .hero-buttons, nav {
+        opacity: 1 !important;
+        transform: none !important;
+        transition: none !important;
+        animation: none !important;
+      }
+      #matrix-canvas { display: none; }
     }
 
     .section-subtitle {
@@ -2489,19 +2500,32 @@
       }
     }
 
-    setInterval(drawMatrix, 50);
+    // Honour reduced-motion: a permanently animating background is exactly
+    // what that preference is asking us not to run.
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setInterval(drawMatrix, 50);
+    }
 
     // Intersection Observer for scroll animations
     const observerOptions = {
-      threshold: 0.1,
-      rootMargin: '0px 0px -50px 0px'
+      threshold: 0.05,
+      // Positive bottom margin extends the root box past the fold, so an
+      // element starts revealing just before it scrolls into view.
+      rootMargin: '0px 0px 120px 0px'
     };
 
     const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('visible');
-        }
+      const arriving = entries.filter(e => e.isIntersecting);
+      if (!arriving.length) return;
+
+      // Stagger across the batch that appears together, capped. The delay
+      // used to come from each element's index in the whole document, so
+      // with 52 command rows the last one waited 5.2s after entering view.
+      arriving.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+      arriving.forEach((entry, i) => {
+        entry.target.style.transitionDelay = Math.min(i * 40, 200) + 'ms';
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
       });
     }, observerOptions);
 
@@ -2658,26 +2682,6 @@
     }, { threshold: 0.3 });
 
     chatObserver.observe(document.getElementById('telegram-demo'));
-
-    // Stagger feature cards
-    document.querySelectorAll('.feature-card').forEach((card, index) => {
-      card.style.transitionDelay = `${index * 0.1}s`;
-    });
-
-    // Stagger command rows
-    document.querySelectorAll('.command-row').forEach((row, index) => {
-      row.style.transitionDelay = `${index * 0.1}s`;
-    });
-
-    // Stagger step items
-    document.querySelectorAll('.step-item').forEach((step, index) => {
-      step.style.transitionDelay = `${index * 0.1}s`;
-    });
-
-    // Stagger contributor cards
-    document.querySelectorAll('.contributor-card').forEach((card, index) => {
-      card.style.transitionDelay = `${index * 0.15}s`;
-    });
 
     // Feature tabs filtering
     // ── theme switcher ────────────────────────────────────────────────
