@@ -21,28 +21,76 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as http from 'http';
 
 const workspaceRoot = process.env.CLAUDEGRAM_WORKSPACE_ROOT || path.resolve(process.cwd());
 const ipcPort = process.env.CLAUDEGRAM_IPC_PORT;
 const claudeSessionId = process.env.CLAUDEGRAM_CLAUDE_SESSION_ID || '';
-const ipcUrl = ipcPort ? `http://127.0.0.1:${ipcPort}` : null;
 
 /**
  * POST a JSON payload to the bot's loopback IPC server. claude's session_id
  * is appended automatically so the IPC server can route to the right active
  * turn. Throws on non-2xx so the calling tool can surface a useful error.
+ *
+ * Deliberately `node:http` rather than `fetch`. claudegram_ask_user and
+ * claudegram_poll_user are long polls: the bot holds the request open — sending
+ * no response headers at all — for up to 10 minutes while it waits for a
+ * Telegram button tap. undici, which backs global fetch, enforces a 5-minute
+ * `headersTimeout` that can only be lifted with a custom dispatcher, so every
+ * question left unanswered for 5 minutes died as an opaque `fetch failed`
+ * (UND_ERR_HEADERS_TIMEOUT) instead of the intended graceful 10-minute "user
+ * did not respond" — and the model, seeing a tool error, tended to re-ask and
+ * post a second keyboard while the first was still live.
+ *
+ * `http.request` applies no timeout unless asked, which puts the deadline back
+ * with the layers that actually know it: the bot's own 10-minute question timer
+ * (see createPendingQuestion), with claude's MCP_TOOL_TIMEOUT (15 min, set by
+ * PtyProvider) as the outer backstop. The server side already disables its own
+ * timeouts for the same reason — see startIpcServer.
  */
-async function ipc<T = unknown>(routePath: string, payload: Record<string, unknown> = {}): Promise<T> {
-  if (!ipcUrl) throw new Error('CLAUDEGRAM_IPC_PORT not set; cannot reach bot');
-  const res = await fetch(`${ipcUrl}${routePath}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: claudeSessionId, ...payload }),
+function ipc<T = unknown>(routePath: string, payload: Record<string, unknown> = {}): Promise<T> {
+  if (!ipcPort) return Promise.reject(new Error('CLAUDEGRAM_IPC_PORT not set; cannot reach bot'));
+  const body = JSON.stringify({ session_id: claudeSessionId, ...payload });
+
+  return new Promise<T>((resolve, reject) => {
+    const req = http.request(
+      {
+        host: '127.0.0.1',
+        port: Number(ipcPort),
+        path: routePath,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => {
+          const status = res.statusCode ?? 0;
+          if (status < 200 || status >= 300) {
+            reject(new Error(`IPC ${routePath} → HTTP ${status}`));
+            return;
+          }
+          try {
+            resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')) as T);
+          } catch {
+            reject(new Error(`IPC ${routePath} → malformed JSON response`));
+          }
+        });
+        res.on('error', (err: Error) => reject(new Error(`IPC ${routePath} → ${err.message}`)));
+      },
+    );
+
+    // Name the actual failure rather than fetch's opaque "fetch failed". The
+    // common one is ECONNREFUSED: the bot restarted (new port) while this pty
+    // and its MCP subprocess kept running against the old one.
+    req.on('error', (err: NodeJS.ErrnoException) => {
+      reject(new Error(`IPC ${routePath} → ${err.code ?? err.message}`));
+    });
+    req.end(body);
   });
-  if (!res.ok) {
-    throw new Error(`IPC ${routePath} → HTTP ${res.status}`);
-  }
-  return res.json() as Promise<T>;
 }
 
 // ── Constants ────────────────────────────────────────────────────────
