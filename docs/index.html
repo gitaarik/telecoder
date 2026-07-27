@@ -9,8 +9,24 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    // Runs before paint: a stored choice must not flash the other theme.
+    // "auto" writes no attribute, leaving the media query in charge.
+    (function () {
+      try {
+        var t = localStorage.getItem('theme');
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+      } catch (e) { /* private mode: fall back to auto */ }
+    })();
+  </script>
   <style>
     :root {
+      /* Brand channels as raw triplets so alpha can vary per use. */
+      --amber-rgb: 255, 176, 0;
+      --ember-rgb: 255, 92, 57;
+      --gold-rgb: 255, 209, 102;
+
+      color-scheme: dark;
       --bg-deep: #0c0a07;
       --bg-surface: #17130d;
       --signal-amber: #ffb000;
@@ -20,8 +36,64 @@
       --text-muted: #8d8474;
       --glass-bg: rgba(23, 19, 13, 0.72);
       --glass-border: rgba(255, 255, 255, 0.08);
-      --glow-cyan: 0 0 20px rgba(0, 255, 213, 0.4), 0 0 40px rgba(0, 255, 213, 0.2);
-      --glow-magenta: 0 0 20px rgba(255, 0, 110, 0.4), 0 0 40px rgba(255, 0, 110, 0.2);
+      --nav-bg: rgba(12, 10, 7, 0.8);
+      --sunken: rgba(0, 0, 0, 0.2);
+      --sunken-strong: rgba(0, 0, 0, 0.3);
+      --shadow-card: 0 20px 60px rgba(0, 0, 0, 0.3);
+      --rain-trail: rgba(12, 10, 7, 0.05);
+      --rain-ink: rgba(255, 176, 0, 0.85);
+      --code-bg: #14110b;
+      --success: #5cb85c;
+      --glow-amber: 0 0 20px rgba(var(--amber-rgb), 0.4), 0 0 40px rgba(var(--amber-rgb), 0.2);
+      --glow-ember: 0 0 20px rgba(var(--ember-rgb), 0.4), 0 0 40px rgba(var(--ember-rgb), 0.2);
+    }
+
+    /* Auto: follow the system, unless the visitor has explicitly chosen dark. */
+    @media (prefers-color-scheme: light) {
+      :root:not([data-theme="dark"]) {
+      color-scheme: light;
+      --bg-deep: #f7f3ec;
+      --bg-surface: #fffdf8;
+      /* Accent darkens for legibility: #ffb000 on white fails contrast. */
+      --signal-amber: #9c5800;
+      --signal-ember: #c0391a;
+      --signal-gold: #8a6612;
+      --text-primary: #1b1610;
+      --text-muted: #6d6355;
+      --glass-bg: rgba(255, 253, 248, 0.82);
+      --glass-border: rgba(27, 22, 16, 0.12);
+      --nav-bg: rgba(247, 243, 236, 0.85);
+      --sunken: rgba(27, 22, 16, 0.05);
+      --sunken-strong: rgba(27, 22, 16, 0.08);
+      --shadow-card: 0 20px 60px rgba(27, 22, 16, 0.12);
+      --rain-trail: rgba(247, 243, 236, 0.055);
+      --rain-ink: rgba(156, 88, 0, 0.45);
+      --code-bg: #f2ece0;
+      --success: #2b7130;
+      }
+    }
+
+    /* Explicit choice always wins over the system preference. */
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --bg-deep: #f7f3ec;
+      --bg-surface: #fffdf8;
+      /* Accent darkens for legibility: #ffb000 on white fails contrast. */
+      --signal-amber: #9c5800;
+      --signal-ember: #c0391a;
+      --signal-gold: #8a6612;
+      --text-primary: #1b1610;
+      --text-muted: #6d6355;
+      --glass-bg: rgba(255, 253, 248, 0.82);
+      --glass-border: rgba(27, 22, 16, 0.12);
+      --nav-bg: rgba(247, 243, 236, 0.85);
+      --sunken: rgba(27, 22, 16, 0.05);
+      --sunken-strong: rgba(27, 22, 16, 0.08);
+      --shadow-card: 0 20px 60px rgba(27, 22, 16, 0.12);
+      --rain-trail: rgba(247, 243, 236, 0.055);
+      --rain-ink: rgba(156, 88, 0, 0.45);
+      --code-bg: #f2ece0;
+      --success: #2b7130;
     }
 
     * {
@@ -86,7 +158,7 @@
     .orb-1 {
       width: 600px;
       height: 600px;
-      background: radial-gradient(circle, rgba(0, 255, 213, 0.15) 0%, transparent 70%);
+      background: radial-gradient(circle, rgba(var(--amber-rgb), 0.15) 0%, transparent 70%);
       top: -200px;
       right: -200px;
       animation-delay: 0s;
@@ -95,7 +167,7 @@
     .orb-2 {
       width: 500px;
       height: 500px;
-      background: radial-gradient(circle, rgba(255, 0, 110, 0.12) 0%, transparent 70%);
+      background: radial-gradient(circle, rgba(var(--ember-rgb), 0.12) 0%, transparent 70%);
       bottom: -150px;
       left: -150px;
       animation-delay: -10s;
@@ -104,7 +176,7 @@
     .orb-3 {
       width: 400px;
       height: 400px;
-      background: radial-gradient(circle, rgba(255, 190, 11, 0.1) 0%, transparent 70%);
+      background: radial-gradient(circle, rgba(var(--gold-rgb), 0.1) 0%, transparent 70%);
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
@@ -138,7 +210,7 @@
       right: 0;
       z-index: 100;
       padding: 1rem 2rem;
-      background: rgba(10, 10, 15, 0.8);
+      background: var(--nav-bg);
       backdrop-filter: blur(20px);
       border-bottom: 1px solid var(--glass-border);
       transform: translateY(-100%);
@@ -174,13 +246,52 @@
     }
 
     @keyframes pulse-glow {
-      0%, 100% { text-shadow: var(--glow-cyan); }
-      50% { text-shadow: 0 0 30px rgba(0, 255, 213, 0.8), 0 0 60px rgba(0, 255, 213, 0.4); }
+      0%, 100% { text-shadow: var(--glow-amber); }
+      50% { text-shadow: 0 0 30px rgba(var(--amber-rgb), 0.8), 0 0 60px rgba(var(--amber-rgb), 0.4); }
     }
 
     .nav-links {
       display: flex;
       gap: 2rem;
+    }
+
+    .theme-switch {
+      display: flex;
+      gap: 0.125rem;
+      padding: 0.1875rem;
+      border: 1px solid var(--glass-border);
+      border-radius: 999px;
+      background: var(--sunken);
+    }
+
+    .theme-switch button {
+      display: grid;
+      place-items: center;
+      width: 1.75rem;
+      height: 1.75rem;
+      padding: 0;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      line-height: 1;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .theme-switch button:hover {
+      color: var(--text-primary);
+    }
+
+    .theme-switch button[aria-pressed="true"] {
+      background: rgba(var(--amber-rgb), 0.16);
+      color: var(--signal-amber);
+    }
+
+    .theme-switch button:focus-visible {
+      outline: 2px solid var(--signal-amber);
+      outline-offset: 2px;
     }
 
     .nav-links a {
@@ -296,14 +407,14 @@
     }
 
     .btn-primary {
-      background: linear-gradient(135deg, var(--signal-amber) 0%, #00b894 100%);
+      background: linear-gradient(135deg, var(--signal-amber) 0%, var(--signal-ember) 100%);
       color: var(--bg-deep);
-      box-shadow: var(--glow-cyan);
+      box-shadow: var(--glow-amber);
     }
 
     .btn-primary:hover {
       transform: translateY(-3px);
-      box-shadow: 0 0 30px rgba(0, 255, 213, 0.6), 0 0 60px rgba(0, 255, 213, 0.3);
+      box-shadow: 0 0 30px rgba(var(--amber-rgb), 0.6), 0 0 60px rgba(var(--amber-rgb), 0.3);
     }
 
     .btn-secondary {
@@ -315,7 +426,7 @@
 
     .btn-secondary:hover {
       border-color: var(--signal-amber);
-      background: rgba(0, 255, 213, 0.1);
+      background: rgba(var(--amber-rgb), 0.1);
     }
 
     /* Telegram Chat Demo */
@@ -491,7 +602,7 @@
     .chat-message.terminal {
       font-family: 'IBM Plex Mono', monospace;
       font-size: 0.85rem;
-      background: rgba(0, 255, 213, 0.1);
+      background: rgba(var(--amber-rgb), 0.1);
       border-left: 2px solid var(--signal-amber);
     }
 
@@ -637,8 +748,8 @@
 
     .feature-card:hover {
       transform: translateY(-5px);
-      border-color: rgba(0, 255, 213, 0.3);
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      border-color: rgba(var(--amber-rgb), 0.3);
+      box-shadow: var(--shadow-card);
     }
 
     .feature-icon {
@@ -647,7 +758,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(135deg, rgba(0, 255, 213, 0.1) 0%, rgba(255, 0, 110, 0.1) 100%);
+      background: linear-gradient(135deg, rgba(var(--amber-rgb), 0.1) 0%, rgba(var(--ember-rgb), 0.1) 100%);
       border-radius: 12px;
       font-size: 1.5rem;
       margin-bottom: 1.25rem;
@@ -691,7 +802,7 @@
     }
 
     .feature-tab.active {
-      background: linear-gradient(135deg, rgba(0, 255, 213, 0.2) 0%, rgba(255, 0, 110, 0.1) 100%);
+      background: linear-gradient(135deg, rgba(var(--amber-rgb), 0.2) 0%, rgba(var(--ember-rgb), 0.1) 100%);
       border-color: var(--signal-amber);
       color: var(--signal-amber);
     }
@@ -732,7 +843,7 @@
 
     .flow-node:hover {
       border-color: var(--signal-amber);
-      box-shadow: var(--glow-cyan);
+      box-shadow: var(--glow-amber);
     }
 
     .flow-node-icon {
@@ -787,7 +898,7 @@
 
     .command-row:hover {
       border-color: var(--signal-gold);
-      background: rgba(255, 190, 11, 0.05);
+      background: rgba(var(--gold-rgb), 0.05);
     }
 
     .command-code {
@@ -969,8 +1080,8 @@
       align-items: center;
       gap: 0.5rem;
       padding: 0.5rem 1rem;
-      background: rgba(0, 255, 213, 0.1);
-      border: 1px solid rgba(0, 255, 213, 0.2);
+      background: rgba(var(--amber-rgb), 0.1);
+      border: 1px solid rgba(var(--amber-rgb), 0.2);
       border-radius: 100px;
       font-family: 'IBM Plex Mono', monospace;
       font-size: 0.85rem;
@@ -978,14 +1089,14 @@
     }
 
     .prereq-badge.optional {
-      background: rgba(255, 190, 11, 0.1);
-      border-color: rgba(255, 190, 11, 0.2);
+      background: rgba(var(--gold-rgb), 0.1);
+      border-color: rgba(var(--gold-rgb), 0.2);
     }
 
     .prereq-note {
       margin-top: 1rem;
       padding: 0.75rem 1rem;
-      background: rgba(255, 190, 11, 0.1);
+      background: rgba(var(--gold-rgb), 0.1);
       border-left: 3px solid var(--signal-gold);
       border-radius: 0 8px 8px 0;
       font-size: 0.9rem;
@@ -1008,7 +1119,7 @@
     }
 
     .code-block {
-      background: #1a1a24;
+      background: var(--code-bg);
       border: 1px solid var(--glass-border);
       border-radius: 12px;
       overflow: hidden;
@@ -1019,7 +1130,7 @@
       justify-content: space-between;
       align-items: center;
       padding: 0.75rem 1rem;
-      background: rgba(0, 0, 0, 0.3);
+      background: var(--sunken-strong);
       border-bottom: 1px solid var(--glass-border);
     }
 
@@ -1046,8 +1157,8 @@
     }
 
     .copy-btn.copied {
-      border-color: #5cb85c;
-      color: #5cb85c;
+      border-color: var(--success);
+      color: var(--success);
     }
 
     .code-content {
@@ -1095,7 +1206,7 @@
       display: flex;
       gap: 1rem;
       padding: 1.25rem;
-      background: rgba(0, 0, 0, 0.2);
+      background: var(--sunken);
       border: 1px solid var(--glass-border);
       border-radius: 12px;
       transition: all 0.3s;
@@ -1109,8 +1220,8 @@
     }
 
     .step-item:hover {
-      border-color: rgba(0, 255, 213, 0.3);
-      background: rgba(0, 255, 213, 0.05);
+      border-color: rgba(var(--amber-rgb), 0.3);
+      background: rgba(var(--amber-rgb), 0.05);
     }
 
     .step-number {
@@ -1141,7 +1252,7 @@
     }
 
     .step-content code {
-      background: rgba(0, 255, 213, 0.1);
+      background: rgba(var(--amber-rgb), 0.1);
       padding: 0.125rem 0.375rem;
       border-radius: 4px;
       font-family: 'IBM Plex Mono', monospace;
@@ -1187,7 +1298,7 @@
       text-transform: uppercase;
       letter-spacing: 0.05em;
       color: var(--text-muted);
-      background: rgba(0, 0, 0, 0.2);
+      background: var(--sunken);
     }
 
     .config-table th:first-child {
@@ -1227,7 +1338,7 @@
     .config-note {
       margin-top: 1rem;
       padding: 0.75rem 1rem;
-      background: rgba(255, 0, 110, 0.1);
+      background: rgba(var(--ember-rgb), 0.1);
       border-left: 3px solid var(--signal-ember);
       border-radius: 0 8px 8px 0;
       font-size: 0.9rem;
@@ -1288,7 +1399,7 @@
     .contributor-card:hover {
       transform: translateY(-5px);
       border-color: var(--signal-amber);
-      box-shadow: var(--glow-cyan);
+      box-shadow: var(--glow-amber);
     }
 
     .contributor-avatar {
@@ -1349,6 +1460,11 @@
           <a href="#commands">Commands</a>
           <a href="#contributors">Contributors</a>
           <a href="https://github.com/gitaarik/telecoder">GitHub</a>
+        </div>
+        <div class="theme-switch" role="group" aria-label="Colour theme">
+          <button type="button" data-theme-choice="light" title="Light" aria-label="Light theme" aria-pressed="false">☀</button>
+          <button type="button" data-theme-choice="auto" title="Match system" aria-label="Match system theme" aria-pressed="true">◐</button>
+          <button type="button" data-theme-choice="dark" title="Dark" aria-label="Dark theme" aria-pressed="false">☾</button>
         </div>
       </div>
     </nav>
@@ -2346,11 +2462,20 @@
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
+    // Read once per theme change rather than per frame.
+    let rainTrail, rainInk;
+    function readRainColours() {
+      const cs = getComputedStyle(document.documentElement);
+      rainTrail = cs.getPropertyValue('--rain-trail').trim() || 'rgba(12, 10, 7, 0.05)';
+      rainInk = cs.getPropertyValue('--rain-ink').trim() || 'rgba(255, 176, 0, 0.85)';
+    }
+    readRainColours();
+
     function drawMatrix() {
-      ctx.fillStyle = 'rgba(12, 10, 7, 0.05)';
+      ctx.fillStyle = rainTrail;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      ctx.fillStyle = '#ffb000';
+      ctx.fillStyle = rainInk;
       ctx.font = fontSize + 'px IBM Plex Mono, monospace';
 
       for (let i = 0; i < drops.length; i++) {
@@ -2555,6 +2680,42 @@
     });
 
     // Feature tabs filtering
+    // ── theme switcher ────────────────────────────────────────────────
+    const themeButtons = document.querySelectorAll('[data-theme-choice]');
+    const systemLight = window.matchMedia('(prefers-color-scheme: light)');
+
+    function storedTheme() {
+      try { return localStorage.getItem('theme') || 'auto'; } catch (e) { return 'auto'; }
+    }
+
+    function applyTheme(choice) {
+      if (choice === 'auto') {
+        delete document.documentElement.dataset.theme;
+      } else {
+        document.documentElement.dataset.theme = choice;
+      }
+      themeButtons.forEach(b => {
+        b.setAttribute('aria-pressed', String(b.dataset.themeChoice === choice));
+      });
+      // The canvas paints with literal colours, so it needs the new values.
+      readRainColours();
+    }
+
+    themeButtons.forEach(b => {
+      b.addEventListener('click', () => {
+        const choice = b.dataset.themeChoice;
+        try { localStorage.setItem('theme', choice); } catch (e) { /* private mode */ }
+        applyTheme(choice);
+      });
+    });
+
+    // On auto, a system flip has to reach the canvas too.
+    systemLight.addEventListener('change', () => {
+      if (storedTheme() === 'auto') readRainColours();
+    });
+
+    applyTheme(storedTheme());
+
     const featureTabs = document.querySelectorAll('.feature-tab');
     // Scoped to #features: .feature-card is reused in the lead section,
     // and an unscoped query hides those cards on every tab but 'All'.
