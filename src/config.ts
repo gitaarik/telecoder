@@ -46,7 +46,7 @@ const envSchema = z.object({
     .string()
     .default('true')
     .transform((val) => val.toLowerCase() === 'true'),
-  BOT_NAME: z.string().default('Claudegram'),
+  BOT_NAME: z.string().default('TeleCoder'),
   DYNAMIC_BOT_NAME: z
     .string()
     .default('false')

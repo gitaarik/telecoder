@@ -1,4 +1,4 @@
-# Claudegram Development Guidelines
+# TeleCoder Development Guidelines
 
 ## Website Maintenance (MANDATORY)
 

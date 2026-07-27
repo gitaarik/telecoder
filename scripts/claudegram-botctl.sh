@@ -66,12 +66,12 @@ function list_pids_all() {
 
 function status() {
   if pids=$(list_pids 2>/dev/null); then
-    echo "Claudegram (${MODE}) is running:"
+    echo "TeleCoder (${MODE}) is running:"
     echo "${pids}" | sed 's/^/  PID: /'
     return 0
   fi
 
-  echo "Claudegram (${MODE}) is not running."
+  echo "TeleCoder (${MODE}) is not running."
   return 1
 }
 
@@ -113,11 +113,11 @@ function wait_for_start() {
 
 function stop() {
   if ! pids=$(list_pids 2>/dev/null); then
-    echo "No Claudegram (${MODE}) process found."
+    echo "No TeleCoder (${MODE}) process found."
     return 0
   fi
 
-  echo "Stopping Claudegram (${MODE})..."
+  echo "Stopping TeleCoder (${MODE})..."
   echo "${pids}" | xargs -r kill -TERM
   sleep 1
 
@@ -128,17 +128,17 @@ function stop() {
   fi
 
   if ! wait_for_stop 10; then
-    echo "Warning: Claudegram (${MODE}) did not fully stop within timeout."
+    echo "Warning: TeleCoder (${MODE}) did not fully stop within timeout."
   fi
 }
 
 function stop_all() {
   if ! pids=$(list_pids_all 2>/dev/null); then
-    echo "No Claudegram processes found."
+    echo "No TeleCoder processes found."
     return 0
   fi
 
-  echo "Stopping all Claudegram processes..."
+  echo "Stopping all TeleCoder processes..."
   echo "${pids}" | xargs -r kill -TERM
   sleep 1
 
@@ -149,7 +149,7 @@ function stop_all() {
   fi
 
   if ! wait_for_stop_all 10; then
-    echo "Warning: Claudegram processes did not fully stop within timeout."
+    echo "Warning: TeleCoder processes did not fully stop within timeout."
   fi
 
   # Give OS time to release file descriptors after process death
@@ -158,12 +158,12 @@ function stop_all() {
 
 function start() {
   if status >/dev/null 2>&1; then
-    echo "Claudegram (${MODE}) already running."
+    echo "TeleCoder (${MODE}) already running."
     status
     return 0
   fi
 
-  echo "Starting Claudegram (${MODE})..."
+  echo "Starting TeleCoder (${MODE})..."
   cd "${ROOT_DIR}"
   # Truncate log so nohup opens a clean file descriptor
   : > "${LOG_FILE}"
@@ -174,7 +174,7 @@ function start() {
   fi
 
   if ! wait_for_start 10; then
-    echo "Warning: Claudegram (${MODE}) did not appear to start."
+    echo "Warning: TeleCoder (${MODE}) did not appear to start."
   fi
   status || true
   echo "Log: ${LOG_FILE}"

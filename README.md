@@ -1,10 +1,9 @@
 <div align="center">
 
-# Claudegram
+# TeleCoder
 
-**Your personal AI agent, running on your machine, controlled from Telegram.**
+**Claude Code from Telegram.** Your agent runs on your machine — you drive it from your phone.
 
-[![Website](https://img.shields.io/badge/Website-claudegram.com-00ffd5?logo=googlechrome&logoColor=white)](https://claudegram.com)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Claude](https://img.shields.io/badge/Claude_Agent_SDK-Anthropic-cc785c?logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
 [![Telegram](https://img.shields.io/badge/Telegram_Bot-Grammy-26a5e4?logo=telegram&logoColor=white)](https://grammy.dev/)
@@ -21,17 +20,18 @@
 
 ---
 
-> **Active fork** maintained by [@gitaarik](https://github.com/gitaarik) since
-> February 2026. Substantially extended from the [original by @NachoSEO](https://github.com/NachoSEO/claudegram)
-> with auto-topic, multi-instance launcher, /effort + /tasks commands,
-> background task lifecycle, Skills + TodoWrite support, agent watchdog,
-> plan-mode surfacing, and more. See [Credits](#credits) for full attribution.
+> TeleCoder began in February 2026 as a fork of
+> [Claudegram by @NachoSEO](https://github.com/NachoSEO/claudegram) and now runs as an
+> independent project maintained by [@gitaarik](https://github.com/gitaarik) — 160+ commits
+> and ~23k lines beyond the original, including a provider router, PTY transport,
+> multi-instance launcher, background task lifecycle, and an agent watchdog.
+> See [Credits](#credits) for full attribution.
 
 ---
 
 ## What is this?
 
-Claudegram bridges Telegram to a **full Claude Code agent** running locally on your machine. Send a message in Telegram — Claude reads your files, runs commands, writes code, browses Reddit, fetches Medium articles, transcribes voice notes, and speaks responses back. All from your phone.
+TeleCoder bridges Telegram to a **full Claude Code agent** running locally on your machine. Send a message in Telegram — Claude reads your files, runs commands, writes code, browses Reddit, fetches Medium articles, transcribes voice notes, and speaks responses back. All from your phone.
 
 This is not a simple API wrapper. It's the real Claude Code agent with tool access — Bash, file I/O, code editing, web browsing — packaged behind a Telegram interface with streaming responses, session memory, and rich output formatting.
 
@@ -187,8 +187,8 @@ OPENCODE_ENABLED=true
 ### Setup
 
 ```bash
-git clone https://github.com/gitaarik/claudegram.git
-cd claudegram
+git clone https://github.com/gitaarik/telecoder.git
+cd telecoder
 cp .env.example .env
 ```
 
@@ -346,7 +346,7 @@ All config lives in `.env`. See [`.env.example`](.env.example) for the full anno
 | `ANTHROPIC_API_KEY` | — | API key (optional with Claude Max subscription) |
 | `WORKSPACE_DIR` | `$HOME` | Root directory for project picker |
 | `CLAUDE_EXECUTABLE_PATH` | `claude` | Path to Claude Code CLI |
-| `BOT_NAME` | `Claudegram` | Bot name in system prompt |
+| `BOT_NAME` | `TeleCoder` | Bot name in system prompt |
 | `STREAMING_MODE` | `streaming` | `streaming` or `wait` |
 | `DANGEROUS_MODE` | `false` | Auto-approve all tool permissions |
 | `CANCEL_ON_NEW_MESSAGE` | `false` | Auto-cancel running query on new message |
@@ -486,7 +486,7 @@ npm start            # Run compiled build
 
 ### Self-Editing Workflow
 
-If Claudegram is editing its own codebase, use **prod mode** to avoid hot-reload restarts:
+If TeleCoder is editing its own codebase, use **prod mode** to avoid hot-reload restarts:
 
 ```bash
 ./scripts/claudegram-botctl.sh prod start      # No hot reload
@@ -510,8 +510,11 @@ Then `/continue` or `/resume` in Telegram to restore your session.
 
 ## Credits
 
-Originally created by [@NachoSEO](https://github.com/NachoSEO/claudegram).
-This active fork by [@gitaarik](https://github.com/gitaarik) extends it with:
+TeleCoder is a derivative of [Claudegram](https://github.com/NachoSEO/claudegram), created by
+[@NachoSEO](https://github.com/NachoSEO) and MIT-licensed. That project is the foundation this
+one is built on, and its copyright notice is retained in [LICENSE](LICENSE).
+
+TeleCoder is maintained independently by [@gitaarik](https://github.com/gitaarik) and adds:
 
 - **Auto-topic & dynamic bot name** — bot display name reflects current
   work topic, derived via parallel Haiku side-call; per-chat /topic and

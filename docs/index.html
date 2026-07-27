@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Claudegram - Claude Code via Telegram</title>
+  <title>TeleCoder - Claude Code via Telegram</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
@@ -1320,7 +1320,7 @@
     <nav>
       <div class="nav-content">
         <a href="#" class="nav-logo">
-          <span>⚡</span> Claudegram
+          <span>⚡</span> TeleCoder
         </a>
         <div class="nav-links">
           <a href="#features">Features</a>
@@ -1328,7 +1328,7 @@
           <a href="#demo">Demo</a>
           <a href="#commands">Commands</a>
           <a href="#contributors">Contributors</a>
-          <a href="https://github.com/NachoSEO/claudegram">GitHub</a>
+          <a href="https://github.com/gitaarik/telecoder">GitHub</a>
         </div>
       </div>
     </nav>
@@ -1346,7 +1346,7 @@
         Your personal AI agent, running on your machine, controlled from Telegram.
       </p>
       <div class="hero-buttons">
-        <a href="https://github.com/NachoSEO/claudegram" class="btn btn-primary">
+        <a href="https://github.com/gitaarik/telecoder" class="btn btn-primary">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
           View on GitHub
         </a>
@@ -1373,7 +1373,7 @@
               <span class="prereq-badge optional">Claude Max subscription</span>
             </div>
             <div class="prereq-note">
-              <strong>Note:</strong> On macOS, Claudegram uses <code>caffeinate</code> to prevent sleep during long operations.
+              <strong>Note:</strong> On macOS, TeleCoder uses <code>caffeinate</code> to prevent sleep during long operations.
             </div>
           </div>
 
@@ -1385,8 +1385,8 @@
                 <button type="button" class="copy-btn" onclick="copyCode(this)">Copy</button>
               </div>
               <div class="code-content">
-                <pre><span class="command">git clone</span> https://github.com/nachoSEO/claudegram.git
-<span class="command">cd</span> claudegram
+                <pre><span class="command">git clone</span> https://github.com/gitaarik/telecoder.git
+<span class="command">cd</span> telecoder
 <span class="command">npm install</span>
 <span class="command">cp</span> .env.example .env
 <span class="comment"># Edit .env with your credentials</span>
@@ -1611,7 +1611,7 @@
               <span class="telegram-back">←</span>
               <div class="telegram-avatar">⚡</div>
               <div class="telegram-contact">
-                <div class="telegram-contact-name">Claudegram</div>
+                <div class="telegram-contact-name">TeleCoder</div>
                 <div class="telegram-contact-status">online</div>
               </div>
               <div class="telegram-header-icons">
@@ -1813,22 +1813,22 @@
           <div class="feature-card" data-category="core">
             <div class="feature-icon">🎚️</div>
             <h3>Verbosity Tiers</h3>
-            <p>One per-chat setting (quiet / normal / verbose / debug) drives how much detail Claudegram surfaces each turn. Verbose adds the per-turn usage footer, untruncated tool inputs, and a consolidated action log that streams tool results and diffs live in a single updatable message, then collapses to a Telegraph link at the end of the turn so the chat history stays tidy. Debug extends the action log with longer previews (40 lines vs 20). Quiet drops the completion ping. Set with /verbosity; env-level default via VERBOSITY_DEFAULT.</p>
+            <p>One per-chat setting (quiet / normal / verbose / debug) drives how much detail TeleCoder surfaces each turn. Verbose adds the per-turn usage footer, untruncated tool inputs, and a consolidated action log that streams tool results and diffs live in a single updatable message, then collapses to a Telegraph link at the end of the turn so the chat history stays tidy. Debug extends the action log with longer previews (40 lines vs 20). Quiet drops the completion ping. Set with /verbosity; env-level default via VERBOSITY_DEFAULT.</p>
           </div>
           <div class="feature-card" data-category="session">
             <div class="feature-icon">↩️</div>
             <h3>Back to Previous Session</h3>
-            <p>After /clear, /project, /newproject, or /start, Claudegram appends a one-tap inline button that resumes the most recent prior session — handy if you regret a clear or want to jump back to the project you just left.</p>
+            <p>After /clear, /project, /newproject, or /start, TeleCoder appends a one-tap inline button that resumes the most recent prior session — handy if you regret a clear or want to jump back to the project you just left.</p>
           </div>
           <div class="feature-card" data-category="session">
             <div class="feature-icon">📋</div>
             <h3>Session Recap</h3>
-            <p>Use /recap [N] to re-read the last N user/assistant exchanges from the active session (default 3). After /resume or /continue, Claudegram drops a one-line tip pointing at the command so you can quickly orient yourself in a restored session.</p>
+            <p>Use /recap [N] to re-read the last N user/assistant exchanges from the active session (default 3). After /resume or /continue, TeleCoder drops a one-line tip pointing at the command so you can quickly orient yourself in a restored session.</p>
           </div>
           <div class="feature-card" data-category="session">
             <div class="feature-icon">📨</div>
             <h3>Missed-Reply Catch-up</h3>
-            <p>After every turn, Claudegram cross-checks what it sent against Claude Code's canonical session log and auto-posts anything the extractor missed (pure tool-call turns, multi-block lossy screen-scrape, early end-of-turn flushes). Hit /sync any time to manually re-check — bypasses the queue so it works during hung turns.</p>
+            <p>After every turn, TeleCoder cross-checks what it sent against Claude Code's canonical session log and auto-posts anything the extractor missed (pure tool-call turns, multi-block lossy screen-scrape, early end-of-turn flushes). Hit /sync any time to manually re-check — bypasses the queue so it works during hung turns.</p>
           </div>
           <div class="feature-card" data-category="session">
             <div class="feature-icon">🍴</div>
@@ -1848,7 +1848,7 @@
           <div class="feature-card" data-category="core">
             <div class="feature-icon">📡</div>
             <h3>Async Event Relay</h3>
-            <p>In PTY mode, claudegram surfaces task-notifications from <code>Monitor</code>, <code>Bash(run_in_background=true)</code>, and <code>Task</code> subagents to Telegram between turns. Each event posts as a "📡 Monitor — ...", "⚙️ Backgrounded: ...", or "🤖 Subagent started: ..." header, with the raw event payload (▸ trigger line) and Claude's analysis. When a backgrounded task or subagent finishes, the original "started" message is edited in place to "✅ Backgrounded: ... (12s)" so the chat doesn't stay stuck on a stale "in progress" line — short tasks edit silently, longer ones (≥ <code>NOTIFICATION_THRESHOLD_SECONDS</code>) and failures also post a fresh message so Telegram pings you. <code>PushNotification</code> is also relayed as "🔔 &lt;message&gt;". Useful for "tail this log and tell me when it errors", "build the docs in the background", or "delegate Y to a subagent" tasks.</p>
+            <p>In PTY mode, TeleCoder surfaces task-notifications from <code>Monitor</code>, <code>Bash(run_in_background=true)</code>, and <code>Task</code> subagents to Telegram between turns. Each event posts as a "📡 Monitor — ...", "⚙️ Backgrounded: ...", or "🤖 Subagent started: ..." header, with the raw event payload (▸ trigger line) and Claude's analysis. When a backgrounded task or subagent finishes, the original "started" message is edited in place to "✅ Backgrounded: ... (12s)" so the chat doesn't stay stuck on a stale "in progress" line — short tasks edit silently, longer ones (≥ <code>NOTIFICATION_THRESHOLD_SECONDS</code>) and failures also post a fresh message so Telegram pings you. <code>PushNotification</code> is also relayed as "🔔 &lt;message&gt;". Useful for "tail this log and tell me when it errors", "build the docs in the background", or "delegate Y to a subagent" tasks.</p>
           </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon">🌐</div>
@@ -1903,7 +1903,7 @@
           <span class="flow-arrow">→</span>
           <div class="flow-node">
             <span class="flow-node-icon">🤖</span>
-            <span class="flow-node-label">Claudegram</span>
+            <span class="flow-node-label">TeleCoder</span>
           </div>
           <span class="flow-arrow">→</span>
           <div class="flow-node">
@@ -2040,7 +2040,7 @@
             </div>
             <div class="command-row">
               <code class="command-code">/verbosity &lt;tier&gt;</code>
-              <span class="command-desc">Pick how much detail Claudegram surfaces per turn (quiet / normal / verbose / debug). Verbose adds the per-turn usage footer, untruncated tool inputs, and a consolidated action log that streams live then collapses to a Telegraph link at the end of the turn. Debug extends the action log with longer previews (40 lines vs 20); quiet suppresses the completion ping. Per-chat — overrides VERBOSITY_DEFAULT.</span>
+              <span class="command-desc">Pick how much detail TeleCoder surfaces per turn (quiet / normal / verbose / debug). Verbose adds the per-turn usage footer, untruncated tool inputs, and a consolidated action log that streams live then collapses to a Telegraph link at the end of the turn. Debug extends the action log with longer previews (40 lines vs 20); quiet suppresses the completion ping. Per-chat — overrides VERBOSITY_DEFAULT.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/btw &lt;question&gt;</code>
@@ -2072,7 +2072,7 @@
             </div>
             <div class="command-row">
               <code class="command-code">/suggestions</code>
-              <span class="command-desc">Toggle predicted next-prompt buttons. When on, claudegram scrapes Claude Code's ghost-text suggestion from the TUI at end-of-turn and surfaces it as a tappable inline button under each response. Takes effect on next session spawn.</span>
+              <span class="command-desc">Toggle predicted next-prompt buttons. When on, TeleCoder scrapes Claude Code's ghost-text suggestion from the TUI at end-of-turn and surfaces it as a tappable inline button under each response. Takes effect on next session spawn.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/topic &lt;text&gt;</code>
@@ -2237,13 +2237,13 @@
     </section>
 
     <footer>
-      <div class="footer-logo">⚡ Claudegram</div>
+      <div class="footer-logo">⚡ TeleCoder</div>
       <p class="footer-text">Built with Claude Agent SDK and grammY</p>
       <div class="footer-links">
-        <a href="https://github.com/NachoSEO/claudegram">GitHub</a>
+        <a href="https://github.com/gitaarik/telecoder">GitHub</a>
         <a href="#getting-started">Documentation</a>
         <a href="#contributors">Contributors</a>
-        <a href="https://github.com/NachoSEO/claudegram/issues">Issues</a>
+        <a href="https://github.com/gitaarik/telecoder/issues">Issues</a>
       </div>
     </footer>
   </div>

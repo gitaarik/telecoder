@@ -1,7 +1,7 @@
 {
-  "name": "claudegram",
+  "name": "telecoder",
   "version": "1.0.0",
-  "description": "Telegram bot that bridges messages to Claude Code with full agent capabilities",
+  "description": "Claude Code from Telegram — routes to CCR and OpenCode when you need it",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {

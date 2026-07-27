@@ -8,10 +8,10 @@
   },
 
   "instances": [
-    // List of tokens → auto-template: spawns 3 bots named "Claudegram 1", "Claudegram 2", "Claudegram 3"
+    // List of tokens → auto-template: spawns 3 bots named "TeleCoder 1", "TeleCoder 2", "TeleCoder 3"
     // Use {n} for sequential numbering, {N} for zero-padded (01, 02, ...).
     {
-      "name": "Claudegram {n}",
+      "name": "TeleCoder {n}",
       "tokens": [
         "110201543:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw",
         "220201543:BBIdqTcvCH1vGWJxfSeofSAs0K5PALDsaw",

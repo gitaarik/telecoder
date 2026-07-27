@@ -105,7 +105,7 @@ export async function ensureCcrRunning(): Promise<EnsureResult> {
   if (!config.CCR_AUTOSTART) {
     return {
       status: 'not_running',
-      message: `CCR proxy isn't reachable at ${config.CCR_BASE_URL}. Start it with \`ccr start\`, or set \`CCR_AUTOSTART=true\` to let Claudegram start it on demand.`,
+      message: `CCR proxy isn't reachable at ${config.CCR_BASE_URL}. Start it with \`ccr start\`, or set \`CCR_AUTOSTART=true\` to let TeleCoder start it on demand.`,
     };
   }
 

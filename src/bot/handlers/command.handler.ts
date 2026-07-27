@@ -616,7 +616,7 @@ function buildSuggestionsMenu(sessionKey: string) {
     `${header}\n\n` +
     `Status: *${statusLine}*\n` +
     `Default: *${esc(defaultLabel)}*\n\n` +
-    `_When enabled, claudegram surfaces Claude Code's speculative next\\-prompt as an inline button under each response\\. Tap to send it as your next message\\._\n\n` +
+    `_When enabled, TeleCoder surfaces Claude Code's speculative next\\-prompt as an inline button under each response\\. Tap to send it as your next message\\._\n\n` +
     `_Takes effect on the next session spawn \\(env var is set at spawn time\\)\\._`;
 
   return {
@@ -676,7 +676,7 @@ export async function handleStart(ctx: Context): Promise<void> {
   const chatId = keyInfo ? parseSessionKey(keyInfo.sessionKey).chatId : undefined;
   const effortLabel = chatId !== undefined ? (getEffortLabel(chatId) ?? 'Default') : 'Default';
 
-  const welcomeMessage = `👋 *Welcome to Claudegram\\!*
+  const welcomeMessage = `👋 *Welcome to TeleCoder\\!*
 
 I bridge your messages to Claude Code running on your local machine\\.
 

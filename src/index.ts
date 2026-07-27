@@ -511,7 +511,7 @@ async function notifyInterruptedSessions(bot: Bot): Promise<void> {
 }
 
 async function main() {
-  console.log('🤖 Starting Claudegram...');
+  console.log('🤖 Starting TeleCoder...');
   console.log(`📋 Allowed users: ${config.ALLOWED_USER_IDS.join(', ')}`);
   console.log(`📝 Mode: ${config.STREAMING_MODE}`);
 
