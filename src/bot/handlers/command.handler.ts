@@ -65,7 +65,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { execFile, execSync, spawn } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { isMainThread } from 'worker_threads';
 import { sanitizeError, sanitizePath } from '../../utils/sanitize.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../../utils/workspace-guard.js';
@@ -2030,20 +2030,35 @@ export async function handleStartupCallback(ctx: Context): Promise<void> {
 
 type RebuildScope = 'one' | 'all';
 
+/** Run the build without blocking the event loop. execSync would freeze this
+ * worker for the whole build, and a worker that stops sending heartbeats for
+ * 90s gets force-restarted by the launcher mid-build. */
+function runBuild(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'npm',
+      ['run', 'build'],
+      { cwd: PROJECT_ROOT, timeout: 120_000, maxBuffer: 4 * 1024 * 1024 },
+      (error, _stdout, stderr) => {
+        if (error) {
+          reject(new Error((stderr || error.message || 'Unknown build error').trim()));
+          return;
+        }
+        resolve();
+      }
+    );
+  });
+}
+
 async function performRebuild(ctx: Context, scope: RebuildScope): Promise<void> {
   // Step 1: Build
   await ctx.reply('🔨 Building...');
 
   try {
-    execSync('npm run build', {
-      cwd: PROJECT_ROOT,
-      timeout: 120_000,
-      stdio: 'pipe',
-    });
+    await runBuild();
   } catch (error: unknown) {
-    const err = error as { stderr?: Buffer; message?: string };
-    const stderr = err.stderr?.toString().slice(-500) || err.message || 'Unknown build error';
-    await ctx.reply(`❌ Build failed. Aborting reload.\n\n${stderr.slice(0, 400)}`);
+    const message = error instanceof Error ? error.message : String(error);
+    await ctx.reply(`❌ Build failed. Aborting reload.\n\n${message.slice(-500).slice(0, 400)}`);
     return;
   }
 

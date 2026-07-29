@@ -96,6 +96,9 @@ export function requestRestartAll(autoResume = false): boolean {
 
 const RELOAD_MARKER_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
 
+// How long a graceful shutdown may take before we exit regardless.
+const SHUTDOWN_TIMEOUT_MS = 5_000;
+
 async function autoResumeAfterReload(bot: Bot): Promise<boolean> {
   const markerFile = getReloadMarkerPath();
   if (!fs.existsSync(markerFile)) {
@@ -620,6 +623,13 @@ async function main() {
     clearInterval(heartbeatTimer);
     allowSleep();
     stopCleanup();
+    // Don't let a stuck runner.stop() (e.g. a getUpdates call that never
+    // settles) hold the exit open — the launcher is waiting on it to restart us.
+    const exitWatchdog = setTimeout(() => {
+      console.warn(`[Shutdown] Runner did not stop within ${Math.round(SHUTDOWN_TIMEOUT_MS / 1000)}s — exiting anyway`);
+      process.exit(0);
+    }, SHUTDOWN_TIMEOUT_MS);
+    exitWatchdog.unref();
     await runner.stop();
     process.exit(0);
   };
@@ -630,7 +640,11 @@ async function main() {
   // When running as a worker thread, communicate with the launcher
   if (!isMainThread && parentPort) {
     parentPort.on('message', (msg: { type?: string }) => {
-      if (msg?.type === 'shutdown') shutdown();
+      // 'exit_for_restart' is the launcher answering a restart request: we exit
+      // ourselves rather than waiting to be terminated. A worker.terminate()
+      // only lands when the thread next runs JS, so a worker blocked in native
+      // code would never die — and never be respawned.
+      if (msg?.type === 'shutdown' || msg?.type === 'exit_for_restart') shutdown();
     });
 
     // Send periodic heartbeat so the launcher can detect stuck workers

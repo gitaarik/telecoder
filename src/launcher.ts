@@ -33,6 +33,19 @@ const HEARTBEAT_STALL_SLACK_MS = 30_000;
 // transient stall doesn't trigger a fleet-wide thundering-herd respawn.
 const HEARTBEAT_MASS_SILENCE_LIMIT = 3;
 
+// A worker asked to restart exits itself (see 'exit_for_restart' in index.ts),
+// which unwinds cleanly. If it hasn't gone this long after being asked, fall
+// back to terminating the thread.
+const RESTART_GRACEFUL_EXIT_MS = 10_000;
+// terminate() only takes effect when the worker next runs JS: a thread blocked
+// in a synchronous native call ignores it indefinitely, so the exit event never
+// fires and the respawn below never runs — that instance stays dead for good.
+// Rather than leave a bot silently offline, take the launcher down and let the
+// process manager bring every instance back. Comfortably longer than the
+// longest legitimate block (/rebuildbot's 120s build cap) so a slow-but-alive
+// worker is never punished.
+const RESTART_WEDGED_ESCALATION_MS = 180_000;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -138,6 +151,20 @@ const isTsx = workerEntry.endsWith('.ts');
 const workers: Map<string, Worker> = new Map();
 const pendingRestarts = new Set<string>();
 const lastHeartbeat = new Map<string, number>();
+// Per-worker "start restarting this one" callbacks, owned by spawnWorker so the
+// exit/backstop bookkeeping stays with the worker it belongs to. Every restart
+// path (self, sibling, all, missed heartbeat) goes through these rather than
+// calling terminate() directly.
+const restarters = new Map<string, () => void>();
+
+function restartWorker(name: string): void {
+  const begin = restarters.get(name);
+  if (!begin) {
+    console.warn(`[Launcher] restart requested for ${name} but it has no live worker — skipping`);
+    return;
+  }
+  begin();
+}
 
 // ---------------------------------------------------------------------------
 // Worker lifecycle
@@ -212,14 +239,47 @@ function spawnWorker(inst: ResolvedInstance): Worker {
   const worker = new Worker(workerEntry, workerOptions);
   lastHeartbeat.set(inst.name, Date.now());
 
+  let exited = false;
+  let restartBegun = false;
+
+  // Drive this worker through a restart. Asking it to exit itself is the only
+  // path that reliably works — terminate() is powerless against a thread stuck
+  // in native code — so that comes first, with terminate() as a backstop and a
+  // launcher-level bail-out if even that doesn't land.
+  const beginRestart = (): void => {
+    if (restartBegun || exited) return;
+    restartBegun = true;
+    pendingRestarts.add(inst.name);
+
+    try {
+      worker.postMessage({ type: 'exit_for_restart' });
+    } catch (err) {
+      console.warn(`[Launcher] Could not ask ${inst.name} to exit (${err instanceof Error ? err.message : err}) — terminating instead`);
+      worker.terminate();
+    }
+
+    setTimeout(() => {
+      if (exited) return;
+      console.warn(`[Launcher] ${inst.name} did not exit within ${Math.round(RESTART_GRACEFUL_EXIT_MS / 1000)}s of being asked — terminating the thread`);
+      worker.terminate();
+    }, RESTART_GRACEFUL_EXIT_MS).unref();
+
+    setTimeout(() => {
+      if (exited) return;
+      console.error(`[Launcher] ${inst.name} still alive ${Math.round(RESTART_WEDGED_ESCALATION_MS / 1000)}s after a restart was requested — the thread is wedged in native code and terminate() cannot reach it. Exiting the launcher so the process manager restarts every instance.`);
+      process.exit(1);
+    }, RESTART_WEDGED_ESCALATION_MS).unref();
+  };
+
+  restarters.set(inst.name, beginRestart);
+
   worker.on('message', (msg: WorkerMessage) => {
     if (msg?.type === 'heartbeat') {
       lastHeartbeat.set(inst.name, Date.now());
     } else if (msg?.type === 'restart') {
       // Self-restart: this worker wants to be restarted
       console.log(`[Launcher] ${inst.name} requested self-restart`);
-      pendingRestarts.add(inst.name);
-      worker.terminate();
+      beginRestart();
     } else if (msg?.type === 'restart_sibling') {
       // Cross-bot restart: restart a different worker by name
       const targetName = msg.name;
@@ -233,9 +293,7 @@ function spawnWorker(inst: ResolvedInstance): Worker {
         if (msg.autoResume && targetInst) {
           writeReloadMarkerForToken(targetInst.token, targetInst.name);
         }
-        const w = workers.get(resolvedName)!;
-        pendingRestarts.add(resolvedName);
-        w.terminate();
+        restartWorker(resolvedName);
       };
 
       const sibling = workers.get(targetName);
@@ -273,13 +331,13 @@ function spawnWorker(inst: ResolvedInstance): Worker {
           writeReloadMarkerForToken(i.token, i.name);
         }
       }
-      // Stagger terminations to avoid port conflicts on respawn
+      // Stagger restarts to avoid port conflicts on respawn
       let delay = 0;
-      for (const [name, w] of workers) {
+      for (const name of workers.keys()) {
         const scheduledAt = delay;
         setTimeout(() => {
-          console.log(`[Launcher] restart_all: terminating ${name} (scheduled +${scheduledAt}ms)`);
-          w.terminate();
+          console.log(`[Launcher] restart_all: restarting ${name} (scheduled +${scheduledAt}ms)`);
+          restartWorker(name);
         }, delay);
         delay += 200;
       }
@@ -292,7 +350,9 @@ function spawnWorker(inst: ResolvedInstance): Worker {
 
   worker.on('exit', (code) => {
     console.log(`[${inst.name}] Worker exited with code ${code}`);
+    exited = true;
     lastHeartbeat.delete(inst.name);
+    restarters.delete(inst.name);
 
     if (pendingRestarts.has(inst.name)) {
       // Planned restart — respawn after a short delay
@@ -351,6 +411,10 @@ setInterval(() => {
   const silent: string[] = [];
   for (const inst of instances) {
     if (!workers.get(inst.name)) continue;
+    // A restart is already in flight for this one — it stopped beating because
+    // it's on its way out, and beginRestart() owns the escalation from here.
+    // Re-requesting every tick would just log the same line forever.
+    if (pendingRestarts.has(inst.name)) continue;
     const last = lastHeartbeat.get(inst.name) ?? 0;
     if (now - last > HEARTBEAT_TIMEOUT_MS) silent.push(inst.name);
   }
@@ -374,9 +438,7 @@ setInterval(() => {
     console.error(`[Launcher] ${silent.length} workers still silent after ${consecutiveMassSilence} checks — restarting them staggered`);
     let delay = 0;
     for (const name of silent) {
-      pendingRestarts.add(name);
-      const w = workers.get(name);
-      setTimeout(() => w?.terminate(), delay);
+      setTimeout(() => restartWorker(name), delay);
       delay += 1000;
     }
     consecutiveMassSilence = 0;
@@ -388,8 +450,7 @@ setInterval(() => {
   const name = silent[0];
   const last = lastHeartbeat.get(name) ?? 0;
   console.error(`[Launcher] ${name} missed heartbeat (${Math.round((now - last) / 1000)}s silent) — force-restarting`);
-  pendingRestarts.add(name);
-  workers.get(name)!.terminate();
+  restartWorker(name);
 }, HEARTBEAT_CHECK_MS).unref();
 
 // ---------------------------------------------------------------------------
