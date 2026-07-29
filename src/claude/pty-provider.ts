@@ -7,6 +7,7 @@ import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
 import { claudeSessionFileExists, readLastApiErrorFromJsonl, readLastAssistantTurnText, readLastCompactionFromJsonl, readLastUsageFromJsonl, sessionJsonlMtimeMs, type CompactionInfo } from './session-jsonl.js';
+import { clearDeliveredProse, getDeliveredProse, stripDeliveredPrefix } from './turn-prose.js';
 import { isNativeCompactCommand } from './command-parser.js';
 import { isCancelled } from './request-queue.js';
 import { getWorkspaceRoot } from '../utils/workspace-guard.js';
@@ -396,7 +397,15 @@ export class PtyProvider implements Provider {
       );
     }
 
-    const assistantResponse = fromJsonl ?? this._extractAssistantResponse(finalScreenText);
+    // Prose already pushed to the chat mid-turn (an ask_user question flushes
+    // its own set-up text above the buttons) would otherwise be repeated here,
+    // since the JSONL read returns every text record of the turn. Strip it and
+    // retire the marker — see turn-prose.ts.
+    const assistantResponse = stripDeliveredPrefix(
+      fromJsonl ?? this._extractAssistantResponse(finalScreenText),
+      getDeliveredProse(sessionKey),
+    );
+    clearDeliveredProse(sessionKey);
 
     const usage = this._refreshUsageFromJsonl(sessionKey);
 
@@ -574,6 +583,9 @@ export class PtyProvider implements Provider {
     // Tell the monitor relay we're in a turn so it suppresses event posts
     // for assistant text that's being delivered through the normal pipeline.
     markTurnStart(sessionKey);
+    // Start clean: a turn that died before its end-of-turn strip must not
+    // leave a marker behind that eats the front of the next turn's reply.
+    clearDeliveredProse(sessionKey);
 
     // Mid-turn abort. Two stages:
     //   1. Write Esc (0x1b) into the pty — claude code's TUI shortcut for

@@ -1,8 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   buildAskUserMessageText,
   appendAnsweredFooter,
   buildAnswerConfirmation,
+  createPendingQuestion,
+  resolvePendingQuestion,
+  hasPendingQuestionForSession,
 } from '../../src/claude/ask-user.js';
 
 describe('buildAskUserMessageText', () => {
@@ -83,5 +86,58 @@ describe('buildAnswerConfirmation', () => {
   it('falls back to a placeholder when the tapper has no usable name', () => {
     expect(buildAnswerConfirmation('Rebase', { isPrivate: false, who: '  ' })).toBe('✅ Someone picked: Rebase');
     expect(buildAnswerConfirmation('Rebase', { isPrivate: false })).toBe('✅ Someone picked: Rebase');
+  });
+});
+
+// The streaming status bubble renders "waiting for your answer" straight off
+// this flag rather than tracking its own, so the flag has to go down on every
+// exit path — otherwise the bubble stays parked after the turn resumes.
+describe('hasPendingQuestionForSession', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('is false for a session with no outstanding question', () => {
+    expect(hasPendingQuestionForSession('chat-none')).toBe(false);
+  });
+
+  it('goes up while a question is open and back down once it is answered', async () => {
+    const { id, promise } = createPendingQuestion(['A', 'B'], undefined, 'chat-1');
+    expect(hasPendingQuestionForSession('chat-1')).toBe(true);
+
+    expect(resolvePendingQuestion(id, 1)).toBe(true);
+    await expect(promise).resolves.toEqual({ label: 'B', index: 1 });
+    expect(hasPendingQuestionForSession('chat-1')).toBe(false);
+  });
+
+  it('goes back down when the question times out unanswered', async () => {
+    vi.useFakeTimers();
+    const { promise } = createPendingQuestion(['A', 'B'], 1000, 'chat-2');
+    expect(hasPendingQuestionForSession('chat-2')).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(promise).resolves.toBeNull();
+    expect(hasPendingQuestionForSession('chat-2')).toBe(false);
+  });
+
+  it('stays up until the last of several overlapping questions resolves', async () => {
+    const first = createPendingQuestion(['A', 'B'], undefined, 'chat-3');
+    const second = createPendingQuestion(['C', 'D'], undefined, 'chat-3');
+    expect(hasPendingQuestionForSession('chat-3')).toBe(true);
+
+    resolvePendingQuestion(first.id, 0);
+    await first.promise;
+    expect(hasPendingQuestionForSession('chat-3')).toBe(true);
+
+    resolvePendingQuestion(second.id, 0);
+    await second.promise;
+    expect(hasPendingQuestionForSession('chat-3')).toBe(false);
+  });
+
+  it('does not leak the flag when the tapped index has no matching option', async () => {
+    const { id, promise } = createPendingQuestion(['A', 'B'], undefined, 'chat-4');
+    expect(resolvePendingQuestion(id, 9)).toBe(true);
+    await expect(promise).resolves.toBeNull();
+    expect(hasPendingQuestionForSession('chat-4')).toBe(false);
   });
 });

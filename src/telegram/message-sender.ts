@@ -24,10 +24,19 @@ import { sessionManager } from '../claude/session-manager.js';
 import { sessionJsonlPath } from '../claude/session-jsonl.js';
 import { messageOffsets, countJsonlLines } from '../claude/message-offsets.js';
 import { storeSuggestion } from '../claude/pending-suggestions.js';
+import { hasPendingQuestionForSession } from '../claude/ask-user.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
 const FORK_KEYBOARD = { inline_keyboard: [[{ text: '🍴 Fork', callback_data: 'fork:pick' }]] };
+
+/**
+ * Status-bubble text shown while an ask_user question is waiting on a tap.
+ * Replaces the spinner: the watchdog is deliberately paused during a pending
+ * question, so nothing else stops the bubble animating "Thinking…" at a turn
+ * that is actually parked on the user.
+ */
+const AWAITING_ANSWER_LINE = '⏸️ Waiting for your answer — see the question above ↑';
 
 /**
  * Truncate a suggestion text for inline button display. Telegram inline
@@ -894,8 +903,13 @@ export class MessageSender {
 
     const parts: string[] = [];
 
-    // Add status line if there's a current operation
-    if (state.currentOperation) {
+    // A pending ask_user question outranks the tool/thinking status: the turn
+    // is blocked on a button tap, and a spinner here reads as work still in
+    // progress, which is exactly the cue that makes a question easy to miss.
+    const awaitingAnswer = hasPendingQuestionForSession(state.sessionKey);
+    if (awaitingAnswer) {
+      parts.push(AWAITING_ANSWER_LINE);
+    } else if (state.currentOperation) {
       const icon = getToolIcon(state.currentOperation.name);
       const action = getToolAction(state.currentOperation.name);
       const detail = state.currentOperation.detail ? ` ${state.currentOperation.detail}` : '';
@@ -917,7 +931,9 @@ export class MessageSender {
 
     // Mirror Claude Code's live spinner tip under the status line, as the TUI
     // shows it. Scraped from the PTY render; null when no tip is on screen.
-    if (state.tip) {
+    // Suppressed while a question is pending — the tip is whatever was on
+    // screen when the model blocked, and it dilutes the one line that matters.
+    if (state.tip && !awaitingAnswer) {
       parts.push(`  ⎿ 💡 ${state.tip}`);
     }
 
@@ -990,6 +1006,62 @@ export class MessageSender {
 
     state.tip = tip;
     this.flushTerminalUpdate(ctx, state).catch(() => {});
+  }
+
+  /**
+   * An ask_user question has just been posted to the chat.
+   *
+   * Counts it as an intervening post so finishStreaming publishes the final
+   * answer as a fresh message at the bottom. Without this the counter stays at
+   * 0 and the answer is edited into the status bubble — which sits *above* the
+   * question — and a Telegram edit neither notifies nor re-orders, so the
+   * question remains the last thing in the chat while the answer lands
+   * silently upstream where it is easy to never see.
+   *
+   * Also repoints the status bubble at the user; see {@link AWAITING_ANSWER_LINE}.
+   */
+  async noteQuestionPosted(ctx: Context, sessionKey: string): Promise<void> {
+    this.noteInterveningPost(sessionKey);
+    await this.refreshQuestionStatus(ctx, sessionKey);
+  }
+
+  /**
+   * Counterpart to {@link noteQuestionPosted}, called once the question is
+   * resolved — by a tap or by timing out — so the bubble drops the waiting
+   * notice and goes back to reporting progress.
+   */
+  async noteQuestionAnswered(ctx: Context, sessionKey: string): Promise<void> {
+    await this.refreshQuestionStatus(ctx, sessionKey);
+  }
+
+  /**
+   * Re-render the status bubble to match the session's current pending-question
+   * state. Reads the registry rather than tracking a flag of its own, so the
+   * bubble cannot disagree with it — overlapping asks and timeouts both land
+   * on the right text without extra bookkeeping.
+   */
+  private async refreshQuestionStatus(ctx: Context, sessionKey: string): Promise<void> {
+    const state = this.streamStates.get(sessionKey);
+    if (!state || !state.messageId) return;
+
+    if (state.terminalMode) {
+      // Bypass the edit throttle: the point of the notice is that it lands
+      // now, not up to MIN_EDIT_INTERVAL_MS later on the next spinner tick.
+      state.lastUpdate = 0;
+      await this.flushTerminalUpdate(ctx, state).catch(() => {});
+      return;
+    }
+
+    // Non-terminal mode never re-renders the bubble on its own — updateStream
+    // only accumulates text for finishStreaming — so edit it directly.
+    const text = hasPendingQuestionForSession(sessionKey)
+      ? AWAITING_ANSWER_LINE
+      : `${getSpinnerFrame(state.spinnerIndex)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...`;
+    try {
+      await ctx.api.editMessageText(state.chatId, state.messageId, text, { parse_mode: undefined });
+    } catch {
+      // Cosmetic — a failed edit just leaves the previous status text in place.
+    }
   }
 
   async finishStreaming(

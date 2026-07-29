@@ -25,6 +25,8 @@ import { getWorkspaceRoot, isPathWithinRoot } from '../utils/workspace-guard.js'
 import { createPendingQuestion, buildAskUserMessageText } from './ask-user.js';
 import { createPendingPoll } from './poll-user.js';
 import { scheduler } from './scheduler.js';
+import { readLastAssistantTurnText } from './session-jsonl.js';
+import { getDeliveredProse, recordDeliveredProse, stripDeliveredPrefix } from './turn-prose.js';
 
 const TELEGRAM_MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 
@@ -51,6 +53,40 @@ registerIpcHandler('/mcp/set_topic', async (turn, body) => {
     message: topic ? `Topic set to "${topic}".` : 'Topic cleared.',
   };
 });
+
+/**
+ * Post the assistant prose written so far in this PTY turn as its own message,
+ * so a question that follows it doesn't arrive ahead of its own reasoning.
+ *
+ * Reads the same JSONL the end-of-turn path reads, subtracts whatever an
+ * earlier flush in this turn already sent, and records the new high-water mark
+ * for {@link stripDeliveredPrefix} to remove at end-of-turn.
+ *
+ * Best-effort throughout: no claude session id yet, an unreadable log, or a
+ * failed send all just mean the prose stays where it was — the question still
+ * goes out, carrying its own `context` block.
+ */
+async function flushTurnProse(
+  sessionKey: string,
+  ctx: Context,
+  messageSender: { sendMessage(ctx: Context, text: string): Promise<number | null> },
+): Promise<void> {
+  try {
+    const botSession = sessionManager.getSession(sessionKey);
+    if (!botSession?.claudeSessionId) return;
+
+    const soFar = readLastAssistantTurnText(botSession.workingDirectory, botSession.claudeSessionId);
+    if (!soFar) return;
+
+    const fresh = stripDeliveredPrefix(soFar, getDeliveredProse(sessionKey)).trim();
+    if (!fresh) return;
+
+    await messageSender.sendMessage(ctx, fresh);
+    recordDeliveredProse(sessionKey, soFar);
+  } catch (err) {
+    console.debug('[AskUser] Prose flush skipped:', err instanceof Error ? err.message : err);
+  }
+}
 
 // ── /mcp/ask_user ────────────────────────────────────────────────────
 // Long-polling IPC handler: registers a pending question in the same shared
@@ -86,6 +122,15 @@ registerIpcHandler('/mcp/ask_user', async (turn, body) => {
   const optionLabels = options.map((o) => o.label);
   const { id, promise } = createPendingQuestion(optionLabels, undefined, turn.sessionKey);
 
+  // PTY mode holds the turn's prose in the JSONL log until end-of-turn, so
+  // anything the model wrote to set up this question is still undelivered.
+  // Flush it above the buttons; the provider strips it from the end-of-turn
+  // text so it isn't shown twice. Imported lazily to keep this module's eager
+  // graph minimal — it is loaded from pty-provider at module scope, so every
+  // eager edge here is a chance to close a cycle back through it.
+  const { messageSender } = await import('../telegram/message-sender.js');
+  await flushTurnProse(turn.sessionKey, ctx, messageSender);
+
   const messageText = buildAskUserMessageText(question, options, context);
 
   const keyboard = options.map((o, idx) => [{
@@ -105,7 +150,13 @@ registerIpcHandler('/mcp/ask_user', async (turn, body) => {
     ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
   });
 
+  // Tell the streaming UI a question is on screen, so the final answer is
+  // posted below it rather than edited into the bubble above it, and the
+  // status line says we're blocked on the user.
+  await messageSender.noteQuestionPosted(ctx, turn.sessionKey);
+
   const answer = await promise;
+  await messageSender.noteQuestionAnswered(ctx, turn.sessionKey);
   if (!answer) {
     return {
       success: true,
