@@ -48,7 +48,7 @@ Session continuity is shareable across providers: all three ultimately spawn the
 Still needed. Telegram-facing tools (`send_file`, `ask_user`, `set_topic`) bridge the bot to Telegram, not the SDK. Content tools (`fetch_reddit`, `fetch_medium`, `extract_media`) encode useful behavior worth keeping.
 
 What changes is the **transport**:
-- SDK mode: in-process MCP via `createClaudegramMcpServer()` (see `src/claude/mcp-tools.ts`).
+- SDK mode: in-process MCP via `createTeleCoderMcpServer()` (see `src/claude/mcp-tools.ts`).
 - Pty mode: MCP server must be a stdio subprocess spawned by `claude` via `--mcp-config`.
 
 Migration: extract `mcp-tools.ts` into a standalone Node bin (e.g. `bin/claudegram-mcp.js`) that the spawned `claude` process loads. The MCP subprocess needs IPC back to the main bot process to actually send Telegram messages (Unix socket or HTTP loopback on localhost). The chat/session ID gets passed per-spawn via env or `--mcp-config`, and the MCP subprocess threads it through every IPC call.
