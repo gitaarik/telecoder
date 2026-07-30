@@ -2151,6 +2151,10 @@
               <code class="command-code">/status</code>
               <span class="command-desc">Show current session and project info</span>
             </div>
+            <div class="command-row">
+              <code class="command-code">/projectcommands</code>
+              <span class="command-desc">List the current project's <code>.claude/commands/*.md</code> slash commands. They pass straight through to Claude Code, so typing <code>/mycommand</code> in chat just works — this is purely a discoverability helper.</span>
+            </div>
           </div>
         </div>
 
@@ -2203,6 +2207,10 @@
             <div class="command-row">
               <code class="command-code">/unschedule &lt;id&gt;</code>
               <span class="command-desc">Remove a scheduled task by id (get the id from /schedules)</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/handoff</code>
+              <span class="command-desc">Dump the current conversation to a markdown file and deliver it as a Telegraph link plus a downloadable file — useful before switching projects, clearing context, or handing work to a teammate. Captures up to 200 exchanges plus session metadata.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/teleport</code>
@@ -2379,6 +2387,10 @@
             <div class="command-row">
               <code class="command-code">/rebuildbot</code>
               <span class="command-desc">Rebuild code and restart — inline menu picks this instance, all instances, or cancel</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/permissions</code>
+              <span class="command-desc">Show the current permission-gate state and the patterns it enforces</span>
             </div>
             <div class="command-row">
               <code class="command-code">/update</code>

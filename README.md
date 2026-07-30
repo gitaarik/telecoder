@@ -218,11 +218,21 @@ Open your bot in Telegram → `/start`
 | `/start` | Welcome message |
 | `/project` | Set working directory (interactive picker) |
 | `/newproject <name>` | Create and switch to a new project |
+| `/projectcommands` | List the project's `.claude/commands/*.md` slash commands |
 | `/clear` | Clear conversation history (project stays selected) |
 | `/status` | Current session info |
 | `/sessions` | List saved sessions |
 | `/resume` | Pick from recent sessions |
 | `/continue` | Resume most recent session |
+| `/recap [N]` | Re-read the last N exchanges of the current session (default 3) |
+| `/sync` | Resend the latest assistant reply from the session log if Telegram missed any of it |
+| `/handoff` | Dump the conversation to markdown — Telegraph link plus downloadable file |
+| `/fork` | Fork the conversation — new branch on this bot, or hand off to a sibling bot |
+| `/accept` | Accept a pending fork from another bot |
+| `/decline` | Discard a pending fork without loading it |
+| `/schedule <when> <prompt>` | Schedule a recurring prompt (`every 5m`, `daily 9am`, or raw cron) |
+| `/schedules` | List active scheduled tasks for this chat |
+| `/unschedule <id>` | Remove a scheduled task by id |
 | `/teleport` | Move session to terminal (forked) |
 
 ### Agent Modes
@@ -232,6 +242,8 @@ Open your bot in Telegram → `/start`
 | `/explore` | Explore codebase to answer questions |
 | `/loop` | Run iteratively until task complete |
 | `/model` | Switch Sonnet / Opus / Haiku |
+| `/effort` | Set reasoning effort (low / medium / high / xhigh / max / auto) |
+| `/btw` | Ask a side question without interrupting the running task |
 | `/mode` | Toggle streaming / wait |
 | `/method` | Switch Claude transport (SDK / PTY) |
 | `/provider` | Switch backend — Claude / CCR / OpenCode (shown when either alternate is enabled) |
@@ -247,6 +259,7 @@ Open your bot in Telegram → `/start`
 | `/medium` | Fetch Medium articles via Freedium |
 | `/file` | Download a project file |
 | `/telegraph` | Toggle Instant View for long responses |
+| `/suggestions` | Toggle predicted next-prompt buttons under each response |
 | `/extract <url>` | Download media from YouTube, TikTok, Instagram |
 
 ### Voice & TTS
@@ -261,9 +274,18 @@ Open your bot in Telegram → `/start`
 |---------|-------------|
 | `/ping` | Health check |
 | `/context` | Show Claude context / token usage |
+| `/compact` | Compact the context window (PTY mode) |
+| `/statusline` | Toggle per-turn status line (effort, model, context %, cost) |
+| `/botname` | Toggle dynamic bot name (shows the active project) |
+| `/topic` | Set or clear the conversation topic |
+| `/tasks` | List active background tasks |
+| `/shells` | List and kill OS-level background shells from the PTY session |
+| `/permissions` | Show the permission-gate state and the patterns it enforces |
 | `/botstatus` | Bot process status |
 | `/restartbot` | Restart the bot |
-| `/cancel` | Cancel current request |
+| `/rebuildbot` | Rebuild code and restart |
+| `/update` | Update the Claude Code CLI |
+| `/cancel` | Cancel current request (alias: `/stop`) |
 | `/commands` | Show all commands |
 
 ---
