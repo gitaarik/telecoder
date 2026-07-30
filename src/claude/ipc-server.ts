@@ -84,7 +84,7 @@ function extractSessionId(body: Record<string, unknown>, req: http.IncomingMessa
   // it explicitly in the same field for consistency.
   const fromBody = typeof body.session_id === 'string' ? body.session_id : undefined;
   if (fromBody) return fromBody;
-  const fromHeader = req.headers['x-claudegram-session-id'];
+  const fromHeader = req.headers['x-telecoder-session-id'];
   if (typeof fromHeader === 'string') return fromHeader;
   return undefined;
 }

@@ -7,7 +7,7 @@ import { config } from '../config.js';
 import { isUrlAllowed } from '../utils/url-guard.js';
 import { resolveBin } from '../utils/resolve-bin.js';
 
-const USER_AGENT = 'claudegram/1.0';
+const USER_AGENT = 'telecoder/1.0';
 const DASH_FETCH_TIMEOUT_MS = 15000;
 const VIDEO_DOWNLOAD_TIMEOUT_SEC = 120;
 const FFMPEG_TIMEOUT_MS = 120000;
@@ -598,7 +598,7 @@ export async function executeVReddit(ctx: Context, input: string): Promise<void>
       return;
     }
 
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claudegram-vreddit-'));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'telecoder-vreddit-'));
 
     let finalPath: string;
     let finalSize: number;
@@ -680,7 +680,7 @@ export async function executeVReddit(ctx: Context, input: string): Promise<void>
       // Save the original uncompressed video to a temp directory for later retrieval
       // Uses OS temp directory rather than hardcoded paths
       const timestamp = Date.now();
-      const savedDir = path.join(os.tmpdir(), 'claudegram-vreddit-originals');
+      const savedDir = path.join(os.tmpdir(), 'telecoder-vreddit-originals');
       try {
         fs.mkdirSync(savedDir, { recursive: true, mode: 0o700 });
         const savedPath = path.join(savedDir, `vreddit-${timestamp}.mp4`);

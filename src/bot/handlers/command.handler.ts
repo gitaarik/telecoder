@@ -3467,7 +3467,7 @@ export async function executeRedditFetch(
     let userMessage: string;
 
     if (errorMessage.includes('Missing Reddit credentials') || errorMessage.includes('REDDIT_CLIENT_ID')) {
-      userMessage = "❌ Reddit credentials not configured\\.\n\nSet `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USERNAME`, `REDDIT_PASSWORD` in claudegram's `\\.env` file\\.";
+      userMessage = "❌ Reddit credentials not configured\\.\n\nSet `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USERNAME`, `REDDIT_PASSWORD` in TeleCoder's `\\.env` file\\.";
     } else if (errorMessage.includes('timed out') || errorMessage.includes('AbortError')) {
       userMessage = '❌ Reddit fetch timed out\\.';
     } else {
@@ -3914,7 +3914,7 @@ export async function sendTranscriptResult(ctx: Context, transcript: string): Pr
   if (transcript.length <= config.TRANSCRIBE_FILE_THRESHOLD_CHARS) {
     await messageSender.sendMessage(ctx, transcript);
   } else {
-    const tmpPath = path.join(os.tmpdir(), `claudegram_transcript_${Date.now()}.txt`);
+    const tmpPath = path.join(os.tmpdir(), `telecoder_transcript_${Date.now()}.txt`);
     try {
       fs.writeFileSync(tmpPath, transcript, { encoding: 'utf-8', mode: 0o600 });
       const inputFile = new InputFile(fs.readFileSync(tmpPath), 'transcript.txt');
@@ -3960,7 +3960,7 @@ async function transcribeAndSend(
       : mimeHint?.includes('wav') ? '.wav'
       : mimeHint?.includes('mp4') ? '.m4a'
       : '.oga';
-    tempFilePath = path.join(os.tmpdir(), `claudegram_transcribe_${Date.now()}${ext}`);
+    tempFilePath = path.join(os.tmpdir(), `telecoder_transcribe_${Date.now()}${ext}`);
 
     await downloadTelegramAudio(config.TELEGRAM_BOT_TOKEN, file.file_path, tempFilePath);
 

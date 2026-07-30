@@ -23,7 +23,7 @@ import type { Context } from 'grammy';
 import { config } from '../config.js';
 import { AgentWatchdog } from './agent-watchdog.js';
 import { hasPendingQuestionForSession } from './ask-user.js';
-import { createClaudegramMcpServer } from './mcp-tools.js';
+import { createTeleCoderMcpServer } from './mcp-tools.js';
 import { isSubagentTool } from './subagent-tools.js';
 import { isNativeCompactCommand } from './command-parser.js';
 import { getSessionTopic, getMsSinceTopicSet } from '../bot/handlers/command.handler.js';
@@ -721,10 +721,10 @@ export async function sendToAgent(
       cwd = process.env.HOME || process.cwd();
     }
 
-    // Create MCP server for Claudegram tools (if telegramCtx is available)
+    // Create MCP server for TeleCoder tools (if telegramCtx is available)
     const mcpServers: Record<string, McpServerConfig> = {};
     if (options.telegramCtx) {
-      const server = createClaudegramMcpServer({
+      const server = createTeleCoderMcpServer({
         telegramCtx: options.telegramCtx as Context,
         sessionKey,
       });

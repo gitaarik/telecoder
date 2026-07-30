@@ -480,7 +480,7 @@ export async function createBot(): Promise<Bot> {
     if (!pa) return;
     const resolved = resolvePendingPoll(pa.poll_id, pa.option_ids);
     if (!resolved) {
-      // Not a claudegram-tracked poll — ignore (could be a user-created poll
+      // Not a TeleCoder-tracked poll — ignore (could be a user-created poll
       // in the same chat).
     }
   });

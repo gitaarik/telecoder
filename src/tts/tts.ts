@@ -155,7 +155,7 @@ async function concatAndConvertAudio(wavBuffers: Buffer[]): Promise<Buffer> {
     return convertWavToOgg(wavBuffers[0]);
   }
 
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claudegram-tts-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'telecoder-tts-'));
 
   try {
     // Write each WAV chunk
@@ -198,7 +198,7 @@ async function concatAndConvertAudio(wavBuffers: Buffer[]): Promise<Buffer> {
  * Convert a single WAV buffer to OGG/Opus.
  */
 async function convertWavToOgg(wavBuffer: Buffer): Promise<Buffer> {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claudegram-tts-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'telecoder-tts-'));
 
   try {
     const inputPath = path.join(tmpDir, 'input.wav');

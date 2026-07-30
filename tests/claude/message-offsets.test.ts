@@ -7,7 +7,7 @@ import { countJsonlLines } from '../../src/claude/message-offsets.js';
 describe('countJsonlLines', () => {
   const created: string[] = [];
   const write = (name: string, content: string) => {
-    const p = path.join(os.tmpdir(), `claudegram-jsonl-${process.pid}-${name}`);
+    const p = path.join(os.tmpdir(), `telecoder-jsonl-${process.pid}-${name}`);
     fs.writeFileSync(p, content);
     created.push(p);
     return p;

@@ -67,7 +67,7 @@ describe('detectImageType', () => {
 describe('file-backed helpers', () => {
   const tmpFiles: string[] = [];
   const writeTmp = (name: string, buf: Buffer) => {
-    const p = path.join(os.tmpdir(), `claudegram-ft-${process.pid}-${name}`);
+    const p = path.join(os.tmpdir(), `telecoder-ft-${process.pid}-${name}`);
     fs.writeFileSync(p, buf);
     tmpFiles.push(p);
     return p;

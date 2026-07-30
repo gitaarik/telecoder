@@ -29,7 +29,7 @@ export const TOOL_ICONS: Record<string, string> = {
   // Notebook
   NotebookEdit: '📓',
 
-  // Claudegram MCP tools — keys are the SDK-reported full names so
+  // TeleCoder MCP tools — keys are the SDK-reported full names so
   // updateToolOperation/getToolIcon match without any extra normalization.
   'mcp__claudegram-tools__claudegram_ask_user': '❓',
   'mcp__claudegram-tools__claudegram_set_topic': '🏷️',

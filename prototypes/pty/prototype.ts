@@ -4,7 +4,7 @@
  * Goal: validate that we can drive `claude` (interactive REPL, not -p) under a
  * pseudo-terminal, send a prompt, detect end-of-turn reliably, and extract the
  * response text. If this works on current Claude Code, it's the foundation for
- * a third Claudegram provider that uses the user's Max subscription instead of
+ * a third TeleCoder provider that uses the user's Max subscription instead of
  * the programmatic credit pool.
  *
  * Usage:
@@ -31,9 +31,9 @@ const { Terminal } = headless;
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 // Default to a known-trusted dir to avoid the first-run trust dialog
-// intercepting our typed prompt. The user works in claudegram interactively,
+// intercepting our typed prompt. The user works in TeleCoder interactively,
 // so that folder is already on Claude Code's trust list.
-const CWD = process.env.CLAUDEGRAM_PTY_CWD || '/home/rik/dev/claudegram';
+const CWD = process.env.CLAUDEGRAM_PTY_CWD || '/home/rik/dev/telecoder';
 const COLS = 120;
 const ROWS = 40;
 
@@ -78,7 +78,7 @@ if (resumeId) {
 }
 
 const debugLog = debug
-  ? fs.createWriteStream(path.join(os.tmpdir(), `claudegram-pty-debug-${Date.now()}.log`))
+  ? fs.createWriteStream(path.join(os.tmpdir(), `telecoder-pty-debug-${Date.now()}.log`))
   : null;
 if (debugLog) {
   console.error(`[debug] writing raw pty bytes to ${(debugLog as any).path}`);

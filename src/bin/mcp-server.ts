@@ -1,5 +1,5 @@
 /**
- * Claudegram standalone MCP server.
+ * TeleCoder standalone MCP server.
  *
  * Spawned by `claude --mcp-config` when running under PtyProvider, communicates
  * over stdio. Tools that need bot-side context (Telegram send_file / ask_user /
@@ -217,7 +217,7 @@ if (process.env.CLAUDEGRAM_MEDIUM_ENABLED === 'true') {
 // ── claudegram_ask_user (IPC: long-poll on Telegram button tap) ──────
 server.tool(
   'claudegram_ask_user',
-  'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or 10 minutes pass. Keep the question short and the options crisp — labels must be ≤ 60 chars. Prefer this over the built-in AskUserQuestion when interacting through claudegram. IMPORTANT: `context` is required and carries everything the user needs to decide (the comparison, trade-offs, findings, rationale) — it renders in the SAME message as the buttons. Do NOT write that explanation as prose before calling this tool: text you emit before an ask_user call is not delivered to the user until after they answer, so they would be choosing blind.',
+  'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or 10 minutes pass. Keep the question short and the options crisp — labels must be ≤ 60 chars. Prefer this over the built-in AskUserQuestion when interacting through TeleCoder. IMPORTANT: `context` is required and carries everything the user needs to decide (the comparison, trade-offs, findings, rationale) — it renders in the SAME message as the buttons. Do NOT write that explanation as prose before calling this tool: text you emit before an ask_user call is not delivered to the user until after they answer, so they would be choosing blind.',
   {
     question: z.string().describe('The question to display to the user. Keep concise (1-2 sentences).'),
     context: z
@@ -520,10 +520,10 @@ server.tool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error(`[claudegram-mcp] connected via stdio (workspace=${workspaceRoot})`);
+  console.error(`[telecoder-mcp] connected via stdio (workspace=${workspaceRoot})`);
 }
 
 main().catch((err) => {
-  console.error('[claudegram-mcp] fatal:', err);
+  console.error('[telecoder-mcp] fatal:', err);
   process.exit(1);
 });

@@ -16,7 +16,7 @@ import { parseSessionKey } from '../utils/session-key.js';
  * than false negatives because every prompt costs the user a button tap.
  */
 
-export const DENY_MARKER_START = '__CLAUDEGRAM_DENY__';
+export const DENY_MARKER_START = '__TELECODER_DENY__';
 export const DENY_MARKER_END = '__END__';
 
 const PROMPT_TIMEOUT_MS = 10 * 60 * 1000;
@@ -79,7 +79,7 @@ export async function evaluateToolCall(req: GateRequest): Promise<GateDecision> 
     // actually means something when it's enabled).
     return {
       block: true,
-      reason: `claudegram permission gate active but no Telegram context available to prompt user. Denied: ${pattern.reason}`,
+      reason: `TeleCoder permission gate active but no Telegram context available to prompt user. Denied: ${pattern.reason}`,
     };
   }
 

@@ -129,7 +129,7 @@ function stripMcpServerPrefix(toolName: string): string {
 
 /**
  * Trim long absolute paths so a diff header reads `src/foo.ts` rather than
- * `/home/rik/dev/claudegram/src/foo.ts`. Falls back to the full path if no
+ * `/home/rik/dev/telecoder/src/foo.ts`. Falls back to the full path if no
  * prefix matches.
  */
 function stripWorkingDir(filePath: string): string {

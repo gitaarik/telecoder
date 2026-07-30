@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url);
 let cachedBundled: string | null | undefined;
 
 /**
- * Resolve the executable path Claudegram would normally hand to the SDK.
+ * Resolve the executable path TeleCoder would normally hand to the SDK.
  * Mirrors the precedence in `src/claude/agent.ts`:
  *   1. If CLAUDE_USE_BUNDLED_EXECUTABLE=false, use CLAUDE_EXECUTABLE_PATH.
  *   2. Else, prefer the matching-libc bundled binary.

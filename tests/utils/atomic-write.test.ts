@@ -7,7 +7,7 @@ import { atomicWriteFileSync } from '../../src/utils/atomic-write.js';
 describe('atomicWriteFileSync', () => {
   const created: string[] = [];
   const tmp = (name: string) => {
-    const p = path.join(os.tmpdir(), `claudegram-aw-${process.pid}-${name}`);
+    const p = path.join(os.tmpdir(), `telecoder-aw-${process.pid}-${name}`);
     created.push(p, p + '.tmp');
     return p;
   };
@@ -46,7 +46,7 @@ describe('atomicWriteFileSync', () => {
   });
 
   it('throws and cleans up the temp file when the destination dir is missing', () => {
-    const bad = path.join(os.tmpdir(), 'claudegram-aw-missing-dir', 'x.txt');
+    const bad = path.join(os.tmpdir(), 'telecoder-aw-missing-dir', 'x.txt');
     expect(() => atomicWriteFileSync(bad, 'data')).toThrow();
     expect(fs.existsSync(bad + '.tmp')).toBe(false);
   });

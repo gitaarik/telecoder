@@ -60,7 +60,7 @@ const envSchema = z.object({
     .default('true')
     .transform((val) => val.toLowerCase() === 'true'),
   // Default for the per-chat "predicted next prompt" feature: when enabled,
-  // claudegram sets CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=1 on the PTY spawn
+  // TeleCoder sets CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=1 on the PTY spawn
   // and scrapes the ghost-text suggestion that claude renders into its input
   // box after each turn, surfacing it as an inline button under the response.
   // Per-chat override via /suggestions; takes effect on next session spawn.

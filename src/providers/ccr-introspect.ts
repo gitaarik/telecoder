@@ -61,7 +61,7 @@ function readTail(filePath: string, bytes: number): string {
  * no usable entry is found.
  *
  * Caveat: in a multi-user/multi-client setup the most recent log entry may
- * not belong to the caller. For Claudegram's single-user case it's fine.
+ * not belong to the caller. For TeleCoder's single-user case it's fine.
  */
 function getLastCcrRouteFromLog(): { provider: string; model: string } | undefined {
   try {

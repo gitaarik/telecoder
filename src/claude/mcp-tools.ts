@@ -1,5 +1,5 @@
 /**
- * MCP Tools — In-process MCP server factory for Claudegram.
+ * MCP Tools — In-process MCP server factory for TeleCoder.
  *
  * Wraps existing standalone functions (reddit, medium, extract, telegraph,
  * project management) as MCP tools so Claude can invoke them automatically
@@ -48,7 +48,7 @@ const REDDIT_MAX_CHARS = 50_000;
 
 // ── Factory ──────────────────────────────────────────────────────────
 
-export function createClaudegramMcpServer(
+export function createTeleCoderMcpServer(
   toolsCtx: McpToolsContext
 ): McpSdkServerConfigWithInstance {
   const tools = buildToolList(toolsCtx);

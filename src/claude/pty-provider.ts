@@ -191,17 +191,23 @@ function buildSettingsJson(ipcPort: number): string {
 
   // PreToolUse needs a richer wrapper so it can BLOCK tool execution when
   // the IPC handler decides to deny. The marker protocol: if the IPC response
-  // body contains `__CLAUDEGRAM_DENY__<reason>__END__`, exit 2 (claude code's
-  // signal for "block this tool, feed the stderr back to the model") with the
-  // reason on stderr. Otherwise exit 0 and let the tool proceed.
+  // body contains DENY_MARKER_START + <reason> + DENY_MARKER_END, exit 2
+  // (claude code's signal for "block this tool, feed the stderr back to the
+  // model") with the reason on stderr. Otherwise exit 0 and let the tool
+  // proceed.
+  //
+  // The markers are interpolated from permission-gate.ts rather than spelled
+  // out here: this hook is the reader and evaluateToolCall() is the writer, so
+  // a literal copy that drifts would make the `case` stop matching and the
+  // gate would fail OPEN — denied tools would silently run.
   //
   // We use shell parameter expansion instead of jq so no extra binary is
-  // required. The marker is intentionally distinctive so it can't collide
+  // required. The markers are intentionally distinctive so they can't collide
   // with normal JSON content.
   const preToolUseCommand =
     `RESP=$(curl -s --max-time 900 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:${ipcPort}/hook/preToolUse' 2>/dev/null); ` +
-    `case "$RESP" in *__CLAUDEGRAM_DENY__*) ` +
-    `REASON=\${RESP##*__CLAUDEGRAM_DENY__}; REASON=\${REASON%%__END__*}; ` +
+    `case "$RESP" in *${DENY_MARKER_START}*) ` +
+    `REASON=\${RESP##*${DENY_MARKER_START}}; REASON=\${REASON%%${DENY_MARKER_END}*}; ` +
     `printf '%s' "$REASON" >&2; exit 2 ;; esac; exit 0`;
 
   return JSON.stringify({
@@ -230,7 +236,7 @@ function buildMcpToolsSystemPromptNote(): string {
     '- mcp__claudegram-tools__claudegram_list_projects — list available workspace projects the user can switch to',
     '- mcp__claudegram-tools__claudegram_switch_project — switch the working directory to a different project (call list_projects first). The change takes effect on the next user query.',
     '- mcp__claudegram-tools__claudegram_send_file — send a file from the bot\'s filesystem (within the workspace or /tmp) to the user via Telegram. Use after creating files (reports, SVGs, images, etc.) to deliver them directly. Max 50MB.',
-    '- mcp__claudegram-tools__claudegram_ask_user — ask the user a multiple-choice question via a Telegram inline keyboard (2-8 options). Pauses until the user taps a button. Prefer this over the built-in AskUserQuestion whenever you need a decision from the user — AskUserQuestion is for terminal users and does not render correctly through claudegram.',
+    '- mcp__claudegram-tools__claudegram_ask_user — ask the user a multiple-choice question via a Telegram inline keyboard (2-8 options). Pauses until the user taps a button. Prefer this over the built-in AskUserQuestion whenever you need a decision from the user — AskUserQuestion is for terminal users and does not render correctly through TeleCoder.',
     '- mcp__claudegram-tools__claudegram_poll_user — like ask_user but uses a Telegram poll. Pick this when multiple chat members should vote, when you want visible vote counts, or when you need multi-select. 2-10 options, non-anonymous, resolves on the first vote.',
     '- mcp__claudegram-tools__claudegram_loop — schedule a prompt to re-fire on a fixed interval (min 60s). Use for periodic polling / "every N minutes do X" tasks. Prefer this over the built-in CronCreate or ScheduleWakeup — those don\'t reach back into Telegram. The user sees each fire as a "🔔 Scheduled" message.',
     '- mcp__claudegram-tools__claudegram_schedule — schedule a prompt on a 5-field cron expression (e.g. "0 9 * * *" for daily 9am). Use for time-of-day tasks (morning summary, end-of-day report). Same Telegram-visible behavior as claudegram_loop.',
@@ -241,8 +247,8 @@ function buildMcpToolsSystemPromptNote(): string {
   // claudegram_* tools, but PTY mode wires up a relay so task-notifications
   // that arrive after the user-turn ends still reach Telegram. Mention it so
   // the model confidently uses these tools when they're the right fit.
-  tools.push('- Async built-ins (Monitor, `Bash(run_in_background=true)`, `Task`/`Agent`) — supported in claudegram PTY mode. Task-notifications that fire between user turns are relayed to Telegram with a "📡 Monitor — ...", "⚙️ Backgrounded: ...", or "🤖 Subagent started: ..." header, paired with the actual event payload and your response. Use these freely for "watch X", "run X in background while continuing", or "delegate Y to a subagent" tasks.');
-  tools.push('- PushNotification (built-in) — supported in claudegram PTY mode. The message text is relayed to Telegram as "🔔 <message>". Use the normal rules: only when the user might have walked away and there\'s something they\'d act on now.');
+  tools.push('- Async built-ins (Monitor, `Bash(run_in_background=true)`, `Task`/`Agent`) — supported in TeleCoder PTY mode. Task-notifications that fire between user turns are relayed to Telegram with a "📡 Monitor — ...", "⚙️ Backgrounded: ...", or "🤖 Subagent started: ..." header, paired with the actual event payload and your response. Use these freely for "watch X", "run X in background while continuing", or "delegate Y to a subagent" tasks.');
+  tools.push('- PushNotification (built-in) — supported in TeleCoder PTY mode. The message text is relayed to Telegram as "🔔 <message>". Use the normal rules: only when the user might have walked away and there\'s something they\'d act on now.');
   tools.push('- For scheduled/recurring tasks, prefer claudegram_loop / claudegram_schedule over the built-in CronCreate / ScheduleWakeup / RemoteTrigger — those don\'t reach back into Telegram.');
   tools.push('- *Destructive-op safety:* before running anything irreversible — `rm -rf` on real paths, `sudo`, `git push --force` on shared branches, `DROP TABLE` / `TRUNCATE` against real DBs, `terraform destroy`, mass file rewrites — call `claudegram_ask_user` with a one-line summary of what you\'re about to do and "Confirm" / "Cancel" options. This bot runs unsupervised in Telegram and the user can\'t intervene mid-tool. When in doubt, ask.');
   if (config.REDDIT_ENABLED) {
@@ -261,7 +267,7 @@ function buildMcpToolsSystemPromptNote(): string {
     tools.push('- mcp__claudegram-tools__claudegram_set_topic — update the conversation topic shown in the bot display name. Call proactively when the topic of work shifts. Empty string clears it. Keep topics 1-4 words.');
   }
   return [
-    'You have access to Claudegram-specific MCP tools listed below. They are loaded lazily — call them directly when relevant; do not try to reproduce their behavior with WebFetch/Bash.',
+    'You have access to TeleCoder-specific MCP tools listed below. They are loaded lazily — call them directly when relevant; do not try to reproduce their behavior with WebFetch/Bash.',
     ...tools,
   ].join('\n');
 }
@@ -1266,7 +1272,7 @@ function stageImagesForPty(prompt: string, images?: ImageAttachment[]): { prompt
   const tempPaths: string[] = [];
   for (const img of images) {
     const ext = imageExtension(img.mediaType);
-    const filePath = path.join('/tmp', `claudegram-img-${randomUUID()}.${ext}`);
+    const filePath = path.join('/tmp', `telecoder-img-${randomUUID()}.${ext}`);
     fs.writeFileSync(filePath, Buffer.from(img.data, 'base64'));
     tempPaths.push(filePath);
   }

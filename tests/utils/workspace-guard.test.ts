@@ -10,11 +10,11 @@ describe('workspace-guard', () => {
   let outside: string;
 
   beforeAll(() => {
-    root = fs.mkdtempSync(path.join(os.tmpdir(), 'claudegram-ws-root-'));
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'telecoder-ws-root-'));
     inside = path.join(root, 'sub', 'file.txt');
     fs.mkdirSync(path.dirname(inside), { recursive: true });
     fs.writeFileSync(inside, 'x');
-    outside = fs.mkdtempSync(path.join(os.tmpdir(), 'claudegram-ws-out-'));
+    outside = fs.mkdtempSync(path.join(os.tmpdir(), 'telecoder-ws-out-'));
   });
 
   afterAll(() => {

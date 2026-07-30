@@ -1,5 +1,5 @@
 /**
- * Per-chat prompt-suggestion settings — controls whether claudegram enables
+ * Per-chat prompt-suggestion settings — controls whether TeleCoder enables
  * Claude Code's `prompt_suggestion` feature for this session and scrapes the
  * resulting ghost text. Persisted to ~/.claudegram/suggestions-settings.json.
  *

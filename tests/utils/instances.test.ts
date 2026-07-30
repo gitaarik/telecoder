@@ -12,7 +12,7 @@ import {
 // instances.ts caches for 5s; each test writes a fresh config and waits out
 // the cache by pointing at a NEW file path (cache is keyed by content+time,
 // but a distinct file plus the >5s-safe reset below keeps tests independent).
-const cfgPath = path.join(os.tmpdir(), `claudegram-instances-${process.pid}.json`);
+const cfgPath = path.join(os.tmpdir(), `telecoder-instances-${process.pid}.json`);
 process.env.CLAUDEGRAM_INSTANCES_CONFIG = cfgPath;
 
 const writeConfig = (obj: unknown) => fs.writeFileSync(cfgPath, JSON.stringify(obj));

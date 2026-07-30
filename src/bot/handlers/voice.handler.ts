@@ -95,7 +95,7 @@ export async function handleVoice(ctx: Context): Promise<void> {
 
     // Download using curl with secure stdin config (prevents token exposure in ps)
     const ext = voice.mime_type?.includes('ogg') ? '.ogg' : '.oga';
-    tempFilePath = path.join(os.tmpdir(), `claudegram_voice_${messageId}${ext}`);
+    tempFilePath = path.join(os.tmpdir(), `telecoder_voice_${messageId}${ext}`);
 
     await downloadFileSecure(fileUrl, tempFilePath);
 
@@ -230,7 +230,7 @@ async function handleTranscribeOnly(
     const fileUrl = getTelegramFileUrl(config.TELEGRAM_BOT_TOKEN, file.file_path);
 
     const ext = voice.mime_type?.includes('ogg') ? '.ogg' : '.oga';
-    tempFilePath = path.join(os.tmpdir(), `claudegram_transcribe_${messageId}${ext}`);
+    tempFilePath = path.join(os.tmpdir(), `telecoder_transcribe_${messageId}${ext}`);
 
     await downloadFileSecure(fileUrl, tempFilePath);
 
