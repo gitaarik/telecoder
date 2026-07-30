@@ -2,10 +2,13 @@ import { config as loadEnv } from 'dotenv';
 import { z } from 'zod';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { legacyEnv } from './utils/legacy-env.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const defaultEnvPath = path.resolve(__dirname, '..', '.env');
-const envPath = process.env.CLAUDEGRAM_ENV_PATH || defaultEnvPath;
+// Read from the real process env, not the .env file — this is the var that
+// says *which* .env to load, so it can't come from inside one.
+const envPath = legacyEnv('ENV_PATH') || defaultEnvPath;
 loadEnv({ path: envPath });
 
 const toBool = (val: string) => val.toLowerCase() === 'true';
@@ -348,7 +351,7 @@ import * as os from 'os';
 /** Numeric bot ID extracted from the Telegram token (e.g. "123456" from "123456:ABC..."). */
 export const BOT_ID = config.TELEGRAM_BOT_TOKEN.split(':')[0];
 
-const CLAUDEGRAM_DIR = path.join(os.homedir(), '.claudegram');
+const STATE_DIR = path.join(os.homedir(), '.claudegram');
 
 /** Per-bot reload marker file path so multi-instance setups don't cross-restore. */
 export function getReloadMarkerPath(): string {
@@ -359,5 +362,5 @@ export function getReloadMarkerPath(): string {
  * launcher when it needs to write markers for sibling bots on /restartbot all
  * and /rebuildbot all. */
 export function getReloadMarkerPathForBotId(botId: string): string {
-  return path.join(CLAUDEGRAM_DIR, `pending-reload-${botId}.json`);
+  return path.join(STATE_DIR, `pending-reload-${botId}.json`);
 }

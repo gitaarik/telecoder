@@ -2,9 +2,10 @@ import type { Context } from 'grammy';
 import { config } from '../config.js';
 import { createPendingQuestion } from './ask-user.js';
 import { parseSessionKey } from '../utils/session-key.js';
+import { legacyEnv } from '../utils/legacy-env.js';
 
 /**
- * Pattern-based permission gate for PreToolUse. When CLAUDEGRAM_PERMISSION_PROMPTS
+ * Pattern-based permission gate for PreToolUse. When TELECODER_PERMISSION_PROMPTS
  * is enabled, certain tool calls (destructive bash patterns, force-pushes, DROP
  * TABLE, etc.) trigger a Telegram approval prompt before executing. On approve,
  * the hook returns ok and claude proceeds; on deny or timeout, the hook returns
@@ -54,7 +55,7 @@ export interface GateRequest {
 
 /** Enabled when the env var is exactly "1". Default off. */
 export function isPermissionGateEnabled(): boolean {
-  return process.env.CLAUDEGRAM_PERMISSION_PROMPTS === '1';
+  return legacyEnv('PERMISSION_PROMPTS') === '1';
 }
 
 /**

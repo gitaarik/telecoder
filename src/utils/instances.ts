@@ -1,7 +1,7 @@
 /**
  * Read instances.json so any running worker can enumerate its sibling bots
  * (name + botId). The launcher exports the resolved config path through
- * CLAUDEGRAM_INSTANCES_CONFIG so workers don't have to reproduce its
+ * TELECODER_INSTANCES_CONFIG so workers don't have to reproduce its
  * --config flag handling.
  */
 
@@ -9,6 +9,7 @@ import { readFileSync, existsSync } from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { stripJsonComments, expandName } from './instance-config.js';
+import { legacyEnv } from './legacy-env.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // src/utils/instances.ts → projectRoot; dist/utils/instances.js → projectRoot
@@ -34,7 +35,7 @@ let cachedAtMs = 0;
 const CACHE_TTL_MS = 5_000;
 
 function configPath(): string {
-  return process.env.CLAUDEGRAM_INSTANCES_CONFIG || path.join(projectRoot, 'instances.json');
+  return legacyEnv('INSTANCES_CONFIG') || path.join(projectRoot, 'instances.json');
 }
 
 /**

@@ -13,7 +13,7 @@ import {
 // the cache by pointing at a NEW file path (cache is keyed by content+time,
 // but a distinct file plus the >5s-safe reset below keeps tests independent).
 const cfgPath = path.join(os.tmpdir(), `telecoder-instances-${process.pid}.json`);
-process.env.CLAUDEGRAM_INSTANCES_CONFIG = cfgPath;
+process.env.TELECODER_INSTANCES_CONFIG = cfgPath;
 
 const writeConfig = (obj: unknown) => fs.writeFileSync(cfgPath, JSON.stringify(obj));
 
@@ -63,10 +63,10 @@ describe('instances', () => {
 
 describe('instances with no config file', () => {
   it('returns an empty list when the config path does not exist', () => {
-    const prev = process.env.CLAUDEGRAM_INSTANCES_CONFIG;
-    process.env.CLAUDEGRAM_INSTANCES_CONFIG = '/nonexistent/instances.json';
+    const prev = process.env.TELECODER_INSTANCES_CONFIG;
+    process.env.TELECODER_INSTANCES_CONFIG = '/nonexistent/instances.json';
     // Cache may still hold the previous fixture; this asserts the no-throw path.
     expect(() => listAllBots()).not.toThrow();
-    process.env.CLAUDEGRAM_INSTANCES_CONFIG = prev;
+    process.env.TELECODER_INSTANCES_CONFIG = prev;
   });
 });

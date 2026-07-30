@@ -33,7 +33,7 @@ const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 // Default to a known-trusted dir to avoid the first-run trust dialog
 // intercepting our typed prompt. The user works in TeleCoder interactively,
 // so that folder is already on Claude Code's trust list.
-const CWD = process.env.CLAUDEGRAM_PTY_CWD || '/home/rik/dev/telecoder';
+const CWD = process.env.TELECODER_PTY_CWD || '/home/rik/dev/telecoder';
 const COLS = 120;
 const ROWS = 40;
 

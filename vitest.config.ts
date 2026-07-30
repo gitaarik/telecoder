@@ -6,7 +6,7 @@ export default defineConfig({
     // Provide harmless dummies so modules that transitively import config load.
     env: {
       // Point at a non-existent env file so tests are isolated from the dev .env.
-      CLAUDEGRAM_ENV_PATH: '/nonexistent/telecoder-test.env',
+      TELECODER_ENV_PATH: '/nonexistent/telecoder-test.env',
       TELEGRAM_BOT_TOKEN: '123456789:TEST_TOKEN',
       ALLOWED_USER_IDS: '1,2,3',
       ALLOWED_GROUP_IDS: '-1009990001',

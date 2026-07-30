@@ -2930,7 +2930,7 @@ export async function handlePermissions(ctx: Context): Promise<void> {
     '',
     enabled
       ? 'Bash commands matching the patterns below trigger a Telegram approval prompt before claude executes them\\. Other tools auto\\-allow\\.'
-      : 'Disabled\\. Set `CLAUDEGRAM_PERMISSION_PROMPTS=1` and restart the bot to enable\\.',
+      : 'Disabled\\. Set `TELECODER_PERMISSION_PROMPTS=1` and restart the bot to enable\\.',
     '',
     '*Guarded patterns:*',
     ...patterns.map((p) => `• ${esc(p.reason)}`),

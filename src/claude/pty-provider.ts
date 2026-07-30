@@ -12,6 +12,7 @@ import { isNativeCompactCommand } from './command-parser.js';
 import { isCancelled } from './request-queue.js';
 import { getWorkspaceRoot } from '../utils/workspace-guard.js';
 import { parseSessionKey } from '../utils/session-key.js';
+import { legacyEnv } from '../utils/legacy-env.js';
 import { userPreferences } from '../providers/user-preferences.js';
 import {
   getIpcPort,
@@ -228,7 +229,7 @@ function buildSettingsJson(ipcPort: number): string {
  * task). Mentioning each tool with a description and a "prefer over X"
  * hint makes claude pick the right tool.
  *
- * Driven by the same CLAUDEGRAM_*_ENABLED env flags that gate tool
+ * Driven by the same TELECODER_*_ENABLED env flags that gate tool
  * registration in src/bin/mcp-server.ts.
  */
 function buildMcpToolsSystemPromptNote(): string {
@@ -276,27 +277,27 @@ function buildMcpToolsSystemPromptNote(): string {
  * Build the env we hand to the spawned MCP subprocess via --mcp-config.
  * MCP server env is the controlled subset listed here — anything not present
  * won't be visible to the subprocess. We pass:
- *   - required routing info (CLAUDEGRAM_IPC_PORT, _CLAUDE_SESSION_ID,
+ *   - required routing info (TELECODER_IPC_PORT, _CLAUDE_SESSION_ID,
  *     _WORKSPACE_ROOT)
  *   - PATH/HOME/NODE_ENV so node can find binaries and home-relative files
- *   - every CLAUDEGRAM_*-prefixed var from this process's env (feature flags
- *     like CLAUDEGRAM_REDDIT_ENABLED gate which tools register)
+ *   - every TELECODER_*-prefixed var from this process's env (feature flags
+ *     like TELECODER_REDDIT_ENABLED gate which tools register)
  */
 function buildMcpEnv(required: Record<string, string>): Record<string, string> {
   const env: Record<string, string> = {
     PATH: process.env.PATH || '',
     HOME: process.env.HOME || '',
     NODE_ENV: process.env.NODE_ENV || '',
-    // Translate the bot's parsed config flags into the CLAUDEGRAM_*_ENABLED
+    // Translate the bot's parsed config flags into the TELECODER_*_ENABLED
     // form the MCP subprocess gates on. The bot's own env vars are unprefixed
     // (REDDIT_ENABLED, MEDIUM_ENABLED, …) so we can't just pass through.
-    CLAUDEGRAM_REDDIT_ENABLED: config.REDDIT_ENABLED ? 'true' : 'false',
-    CLAUDEGRAM_MEDIUM_ENABLED: config.MEDIUM_ENABLED ? 'true' : 'false',
-    CLAUDEGRAM_TELEGRAPH_ENABLED: config.TELEGRAPH_ENABLED ? 'true' : 'false',
-    CLAUDEGRAM_EXTRACT_ENABLED: config.EXTRACT_ENABLED ? 'true' : 'false',
-    CLAUDEGRAM_DYNAMIC_BOT_NAME: config.DYNAMIC_BOT_NAME ? 'true' : 'false',
-    CLAUDEGRAM_REDDITFETCH_DEFAULT_LIMIT: String(config.REDDITFETCH_DEFAULT_LIMIT),
-    CLAUDEGRAM_REDDITFETCH_DEFAULT_DEPTH: String(config.REDDITFETCH_DEFAULT_DEPTH),
+    TELECODER_REDDIT_ENABLED: config.REDDIT_ENABLED ? 'true' : 'false',
+    TELECODER_MEDIUM_ENABLED: config.MEDIUM_ENABLED ? 'true' : 'false',
+    TELECODER_TELEGRAPH_ENABLED: config.TELEGRAPH_ENABLED ? 'true' : 'false',
+    TELECODER_EXTRACT_ENABLED: config.EXTRACT_ENABLED ? 'true' : 'false',
+    TELECODER_DYNAMIC_BOT_NAME: config.DYNAMIC_BOT_NAME ? 'true' : 'false',
+    TELECODER_REDDITFETCH_DEFAULT_LIMIT: String(config.REDDITFETCH_DEFAULT_LIMIT),
+    TELECODER_REDDITFETCH_DEFAULT_DEPTH: String(config.REDDITFETCH_DEFAULT_DEPTH),
     // Reddit credentials — the redditfetch module reads these from its own
     // process.env, so they need to be present in the subprocess env or
     // OAuth will fail with "Missing Reddit credentials".
@@ -306,12 +307,21 @@ function buildMcpEnv(required: Record<string, string>): Record<string, string> {
     REDDIT_PASSWORD: process.env.REDDIT_PASSWORD || '',
     ...required,
   };
-  // Any extra CLAUDEGRAM_*-prefixed vars that the bot's env carries (e.g.
-  // user overrides not codified in config.ts) get passed through too.
+  // Any extra TELECODER_*-prefixed vars the bot's env carries (e.g. user
+  // overrides not codified in config.ts) get passed through too. Pre-rename
+  // CLAUDEGRAM_* overrides are translated to the new name rather than forwarded
+  // verbatim — the subprocess only reads TELECODER_*, so passing the old key
+  // through unchanged would silently drop the override. New name wins when both
+  // are set, which is why this runs as two passes instead of one.
   for (const [k, v] of Object.entries(process.env)) {
-    if (k.startsWith('CLAUDEGRAM_') && typeof v === 'string' && env[k] === undefined) {
+    if (k.startsWith('TELECODER_') && typeof v === 'string' && env[k] === undefined) {
       env[k] = v;
     }
+  }
+  for (const [k, v] of Object.entries(process.env)) {
+    if (!k.startsWith('CLAUDEGRAM_') || typeof v !== 'string') continue;
+    const renamed = `TELECODER_${k.slice('CLAUDEGRAM_'.length)}`;
+    if (env[renamed] === undefined) env[renamed] = v;
   }
   return env;
 }
@@ -719,12 +729,12 @@ export class PtyProvider implements Provider {
     const ipcPort = getIpcPort();
     const settingsJson = buildSettingsJson(ipcPort);
     const mcpConfigJson = buildMcpConfigJson(buildMcpEnv({
-      CLAUDEGRAM_IPC_PORT: String(ipcPort),
-      CLAUDEGRAM_CLAUDE_SESSION_ID: claudeSessionId,
+      TELECODER_IPC_PORT: String(ipcPort),
+      TELECODER_CLAUDE_SESSION_ID: claudeSessionId,
       // Workspace root for the MCP subprocess (used by list_projects). This is
       // the top-level dev directory (`config.WORKSPACE_DIR`), NOT the current
       // project cwd — list_projects needs to enumerate sibling projects.
-      CLAUDEGRAM_WORKSPACE_ROOT: getWorkspaceRoot(),
+      TELECODER_WORKSPACE_ROOT: getWorkspaceRoot(),
     }));
 
     // /effort and /model are per-chat preferences the CLI accepts as flags.
@@ -768,9 +778,9 @@ export class PtyProvider implements Provider {
       // fires land outside our session (cron in PTY mode, RemoteTrigger on
       // claude.ai's servers) and never reach the Telegram chat.
       // claudegram_loop / claudegram_schedule replace them and route fires
-      // through the bot. Set CLAUDEGRAM_ALLOW_NATIVE_SCHEDULING=1 to keep
+      // through the bot. Set TELECODER_ALLOW_NATIVE_SCHEDULING=1 to keep
       // the built-ins enabled if you want to experiment.
-      '--disallowedTools', process.env.CLAUDEGRAM_ALLOW_NATIVE_SCHEDULING === '1'
+      '--disallowedTools', legacyEnv('ALLOW_NATIVE_SCHEDULING') === '1'
         ? 'AskUserQuestion'
         : 'AskUserQuestion,CronCreate,ScheduleWakeup,RemoteTrigger',
     ];
@@ -1466,7 +1476,7 @@ registerIpcHandler('/hook/preToolUse', async (turn, body) => {
     if (message) relayPushNotification(turn.sessionKey, message);
   }
 
-  // Permission gate: opt-in via CLAUDEGRAM_PERMISSION_PROMPTS=1. For tools
+  // Permission gate: opt-in via TELECODER_PERMISSION_PROMPTS=1. For tools
   // matching a dangerous pattern, blocks the call and waits for Telegram
   // approval. Decision returned as a deny-marker string the shell wrapper
   // parses to exit 2 (claude code's "block this tool" signal).

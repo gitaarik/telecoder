@@ -22,7 +22,7 @@ import type { Bot } from 'grammy';
 
 // When running as a worker thread (multi-instance mode), prefix all console
 // output with the instance name so logs from different bots are distinguishable.
-const instanceName = process.env.CLAUDEGRAM_INSTANCE_NAME;
+const instanceName = process.env.TELECODER_INSTANCE_NAME;
 if (instanceName) {
   const prefix = `[${instanceName}]`;
   const origLog = console.log.bind(console);

@@ -6,14 +6,17 @@
  * set_topic, …) POST to the main bot process's loopback IPC server; tools that
  * are pure local work (list_projects, fetch_reddit, fetch_medium, …) run inline.
  *
- * Env vars set by PtyProvider when spawning this process:
- *   CLAUDEGRAM_IPC_PORT          loopback IPC server port
- *   CLAUDEGRAM_CLAUDE_SESSION_ID claude's session_id; used as the IPC routing key
- *   CLAUDEGRAM_WORKSPACE_ROOT    workspace root for security checks
- *   CLAUDEGRAM_REDDIT_ENABLED    feature flag for fetch_reddit
- *   CLAUDEGRAM_MEDIUM_ENABLED    feature flag for fetch_medium
- *   CLAUDEGRAM_TELEGRAPH_ENABLED feature flag for publish_telegraph
- *   CLAUDEGRAM_REDDITFETCH_DEFAULT_LIMIT, CLAUDEGRAM_REDDITFETCH_DEFAULT_DEPTH
+ * Env vars set by PtyProvider when spawning this process. These are an internal
+ * contract between the two — PtyProvider writes them and only this file reads
+ * them, both from the same build — so unlike the user-settable vars they carry
+ * no pre-rename CLAUDEGRAM_* fallback:
+ *   TELECODER_IPC_PORT          loopback IPC server port
+ *   TELECODER_CLAUDE_SESSION_ID claude's session_id; used as the IPC routing key
+ *   TELECODER_WORKSPACE_ROOT    workspace root for security checks
+ *   TELECODER_REDDIT_ENABLED    feature flag for fetch_reddit
+ *   TELECODER_MEDIUM_ENABLED    feature flag for fetch_medium
+ *   TELECODER_TELEGRAPH_ENABLED feature flag for publish_telegraph
+ *   TELECODER_REDDITFETCH_DEFAULT_LIMIT, TELECODER_REDDITFETCH_DEFAULT_DEPTH
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -23,9 +26,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
 
-const workspaceRoot = process.env.CLAUDEGRAM_WORKSPACE_ROOT || path.resolve(process.cwd());
-const ipcPort = process.env.CLAUDEGRAM_IPC_PORT;
-const claudeSessionId = process.env.CLAUDEGRAM_CLAUDE_SESSION_ID || '';
+const workspaceRoot = process.env.TELECODER_WORKSPACE_ROOT || path.resolve(process.cwd());
+const ipcPort = process.env.TELECODER_IPC_PORT;
+const claudeSessionId = process.env.TELECODER_CLAUDE_SESSION_ID || '';
 
 /**
  * POST a JSON payload to the bot's loopback IPC server. claude's session_id
@@ -49,7 +52,7 @@ const claudeSessionId = process.env.CLAUDEGRAM_CLAUDE_SESSION_ID || '';
  * timeouts for the same reason — see startIpcServer.
  */
 function ipc<T = unknown>(routePath: string, payload: Record<string, unknown> = {}): Promise<T> {
-  if (!ipcPort) return Promise.reject(new Error('CLAUDEGRAM_IPC_PORT not set; cannot reach bot'));
+  if (!ipcPort) return Promise.reject(new Error('TELECODER_IPC_PORT not set; cannot reach bot'));
   const body = JSON.stringify({ session_id: claudeSessionId, ...payload });
 
   return new Promise<T>((resolve, reject) => {
@@ -143,7 +146,7 @@ server.tool(
 );
 
 // ── claudegram_fetch_reddit ──────────────────────────────────────────
-if (process.env.CLAUDEGRAM_REDDIT_ENABLED === 'true') {
+if (process.env.TELECODER_REDDIT_ENABLED === 'true') {
   server.tool(
     'claudegram_fetch_reddit',
     'Fetch Reddit content: subreddit listings, post threads with comments, or user profiles. Supports sort/time filters for subreddits. Returns markdown-formatted results.',
@@ -157,8 +160,8 @@ if (process.env.CLAUDEGRAM_REDDIT_ENABLED === 'true') {
     async ({ target, sort, limit, time_filter, depth }) => {
       try {
         const { redditFetch } = await importReddit();
-        const defaultLimit = parseInt(process.env.CLAUDEGRAM_REDDITFETCH_DEFAULT_LIMIT || '10', 10);
-        const defaultDepth = parseInt(process.env.CLAUDEGRAM_REDDITFETCH_DEFAULT_DEPTH || '5', 10);
+        const defaultLimit = parseInt(process.env.TELECODER_REDDITFETCH_DEFAULT_LIMIT || '10', 10);
+        const defaultDepth = parseInt(process.env.TELECODER_REDDITFETCH_DEFAULT_DEPTH || '5', 10);
         const result = await redditFetch([target], {
           format: 'markdown',
           sort: sort || 'hot',
@@ -181,7 +184,7 @@ if (process.env.CLAUDEGRAM_REDDIT_ENABLED === 'true') {
 }
 
 // ── claudegram_fetch_medium ──────────────────────────────────────────
-if (process.env.CLAUDEGRAM_MEDIUM_ENABLED === 'true') {
+if (process.env.TELECODER_MEDIUM_ENABLED === 'true') {
   server.tool(
     'claudegram_fetch_medium',
     'Fetch a Medium article via Freedium (bypasses paywall). Returns the article title, author, and full markdown content.',
@@ -275,7 +278,7 @@ server.tool(
 );
 
 // ── claudegram_extract_media (IPC: yt-dlp + Telegram upload on bot side) ─
-if (process.env.CLAUDEGRAM_EXTRACT_ENABLED === 'true') {
+if (process.env.TELECODER_EXTRACT_ENABLED === 'true') {
   server.tool(
     'claudegram_extract_media',
     'Extract text transcripts, audio, or video from YouTube, Instagram, and TikTok URLs. Audio/video files are sent directly to the user via Telegram. Transcripts are returned as text.',
@@ -325,7 +328,7 @@ server.tool(
 );
 
 // ── claudegram_set_topic (IPC: needs bot for Telegram setMyName) ─────
-if (process.env.CLAUDEGRAM_DYNAMIC_BOT_NAME === 'true') {
+if (process.env.TELECODER_DYNAMIC_BOT_NAME === 'true') {
   server.tool(
     'claudegram_set_topic',
     'Update the conversation topic shown in the bot display name. Call this proactively when the work topic changes. Pass an empty string to clear. Keep topics very short (1-4 words, e.g. "auth refactor", "CI fix", "dark mode").',
@@ -353,7 +356,7 @@ if (process.env.CLAUDEGRAM_DYNAMIC_BOT_NAME === 'true') {
 }
 
 // ── claudegram_publish_telegraph ─────────────────────────────────────
-if (process.env.CLAUDEGRAM_TELEGRAPH_ENABLED === 'true') {
+if (process.env.TELECODER_TELEGRAPH_ENABLED === 'true') {
   server.tool(
     'claudegram_publish_telegraph',
     'Publish markdown content as a Telegraph (telegra.ph) Instant View page. Returns the URL. Useful for sharing long-form content as a readable link.',

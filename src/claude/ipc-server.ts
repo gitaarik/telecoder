@@ -1,5 +1,6 @@
 import * as http from 'http';
 import type { AgentOptions } from '../providers/types.js';
+import { legacyEnv } from '../utils/legacy-env.js';
 
 /**
  * Loopback HTTP server used by:
@@ -10,7 +11,7 @@ import type { AgentOptions } from '../providers/types.js';
  *    need Telegram-side context (send_file, ask_user, set_topic, …) through here.
  *
  * The server is bound to 127.0.0.1 only. Port is auto-picked at startup unless
- * CLAUDEGRAM_IPC_PORT is set, and surfaced via getIpcPort() / getIpcUrl() so the
+ * TELECODER_IPC_PORT is set, and surfaced via getIpcPort() / getIpcUrl() so the
  * spawned subprocesses can be told where to reach us.
  *
  * Dispatch model: producers POST to /<category>/<name> (e.g. /hook/preToolUse,
@@ -156,9 +157,8 @@ export async function startIpcServer(): Promise<{ port: number }> {
   server.requestTimeout = 0;
   server.headersTimeout = 0;
 
-  const envPort = process.env.CLAUDEGRAM_IPC_PORT
-    ? parseInt(process.env.CLAUDEGRAM_IPC_PORT, 10)
-    : 0;
+  const pinnedPort = legacyEnv('IPC_PORT');
+  const envPort = pinnedPort ? parseInt(pinnedPort, 10) : 0;
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);

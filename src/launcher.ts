@@ -16,6 +16,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { fileURLToPath } from 'url';
 import { stripJsonComments, expandName } from './utils/instance-config.js';
+import { legacyEnv } from './utils/legacy-env.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
@@ -134,7 +135,7 @@ const configPath = configFlagIdx !== -1 && args[configFlagIdx + 1]
   : path.join(projectRoot, 'instances.json');
 
 // Load base .env so all env vars are available as defaults
-const envPath = process.env.CLAUDEGRAM_ENV_PATH || path.join(projectRoot, '.env');
+const envPath = legacyEnv('ENV_PATH') || path.join(projectRoot, '.env');
 loadEnv({ path: envPath });
 
 const instances = loadInstancesConfig(configPath);
@@ -179,7 +180,7 @@ interface WorkerMessage {
 // Mirrors getReloadMarkerPathForBotId in src/config.ts. We can't import config
 // here because the launcher process has no TELEGRAM_BOT_TOKEN env var (only
 // workers do), and config.ts validates it at import time.
-const CLAUDEGRAM_DIR = path.join(os.homedir(), '.claudegram');
+const STATE_DIR = path.join(os.homedir(), '.claudegram');
 
 function writeReloadMarkerForToken(token: string, instanceName?: string): void {
   let botId = '';
@@ -189,8 +190,8 @@ function writeReloadMarkerForToken(token: string, instanceName?: string): void {
       console.warn(`[Launcher] writeReloadMarkerForToken (${instanceName ?? '?'}) called with malformed token (no colon) — skipping`);
       return;
     }
-    const markerPath = path.join(CLAUDEGRAM_DIR, `pending-reload-${botId}.json`);
-    mkdirSync(CLAUDEGRAM_DIR, { recursive: true });
+    const markerPath = path.join(STATE_DIR, `pending-reload-${botId}.json`);
+    mkdirSync(STATE_DIR, { recursive: true });
     writeFileSync(markerPath, JSON.stringify({ timestamp: new Date().toISOString() }));
     console.log(`[Launcher] Wrote reload marker for ${instanceName ?? botId} (botId=${botId}) at ${markerPath}`);
   } catch (err) {
@@ -216,11 +217,16 @@ function buildWorkerEnv(inst: ResolvedInstance): Record<string, string> {
   env.BOT_NAME = inst.name;
 
   // Tag for log prefixing inside the worker
-  env.CLAUDEGRAM_INSTANCE_NAME = inst.name;
+  env.TELECODER_INSTANCE_NAME = inst.name;
 
   // Workers use this to enumerate sibling bots (e.g. for /fork). Mirrors the
   // launcher's own --config resolution so a custom config path still works.
-  env.CLAUDEGRAM_INSTANCES_CONFIG = configPath;
+  env.TELECODER_INSTANCES_CONFIG = configPath;
+
+  // A pre-rename value inherited from the parent env would otherwise win the
+  // fallback in utils/legacy-env.ts and point workers at a stale config.
+  delete env.CLAUDEGRAM_INSTANCES_CONFIG;
+  delete env.CLAUDEGRAM_INSTANCE_NAME;
 
   return env;
 }
