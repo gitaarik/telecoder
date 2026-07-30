@@ -15,6 +15,7 @@ import { setMonitorRelayBot } from './claude/monitor-relay.js';
 import { setUpdateBannerRelayBot } from './claude/update-banner-relay.js';
 import { startPendingForkWatcher } from './bot/handlers/fork.handler.js';
 import { parseSessionKey } from './utils/session-key.js';
+import { stripParentClaudeSession } from './utils/claude-env.js';
 import { setSessionTopic, getEffortLabel } from './bot/handlers/command.handler.js';
 import { isBotNameEnabled, rateLimitedSetMyName, notifyBotNameBlockToChat, syncBotNameOnStartup } from './telegram/botname-settings.js';
 import { splitMessage, escapeMarkdownV2, processMessageForTelegram } from './telegram/markdown.js';
@@ -31,6 +32,18 @@ if (instanceName) {
   console.log = (...args: unknown[]) => origLog(prefix, ...args);
   console.error = (...args: unknown[]) => origError(prefix, ...args);
   console.warn = (...args: unknown[]) => origWarn(prefix, ...args);
+}
+
+// Drop any Claude Code session markers we inherited before a provider spawns
+// anything. Restarting the bot from inside a claude session (which is how it
+// happens here — the bot's own session runs `pm2 start`) otherwise leaves every
+// claude we spawn believing it's a nested session, with transcript persistence
+// off and no session log for us to read replies from. See utils/claude-env.ts.
+const strippedClaudeVars = stripParentClaudeSession();
+if (strippedClaudeVars.length > 0) {
+  console.warn(
+    `[Env] Bot was launched from inside a Claude Code session; dropped inherited markers so spawned sessions persist normally: ${strippedClaudeVars.join(', ')}`,
+  );
 }
 
 // Log unhandled rejections — prevents silent failures where the process stays

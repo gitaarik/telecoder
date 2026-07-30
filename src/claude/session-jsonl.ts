@@ -20,6 +20,9 @@ interface JsonlMessage {
 interface JsonlRecord {
   type?: string;
   message?: JsonlMessage;
+  /** Claude Code's per-record id. Used to tell one turn's prompt from the next. */
+  uuid?: string;
+  timestamp?: string;
   /**
    * Top-level flag Claude Code sets on a synthetic assistant record it writes
    * when its API call fails mid-turn (socket dropped, rate limit, auth, …).
@@ -257,6 +260,53 @@ export function readLastAssistantTurnText(
 
   if (assistantTexts.length === 0) return undefined;
   return assistantTexts.join('\n\n');
+}
+
+/** Identity of a user prompt record in the log. */
+export interface UserPromptMarker {
+  /** Record uuid, or a timestamp+text digest when Claude Code wrote none. */
+  id: string;
+  text: string;
+}
+
+/**
+ * Identity of the last real user prompt in the log — the same turn boundary
+ * readLastAssistantTurnText slices from. Snapshotted just before a prompt is
+ * submitted so end-of-turn can tell "claude answered us" apart from "claude
+ * never received the prompt and the log still ends on the previous turn".
+ *
+ * That second case is not hypothetical: a pty respawned against a large session
+ * replays the whole transcript, and while it renders, the editor can swallow
+ * the Enter that submits our prompt. The log then still holds the *previous*
+ * turn, and reading assistant text out of it hands the user a stale answer as
+ * if it were a fresh one.
+ *
+ * tool_result records are user-role too, so real prompts are isolated the same
+ * way as above: by requiring non-empty prose after tool blocks are filtered.
+ */
+export function readLastUserPromptMarker(
+  workingDirectory: string,
+  sessionId: string,
+): UserPromptMarker | undefined {
+  const filePath = sessionJsonlPath(workingDirectory, sessionId);
+  if (!fs.existsSync(filePath)) return undefined;
+
+  let raw: string;
+  try { raw = fs.readFileSync(filePath, 'utf-8'); }
+  catch { return undefined; }
+
+  let last: UserPromptMarker | undefined;
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    let rec: JsonlRecord;
+    try { rec = JSON.parse(line) as JsonlRecord; }
+    catch { continue; }
+    if (rec.type !== 'user') continue;
+    const text = extractText(rec.message?.content);
+    if (!text) continue;
+    last = { id: rec.uuid ?? `${rec.timestamp ?? ''}|${text.slice(0, 120)}`, text };
+  }
+  return last;
 }
 
 /**

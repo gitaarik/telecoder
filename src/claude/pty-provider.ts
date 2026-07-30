@@ -6,12 +6,13 @@ import { fileURLToPath } from 'url';
 import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
-import { claudeSessionFileExists, readLastApiErrorFromJsonl, readLastAssistantTurnText, readLastCompactionFromJsonl, readLastUsageFromJsonl, sessionJsonlMtimeMs, type CompactionInfo } from './session-jsonl.js';
+import { claudeSessionFileExists, readLastApiErrorFromJsonl, readLastAssistantTurnText, readLastCompactionFromJsonl, readLastUsageFromJsonl, readLastUserPromptMarker, sessionJsonlMtimeMs, type CompactionInfo, type UserPromptMarker } from './session-jsonl.js';
 import { clearDeliveredProse, getDeliveredProse, stripDeliveredPrefix } from './turn-prose.js';
 import { isNativeCompactCommand } from './command-parser.js';
 import { isCancelled } from './request-queue.js';
 import { getWorkspaceRoot } from '../utils/workspace-guard.js';
 import { parseSessionKey } from '../utils/session-key.js';
+import { envWithoutParentSession } from '../utils/claude-env.js';
 import { legacyEnv } from '../utils/legacy-env.js';
 import { userPreferences } from '../providers/user-preferences.js';
 import {
@@ -77,6 +78,39 @@ const POST_STOP_SETTLE_MS = 200;
  */
 const MAX_TURN_MS = config.CLAUDE_PTY_HARD_TIMEOUT_MS;
 const STARTUP_MAX_MS = 15_000;
+/**
+ * Readiness thresholds for the first turn on a pty spawned with `--resume`.
+ * Claude replays the whole transcript on resume, and a long conversation takes
+ * minutes of near-continuous rendering — during which it draws the input glyph
+ * early, pauses, and keeps going. The normal 1.2s/15s pair reads one of those
+ * pauses as "ready", the prompt is pasted into an editor that isn't listening
+ * yet, and the Enter that submits it is swallowed. Demand a longer quiet period
+ * and allow far longer to reach it: waiting out the replay beats submitting
+ * into it. Still capped, so a genuinely stuck TUI can't hang the bot.
+ */
+const RESUME_SETTLE_IDLE_MS = 3_000;
+const RESUME_STARTUP_MAX_MS = 180_000;
+/**
+ * After writing \r we confirm claude actually took the prompt — it appears in
+ * the session log as a user record. Until that lands (or we give up), re-send
+ * \r periodically as long as our text is still sitting in the input box: a
+ * swallowed keystroke is invisible otherwise, and the turn would resolve on
+ * stale log content. Skipped for slash commands, which need not write a record.
+ */
+const SUBMIT_CONFIRM_CAP_MS = 30_000;
+const SUBMIT_RETRY_EVERY_MS = 3_000;
+
+/**
+ * The slice of a prompt we look for on the rendered screen: leading
+ * non-whitespace of the first line, short enough to survive wrapping in the
+ * 120-col input box, long enough to be distinctive. Undefined when the prompt
+ * is too short to match meaningfully — callers treat that as "can't tell".
+ */
+function promptNeedle(prompt: string): string | undefined {
+  const firstLine = prompt.replace(/^\s+/, '').split(/\r?\n/, 1)[0] ?? '';
+  const needle = firstLine.slice(0, 24);
+  return needle.length < 4 ? undefined : needle;
+}
 /**
  * Idle + prompt-visible safety net for prompts that produce no JSONL activity.
  * Most prompts (model turns, /compact, /clear, /handoff, …) write at least one
@@ -167,6 +201,29 @@ interface PtySession {
    * other slash commands that don't emit a `●` glyph.
    */
   jsonlMtimeAtSubmit: number;
+  /**
+   * Identity of the last user prompt in the session log at submit time. If it
+   * hasn't changed by end-of-turn, claude never took delivery of our prompt —
+   * a moving mtime isn't proof it did, because `--resume` alone rewrites
+   * bookkeeping records (system, last-prompt) on spawn. Without this check the
+   * turn resolves on that mtime bump and the JSONL read returns the *previous*
+   * turn's answer, which the user sees as a fresh reply to a question the model
+   * never saw.
+   */
+  promptMarkerAtSubmit: UserPromptMarker | undefined;
+  /**
+   * True when the submitted prompt was a slash command. Those can legitimately
+   * finish without adding a prompt record to the log (purely-TUI ones like
+   * /cost render to screen only), so the prompt-landed check above is skipped
+   * for them and the NO_JSONL_FALLBACK_MS path still applies.
+   */
+  submittedSlashCommand: boolean;
+  /**
+   * True between spawning this pty with `--resume` and its first submitted
+   * prompt. While set, readiness uses RESUME_SETTLE_IDLE_MS/RESUME_STARTUP_MAX_MS
+   * so we wait out the transcript replay instead of pasting into it.
+   */
+  awaitingResumeReplay: boolean;
   /**
    * Set to true after we've scanned this pty's startup output for Claude
    * Code's update banner. The banner only renders during the first TUI draw,
@@ -283,6 +340,11 @@ function buildMcpToolsSystemPromptNote(): string {
  *   - every TELECODER_*-prefixed var from this process's env (feature flags
  *     like TELECODER_REDDIT_ENABLED gate which tools register)
  */
+/** True if claude's status line reports that it isn't persisting the session. */
+function transcriptSavingDisabled(screenText: string): boolean {
+  return /transcript saving is off/i.test(screenText);
+}
+
 function buildMcpEnv(required: Record<string, string>): Record<string, string> {
   const env: Record<string, string> = {
     PATH: process.env.PATH || '',
@@ -398,6 +460,39 @@ export class PtyProvider implements Provider {
     // log has every text block as a structured record, so joining them gives
     // the user the full reply. Falls back to screen scrape if the log isn't
     // available (very rare — Stop hook fires after claude flushes records).
+    // Before reading anything out of the log, prove claude actually took
+    // delivery of this prompt. A pty respawned against a large session spends
+    // its first seconds replaying the transcript, and the Enter that submits
+    // our prompt gets swallowed while the editor is still coming up. The turn
+    // resolves anyway — `--resume` rewrites bookkeeping records on spawn, so
+    // the mtime gate in _checkEndOfTurn reads that as "claude did something" —
+    // and the JSONL read below then returns the PREVIOUS turn's answer. The
+    // user gets a stale reply to a question the model never saw, and every
+    // retry repeats it. Only bail when the log demonstrably still ends on the
+    // turn it ended on before we submitted; a missing log or missing baseline
+    // falls through to the screen-scrape guards below.
+    const turnSession = this.sessions.get(sessionKey);
+    const markerNow = this._currentPromptMarker(sessionKey);
+    const markerAtSubmit = turnSession?.promptMarkerAtSubmit;
+    if (
+      turnSession
+      && !turnSession.submittedSlashCommand
+      && markerNow && markerAtSubmit
+      && markerNow.id === markerAtSubmit.id
+    ) {
+      // Distinguish the two ways the log can fail to move. If claude says it
+      // isn't saving the transcript, the prompt was almost certainly answered
+      // — we simply can't read it — and the cure is environmental, not a retry.
+      if (transcriptSavingDisabled(finalScreenText)) {
+        throw new Error(
+          "Claude Code isn't saving this session's transcript, so the bot can't read its replies. It inherited a parent Claude session's environment — restart the bot from a shell that isn't inside a Claude Code session.",
+        );
+      }
+      throw new Error(
+        "Claude never received your message — the TUI was still busy (this happens on the first message after a restart, while a long session is replayed). Please send it again.",
+      );
+    }
+
     const fromJsonl = this._readAssistantResponseFromJsonl(sessionKey);
 
     // First-turn-in-fresh-cwd failure: claude's TUI is still rendering the
@@ -632,7 +727,14 @@ export class PtyProvider implements Provider {
     abortSignal?.addEventListener('abort', abortHandler);
 
     try {
-      await this._waitForReady(session, IDLE_MS, STARTUP_MAX_MS);
+      // A pty spawned with --resume is still replaying the transcript; give it
+      // the patience that needs rather than pasting into a busy editor.
+      if (session.awaitingResumeReplay) {
+        await this._waitForReady(session, RESUME_SETTLE_IDLE_MS, RESUME_STARTUP_MAX_MS);
+        session.awaitingResumeReplay = false;
+      } else {
+        await this._waitForReady(session, IDLE_MS, STARTUP_MAX_MS);
+      }
       this._maybeRelayUpdateBanner(session, sessionKey);
 
       // Snapshot the screen before submitting so the progress diff and the
@@ -647,6 +749,10 @@ export class PtyProvider implements Provider {
       // safety net).
       session.submitTimeMs = Date.now();
       session.jsonlMtimeAtSubmit = this._currentJsonlMtimeMs(sessionKey);
+      // Which turn the log ends on right now, so end-of-turn can prove our
+      // prompt actually landed rather than trusting a bumped mtime.
+      session.promptMarkerAtSubmit = this._currentPromptMarker(sessionKey);
+      session.submittedSlashCommand = prompt.trimStart().startsWith('/');
 
       // Submit handling for claude's TUI input editor:
       //
@@ -688,6 +794,7 @@ export class PtyProvider implements Provider {
         if (echoed) break;
       }
       session.term.write('\r');
+      await this._confirmSubmitted(session, sessionKey, prompt, abortSignal);
 
       return await this._awaitEndOfTurn(session);
     } finally {
@@ -791,8 +898,12 @@ export class PtyProvider implements Provider {
       rows: ROWS,
       cwd: requiredCwd,
       env: {
-        ...process.env,
+        ...envWithoutParentSession(),
         TERM: 'xterm-256color',
+        // Belt and braces alongside the stripped markers above: whatever else
+        // the bot inherited, this pty must write its session log — the bot has
+        // no other way to read the model's reply.
+        CLAUDE_CODE_FORCE_SESSION_PERSISTENCE: '1',
         // Claude code's default MCP tool-call timeout is 60s. claudegram_ask_user
         // long-polls for up to 10 min waiting on a Telegram button tap; without
         // this override claude aborts the call at 60s, fires postToolUseFailure
@@ -839,6 +950,9 @@ export class PtyProvider implements Provider {
       inflightTools: 0,
       submitTimeMs: 0,
       jsonlMtimeAtSubmit: 0,
+      promptMarkerAtSubmit: undefined,
+      submittedSlashCommand: false,
+      awaitingResumeReplay: resuming,
       updateBannerChecked: false,
     };
 
@@ -949,6 +1063,13 @@ export class PtyProvider implements Provider {
     }
   }
 
+  /** Identity of the last user prompt in the active session's log, if any. */
+  private _currentPromptMarker(sessionKey: string): UserPromptMarker | undefined {
+    const botSession = sessionManager.getSession(sessionKey);
+    if (!botSession?.claudeSessionId) return undefined;
+    return readLastUserPromptMarker(botSession.workingDirectory, botSession.claudeSessionId);
+  }
+
   /** Cheap fs.stat on the active session's JSONL log; 0 if not on disk yet. */
   private _currentJsonlMtimeMs(sessionKey: string): number {
     const botSession = sessionManager.getSession(sessionKey);
@@ -1017,6 +1138,73 @@ export class PtyProvider implements Provider {
   }
 
   /**
+   * Wait for evidence that claude took delivery of the prompt: a user record
+   * appearing in the session log. While it hasn't, and our text is still
+   * visible in the input box, re-send \r every SUBMIT_RETRY_EVERY_MS — the
+   * editor swallows the keystroke silently when it's busy (transcript replay,
+   * late startup), and nothing downstream can tell that from a slow model.
+   *
+   * The log read is gated on the log's mtime so a large transcript isn't
+   * re-parsed on every poll. Returns true once the prompt lands; false on
+   * cap-hit, where the end-of-turn guard in sendToAgent reports the failure.
+   * Slash commands skip the whole thing — they needn't write a record at all,
+   * and blind \r retries would be the only outcome.
+   */
+  private async _confirmSubmitted(
+    session: PtySession,
+    sessionKey: string,
+    prompt: string,
+    abortSignal?: AbortSignal,
+  ): Promise<boolean> {
+    if (session.submittedSlashCommand) return true;
+
+    const baselineId = session.promptMarkerAtSubmit?.id;
+    const deadline = Date.now() + SUBMIT_CONFIRM_CAP_MS;
+    let seenMtime = session.jsonlMtimeAtSubmit;
+    let lastRetryAt = Date.now();
+
+    while (Date.now() < deadline) {
+      // Stop waiting the moment the turn is cancelled or the pty dies —
+      // _awaitEndOfTurn handles both, and retrying \r into a dead term or a
+      // cancelled turn is pointless.
+      if (abortSignal?.aborted) return false;
+      if (this.sessions.get(sessionKey) !== session) return false;
+      const mtime = this._currentJsonlMtimeMs(sessionKey);
+      if (mtime !== seenMtime) {
+        seenMtime = mtime;
+        const markerNow = this._currentPromptMarker(sessionKey);
+        if (markerNow && markerNow.id !== baselineId) return true;
+      }
+      if (Date.now() - lastRetryAt >= SUBMIT_RETRY_EVERY_MS) {
+        lastRetryAt = Date.now();
+        // With persistence off the log will never confirm anything, so retrying
+        // just fires Enter into a session that already took the prompt. Stop
+        // and let the end-of-turn guard name the real problem.
+        if (transcriptSavingDisabled(this._getScreenText(session))) {
+          console.warn('[PtyProvider] transcript saving is off — cannot confirm submission from the log');
+          return false;
+        }
+        if (this._screenHasPromptText(session, prompt)) {
+          console.warn('[PtyProvider] prompt still in the input box after Enter — re-sending submit');
+          session.term.write('\r');
+        }
+      }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    console.warn(`[PtyProvider] prompt not confirmed submitted within ${Math.round(SUBMIT_CONFIRM_CAP_MS / 1000)}s`);
+    return false;
+  }
+
+  /** True if the prompt's distinctive opening is still on the rendered screen. */
+  private _screenHasPromptText(session: PtySession, prompt: string): boolean {
+    const needle = promptNeedle(prompt);
+    // Too short to match reliably — assume it's still pending and let the
+    // caller re-send; a stray Enter on an empty input box is a no-op.
+    if (!needle) return true;
+    return this._getScreenText(session).includes(needle);
+  }
+
+  /**
    * Poll the xterm buffer until the first chars of `prompt` appear on screen —
    * proves claude's editor actually consumed our paste before we send \r.
    * Returns true on echo confirmed, false on cap-hit. Caller retries the
@@ -1031,9 +1219,8 @@ export class PtyProvider implements Provider {
    * the retry loop isn't load-bearing for them).
    */
   private async _waitForPromptEcho(session: PtySession, prompt: string, capMs: number): Promise<boolean> {
-    const firstLine = prompt.replace(/^\s+/, '').split(/\r?\n/, 1)[0] ?? '';
-    const needle = firstLine.slice(0, 24);
-    if (needle.length < 4) {
+    const needle = promptNeedle(prompt);
+    if (!needle) {
       await new Promise((r) => setTimeout(r, 100));
       return true;
     }
