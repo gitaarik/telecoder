@@ -11,6 +11,10 @@ export default defineConfig({
       ALLOWED_USER_IDS: '1,2,3',
       ALLOWED_GROUP_IDS: '-1009990001',
       WORKSPACE_DIR: '/tmp/telecoder-test-workspace',
+      // Pin the default explicitly. Running the suite from inside a TeleCoder
+      // worker otherwise inherits that worker's BOT_NAME (e.g. "TeleCoder 6"),
+      // and the botname tests assert against the default.
+      BOT_NAME: 'TeleCoder',
       // Force the SSRF guard on regardless of the developer's shell/.env.
       ALLOW_PRIVATE_NETWORK_URLS: 'false',
     },

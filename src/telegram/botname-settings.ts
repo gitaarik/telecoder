@@ -238,6 +238,13 @@ interface NameRateState {
   pendingTimer: ReturnType<typeof setTimeout> | null;
 }
 
+// Set as soon as anything in this process asks for a name update. The startup
+// sync uses it to tell "nobody has claimed the display name yet" from
+// "auto-resume already pushed a name built from BOT_NAME" — in the latter case
+// the name is current by construction and re-checking it would race against a
+// deferred (soft-throttled) push that hasn't reached Telegram yet.
+let nameClaimedThisProcess = false;
+
 // Per-bot soft-throttle state. Keyed by the bot's `api` object (stable per
 // bot) so multiple bots running in the same process don't collide on a
 // shared slot. WeakMap lets state get GC'd if a bot is torn down.
@@ -316,6 +323,7 @@ export async function rateLimitedSetMyName(
   apiCall: (name: string) => Promise<unknown>,
   name: string,
 ): Promise<SetMyNameResult> {
+  nameClaimedThisProcess = true;
   const blockedUntil = getBlockedUntil();
   const now = Date.now();
   if (blockedUntil > now) {
@@ -378,6 +386,59 @@ export async function rateLimitedSetMyName(
     }, delay);
   }
   return { status: 'queued' };
+}
+
+/**
+ * Reconcile the Telegram display name with `BOT_NAME` once at startup.
+ *
+ * Every other `setMyName` path is event-driven (project switch, topic
+ * clear/restore, `/botname` toggle), so a `BOT_NAME` change in `instances.json`
+ * used to sit invisible until one of those fired — a rebrand could leave the
+ * old name showing for days.
+ *
+ * Deliberately bypasses the `lastSentName` dedup in `rateLimitedSetMyName`:
+ * `getMyName()` is authoritative about what Telegram actually shows, and the
+ * case worth catching here is exactly the one where our cached name and the
+ * live name disagree (BOT_NAME edited between runs, or a BotFather rename).
+ * The persistent 429 cooldown still applies.
+ */
+export async function syncBotNameOnStartup(api: {
+  getMyName(): Promise<{ name: string }>;
+  setMyName(name: string): Promise<unknown>;
+}): Promise<SetMyNameResult> {
+  if (nameClaimedThisProcess) return { status: 'no_change' };
+
+  const base = config.BOT_NAME;
+  let current: string;
+  try {
+    current = (await api.getMyName()).name;
+  } catch (err) {
+    console.debug('[BotName] Startup sync: getMyName failed:', err instanceof Error ? err.message : err);
+    return { status: 'no_change' };
+  }
+
+  // Dynamic names carry a " — project" suffix. Anything already rooted at
+  // BOT_NAME is in sync; rewriting it to the bare base would clobber the
+  // project the user last switched to.
+  if (current === base || current.startsWith(`${base} — `)) return { status: 'no_change' };
+
+  const blockedUntil = getBlockedUntil();
+  const now = Date.now();
+  if (blockedUntil > now) {
+    const mins = Math.round((blockedUntil - now) / 60000);
+    console.warn(`[BotName] Startup sync: "${current}" → "${base}" skipped, Telegram cooldown for ~${mins}m more.`);
+    return { status: 'still_blocked', blockedUntilMs: blockedUntil };
+  }
+
+  console.log(`[BotName] Startup sync: renaming "${current}" → "${base}"`);
+  const state = getRateState(api);
+  state.lastUpdateTime = now;
+  const result = await callAndHandle429(state, (n) => api.setMyName(n), base, 'startup sync');
+  if (result.kind === 'newly_blocked') {
+    return { status: 'newly_blocked', blockedUntilMs: result.blockedUntilMs };
+  }
+  nameClaimedThisProcess = true;
+  return { status: 'sent' };
 }
 
 // ---------------------------------------------------------------------------

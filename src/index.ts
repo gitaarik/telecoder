@@ -16,7 +16,7 @@ import { setUpdateBannerRelayBot } from './claude/update-banner-relay.js';
 import { startPendingForkWatcher } from './bot/handlers/fork.handler.js';
 import { parseSessionKey } from './utils/session-key.js';
 import { setSessionTopic, getEffortLabel } from './bot/handlers/command.handler.js';
-import { isBotNameEnabled, rateLimitedSetMyName, notifyBotNameBlockToChat } from './telegram/botname-settings.js';
+import { isBotNameEnabled, rateLimitedSetMyName, notifyBotNameBlockToChat, syncBotNameOnStartup } from './telegram/botname-settings.js';
 import { splitMessage, escapeMarkdownV2, processMessageForTelegram } from './telegram/markdown.js';
 import type { Bot } from 'grammy';
 
@@ -560,6 +560,16 @@ async function main() {
     } catch (err) {
       console.error('[AutoContinue] Failed:', err);
     }
+  }
+
+  // Reconcile the Telegram display name with BOT_NAME. Runs after the resume
+  // paths above so a session restore — which pushes its own "BOT_NAME —
+  // project" name — wins and this becomes a no-op; only a bot whose name
+  // nobody claimed this startup gets rewritten.
+  try {
+    await syncBotNameOnStartup(bot.api);
+  } catch (err) {
+    console.debug('[BotName] Startup sync failed:', err instanceof Error ? err.message : err);
   }
 
   // Re-arm persisted scheduled tasks (/schedule). Runs after session
