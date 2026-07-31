@@ -22,8 +22,8 @@
 
 > TeleCoder began in February 2026 as a fork of
 > [Claudegram by @NachoSEO](https://github.com/NachoSEO/claudegram) and now runs as an
-> independent project maintained by [@gitaarik](https://github.com/gitaarik) — 160+ commits
-> and ~23k lines beyond the original, including a provider router, PTY transport,
+> independent project maintained by [@gitaarik](https://github.com/gitaarik) — 185+ commits
+> and ~25k lines beyond the original, including a provider router, PTY transport,
 > multi-instance launcher, background task lifecycle, and an agent watchdog.
 > See [Credits](#credits) for full attribution.
 
@@ -499,11 +499,11 @@ npm start            # Run compiled build
 ### Bot Control Script
 
 ```bash
-./scripts/claudegram-botctl.sh dev start      # Start dev mode
-./scripts/claudegram-botctl.sh dev restart     # Restart dev
-./scripts/claudegram-botctl.sh prod start      # Start production
-./scripts/claudegram-botctl.sh dev log         # Tail logs
-./scripts/claudegram-botctl.sh dev status      # Check if running
+./scripts/telecoder-botctl.sh dev start       # Start dev mode
+./scripts/telecoder-botctl.sh dev restart     # Restart dev
+./scripts/telecoder-botctl.sh prod start      # Start production
+./scripts/telecoder-botctl.sh dev log         # Tail logs
+./scripts/telecoder-botctl.sh dev status      # Check if running
 ```
 
 ### Self-Editing Workflow
@@ -511,9 +511,9 @@ npm start            # Run compiled build
 If TeleCoder is editing its own codebase, use **prod mode** to avoid hot-reload restarts:
 
 ```bash
-./scripts/claudegram-botctl.sh prod start      # No hot reload
+./scripts/telecoder-botctl.sh prod start      # No hot reload
 # ... let Claude edit files ...
-./scripts/claudegram-botctl.sh prod restart     # Apply changes
+./scripts/telecoder-botctl.sh prod restart    # Apply changes
 ```
 
 Then `/continue` or `/resume` in Telegram to restore your session.

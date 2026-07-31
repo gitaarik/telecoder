@@ -14,7 +14,7 @@ if [[ "${ACTION}" == "dev" || "${ACTION}" == "prod" ]]; then
   ACTION="${2:-status}"
 fi
 
-LOG_FILE="${ROOT_DIR}/claudegram.${MODE}.log"
+LOG_FILE="${ROOT_DIR}/telecoder.${MODE}.log"
 
 # Match this checkout by its actual path rather than a hardcoded directory
 # name, so renaming the folder doesn't silently break process detection.

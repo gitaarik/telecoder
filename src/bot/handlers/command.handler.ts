@@ -346,7 +346,7 @@ function getActiveTTSVoices(): readonly string[] {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
-const BOTCTL_PATH = path.join(PROJECT_ROOT, 'scripts', 'claudegram-botctl.sh');
+const BOTCTL_PATH = path.join(PROJECT_ROOT, 'scripts', 'telecoder-botctl.sh');
 /** Write the reload marker so autoResumeAfterReload picks up sessions on restart. */
 function writeReloadMarker(): void {
   try {
@@ -1874,7 +1874,7 @@ async function performRestart(ctx: Context, scope: RestartScope): Promise<void> 
 
   // Single-instance mode — use shell script to restart the whole process
   if (!botctlExists()) {
-    await replyMd(ctx, '❌ Bot control script not found\\.\n\nExpected at `scripts/claudegram-botctl.sh`\\.');
+    await replyMd(ctx, '❌ Bot control script not found\\.\n\nExpected at `scripts/telecoder-botctl.sh`\\.');
     return;
   }
 
@@ -2087,7 +2087,7 @@ async function performRebuild(ctx: Context, scope: RebuildScope): Promise<void> 
   if (!config.AUTO_RESTORE_SESSION) await sendRestoreButtons(ctx);
 
   if (!botctlExists()) {
-    await replyMd(ctx, 'Build OK but cannot restart: `scripts/claudegram\\-botctl\\.sh` not found\\.');
+    await replyMd(ctx, 'Build OK but cannot restart: `scripts/telecoder\\-botctl\\.sh` not found\\.');
     return;
   }
 
