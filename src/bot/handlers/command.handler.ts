@@ -1715,10 +1715,6 @@ export async function handleContext(ctx: Context): Promise<void> {
   }
 
   // Fallback: CLI shell-out approach (Claude only)
-  if (getActiveProviderName(chatId) === 'opencode') {
-    await replyMd(ctx, '⚠️ No usage data yet\\.\n\nSend a message first, then run `/context` again\\.');
-    return;
-  }
   if (!session.claudeSessionId) {
     await replyMd(
       ctx,
@@ -2276,7 +2272,6 @@ export async function handleModelCallback(ctx: Context): Promise<void> {
 const PROVIDER_DESCRIPTIONS: Record<ProviderName, string> = {
   claude: '*claude* \\- Claude Code SDK \\(Anthropic / Max\\)',
   ccr: '*ccr* \\- Routed via Claude Code Router \\(alt providers\\)',
-  opencode: '*opencode* \\- OpenCode \\(75\\+ LLM providers\\)',
 };
 
 export async function handleProviderCommand(ctx: Context): Promise<void> {
@@ -3069,11 +3064,6 @@ export async function handleTeleport(ctx: Context): Promise<void> {
   if (!keyInfo) return;
   const { sessionKey } = keyInfo;
   const { chatId } = parseSessionKey(sessionKey);
-
-  if (getActiveProviderName(chatId) === 'opencode') {
-    await replyMd(ctx, 'ℹ️ `/teleport` is not available for the OpenCode provider\\.');
-    return;
-  }
 
   const session = sessionManager.getSession(sessionKey);
 
@@ -4484,7 +4474,7 @@ export async function handleBtw(ctx: Context): Promise<void> {
 
   // PTY mode has no SDK Query to hang askSideQuestion off — answer from a
   // read-only fork of the live session instead. Only Claude sessions have a
-  // resumable JSONL transcript; ccr/opencode fall through to the SDK path.
+  // resumable JSONL transcript; ccr falls through to the SDK path.
   const usesPty = getActiveProviderName(chatId) === 'claude'
     && userPreferences.getMethod(chatId) === 'pty';
   if (usesPty) {

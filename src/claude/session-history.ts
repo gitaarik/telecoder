@@ -8,7 +8,7 @@ import { atomicWriteFileSync } from '../utils/atomic-write.js';
 const sessionHistoryEntrySchema = z.object({
   conversationId: z.string(),
   claudeSessionId: z.string().optional(),
-  // Which provider backend (claude / ccr / opencode) created this Claude
+  // Which provider backend (claude / ccr) created this Claude
   // session. Used to refuse cross-backend resumes — a session whose thinking
   // blocks were minted by DeepSeek-via-CCR can't be replayed against the real
   // Anthropic API. Optional for backward compatibility with pre-existing files.

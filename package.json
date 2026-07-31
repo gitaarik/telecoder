@@ -1,7 +1,7 @@
 {
   "name": "telecoder",
   "version": "1.0.0",
-  "description": "Claude Code from Telegram — routes to CCR and OpenCode when you need it",
+  "description": "Claude Code from Telegram — routes through CCR to any model when you need it",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -31,7 +31,6 @@
     "@anthropic-ai/claude-agent-sdk": "^0.2.140",
     "@grammyjs/auto-retry": "^2.0.2",
     "@grammyjs/runner": "^2.0.3",
-    "@opencode-ai/sdk": "^1.1.53",
     "@types/turndown": "^5.0.6",
     "@xterm/headless": "^6.0.0",
     "cheerio": "^1.2.0",

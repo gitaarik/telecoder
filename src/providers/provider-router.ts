@@ -27,35 +27,8 @@ function savePersistedProvider(chatId: number, provider: ProviderName): void {
   userPreferences.setProvider(chatId, provider);
 }
 
-// Lazy-loaded opencode provider (only when needed)
-let opencodeProvider: Provider | undefined;
-
-async function getOpenCodeProvider(): Promise<Provider> {
-  if (!opencodeProvider) {
-    const mod = await import('./opencode-provider.js');
-    opencodeProvider = mod.opencodeProvider;
-  }
-  return opencodeProvider;
-}
-
-// Eagerly load the OpenCode module at startup when enabled, so that
-// getProvider() never throws for users whose persisted preference is 'opencode'.
-if (config.OPENCODE_ENABLED) {
-  getOpenCodeProvider().catch((err) => {
-    console.error('[ProviderRouter] Failed to pre-load OpenCode provider:', err);
-  });
-}
-
 function getProvider(chatId: number): Provider {
   const name = getActiveProviderName(chatId);
-  if (name === 'opencode') {
-    if (!opencodeProvider) {
-      // Fallback: if eager load hasn't completed yet, return Claude temporarily
-      console.warn('[ProviderRouter] OpenCode provider not ready yet, falling back to Claude');
-      return claudeProvider;
-    }
-    return opencodeProvider;
-  }
   if (name === 'ccr') {
     if (!config.CCR_ENABLED) {
       console.warn('[ProviderRouter] CCR provider selected but CCR_ENABLED=false; falling back to Claude');
@@ -69,7 +42,7 @@ function getProvider(chatId: number): Provider {
 // --- Public API (identical signatures to agent.ts) ---
 
 export function getActiveProviderName(chatId: number): ProviderName {
-  if (!config.OPENCODE_ENABLED && !config.CCR_ENABLED) return 'claude';
+  if (!config.CCR_ENABLED) return 'claude';
   // Check in-memory cache first
   const cached = chatProviders.get(chatId);
   if (cached) return cached;
@@ -83,9 +56,6 @@ export function getActiveProviderName(chatId: number): ProviderName {
 }
 
 export async function setActiveProvider(chatId: number, provider: ProviderName): Promise<void> {
-  if (provider === 'opencode') {
-    await getOpenCodeProvider(); // ensure loaded
-  }
   chatProviders.set(chatId, provider);
   savePersistedProvider(chatId, provider);
 }
@@ -93,7 +63,6 @@ export async function setActiveProvider(chatId: number, provider: ProviderName):
 export function getAvailableProviders(): ProviderName[] {
   const list: ProviderName[] = ['claude'];
   if (config.CCR_ENABLED) list.push('ccr');
-  if (config.OPENCODE_ENABLED) list.push('opencode');
   return list;
 }
 
@@ -121,9 +90,6 @@ export function clearConversation(sessionKey: string): void {
   // Clear all providers to avoid stale state
   claudeProvider.clearConversation(sessionKey);
   ccrProvider.clearConversation(sessionKey);
-  if (opencodeProvider) {
-    opencodeProvider.clearConversation(sessionKey);
-  }
 }
 
 export function setModel(chatId: number, model: string): void {
@@ -166,11 +132,6 @@ export function clearEffort(chatId: number): void {
 
 export async function getAvailableModels(chatId: number): Promise<ModelInfo[]> {
   const providerName = getActiveProviderName(chatId);
-  if (providerName === 'opencode') {
-    // Ensure opencode provider is loaded before accessing
-    const provider = await getOpenCodeProvider();
-    return provider.getAvailableModels(chatId);
-  }
   if (providerName === 'ccr') {
     return ccrProvider.getAvailableModels(chatId);
   }

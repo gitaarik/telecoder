@@ -31,7 +31,7 @@ function resolveWorkingDirectory(storedPath: string): string {
 export interface Session {
   conversationId: string;
   claudeSessionId?: string;
-  /** Provider backend that created `claudeSessionId` (claude / ccr / opencode).
+  /** Provider backend that created `claudeSessionId` (claude / ccr).
    * Lets the agent refuse to resume a session on a different backend. */
   ownerProvider?: string;
   workingDirectory: string;

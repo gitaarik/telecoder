@@ -6,7 +6,11 @@ import { atomicWriteFileSync } from '../utils/atomic-write.js';
 
 // Zod schema for user preferences
 const userPreferencesSchema = z.object({
-  provider: z.enum(['claude', 'ccr', 'opencode']).optional(),
+  // `.catch` drops values this build no longer knows about (e.g. the retired
+  // 'opencode' backend) instead of failing the parse. load() parses the whole
+  // file in one shot, so a strict enum would make one stale value wipe every
+  // user's saved model/effort/verbosity too.
+  provider: z.enum(['claude', 'ccr']).optional().catch(undefined),
   method: z.enum(['sdk', 'pty']).optional(),
   model: z.string().optional(),
   effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
@@ -71,11 +75,11 @@ class UserPreferencesManager {
     }
   }
 
-  getProvider(chatId: number): 'claude' | 'ccr' | 'opencode' | undefined {
+  getProvider(chatId: number): 'claude' | 'ccr' | undefined {
     return this.data[chatId]?.provider;
   }
 
-  setProvider(chatId: number, provider: 'claude' | 'ccr' | 'opencode'): void {
+  setProvider(chatId: number, provider: 'claude' | 'ccr'): void {
     if (!this.data[chatId]) {
       this.data[chatId] = { lastUpdated: new Date().toISOString() };
     }

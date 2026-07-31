@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TeleCoder — Claude Code from Telegram</title>
-  <meta name="description" content="Drive a full Claude Code agent from Telegram. Runs on your own machine, and routes to CCR or OpenCode when your usage limit hits.">
+  <meta name="description" content="Drive a full Claude Code agent from Telegram. Runs on your own machine, and routes through CCR to any model when your usage limit hits.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230c0a07'/%3E%3Ccircle cx='17' cy='32' r='7' fill='%23ffb000'/%3E%3Crect x='30' y='25' width='25' height='14' rx='7' fill='%23ffb000'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1518,7 +1518,7 @@
             <p>When Claude Max throttles mid-turn, TeleCoder doesn't just report the
             error — it offers a one-tap switch to Claude Code Router and replays the
             message you just sent. A provider router sits behind every message, so
-            Claude, CCR and OpenCode are all reachable from <code>/provider</code>.</p>
+            both Claude and CCR are reachable from <code>/provider</code>.</p>
           </div>
           <div class="feature-card">
             <div class="feature-icon">🛰️</div>
@@ -1708,7 +1708,7 @@
           <div class="feature-card" data-category="core">
             <div class="feature-icon">🔌</div>
             <h3>Provider Switching</h3>
-            <p>Switch between Claude, CCR, and OpenCode with /provider. Access 75+ LLM providers when Claude is unavailable. Switching a live conversation confirms first, then starts a fresh session on the new backend with a plain-text summary of the prior chat carried over — backends can't share a session (a different model's thinking blocks can't be replayed), so each is kept cleanly separate.</p>
+            <p>Switch between Claude and CCR with /provider. CCR routes the same agent through any model its config knows about, so you keep working when Claude is unavailable. Switching a live conversation confirms first, then starts a fresh session on the new backend with a plain-text summary of the prior chat carried over — backends can't share a session (a different model's thinking blocks can't be replayed), so each is kept cleanly separate.</p>
           </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon">🛰️</div>
@@ -1850,7 +1850,6 @@
               <span class="prereq-badge optional">Anthropic API key</span>
               <span class="prereq-badge optional">Claude Max subscription</span>
               <span class="prereq-badge optional">CCR</span>
-              <span class="prereq-badge optional">OpenCode</span>
             </div>
             <div class="prereq-note">
               <strong>Note:</strong> On macOS, TeleCoder uses <code>caffeinate</code> to prevent sleep during long operations.
@@ -2107,7 +2106,7 @@
           <span class="flow-arrow">→</span>
           <div class="flow-node">
             <span class="flow-node-icon">🧠</span>
-            <span class="flow-node-label">Claude Code · CCR · OpenCode</span>
+            <span class="flow-node-label">Claude Code · CCR</span>
           </div>
           <span class="flow-arrow">→</span>
           <div class="flow-node">
@@ -2227,7 +2226,7 @@
           <div class="commands-grid">
             <div class="command-row">
               <code class="command-code">/provider</code>
-              <span class="command-desc">Switch AI provider (Claude / CCR / OpenCode)</span>
+              <span class="command-desc">Switch AI provider (Claude / CCR)</span>
             </div>
             <div class="command-row">
               <code class="command-code">/method</code>

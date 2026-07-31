@@ -2,7 +2,7 @@
  * Provider-switch orchestration.
  *
  * A Claude session is bound to the chat, not the backend — each turn resumes
- * the same Claude Code session id, and the "provider" (claude / ccr / opencode)
+ * the same Claude Code session id, and the "provider" (claude / ccr)
  * is just a per-turn executable choice. That means a session whose thinking
  * blocks were minted by DeepSeek-via-CCR (placeholder signatures) cannot be
  * replayed against the real Anthropic API without a `400 Invalid signature in

@@ -73,7 +73,7 @@ export function getAvailableCommands(): string {
         '• `/explore <question>` \\- Use explore agent for codebase questions',
         '• `/loop <task>` \\- Run iteratively until task complete',
         '• `/model \\[name\\]` \\- Show or set AI model',
-        ...(config.OPENCODE_ENABLED ? ['• `/provider` \\- Switch AI provider \\(Claude / OpenCode\\)'] : []),
+        ...(config.CCR_ENABLED ? ['• `/provider` \\- Switch AI provider \\(Claude / CCR\\)'] : []),
         '• `/commands` \\- Show this list',
       ],
     },

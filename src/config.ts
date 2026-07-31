@@ -279,16 +279,6 @@ const envSchema = z.object({
     .string()
     .default('60')
     .transform((val) => parseInt(val, 10)),
-  // OpenCode provider integration
-  OPENCODE_ENABLED: z
-    .string()
-    .default('false')
-    .transform((val) => val.toLowerCase() === 'true'),
-  OPENCODE_BASE_URL: z.string().optional(),
-  OPENCODE_PORT: z
-    .string()
-    .default('4096')
-    .transform((val) => parseInt(val, 10)),
   // Claude Code Router (CCR) provider — redirects the spawned `claude` binary
   // through a local CCR proxy so it can be backed by non-Anthropic models.
   // Useful as a fallback when the Max usage limit is reached.

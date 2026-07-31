@@ -256,7 +256,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'btw', description: '💬 Side question without interrupting' },
     { command: 'tasks', description: '🔄 List active background tasks' },
     { command: 'shells', description: '🔍 List & kill background shells (PTY mode)' },
-    ...(config.OPENCODE_ENABLED || config.CCR_ENABLED ? [{ command: 'provider', description: '🔌 Switch AI provider' }] : []),
+    ...(config.CCR_ENABLED ? [{ command: 'provider', description: '🔌 Switch AI provider' }] : []),
     ...(config.CCR_ENABLED ? [{ command: 'ccr', description: '🔌 Toggle CCR routing (alt providers)' }] : []),
     { command: 'mode', description: '⚙️ Toggle streaming mode' },
     { command: 'terminalui', description: '🖥️ Toggle terminal-style display' },
@@ -359,7 +359,7 @@ export async function createBot(): Promise<Bot> {
   bot.command('effort', handleEffort);
   bot.command('verbosity', handleVerbosity);
   bot.command('method', handleMethodCommand);
-  if (config.OPENCODE_ENABLED || config.CCR_ENABLED) {
+  if (config.CCR_ENABLED) {
     bot.command('provider', handleProviderCommand);
   }
   if (config.CCR_ENABLED) {
