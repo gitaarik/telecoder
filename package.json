@@ -22,7 +22,7 @@
     "ai",
     "agent"
   ],
-  "author": "",
+  "author": "Rik Wanders (https://github.com/gitaarik)",
   "license": "MIT",
   "engines": {
     "node": ">=20"
