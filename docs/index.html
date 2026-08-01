@@ -265,7 +265,9 @@
       text-decoration: none;
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      /* slightly wider than the hero lockup: at this size the blue chevron and
+         the blue Tele are close enough to read as one object without it */
+      gap: 0.62rem;
     }
 
     /*
@@ -362,12 +364,11 @@
     }
 
     /*
-      The full lockup, used once. The wordmark splits Tele/Coder on the same
-      rule as the mark — blue for the channel, coral for the agent — because
-      at this size there is room to read it, and the blue stops the lockup
-      stacking two coral blocks against the coral in the headline.
-      Nav and footer keep the compact one-colour wordmark: repeated at 1.25rem
-      beside a two-colour mark, the split has no anchor and just reads busy.
+      The wordmark splits Tele/Coder everywhere it appears, on the same rule as
+      the mark: blue for the channel, coral for the agent. In the hero it also
+      stops the lockup stacking two coral blocks against the coral headline.
+      At nav size the risk is the blue chevron and the blue Tele merging into
+      one object, which the wider gap on .nav-logo is there to prevent.
     */
     .hero-lockup {
       display: flex;
@@ -384,7 +385,8 @@
     }
 
     .hero-lockup .brand-mark { width: 1.1em; height: 1.1em; }
-    .hero-lockup .tele { color: var(--channel); }
+
+    .tele { color: var(--channel); }
 
     .hero-badge {
       display: inline-flex;
@@ -1636,7 +1638,8 @@
     <nav>
       <div class="nav-content">
         <a href="#" class="nav-logo">
-          <svg class="brand-mark" aria-hidden="true"><use href="#i-brand"/></svg> TeleCoder
+          <svg class="brand-mark" aria-hidden="true"><use href="#i-brand"/></svg>
+          <span><span class="tele">Tele</span>Coder</span>
         </a>
         <div class="nav-links">
           <a href="#features">Features</a>
@@ -2628,7 +2631,7 @@
     </section>
 
     <footer>
-      <div class="footer-logo"><svg class="brand-mark" aria-hidden="true"><use href="#i-brand"/></svg> TeleCoder</div>
+      <div class="footer-logo"><svg class="brand-mark" aria-hidden="true"><use href="#i-brand"/></svg> <span><span class="tele">Tele</span>Coder</span></div>
       <p class="footer-text">Built with Claude Agent SDK and grammY · MIT licensed<br>
       Forked from <a href="https://github.com/NachoSEO/claudegram">Claudegram</a> by Nacho Mascort</p>
       <div class="footer-links">
