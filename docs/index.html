@@ -60,6 +60,7 @@
       --code-bg: #131820;
       --success: #5cb85c;
       --glow-brand: 0 0 20px rgba(var(--brand-rgb), 0.35), 0 0 40px rgba(var(--brand-rgb), 0.18);
+      --check-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 13.2 6 17.2 13.4 8'/%3E%3Cpath d='M10.6 13.2 14.6 17.2 22 8'/%3E%3C/svg%3E");
     }
 
     /* Auto: follow the system, unless the visitor has explicitly chosen dark. */
@@ -447,10 +448,13 @@
       box-shadow: 0 0 30px rgba(var(--brand-rgb), 0.6), 0 0 60px rgba(var(--brand-rgb), 0.3);
     }
 
+    /* Telegram's pill: the secondary action now reads as the channel, so the
+       two CTAs say different things instead of just being two buttons. */
     .btn-secondary {
       background: var(--glass-bg);
-      color: var(--text-primary);
-      border: 1px solid var(--glass-border);
+      color: var(--channel);
+      border: 1px solid rgba(var(--channel-rgb), 0.35);
+      border-radius: 999px;
       backdrop-filter: blur(10px);
     }
 
@@ -496,6 +500,20 @@
       gap: 0.75rem;
       border-bottom: 1px solid var(--glass-border);
     }
+
+    .telegram-back svg, .telegram-avatar svg,
+    .telegram-header-icons svg, .telegram-input-icon svg {
+      width: 19px;
+      height: 19px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      display: block;
+    }
+
+    .telegram-avatar svg { width: 18px; height: 18px; stroke: #fff; }
 
     .telegram-back {
       color: var(--channel);
@@ -614,6 +632,13 @@
       font-family: 'IBM Plex Mono', monospace;
       font-size: 0.85rem;
       color: var(--brand);
+    }
+
+    /* On the blue fill, coral would be both illegible and off-role:
+       an outgoing message is the channel, not the agent. */
+    .chat-message.outgoing code {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.18);
     }
 
     .chat-message .success {
@@ -793,6 +818,8 @@
       box-shadow: var(--shadow-card);
     }
 
+    .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+
     .feature-icon {
       width: 56px;
       height: 56px;
@@ -800,9 +827,20 @@
       align-items: center;
       justify-content: center;
       background: linear-gradient(135deg, rgba(var(--brand-rgb), 0.1) 0%, rgba(var(--brand-2-rgb), 0.1) 100%);
-      border-radius: 12px;
-      font-size: 1.5rem;
+      /* one squared corner: the message-bubble tell, borrowed not copied */
+      border-radius: 14px 14px 14px 4px;
       margin-bottom: 1.25rem;
+    }
+
+    /* One grid, one weight, one cap style across the whole set. */
+    .feature-icon svg {
+      width: 28px;
+      height: 28px;
+      fill: none;
+      stroke: var(--brand);
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
 
     .feature-card h3 {
@@ -1364,8 +1402,22 @@
       color: var(--terminal);
     }
 
+    /* Telegram's read receipt as the done mark: delivered *and* read. */
     .config-table .required-yes {
       color: var(--brand);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .config-table .required-yes::before {
+      content: "";
+      width: 15px;
+      height: 15px;
+      flex: none;
+      background: currentColor;
+      -webkit-mask: var(--check-mask) center / contain no-repeat;
+      mask: var(--check-mask) center / contain no-repeat;
     }
 
     .config-table .required-no {
@@ -1480,6 +1532,59 @@
   </style>
 </head>
 <body>
+<svg class="icon-sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-failover" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="12" r="2.5"/><path d="M7.5 10.6c1.6-3 6.4-3 8 0"/><path d="M15.5 13.4c-1.6 3-6.4 3-8 0"/><path d="m14.6 10.9 1.1-.9.5 1.3"/></symbol>
+  <symbol id="i-transports" viewBox="0 0 24 24"><path d="M3 7h6.5c2.7 0 2.7 5 5.4 5H21"/><path d="M3 17h6.5c2.7 0 2.7-5 5.4-5H21"/><path d="M18.4 9.4 21 12l-2.6 2.6"/></symbol>
+  <symbol id="i-page" viewBox="0 0 24 24"><rect x="3" y="5.5" width="11.5" height="13" rx="2.5"/><path d="M6.5 10 9 12.5 6.5 15"/><path d="M17.8 8.8a4.6 4.6 0 0 1 0 6.4"/><path d="M20.4 6.2a8.2 8.2 0 0 1 0 11.6"/></symbol>
+  <symbol id="i-instances" viewBox="0 0 24 24"><rect x="3" y="8.5" width="13" height="12" rx="2.5"/><path d="M6.5 5.5h10a2.5 2.5 0 0 1 2.5 2.5v10"/><path d="M9.5 2.5h9a2.5 2.5 0 0 1 2.5 2.5v9"/></symbol>
+  <symbol id="i-mobile" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10.5 5.6h3"/><path d="M9 10.5h6"/><path d="M9 14h4"/></symbol>
+  <symbol id="i-stream" viewBox="0 0 24 24"><path d="M3 8h9"/><path d="M3 12h6"/><path d="M3 16h9"/><path d="M15.5 7.5 20 12l-4.5 4.5"/></symbol>
+  <symbol id="i-tip" viewBox="0 0 24 24"><path d="M8.6 15.4a5.5 5.5 0 1 1 6.8 0 2.6 2.6 0 0 0-1 2v.6H9.6v-.6a2.6 2.6 0 0 0-1-2z"/><path d="M10 21h4"/></symbol>
+  <symbol id="i-tools" viewBox="0 0 24 24"><path d="M17.6 2.8a5.5 5.5 0 0 0-6.4 7.1L3.5 17.6a2.1 2.1 0 0 0 3 3l7.7-7.7a5.5 5.5 0 0 0 7.1-6.4l-3.1 3.1-2.7-.7z"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.5c0 4.3-3.1 7-7.5 7.8-4.4-.8-7.5-3.5-7.5-7.8V6z"/><circle cx="12" cy="10.8" r="1.6"/><path d="M12 12.4v2.4"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5.5 21V3.5"/><path d="M5.5 4.5h11l-2 3.5 2 3.5h-11"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6.5 9.5a5.5 5.5 0 0 1 11 0c0 4 1.5 5.5 1.5 5.5H5s1.5-1.5 1.5-5.5z"/><path d="M10.2 18.5a2 2 0 0 0 3.6 0"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2.8" width="6" height="11" rx="3"/><path d="M5.2 11.5a6.8 6.8 0 0 0 13.6 0"/><path d="M12 18.3v2.9"/></symbol>
+  <symbol id="i-speaker" viewBox="0 0 24 24"><path d="M4 9.5h3l4-3.2v11.4l-4-3.2H4z"/><path d="M15.2 9.2a3.8 3.8 0 0 1 0 5.6"/><path d="M18 6.6a7.6 7.6 0 0 1 0 10.8"/></symbol>
+  <symbol id="i-extract" viewBox="0 0 24 24"><path d="M12 3v9.8"/><path d="m8.4 9.2 3.6 3.6 3.6-3.6"/><path d="M4 15.5v3A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5v-3"/></symbol>
+  <symbol id="i-thread" viewBox="0 0 24 24"><path d="M20.5 12.5c0 3.9-3.8 7-8.5 7a9.9 9.9 0 0 1-2.6-.3L4.5 21l1.2-3.4a7.5 7.5 0 0 1-2.2-5.1c0-3.9 3.8-7 8.5-7s8.5 3.1 8.5 7z"/><path d="M12 15.6V9.9"/><path d="m9.6 12.3 2.4-2.4 2.4 2.4"/></symbol>
+  <symbol id="i-article" viewBox="0 0 24 24"><path d="M5 4.5a2 2 0 0 1 2-2h7.2L19 7v12.5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><path d="M14.2 2.6V7H19"/><path d="M8.2 12h7"/><path d="M8.2 15.6h5"/></symbol>
+  <symbol id="i-vision" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="8.8" cy="10" r="1.6"/><path d="m3.4 17.2 5.6-5.4 3.4 3.3 3-2.6 5.2 4.7"/></symbol>
+  <symbol id="i-publish" viewBox="0 0 24 24"><path d="M5 4.5a2 2 0 0 1 2-2h7.2L19 7v12.5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><path d="M14.2 2.6V7H19"/><path d="M9.6 14.4a1.9 1.9 0 0 1 0-2.7l1.4-1.4"/><path d="M14.4 13.6a1.9 1.9 0 0 1 0 2.7l-1.4 1.4"/><path d="m10.8 15.8 2.4-2.4"/></symbol>
+  <symbol id="i-table" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M3 9.5h18"/><path d="M3 14.5h18"/><path d="M10 9.5v10"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M4.5 6.5a2 2 0 0 1 2-2h9l4 4v9a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2z"/><path d="M8 4.5v4h6v-4"/><rect x="8" y="12.5" width="8" height="7" rx="1"/></symbol>
+  <symbol id="i-predict" viewBox="0 0 24 24"><path d="M20.5 11.8c0 3.9-3.8 7-8.5 7a9.9 9.9 0 0 1-2.6-.3L4.5 20.3l1.2-3.3a7.5 7.5 0 0 1-2.2-5.2c0-3.9 3.8-7 8.5-7s8.5 3.1 8.5 7z"/><path d="m10 9.2 2.8 2.6-2.8 2.6"/></symbol>
+  <symbol id="i-reload" viewBox="0 0 24 24"><path d="M20.4 12a8.4 8.4 0 1 1-2.5-6"/><path d="M20.6 3.8v4.6H16"/></symbol>
+  <symbol id="i-model" viewBox="0 0 24 24"><path d="M9 6.5h11"/><path d="M9 12h11"/><path d="M9 17.5h11"/><circle cx="4.6" cy="12" r="2"/><path d="M4.6 6.5h.01"/><path d="M4.6 17.5h.01"/></symbol>
+  <symbol id="i-skill" viewBox="0 0 24 24"><path d="M4.5 6.5a2 2 0 0 1 2-2H10a2 2 0 1 1 4 0h3.5a2 2 0 0 1 2 2V10a2 2 0 1 0 0 4v3.5a2 2 0 0 1-2 2H14a2 2 0 1 0-4 0H6.5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-todo" viewBox="0 0 24 24"><path d="M9.5 6.5h10"/><path d="M9.5 12h10"/><path d="M9.5 17.5h6"/><path d="m3.5 6.3 1.4 1.4 2.3-2.4"/><path d="m3.5 11.8 1.4 1.4 2.3-2.4"/></symbol>
+  <symbol id="i-ask" viewBox="0 0 24 24"><path d="M20.5 11.8c0 3.9-3.8 7-8.5 7a9.9 9.9 0 0 1-2.6-.3L4.5 20.3l1.2-3.3a7.5 7.5 0 0 1-2.2-5.2c0-3.9 3.8-7 8.5-7s8.5 3.1 8.5 7z"/><path d="M10.2 9.6a1.9 1.9 0 1 1 2.4 1.9c-.5.2-.7.6-.7 1.1v.4"/><path d="M11.9 15.2h.01"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 8.5h13"/><path d="m14 5.5 3 3-3 3"/><path d="M20 15.5H7"/><path d="m10 12.5-3 3 3 3"/></symbol>
+  <symbol id="i-pty" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="2.5"/><path d="M6.5 9.5 9.5 12l-3 2.5"/><path d="M12.5 15h5"/></symbol>
+  <symbol id="i-throttle" viewBox="0 0 24 24"><path d="M3.6 17.5a9 9 0 1 1 16.8 0"/><path d="M12 13.2 16 9.6"/><circle cx="12" cy="14.4" r="1.4"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3.2 2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></symbol>
+  <symbol id="i-sidechat" viewBox="0 0 24 24"><path d="M3.5 8a3 3 0 0 1 3-3h7a3 3 0 0 1 3 3v3.5a3 3 0 0 1-3 3H8.5L5 17.4v-2.9a3 3 0 0 1-1.5-2.6z"/><path d="M18.5 9.6A2.5 2.5 0 0 1 21 12.1v3.2a2.5 2.5 0 0 1-2.5 2.5H18v2.3l-2.7-2.3h-1.6"/></symbol>
+  <symbol id="i-teleport" viewBox="0 0 24 24"><path d="M13.5 4.5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-7.5"/><path d="M20 4l-8.5 8.5"/><path d="M14.5 3.8h5.7v5.7"/></symbol>
+  <symbol id="i-topic" viewBox="0 0 24 24"><path d="M4.5 9h15"/><path d="M4.5 15h15"/><path d="M10.2 3.5 8.4 20.5"/><path d="M15.8 3.5 14 20.5"/></symbol>
+  <symbol id="i-tui" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="2.5"/><path d="M9 4v16"/><path d="M2.5 8h19"/></symbol>
+  <symbol id="i-statusline" viewBox="0 0 24 24"><rect x="2.5" y="9" width="19" height="6" rx="3"/><circle cx="7.5" cy="12" r="1.6"/><path d="M11.5 12h6"/></symbol>
+  <symbol id="i-done" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.2 12.2 2.6 2.6 5-5.4"/></symbol>
+  <symbol id="i-levels" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h10"/><path d="M4 17h5"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M4 9.5h11a5.5 5.5 0 0 1 0 11H9"/><path d="M7.6 5.9 4 9.5l3.6 3.6"/></symbol>
+  <symbol id="i-recap" viewBox="0 0 24 24"><path d="M5 4.5a2 2 0 0 1 2-2h6.7L18.5 7v4.2"/><path d="M13.7 2.6V7h4.8"/><path d="M5 8v11.5a2 2 0 0 0 2 2h4"/><circle cx="17" cy="17" r="4.2"/><path d="M17 15v2.2l1.4.9"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M3.5 8.2A2.5 2.5 0 0 1 6 5.7h8.4"/><path d="M3.5 8.2v9.1a2.5 2.5 0 0 0 2.5 2.5h12a2.5 2.5 0 0 0 2.5-2.5v-6.2"/><path d="m3.7 8 8.3 5.6 3.6-2.4"/><circle cx="19" cy="6" r="2.6"/></symbol>
+  <symbol id="i-fork" viewBox="0 0 24 24"><circle cx="6" cy="5.5" r="2.4"/><circle cx="18" cy="5.5" r="2.4"/><circle cx="6" cy="18.5" r="2.4"/><path d="M6 7.9v8.2"/><path d="M18 7.9v1.6c0 3-3 3.5-6 4.2"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 6.8V12l3.4 2.1"/></symbol>
+  <symbol id="i-autoclock" viewBox="0 0 24 24"><circle cx="11" cy="12.5" r="7.6"/><path d="M11 8.2v4.3l2.8 1.8"/><circle cx="19.6" cy="4.6" r="1.9"/></symbol>
+  <symbol id="i-relay" viewBox="0 0 24 24"><path d="M12 10.5v10"/><path d="M8.6 20.5h6.8"/><circle cx="12" cy="8" r="1.9"/><path d="M7.9 4.2a5.9 5.9 0 0 0 0 7.6"/><path d="M16.1 4.2a5.9 5.9 0 0 1 0 7.6"/></symbol>
+  <symbol id="i-proxy" viewBox="0 0 24 24"><circle cx="4.2" cy="12" r="2.2"/><circle cx="19.8" cy="12" r="2.2"/><rect x="9" y="8.8" width="6" height="6.4" rx="1.6"/><path d="M6.4 12H9"/><path d="M15 12h2.6"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><circle cx="4.5" cy="12" r="2.2"/><circle cx="19.5" cy="5.5" r="2.2"/><circle cx="19.5" cy="12" r="2.2"/><circle cx="19.5" cy="18.5" r="2.2"/><path d="M6.7 11.3c3-1.5 6.4-4.3 10.6-5.4"/><path d="M6.7 12h10.6"/><path d="M6.7 12.7c3 1.5 6.4 4.3 10.6 5.4"/></symbol>
+  <symbol id="i-sendfile" viewBox="0 0 24 24"><path d="M5 4.5a2 2 0 0 1 2-2h6.7L18.5 7v12.5a2 2 0 0 1-2 2h-4.5"/><path d="M13.7 2.6V7h4.8"/><path d="M6.5 21v-8.5"/><path d="M3.6 15.4 6.5 12.5l2.9 2.9"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M11.4 3.5H5.5a2 2 0 0 0-2 2v5.9a2 2 0 0 0 .6 1.4l7.1 7.1a2 2 0 0 0 2.8 0l5.9-5.9a2 2 0 0 0 0-2.8l-7.1-7.1a2 2 0 0 0-1.4-.6z"/><circle cx="8.2" cy="8.2" r="1.5"/></symbol>
+  <symbol id="i-background" viewBox="0 0 24 24"><rect x="3" y="3.5" width="12" height="12" rx="2.5"/><path d="M9 20.5h9a2.5 2.5 0 0 0 2.5-2.5v-9"/><path d="m7.2 7.6 3.8 2-3.8 2z"/></symbol>
+  <symbol id="i-waveform" viewBox="0 0 24 24"><path d="M2.5 12h3l2-6 3 12 3-9 2 3h6"/></symbol>
+  <symbol id="i-reap" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="m6.2 6.2 11.6 11.6"/></symbol>
+</svg>
   <canvas id="matrix-canvas"></canvas>
 
   <div class="orbs-container">
@@ -1543,7 +1648,7 @@
         </div>
         <div class="features-grid">
           <div class="feature-card">
-            <div class="feature-icon">🔌</div>
+            <div class="feature-icon"><svg><use href="#i-failover"/></svg></div>
             <h3>Survives your usage limit</h3>
             <p>When Claude Max throttles mid-turn, TeleCoder doesn't just report the
             error — it offers a one-tap switch to Claude Code Router and replays the
@@ -1551,7 +1656,7 @@
             both Claude and CCR are reachable from <code>/provider</code>.</p>
           </div>
           <div class="feature-card">
-            <div class="feature-icon">🛰️</div>
+            <div class="feature-icon"><svg><use href="#i-transports"/></svg></div>
             <h3>Two transports, one agent</h3>
             <p>Run against the Claude Agent SDK, or drive the real <code>claude</code>
             CLI in a pseudo-terminal with <code>/method</code> — built for the policy
@@ -1559,7 +1664,7 @@
             resume, forks and <code>/compact</code> work either way.</p>
           </div>
           <div class="feature-card">
-            <div class="feature-icon">📟</div>
+            <div class="feature-icon"><svg><use href="#i-page"/></svg></div>
             <h3>It pages you</h3>
             <p>Long tasks run in the background and ping you when they finish;
             short ones edit their own message in place so the chat stays quiet.
@@ -1567,7 +1672,7 @@
             happen instead of arriving in one wall of text at the end.</p>
           </div>
           <div class="feature-card">
-            <div class="feature-icon">🎛️</div>
+            <div class="feature-icon"><svg><use href="#i-instances"/></svg></div>
             <h3>Many bots, one process</h3>
             <p>A multi-instance launcher runs several bots side by side with
             per-bot session scoping, each with its own project, model and
@@ -1583,22 +1688,22 @@
         <div class="telegram-phone" id="telegram-demo">
           <div class="telegram-screen">
             <div class="telegram-header">
-              <span class="telegram-back">←</span>
-              <div class="telegram-avatar">⚡</div>
+              <span class="telegram-back" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg></span>
+              <div class="telegram-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 17.5 20 4.5l-5 15.5-3.6-6z"/><path d="M11.4 14 20 4.5"/></svg></div>
               <div class="telegram-contact">
                 <div class="telegram-contact-name">TeleCoder</div>
                 <div class="telegram-contact-status">online</div>
               </div>
               <div class="telegram-header-icons">
-                <span>📞</span>
-                <span>⋮</span>
+                <span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7.5 4.5 10 8l-2 2.4a12 12 0 0 0 5.6 5.6L16 14l3.5 2.5-.6 2.6a1.8 1.8 0 0 1-2 1.4C9.6 19.7 4.3 14.4 3.5 7.1a1.8 1.8 0 0 1 1.4-2z"/></svg></span>
+                <span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5.5h.01"/><path d="M12 12h.01"/><path d="M12 18.5h.01"/></svg></span>
               </div>
             </div>
             <div class="telegram-chat" id="chat-messages">
               <!-- Messages will be added dynamically -->
             </div>
             <div class="telegram-input">
-              <span class="telegram-input-icon">📎</span>
+              <span class="telegram-input-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 11.5 12.3 19a4.6 4.6 0 0 1-6.5-6.5l7.7-7.7a3 3 0 0 1 4.3 4.3l-7.7 7.7a1.4 1.4 0 0 1-2-2l7-7"/></svg></span>
               <input type="text" class="telegram-input-field" placeholder="Message" readonly>
               <button type="button" class="telegram-send" aria-label="Send message">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
@@ -1626,237 +1731,237 @@
 
         <div class="features-grid">
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">📱</div>
+            <div class="feature-icon"><svg><use href="#i-mobile"/></svg></div>
             <h3>Mobile-First</h3>
             <p>Send coding requests from anywhere using Telegram. Perfect for quick fixes, code reviews, or managing projects on the go.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">⚡</div>
+            <div class="feature-icon"><svg><use href="#i-stream"/></svg></div>
             <h3>Smart Streaming</h3>
             <p>See what Claude is doing in real time — tool status updates show current operations, with rotating thinking verbs for personality. Complete response delivered when done, avoiding rate limits.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">💡</div>
+            <div class="feature-icon"><svg><use href="#i-tip"/></svg></div>
             <h3>Live Tips</h3>
             <p>The same contextual tips Claude Code shows in the terminal appear under the status indicator while it works — scraped live from the CLI and mirrored into your chat (PTY mode).</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">🔧</div>
+            <div class="feature-icon"><svg><use href="#i-tools"/></svg></div>
             <h3>Full Tool Access</h3>
             <p>Read files, write code, run bash commands, search codebases. Every Claude Code capability available through chat.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">🔒</div>
+            <div class="feature-icon"><svg><use href="#i-shield"/></svg></div>
             <h3>Security Hardened</h3>
             <p>SSRF protection blocks private networks, workspace boundaries prevent path traversal, and restrictive file permissions protect your data.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">🎛️</div>
+            <div class="feature-icon"><svg><use href="#i-flag"/></svg></div>
             <h3>Feature Flags</h3>
             <p>Enable or disable optional features via environment variables. Commands auto-hide from Telegram menu when disabled.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">🔔</div>
+            <div class="feature-icon"><svg><use href="#i-bell"/></svg></div>
             <h3>Update Notifications</h3>
             <p>Spots Claude Code's "Update available" or auto-update banner at PTY startup and forwards the notice to Telegram — so you know when to upgrade.</p>
           </div>
           <div class="feature-card" data-category="voice">
-            <div class="feature-icon">🎤</div>
+            <div class="feature-icon"><svg><use href="#i-mic"/></svg></div>
             <h3>Voice Transcription</h3>
             <p>Send voice messages and have them transcribed with Groq Whisper. Just talk to Claude instead of typing.</p>
           </div>
           <div class="feature-card" data-category="voice">
-            <div class="feature-icon">🔊</div>
+            <div class="feature-icon"><svg><use href="#i-speaker"/></svg></div>
             <h3>Text-to-Speech</h3>
             <p>Get Claude's responses as voice messages. 13 OpenAI voices + 6 Groq Orpheus voices with configurable speed and autoplay.</p>
           </div>
           <div class="feature-card" data-category="media">
-            <div class="feature-icon">📥</div>
+            <div class="feature-icon"><svg><use href="#i-extract"/></svg></div>
             <h3>Media Extraction</h3>
             <p>Download videos from YouTube, TikTok, Instagram with /extract. Auto-detects URLs in messages.</p>
           </div>
           <div class="feature-card" data-category="media">
-            <div class="feature-icon">🔴</div>
+            <div class="feature-icon"><svg><use href="#i-thread"/></svg></div>
             <h3>Native Reddit Module</h3>
             <p>Pure TypeScript Reddit integration with OAuth2. Interactive mode picker (File/Chat/Both) for flexible content delivery.</p>
           </div>
           <div class="feature-card" data-category="media">
-            <div class="feature-icon">📰</div>
+            <div class="feature-icon"><svg><use href="#i-article"/></svg></div>
             <h3>Medium Reader</h3>
             <p>Read Medium articles without paywalls using /medium. Full article content delivered to chat.</p>
           </div>
           <div class="feature-card" data-category="media">
-            <div class="feature-icon">🖼️</div>
+            <div class="feature-icon"><svg><use href="#i-vision"/></svg></div>
             <h3>Image Vision</h3>
             <p>Send photos directly in chat. Images are sent as multimodal vision input — Claude sees the actual image for accurate analysis, descriptions, and edits.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">📝</div>
+            <div class="feature-icon"><svg><use href="#i-publish"/></svg></div>
             <h3>Telegraph Output</h3>
             <p>Long responses auto-render as Telegraph articles with Instant View. Toggle on/off per chat with /telegraph.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">📊</div>
+            <div class="feature-icon"><svg><use href="#i-table"/></svg></div>
             <h3>Smart Table Rendering</h3>
             <p>Markdown tables are auto-rewritten as bold-labeled records, since Telegram has no monospace table layout. Each row becomes a clean key-value block instead of garbled pipe text.</p>
           </div>
           <div class="feature-card" data-category="session">
-            <div class="feature-icon">💾</div>
+            <div class="feature-icon"><svg><use href="#i-save"/></svg></div>
             <h3>Session Persistence</h3>
             <p>Sessions auto-restore after any restart (planned, crash, or cold start). Recent sessions (under an hour) are silently reattached so your next message just continues. Sessions idle between 1h and 7d get a "Continue or start fresh?" prompt. Older sessions stay parked behind /resume and /continue.</p>
           </div>
           <div class="feature-card" data-category="session">
-            <div class="feature-icon">💡</div>
+            <div class="feature-icon"><svg><use href="#i-predict"/></svg></div>
             <h3>Predicted Next Prompt</h3>
             <p>Opt in with /suggestions to scrape Claude Code's ghost-text prompt suggestion from the TUI at end-of-turn and surface it as an inline button under each response. Tap to send it as your next message. Free — the suggestion piggybacks on Claude Code's own speculation, no extra API call.</p>
           </div>
           <div class="feature-card" data-category="session">
-            <div class="feature-icon">🔄</div>
+            <div class="feature-icon"><svg><use href="#i-reload"/></svg></div>
             <h3>Hot Reload</h3>
             <p>Rebuild and restart the bot with /rebuildbot. Sessions are automatically restored — no manual button clicks needed. Every restarted instance confirms itself in chat when it's back, so a multi-bot "all instances" restart doesn't leave you guessing whether the siblings came up.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">🧠</div>
+            <div class="feature-icon"><svg><use href="#i-model"/></svg></div>
             <h3>Model Picker</h3>
             <p>Switch between Claude models (Opus, Sonnet, Haiku) with /model. Default: Opus for best results.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">🛠️</div>
+            <div class="feature-icon"><svg><use href="#i-skill"/></svg></div>
             <h3>Skills Support</h3>
             <p>Claude can invoke project-level skills from <code>.claude/skills/</code> via the Skill tool. User-level skills load when CLAUDE_SDK_LOAD_USER_SETTINGS=true.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">📝</div>
+            <div class="feature-icon"><svg><use href="#i-todo"/></svg></div>
             <h3>Todo Tracking</h3>
             <p>Claude can plan multi-step work with the TodoWrite tool, posting and updating a checklist as it progresses.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">❓</div>
+            <div class="feature-icon"><svg><use href="#i-ask"/></svg></div>
             <h3>Ask User</h3>
             <p>Claude can pop up a Telegram inline keyboard with multiple-choice options when it needs a clear decision. You're never asked to pick before you've been told why: the comparison or rationale always rides in the same message as the buttons, and any reasoning Claude had already written before it stopped to ask is flushed to the chat just above the question instead of waiting for the end of the turn. While the question is open the status line says it's waiting on you instead of spinning, and the final answer lands as a fresh message <em>below</em> the question rather than being quietly edited in above it. Tap a button to answer; the agent loop continues with your choice. The question loses its keyboard and gets an "✅ Answered" marker, and your choice also posts as its own message replying to the question — so it lands in the conversation flow, notifies the rest of a group chat, and names who tapped.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">🔌</div>
+            <div class="feature-icon"><svg><use href="#i-swap"/></svg></div>
             <h3>Provider Switching</h3>
             <p>Switch between Claude and CCR with /provider. CCR routes the same agent through any model its config knows about, so you keep working when Claude is unavailable. Switching a live conversation confirms first, then starts a fresh session on the new backend with a plain-text summary of the prior chat carried over — backends can't share a session (a different model's thinking blocks can't be replayed), so each is kept cleanly separate.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">🛰️</div>
+            <div class="feature-icon"><svg><use href="#i-pty"/></svg></div>
             <h3>PTY Mode (Subscription Path)</h3>
             <p>Switch with /method to drive Claude Code as an interactive pseudo-terminal session instead of the Agent SDK. Built for the 2026-06-15 policy split that separates programmatic-pool usage from Pro/Max subscription. Verbose UI (tool indicators, edit diffs, action log) is delivered via hook events from the spawned <code>claude</code>; reddit / medium / telegraph / set_topic are available as MCP tools loaded from a standalone subprocess. SDK mode remains available as a fallback.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">♻️</div>
+            <div class="feature-icon"><svg><use href="#i-throttle"/></svg></div>
             <h3>Max Throttle Fallback</h3>
             <p>When the Claude Max usage limit hits, the bot detects it and offers a one-tap switch to Claude Code Router (CCR) — your message replays automatically through your chosen alt provider.</p>
           </div>
           <div class="feature-card" data-category="session">
-            <div class="feature-icon">⭐</div>
+            <div class="feature-icon"><svg><use href="#i-star"/></svg></div>
             <h3>Project Favorites</h3>
             <p>/project opens with your favorite projects — one tap to switch. ⭐ from inside the workspace browser to add the current folder, or use ✍️ Enter path to point at any directory on disk (escapes the workspace root). Favorites persist across restarts in ~/.claudegram/project-favorites.json.</p>
           </div>
           <div class="feature-card" data-category="session">
-            <div class="feature-icon">💬</div>
+            <div class="feature-icon"><svg><use href="#i-sidechat"/></svg></div>
             <h3>Side Questions</h3>
             <p>/btw answers a question about the running task without interrupting it. SDK mode asks the live query directly; PTY mode forks the session into a read-only, non-persisted copy that sees the transcript up to the current moment — the working turn never pauses and the transcript is never written to. One labelled message shows live progress while the side question works, then collapses to a receipt (“3 tools · 22s”) with the answer below it.</p>
           </div>
           <div class="feature-card" data-category="session">
-            <div class="feature-icon">🚀</div>
+            <div class="feature-icon"><svg><use href="#i-teleport"/></svg></div>
             <h3>Teleport to Terminal</h3>
             <p>Move your conversation from Telegram to a terminal session with /teleport. Fork and continue in both places.</p>
           </div>
           <div class="feature-card" data-category="session">
-            <div class="feature-icon">📌</div>
+            <div class="feature-icon"><svg><use href="#i-topic"/></svg></div>
             <h3>Forum Topic Sessions</h3>
             <p>Each forum topic in a Telegram group runs as an independent session. Work on multiple projects in parallel across different topics.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">🖥️</div>
+            <div class="feature-icon"><svg><use href="#i-tui"/></svg></div>
             <h3>Terminal UI Mode</h3>
             <p>Terminal-style display with tool status indicators showing what Claude is doing. Updates only on tool changes to stay within rate limits. Toggle with /terminalui.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">📍</div>
+            <div class="feature-icon"><svg><use href="#i-statusline"/></svg></div>
             <h3>Per-Turn Status Line</h3>
             <p>Sends a small status line after each turn showing the current topic, effort, model, context %, and cost — right above the compose box and visible in the Telegram chat list as the latest message. Active counters (🔄 backgrounded tasks, 📡 monitors, 🔍 PTY bg shells) appear only when non-zero so quiet turns stay quiet. Optional sub-toggles for your last prompt (handy under verbose mode, where the action log can bury what you typed) and a copy-pasteable <code>claude --resume &lt;id&gt;</code> line for CLI fallback. Off by default; opt in with /statusline.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">🔔</div>
+            <div class="feature-icon"><svg><use href="#i-done"/></svg></div>
             <h3>Completion Notifications</h3>
             <p>Get a push notification when long-running tasks finish. Configurable threshold (default: 60s) — never miss a completed task again.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">🎚️</div>
+            <div class="feature-icon"><svg><use href="#i-levels"/></svg></div>
             <h3>Verbosity Tiers</h3>
             <p>One per-chat setting (quiet / normal / verbose / debug) drives how much detail TeleCoder surfaces each turn. Verbose adds the per-turn usage footer, untruncated tool inputs, and a consolidated action log that streams tool results and diffs live in a single updatable message, then collapses to a Telegraph link at the end of the turn so the chat history stays tidy. Debug extends the action log with longer previews (40 lines vs 20). Quiet drops the completion ping. Set with /verbosity; env-level default via VERBOSITY_DEFAULT.</p>
           </div>
           <div class="feature-card" data-category="session">
-            <div class="feature-icon">↩️</div>
+            <div class="feature-icon"><svg><use href="#i-back"/></svg></div>
             <h3>Back to Previous Session</h3>
             <p>After /clear, /project, /newproject, or /start, TeleCoder appends a one-tap inline button that resumes the most recent prior session — handy if you regret a clear or want to jump back to the project you just left.</p>
           </div>
           <div class="feature-card" data-category="session">
-            <div class="feature-icon">📋</div>
+            <div class="feature-icon"><svg><use href="#i-recap"/></svg></div>
             <h3>Session Recap</h3>
             <p>Use /recap [N] to re-read the last N user/assistant exchanges from the active session (default 3). After /resume or /continue, TeleCoder drops a one-line tip pointing at the command so you can quickly orient yourself in a restored session.</p>
           </div>
           <div class="feature-card" data-category="session">
-            <div class="feature-icon">📨</div>
+            <div class="feature-icon"><svg><use href="#i-inbox"/></svg></div>
             <h3>Missed-Reply Catch-up</h3>
             <p>After every turn, TeleCoder cross-checks what it sent against Claude Code's canonical session log and auto-posts anything the extractor missed (pure tool-call turns, multi-block lossy screen-scrape, early end-of-turn flushes). Hit /sync any time to manually re-check — bypasses the queue so it works during hung turns.</p>
           </div>
           <div class="feature-card" data-category="session">
-            <div class="feature-icon">🍴</div>
+            <div class="feature-icon"><svg><use href="#i-fork"/></svg></div>
             <h3>Conversation Forks</h3>
             <p>Every assistant message gets a 🍴 Fork button that branches the conversation up to that point. Pick "New branch here" to fork into a fresh conversation on the <em>same</em> bot — your current thread is saved to /resume history and you continue from the branch point. Or pick a sibling bot from your multi-bot setup to hand it off: open that bot and your next message triggers an accept/decline prompt (accepting loads the truncated transcript, its prior conversation stays in /resume history). Either way you explore a different angle without losing the original.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">🔔</div>
+            <div class="feature-icon"><svg><use href="#i-clock"/></svg></div>
             <h3>Scheduled Tasks</h3>
             <p>Use /schedule to run a prompt on a recurring cadence. Supports intervals (<code>every 5m</code>, <code>every 1h</code>) and cron-style days/times (<code>daily 9am</code>, <code>weekdays 14:00</code>, <code>mon,wed,fri 10:30</code>). Each fire posts a "🔔 Scheduled" header and runs through the same session as your manual chats. Hard caps (10 active per chat, 50 fires default) keep runaway API spend in check.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">🤖</div>
+            <div class="feature-icon"><svg><use href="#i-autoclock"/></svg></div>
             <h3>Claude Self-Scheduling</h3>
             <p>In PTY mode, Claude has access to <code>claudegram_loop</code> and <code>claudegram_schedule</code> MCP tools so it can set up its own recurring tasks ("ping me when CI finishes", "remind me about this tomorrow"). Built-in <code>CronCreate</code> / <code>ScheduleWakeup</code> are blocked since they can't reach back into Telegram — set <code>TELECODER_ALLOW_NATIVE_SCHEDULING=1</code> to re-enable for experimentation.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">📡</div>
+            <div class="feature-icon"><svg><use href="#i-relay"/></svg></div>
             <h3>Async Event Relay</h3>
             <p>In PTY mode, TeleCoder surfaces task-notifications from <code>Monitor</code>, <code>Bash(run_in_background=true)</code>, and <code>Task</code> subagents to Telegram between turns. Each event posts as a "📡 Monitor — ...", "⚙️ Backgrounded: ...", or "🤖 Subagent started: ..." header, with the raw event payload (▸ trigger line) and Claude's analysis. When a backgrounded task or subagent finishes, the original "started" message is edited in place to "✅ Backgrounded: ... (12s)" so the chat doesn't stay stuck on a stale "in progress" line — short tasks edit silently, longer ones (≥ <code>NOTIFICATION_THRESHOLD_SECONDS</code>) and failures also post a fresh message so Telegram pings you. <code>PushNotification</code> is also relayed as "🔔 &lt;message&gt;". Useful for "tail this log and tell me when it errors", "build the docs in the background", or "delegate Y to a subagent" tasks.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">🌐</div>
+            <div class="feature-icon"><svg><use href="#i-proxy"/></svg></div>
             <h3>Proxy Support</h3>
             <p>Connect through HTTP/HTTPS/SOCKS proxies via TELEGRAM_PROXY_URL or standard HTTP_PROXY env vars. Essential for restricted networks.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">🧠</div>
+            <div class="feature-icon"><svg><use href="#i-route"/></svg></div>
             <h3>Intelligent Routing</h3>
             <p>Talk naturally — Claude automatically uses the right tools for Reddit, Medium, YouTube, and project management without explicit commands.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">📤</div>
+            <div class="feature-icon"><svg><use href="#i-sendfile"/></svg></div>
             <h3>File Delivery</h3>
             <p>Claude proactively sends generated files (SVGs, images, reports) directly to your Telegram chat. No manual download needed.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">🏷️</div>
+            <div class="feature-icon"><svg><use href="#i-tag"/></svg></div>
             <h3>Auto-Topic</h3>
             <p>Claude automatically updates the conversation topic in the status line to reflect the current work. Shows what you're working on at a glance.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">🔄</div>
+            <div class="feature-icon"><svg><use href="#i-background"/></svg></div>
             <h3>Background Tasks</h3>
             <p>Long-running subagents run in the background while Claude keeps responding. A compact counter shows how many tasks are active. When a task finishes, the original "started" message is edited in place to show the status and duration; tasks that ran longer than <code>NOTIFICATION_THRESHOLD_SECONDS</code> (default 60s) or that errored also post a fresh notification so Telegram pings you.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">📡</div>
+            <div class="feature-icon"><svg><use href="#i-waveform"/></svg></div>
             <h3>Monitor Streams</h3>
             <p>Claude can subscribe to streaming output (log tails, file watches, CI checks). Each event arrives as a separate Telegram message so you can react in real time.</p>
           </div>
           <div class="feature-card" data-category="core">
-            <div class="feature-icon">🔍</div>
+            <div class="feature-icon"><svg><use href="#i-reap"/></svg></div>
             <h3>Background Process Reaper</h3>
             <p><code>/shells</code> lists the actual OS-level shells the PTY claude session has spawned — every <code>Bash(run_in_background=true)</code> poller and Monitor loop, with cmdline and age. One tap SIGTERMs the chosen process plus its descendants, rescuing sessions whose watcher will never fire.</p>
           </div>
