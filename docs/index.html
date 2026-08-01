@@ -20,79 +20,109 @@
     })();
   </script>
   <style>
+    /*
+      Colour is split by role, not by decoration:
+        brand    — the agent. Claude's coral. Identity, primary actions, code identifiers.
+        channel  — Telegram. Links, chat surfaces, your side of the conversation.
+        terminal — CLI register. Tool output and shell commands only.
+        note     — advisory callouts. Semantic, deliberately not one of the brand hues.
+      Every accent is tuned per theme: neither brand colour clears WCAG AA on both
+      grounds unchanged, which is why Telegram itself ships a lighter blue in its
+      Night theme (#6AB3F3) than its brand blue (#0088CC).
+    */
     :root {
-      /* Brand channels as raw triplets so alpha can vary per use. */
-      --amber-rgb: 255, 176, 0;
-      --ember-rgb: 255, 92, 57;
-      --gold-rgb: 255, 209, 102;
+      /* Raw triplets so alpha can vary per use. */
+      --brand-rgb: 224, 138, 107;
+      --brand-2-rgb: 201, 105, 74;
+      --channel-rgb: 95, 176, 245;
+      --terminal-rgb: 255, 176, 0;
+      --note-rgb: 255, 209, 102;
 
       color-scheme: dark;
-      --bg-deep: #0c0a07;
-      --bg-surface: #17130d;
-      --signal-amber: #ffb000;
-      --signal-ember: #ff5c39;
-      --signal-gold: #ffd166;
-      --text-primary: #f2ece1;
-      --text-muted: #8d8474;
-      --glass-bg: rgba(23, 19, 13, 0.72);
-      --glass-border: rgba(255, 255, 255, 0.08);
-      --nav-bg: rgba(12, 10, 7, 0.8);
+      --bg-deep: #0f1319;
+      --bg-surface: #161c24;
+      --brand: #e08a6b;         /* 7.11:1 — Claude's #d97757, lifted for a dark ground */
+      --brand-2: #c9694a;       /* gradient partner */
+      --channel: #5fb0f5;       /* 8.00:1 */
+      --channel-fill: #2b5278;  /* Telegram's own bubble fill; behind white text only */
+      --terminal: #ffb000;      /* 10.17:1 */
+      --note: #ffd166;          /* 12.92:1 */
+      --text-primary: #e8e6e3;  /* 14.95:1 */
+      --text-muted: #939aa6;    /*  6.58:1 */
+      --glass-bg: rgba(22, 28, 36, 0.72);
+      --glass-border: rgba(232, 230, 227, 0.1);
+      --nav-bg: rgba(15, 19, 25, 0.82);
       --sunken: rgba(0, 0, 0, 0.2);
       --sunken-strong: rgba(0, 0, 0, 0.3);
-      --shadow-card: 0 20px 60px rgba(0, 0, 0, 0.3);
-      --rain-trail: rgba(12, 10, 7, 0.05);
-      --rain-ink: rgba(255, 176, 0, 0.85);
-      --code-bg: #14110b;
+      --shadow-card: 0 20px 60px rgba(0, 0, 0, 0.35);
+      --rain-trail: rgba(15, 19, 25, 0.05);
+      --rain-ink: rgba(95, 176, 245, 0.7);
+      --code-bg: #131820;
       --success: #5cb85c;
-      --glow-amber: 0 0 20px rgba(var(--amber-rgb), 0.4), 0 0 40px rgba(var(--amber-rgb), 0.2);
-      --glow-ember: 0 0 20px rgba(var(--ember-rgb), 0.4), 0 0 40px rgba(var(--ember-rgb), 0.2);
+      --glow-brand: 0 0 20px rgba(var(--brand-rgb), 0.35), 0 0 40px rgba(var(--brand-rgb), 0.18);
     }
 
     /* Auto: follow the system, unless the visitor has explicitly chosen dark. */
     @media (prefers-color-scheme: light) {
       :root:not([data-theme="dark"]) {
+      --brand-rgb: 180, 80, 47;
+      --brand-2-rgb: 154, 63, 34;
+      --channel-rgb: 11, 111, 164;
+      --terminal-rgb: 138, 90, 0;
+      --note-rgb: 122, 90, 14;
       color-scheme: light;
-      --bg-deep: #f7f3ec;
-      --bg-surface: #fffdf8;
-      /* Accent darkens for legibility: #ffb000 on white fails contrast. */
-      --signal-amber: #9c5800;
-      --signal-ember: #c0391a;
-      --signal-gold: #8a6612;
-      --text-primary: #1b1610;
-      --text-muted: #6d6355;
-      --glass-bg: rgba(255, 253, 248, 0.82);
-      --glass-border: rgba(27, 22, 16, 0.12);
-      --nav-bg: rgba(247, 243, 236, 0.85);
-      --sunken: rgba(27, 22, 16, 0.05);
-      --sunken-strong: rgba(27, 22, 16, 0.08);
-      --shadow-card: 0 20px 60px rgba(27, 22, 16, 0.12);
-      --rain-trail: rgba(247, 243, 236, 0.055);
-      --rain-ink: rgba(156, 88, 0, 0.45);
-      --code-bg: #f2ece0;
+      --bg-deep: #fbfaf8;
+      --bg-surface: #ffffff;
+      /* Both brand hues darken here: #e08a6b and #5fb0f5 fail contrast on paper. */
+      --brand: #b4502f;         /* 4.88:1 */
+      --brand-2: #9a3f22;
+      --channel: #0b6fa4;       /* 5.26:1 */
+      --channel-fill: #0b6fa4;
+      --terminal: #8a5a00;      /* 5.68:1 */
+      --note: #7a5a0e;          /* 6.11:1 */
+      --text-primary: #191c22;  /* 16.36:1 */
+      --text-muted: #5c6470;    /*  5.73:1 */
+      --glass-bg: rgba(255, 255, 255, 0.82);
+      --glass-border: rgba(25, 28, 34, 0.12);
+      --nav-bg: rgba(251, 250, 248, 0.85);
+      --sunken: rgba(25, 28, 34, 0.05);
+      --sunken-strong: rgba(25, 28, 34, 0.08);
+      --shadow-card: 0 20px 60px rgba(25, 28, 34, 0.1);
+      --rain-trail: rgba(251, 250, 248, 0.055);
+      --rain-ink: rgba(11, 111, 164, 0.4);
+      --code-bg: #f2f0ec;
       --success: #2b7130;
       }
     }
 
     /* Explicit choice always wins over the system preference. */
     :root[data-theme="light"] {
+      --brand-rgb: 180, 80, 47;
+      --brand-2-rgb: 154, 63, 34;
+      --channel-rgb: 11, 111, 164;
+      --terminal-rgb: 138, 90, 0;
+      --note-rgb: 122, 90, 14;
       color-scheme: light;
-      --bg-deep: #f7f3ec;
-      --bg-surface: #fffdf8;
-      /* Accent darkens for legibility: #ffb000 on white fails contrast. */
-      --signal-amber: #9c5800;
-      --signal-ember: #c0391a;
-      --signal-gold: #8a6612;
-      --text-primary: #1b1610;
-      --text-muted: #6d6355;
-      --glass-bg: rgba(255, 253, 248, 0.82);
-      --glass-border: rgba(27, 22, 16, 0.12);
-      --nav-bg: rgba(247, 243, 236, 0.85);
-      --sunken: rgba(27, 22, 16, 0.05);
-      --sunken-strong: rgba(27, 22, 16, 0.08);
-      --shadow-card: 0 20px 60px rgba(27, 22, 16, 0.12);
-      --rain-trail: rgba(247, 243, 236, 0.055);
-      --rain-ink: rgba(156, 88, 0, 0.45);
-      --code-bg: #f2ece0;
+      --bg-deep: #fbfaf8;
+      --bg-surface: #ffffff;
+      /* Both brand hues darken here: #e08a6b and #5fb0f5 fail contrast on paper. */
+      --brand: #b4502f;         /* 4.88:1 */
+      --brand-2: #9a3f22;
+      --channel: #0b6fa4;       /* 5.26:1 */
+      --channel-fill: #0b6fa4;
+      --terminal: #8a5a00;      /* 5.68:1 */
+      --note: #7a5a0e;          /* 6.11:1 */
+      --text-primary: #191c22;  /* 16.36:1 */
+      --text-muted: #5c6470;    /*  5.73:1 */
+      --glass-bg: rgba(255, 255, 255, 0.82);
+      --glass-border: rgba(25, 28, 34, 0.12);
+      --nav-bg: rgba(251, 250, 248, 0.85);
+      --sunken: rgba(25, 28, 34, 0.05);
+      --sunken-strong: rgba(25, 28, 34, 0.08);
+      --shadow-card: 0 20px 60px rgba(25, 28, 34, 0.1);
+      --rain-trail: rgba(251, 250, 248, 0.055);
+      --rain-ink: rgba(11, 111, 164, 0.4);
+      --code-bg: #f2f0ec;
       --success: #2b7130;
     }
 
@@ -158,7 +188,7 @@
     .orb-1 {
       width: 600px;
       height: 600px;
-      background: radial-gradient(circle, rgba(var(--amber-rgb), 0.15) 0%, transparent 70%);
+      background: radial-gradient(circle, rgba(var(--brand-rgb), 0.15) 0%, transparent 70%);
       top: -200px;
       right: -200px;
       animation-delay: 0s;
@@ -167,7 +197,7 @@
     .orb-2 {
       width: 500px;
       height: 500px;
-      background: radial-gradient(circle, rgba(var(--ember-rgb), 0.12) 0%, transparent 70%);
+      background: radial-gradient(circle, rgba(var(--brand-2-rgb), 0.12) 0%, transparent 70%);
       bottom: -150px;
       left: -150px;
       animation-delay: -10s;
@@ -176,7 +206,7 @@
     .orb-3 {
       width: 400px;
       height: 400px;
-      background: radial-gradient(circle, rgba(var(--gold-rgb), 0.1) 0%, transparent 70%);
+      background: radial-gradient(circle, rgba(var(--note-rgb), 0.1) 0%, transparent 70%);
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
@@ -234,7 +264,7 @@
       font-family: 'IBM Plex Mono', monospace;
       font-size: 1.25rem;
       font-weight: 700;
-      color: var(--signal-amber);
+      color: var(--brand);
       text-decoration: none;
       display: flex;
       align-items: center;
@@ -246,8 +276,8 @@
     }
 
     @keyframes pulse-glow {
-      0%, 100% { text-shadow: var(--glow-amber); }
-      50% { text-shadow: 0 0 30px rgba(var(--amber-rgb), 0.8), 0 0 60px rgba(var(--amber-rgb), 0.4); }
+      0%, 100% { text-shadow: var(--glow-brand); }
+      50% { text-shadow: 0 0 30px rgba(var(--brand-rgb), 0.8), 0 0 60px rgba(var(--brand-rgb), 0.4); }
     }
 
     .nav-links {
@@ -285,12 +315,12 @@
     }
 
     .theme-switch button[aria-pressed="true"] {
-      background: rgba(var(--amber-rgb), 0.16);
-      color: var(--signal-amber);
+      background: rgba(var(--brand-rgb), 0.16);
+      color: var(--brand);
     }
 
     .theme-switch button:focus-visible {
-      outline: 2px solid var(--signal-amber);
+      outline: 2px solid var(--brand);
       outline-offset: 2px;
     }
 
@@ -302,7 +332,7 @@
     }
 
     .nav-links a:hover {
-      color: var(--signal-amber);
+      color: var(--channel);
     }
 
     /* Hero Section */
@@ -327,7 +357,7 @@
       border-radius: 100px;
       font-family: 'IBM Plex Mono', monospace;
       font-size: 0.75rem;
-      color: var(--signal-amber);
+      color: var(--brand);
       margin-bottom: 2rem;
       opacity: 0;
       animation: fadeInUp 0.8s ease 0.3s forwards;
@@ -336,7 +366,7 @@
     .badge-dot {
       width: 6px;
       height: 6px;
-      background: var(--signal-amber);
+      background: var(--brand);
       border-radius: 50%;
       animation: blink 1.5s ease-in-out infinite;
     }
@@ -356,7 +386,7 @@
     }
 
     .hero-title .highlight {
-      background: linear-gradient(135deg, var(--signal-amber) 0%, var(--signal-ember) 100%);
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
@@ -407,14 +437,14 @@
     }
 
     .btn-primary {
-      background: linear-gradient(135deg, var(--signal-amber) 0%, var(--signal-ember) 100%);
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
       color: var(--bg-deep);
-      box-shadow: var(--glow-amber);
+      box-shadow: var(--glow-brand);
     }
 
     .btn-primary:hover {
       transform: translateY(-3px);
-      box-shadow: 0 0 30px rgba(var(--amber-rgb), 0.6), 0 0 60px rgba(var(--amber-rgb), 0.3);
+      box-shadow: 0 0 30px rgba(var(--brand-rgb), 0.6), 0 0 60px rgba(var(--brand-rgb), 0.3);
     }
 
     .btn-secondary {
@@ -425,8 +455,8 @@
     }
 
     .btn-secondary:hover {
-      border-color: var(--signal-amber);
-      background: rgba(var(--amber-rgb), 0.1);
+      border-color: var(--channel);
+      background: rgba(var(--channel-rgb), 0.1);
     }
 
     /* Telegram Chat Demo */
@@ -437,7 +467,7 @@
     .telegram-phone {
       max-width: 380px;
       margin: 0 auto;
-      background: #0e1621;
+      background: var(--bg-deep);
       border-radius: 40px;
       padding: 12px;
       box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.1);
@@ -452,23 +482,23 @@
     }
 
     .telegram-screen {
-      background: #0e1621;
+      background: var(--bg-deep);
       border-radius: 32px;
       overflow: hidden;
-      border: 3px solid #1c2733;
+      border: 3px solid var(--glass-border);
     }
 
     .telegram-header {
-      background: #17212b;
+      background: var(--bg-surface);
       padding: 0.75rem 1rem;
       display: flex;
       align-items: center;
       gap: 0.75rem;
-      border-bottom: 1px solid #1c2733;
+      border-bottom: 1px solid var(--glass-border);
     }
 
     .telegram-back {
-      color: #6ab3f3;
+      color: var(--channel);
       font-size: 1.25rem;
     }
 
@@ -476,7 +506,7 @@
       width: 40px;
       height: 40px;
       border-radius: 50%;
-      background: linear-gradient(135deg, var(--signal-amber) 0%, #0088cc 100%);
+      background: linear-gradient(135deg, var(--brand) 0%, var(--channel) 100%);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -491,22 +521,22 @@
     .telegram-contact-name {
       font-weight: 600;
       font-size: 1rem;
-      color: #fff;
+      color: var(--text-primary);
     }
 
     .telegram-contact-status {
       font-size: 0.75rem;
-      color: #6ab3f3;
+      color: var(--channel);
     }
 
     .telegram-header-icons {
       display: flex;
       gap: 1rem;
-      color: #6ab3f3;
+      color: var(--channel);
     }
 
     .telegram-chat {
-      background: #0e1621;
+      background: var(--bg-deep);
       padding: 1rem;
       height: 420px;
       overflow-y: auto;
@@ -520,7 +550,7 @@
     }
 
     .telegram-chat::-webkit-scrollbar-thumb {
-      background: rgba(255,255,255,0.2);
+      background: var(--glass-border);
       border-radius: 2px;
     }
 
@@ -548,46 +578,46 @@
 
     .chat-message.outgoing {
       align-self: flex-end;
-      background: #2b5278;
+      background: var(--channel-fill);
       color: #fff;
       border-bottom-right-radius: 4px;
     }
 
     .chat-message.incoming {
       align-self: flex-start;
-      background: #182533;
-      color: #fff;
+      background: var(--bg-surface);
+      color: var(--text-primary);
       border-bottom-left-radius: 4px;
     }
 
     .chat-message .time {
       font-size: 0.65rem;
-      color: rgba(255,255,255,0.5);
+      color: var(--text-muted);
       margin-left: 0.5rem;
       float: right;
       margin-top: 0.25rem;
     }
 
     .chat-message.outgoing .time {
-      color: rgba(255,255,255,0.6);
+      color: rgba(255, 255, 255, 0.7);
     }
 
     .chat-message .check {
-      color: #6ab3f3;
+      color: var(--channel);
       margin-left: 0.25rem;
     }
 
     .chat-message code {
-      background: rgba(0,0,0,0.3);
+      background: var(--sunken-strong);
       padding: 0.125rem 0.375rem;
       border-radius: 4px;
       font-family: 'IBM Plex Mono', monospace;
       font-size: 0.85rem;
-      color: var(--signal-amber);
+      color: var(--brand);
     }
 
     .chat-message .success {
-      color: #5cb85c;
+      color: var(--success);
     }
 
     .chat-message .file-info {
@@ -596,51 +626,51 @@
       gap: 0.5rem;
       margin-top: 0.25rem;
       font-size: 0.8rem;
-      color: rgba(255,255,255,0.7);
+      color: var(--text-muted);
     }
 
     .chat-message.terminal {
       font-family: 'IBM Plex Mono', monospace;
       font-size: 0.85rem;
-      background: rgba(var(--amber-rgb), 0.1);
-      border-left: 2px solid var(--signal-amber);
+      background: rgba(var(--terminal-rgb), 0.1);
+      border-left: 2px solid var(--terminal);
     }
 
     .telegram-input {
-      background: #17212b;
+      background: var(--bg-surface);
       padding: 0.75rem 1rem;
       display: flex;
       align-items: center;
       gap: 0.75rem;
-      border-top: 1px solid #1c2733;
+      border-top: 1px solid var(--glass-border);
     }
 
     .telegram-input-icon {
-      color: #6ab3f3;
+      color: var(--channel);
       font-size: 1.25rem;
       cursor: pointer;
     }
 
     .telegram-input-field {
       flex: 1;
-      background: #242f3d;
+      background: var(--sunken-strong);
       border: none;
       border-radius: 20px;
       padding: 0.6rem 1rem;
-      color: #fff;
+      color: var(--text-primary);
       font-size: 0.9rem;
       outline: none;
     }
 
     .telegram-input-field::placeholder {
-      color: #6b7c8a;
+      color: var(--text-muted);
     }
 
     .telegram-send {
       width: 40px;
       height: 40px;
       border-radius: 50%;
-      background: #6ab3f3;
+      background: var(--channel);
       border: none;
       display: flex;
       align-items: center;
@@ -669,7 +699,7 @@
     .typing-indicator span {
       width: 8px;
       height: 8px;
-      background: #6ab3f3;
+      background: var(--channel);
       border-radius: 50%;
       animation: typingBounce 1.4s ease-in-out infinite;
     }
@@ -695,7 +725,7 @@
     .section-tag {
       font-family: 'IBM Plex Mono', monospace;
       font-size: 0.875rem;
-      color: var(--signal-ember);
+      color: var(--brand-2);
       text-transform: uppercase;
       letter-spacing: 0.1em;
       margin-bottom: 1rem;
@@ -726,13 +756,13 @@
     }
 
     .section-subtitle a {
-      color: var(--signal-amber);
+      color: var(--channel);
       text-decoration: none;
       border-bottom: 1px solid rgba(255, 176, 0, 0.35);
     }
 
     .section-subtitle a:hover {
-      border-bottom-color: var(--signal-amber);
+      border-bottom-color: var(--channel);
     }
 
     .features-grid {
@@ -759,7 +789,7 @@
 
     .feature-card:hover {
       transform: translateY(-5px);
-      border-color: rgba(var(--amber-rgb), 0.3);
+      border-color: rgba(var(--brand-rgb), 0.3);
       box-shadow: var(--shadow-card);
     }
 
@@ -769,7 +799,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(135deg, rgba(var(--amber-rgb), 0.1) 0%, rgba(var(--ember-rgb), 0.1) 100%);
+      background: linear-gradient(135deg, rgba(var(--brand-rgb), 0.1) 0%, rgba(var(--brand-2-rgb), 0.1) 100%);
       border-radius: 12px;
       font-size: 1.5rem;
       margin-bottom: 1.25rem;
@@ -808,14 +838,14 @@
     }
 
     .feature-tab:hover {
-      border-color: var(--signal-amber);
+      border-color: var(--brand);
       color: var(--text-primary);
     }
 
     .feature-tab.active {
-      background: linear-gradient(135deg, rgba(var(--amber-rgb), 0.2) 0%, rgba(var(--ember-rgb), 0.1) 100%);
-      border-color: var(--signal-amber);
-      color: var(--signal-amber);
+      background: linear-gradient(135deg, rgba(var(--brand-rgb), 0.2) 0%, rgba(var(--brand-2-rgb), 0.1) 100%);
+      border-color: var(--brand);
+      color: var(--brand);
     }
 
     .feature-card.hidden {
@@ -853,8 +883,8 @@
     }
 
     .flow-node:hover {
-      border-color: var(--signal-amber);
-      box-shadow: var(--glow-amber);
+      border-color: var(--brand);
+      box-shadow: var(--glow-brand);
     }
 
     .flow-node-icon {
@@ -868,7 +898,7 @@
     }
 
     .flow-arrow {
-      color: var(--signal-amber);
+      color: var(--brand);
       font-size: 1.5rem;
       animation: arrowPulse 1.5s ease-in-out infinite;
     }
@@ -908,14 +938,14 @@
     }
 
     .command-row:hover {
-      border-color: var(--signal-gold);
-      background: rgba(var(--gold-rgb), 0.05);
+      border-color: var(--channel);
+      background: rgba(var(--channel-rgb), 0.05);
     }
 
     .command-code {
       font-family: 'IBM Plex Mono', monospace;
       font-size: 0.95rem;
-      color: var(--signal-gold);
+      color: var(--note);
     }
 
     .command-desc {
@@ -958,7 +988,7 @@
       font-family: 'IBM Plex Mono', monospace;
       font-size: 1.5rem;
       font-weight: 700;
-      color: var(--signal-amber);
+      color: var(--brand);
       margin-bottom: 1rem;
     }
 
@@ -982,7 +1012,7 @@
     }
 
     .footer-links a:hover {
-      color: var(--signal-amber);
+      color: var(--channel);
     }
 
     /* Responsive */
@@ -1051,7 +1081,7 @@
     }
 
     ::-webkit-scrollbar-thumb:hover {
-      background: var(--signal-amber);
+      background: var(--brand);
     }
 
     /* Getting Started Section */
@@ -1077,7 +1107,7 @@
     .prerequisites-card h3 {
       font-size: 1.25rem;
       margin-bottom: 1.25rem;
-      color: var(--signal-amber);
+      color: var(--brand);
     }
 
     .prereq-grid {
@@ -1091,8 +1121,8 @@
       align-items: center;
       gap: 0.5rem;
       padding: 0.5rem 1rem;
-      background: rgba(var(--amber-rgb), 0.1);
-      border: 1px solid rgba(var(--amber-rgb), 0.2);
+      background: rgba(var(--brand-rgb), 0.1);
+      border: 1px solid rgba(var(--brand-rgb), 0.2);
       border-radius: 100px;
       font-family: 'IBM Plex Mono', monospace;
       font-size: 0.85rem;
@@ -1100,15 +1130,15 @@
     }
 
     .prereq-badge.optional {
-      background: rgba(var(--gold-rgb), 0.1);
-      border-color: rgba(var(--gold-rgb), 0.2);
+      background: rgba(var(--note-rgb), 0.1);
+      border-color: rgba(var(--note-rgb), 0.2);
     }
 
     .prereq-note {
       margin-top: 1rem;
       padding: 0.75rem 1rem;
-      background: rgba(var(--gold-rgb), 0.1);
-      border-left: 3px solid var(--signal-gold);
+      background: rgba(var(--note-rgb), 0.1);
+      border-left: 3px solid var(--note);
       border-radius: 0 8px 8px 0;
       font-size: 0.9rem;
       color: var(--text-muted);
@@ -1126,7 +1156,7 @@
     .quick-start-card h3 {
       font-size: 1.25rem;
       margin-bottom: 1.25rem;
-      color: var(--signal-ember);
+      color: var(--brand-2);
     }
 
     .code-block {
@@ -1163,8 +1193,8 @@
     }
 
     .copy-btn:hover {
-      border-color: var(--signal-amber);
-      color: var(--signal-amber);
+      border-color: var(--channel);
+      color: var(--channel);
     }
 
     .copy-btn.copied {
@@ -1190,7 +1220,7 @@
     }
 
     .code-content .command {
-      color: var(--signal-amber);
+      color: var(--terminal);
     }
 
     .steps-card {
@@ -1231,8 +1261,8 @@
     }
 
     .step-item:hover {
-      border-color: rgba(var(--amber-rgb), 0.3);
-      background: rgba(var(--amber-rgb), 0.05);
+      border-color: rgba(var(--brand-rgb), 0.3);
+      background: rgba(var(--brand-rgb), 0.05);
     }
 
     .step-number {
@@ -1242,7 +1272,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(135deg, var(--signal-amber) 0%, var(--signal-ember) 100%);
+      background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
       border-radius: 50%;
       font-family: 'IBM Plex Mono', monospace;
       font-size: 0.85rem;
@@ -1263,12 +1293,12 @@
     }
 
     .step-content code {
-      background: rgba(var(--amber-rgb), 0.1);
+      background: rgba(var(--brand-rgb), 0.1);
       padding: 0.125rem 0.375rem;
       border-radius: 4px;
       font-family: 'IBM Plex Mono', monospace;
       font-size: 0.85rem;
-      color: var(--signal-amber);
+      color: var(--brand);
     }
 
     .config-card {
@@ -1283,7 +1313,7 @@
     .config-card h3 {
       font-size: 1.25rem;
       margin-bottom: 1.25rem;
-      color: var(--signal-gold);
+      color: var(--note);
     }
 
     .config-table-wrapper {
@@ -1331,11 +1361,11 @@
 
     .config-table .var-name {
       font-family: 'IBM Plex Mono', monospace;
-      color: var(--signal-gold);
+      color: var(--terminal);
     }
 
     .config-table .required-yes {
-      color: var(--signal-amber);
+      color: var(--brand);
     }
 
     .config-table .required-no {
@@ -1343,14 +1373,14 @@
     }
 
     .config-table .required-optional {
-      color: var(--signal-ember);
+      color: var(--brand-2);
     }
 
     .config-note {
       margin-top: 1rem;
       padding: 0.75rem 1rem;
-      background: rgba(var(--ember-rgb), 0.1);
-      border-left: 3px solid var(--signal-ember);
+      background: rgba(var(--brand-2-rgb), 0.1);
+      border-left: 3px solid var(--brand-2);
       border-radius: 0 8px 8px 0;
       font-size: 0.9rem;
       color: var(--text-muted);
@@ -1409,8 +1439,8 @@
 
     .contributor-card:hover {
       transform: translateY(-5px);
-      border-color: var(--signal-amber);
-      box-shadow: var(--glow-amber);
+      border-color: var(--brand);
+      box-shadow: var(--glow-brand);
     }
 
     .contributor-avatar {
@@ -1422,7 +1452,7 @@
     }
 
     .contributor-card:hover .contributor-avatar {
-      border-color: var(--signal-amber);
+      border-color: var(--brand);
     }
 
     .contributor-name {
@@ -1433,7 +1463,7 @@
 
     .contributor-role {
       font-size: 0.85rem;
-      color: var(--signal-amber);
+      color: var(--brand);
       font-family: 'IBM Plex Mono', monospace;
     }
 
@@ -1941,7 +1971,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr><td colspan="3" style="color: var(--signal-amber); font-weight: 600; padding-top: 1.25rem;">Core</td></tr>
+                <tr><td colspan="3" style="color: var(--brand); font-weight: 600; padding-top: 1.25rem;">Core</td></tr>
                 <tr>
                   <td class="var-name">TELEGRAM_BOT_TOKEN</td>
                   <td>Bot token from BotFather</td>
@@ -1977,7 +2007,7 @@
                   <td>Auto-approve all tool permissions (default: false)</td>
                   <td class="required-no">No</td>
                 </tr>
-                <tr><td colspan="3" style="color: var(--signal-amber); font-weight: 600; padding-top: 1.25rem;">API Keys</td></tr>
+                <tr><td colspan="3" style="color: var(--brand); font-weight: 600; padding-top: 1.25rem;">API Keys</td></tr>
                 <tr>
                   <td class="var-name">OPENAI_API_KEY</td>
                   <td>For OpenAI TTS voices</td>
@@ -2008,7 +2038,7 @@
                   <td>Reddit bot account password</td>
                   <td class="required-optional">For Reddit</td>
                 </tr>
-                <tr><td colspan="3" style="color: var(--signal-amber); font-weight: 600; padding-top: 1.25rem;">Feature Flags</td></tr>
+                <tr><td colspan="3" style="color: var(--brand); font-weight: 600; padding-top: 1.25rem;">Feature Flags</td></tr>
                 <tr>
                   <td class="var-name">TTS_ENABLED</td>
                   <td>Enable text-to-speech (default: true)</td>
@@ -2039,7 +2069,7 @@
                   <td>Enable /extract command (default: true)</td>
                   <td class="required-no">No</td>
                 </tr>
-                <tr><td colspan="3" style="color: var(--signal-amber); font-weight: 600; padding-top: 1.25rem;">TTS Configuration</td></tr>
+                <tr><td colspan="3" style="color: var(--brand); font-weight: 600; padding-top: 1.25rem;">TTS Configuration</td></tr>
                 <tr>
                   <td class="var-name">TTS_PROVIDER</td>
                   <td><code>openai</code> or <code>groq</code> (default: groq)</td>
@@ -2055,7 +2085,7 @@
                   <td>Playback speed multiplier (default: 1.0)</td>
                   <td class="required-no">No</td>
                 </tr>
-                <tr><td colspan="3" style="color: var(--signal-amber); font-weight: 600; padding-top: 1.25rem;">Display &amp; Behavior</td></tr>
+                <tr><td colspan="3" style="color: var(--brand); font-weight: 600; padding-top: 1.25rem;">Display &amp; Behavior</td></tr>
                 <tr>
                   <td class="var-name">TERMINAL_UI_DEFAULT</td>
                   <td>Terminal-style display on by default (default: true)</td>
