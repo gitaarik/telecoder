@@ -60,6 +60,10 @@
       --code-bg: #131820;
       --success: #5cb85c;
       --glow-brand: 0 0 20px rgba(var(--brand-rgb), 0.35), 0 0 40px rgba(var(--brand-rgb), 0.18);
+      /* Not themed: the phone reads as a device, and a device has a dark bezel
+         whichever way the page is lit. Its screen uses --bg-surface so it is
+         never the same colour as the page behind it. */
+      --phone-bezel: #1b202a;
       --check-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 13.2 6 17.2 13.4 8'/%3E%3Cpath d='M10.6 13.2 14.6 17.2 22 8'/%3E%3C/svg%3E");
     }
 
@@ -352,16 +356,36 @@
     }
 
     /* Hero Section */
+    /*
+      The preview is the most convincing thing on the page, so it sits beside
+      the copy rather than three scrolls below it. min-height: 100vh is gone
+      deliberately: the point is that everything fits without scrolling, and a
+      forced viewport height would push the phone back under the fold on short
+      screens. Type sizes come down to make room.
+    */
     .hero {
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      text-align: center;
-      padding: 8rem 2rem 4rem;
+      padding: clamp(6.5rem, 12vh, 8.5rem) 2rem 3rem;
       position: relative;
     }
+
+    .hero-inner {
+      max-width: 1160px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 350px;
+      gap: clamp(2rem, 5vw, 4rem);
+      align-items: center;
+    }
+
+    .hero-copy {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      text-align: left;
+      min-width: 0;
+    }
+
+    .hero-demo { min-width: 0; }
 
     /*
       The wordmark splits Tele/Coder everywhere it appears, on the same rule as
@@ -376,7 +400,7 @@
       gap: 0.6rem;
       font-family: 'IBM Plex Mono', monospace;
       font-weight: 700;
-      font-size: clamp(1.5rem, 4vw, 2.1rem);
+      font-size: clamp(1.25rem, 2.8vw, 1.7rem);
       letter-spacing: -0.01em;
       color: var(--brand);
       margin-bottom: 1.25rem;
@@ -418,10 +442,11 @@
     }
 
     .hero-title {
-      font-size: clamp(3rem, 10vw, 6rem);
+      font-size: clamp(2.2rem, 4.6vw, 3.5rem);
       font-weight: 700;
-      line-height: 1;
-      margin-bottom: 1.5rem;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      margin-bottom: 1.1rem;
       opacity: 0;
       animation: fadeInUp 0.8s ease 0.5s forwards;
     }
@@ -434,11 +459,11 @@
     }
 
     .hero-subtitle {
-      font-size: clamp(1.1rem, 2.5vw, 1.4rem);
+      font-size: clamp(1rem, 1.9vw, 1.12rem);
       color: var(--text-muted);
-      max-width: 600px;
+      max-width: 34rem;
       line-height: 1.6;
-      margin-bottom: 3rem;
+      margin-bottom: 1.75rem;
       opacity: 0;
       animation: fadeInUp 0.8s ease 0.7s forwards;
     }
@@ -458,7 +483,7 @@
       display: flex;
       gap: 1rem;
       flex-wrap: wrap;
-      justify-content: center;
+      justify-content: flex-start;
       opacity: 0;
       animation: fadeInUp 0.8s ease 0.9s forwards;
     }
@@ -502,15 +527,19 @@
       background: rgba(var(--channel-rgb), 0.1);
     }
 
-    /* Telegram Chat Demo */
-    .telegram-section {
-      padding: 6rem 0;
+    @media (max-width: 940px) {
+      .hero-inner { grid-template-columns: minmax(0, 1fr); }
+      .hero-copy { align-items: center; text-align: center; }
+      .hero-subtitle { margin-left: auto; margin-right: auto; }
+      .hero-buttons { justify-content: center; }
+      .hero-demo { margin-top: 2.5rem; }
     }
 
+    /* Telegram Chat Demo */
     .telegram-phone {
-      max-width: 380px;
+      max-width: 350px;
       margin: 0 auto;
-      background: var(--bg-deep);
+      background: var(--phone-bezel);
       border-radius: 40px;
       padding: 12px;
       box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.1);
@@ -525,14 +554,14 @@
     }
 
     .telegram-screen {
-      background: var(--bg-deep);
+      background: var(--bg-surface);
       border-radius: 32px;
       overflow: hidden;
-      border: 3px solid var(--glass-border);
+      border: 3px solid var(--phone-bezel);
     }
 
     .telegram-header {
-      background: var(--bg-surface);
+      background: var(--sunken-strong);
       padding: 0.75rem 1rem;
       display: flex;
       align-items: center;
@@ -593,9 +622,9 @@
     }
 
     .telegram-chat {
-      background: var(--bg-deep);
+      background: var(--bg-surface);
       padding: 1rem;
-      height: 420px;
+      height: 340px;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
@@ -642,7 +671,8 @@
 
     .chat-message.incoming {
       align-self: flex-start;
-      background: var(--bg-surface);
+      background: var(--sunken);
+      border: 1px solid var(--glass-border);
       color: var(--text-primary);
       border-bottom-left-radius: 4px;
     }
@@ -684,6 +714,13 @@
       color: var(--success);
     }
 
+    .msg-subtext {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    .chat-message.outgoing .msg-subtext { color: rgba(255, 255, 255, 0.75); }
+
     .chat-message .file-info {
       display: flex;
       align-items: center;
@@ -701,7 +738,7 @@
     }
 
     .telegram-input {
-      background: var(--bg-surface);
+      background: var(--sunken-strong);
       padding: 0.75rem 1rem;
       display: flex;
       align-items: center;
@@ -1657,7 +1694,9 @@
       </div>
     </nav>
 
-    <section class="hero">
+    <section class="hero" id="demo">
+      <div class="hero-inner">
+      <div class="hero-copy">
       <div class="hero-lockup">
         <svg class="brand-mark" aria-hidden="true"><use href="#i-brand"/></svg>
         <span><span class="tele">Tele</span>Coder</span>
@@ -1683,6 +1722,36 @@
         <a href="#getting-started" class="btn btn-secondary">
           Quick Start →
         </a>
+      </div>
+      </div>
+      <div class="hero-demo">
+      <div class="telegram-phone" id="telegram-demo">
+        <div class="telegram-screen">
+          <div class="telegram-header">
+            <span class="telegram-back" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg></span>
+            <div class="telegram-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 17.5 20 4.5l-5 15.5-3.6-6z"/><path d="M11.4 14 20 4.5"/></svg></div>
+            <div class="telegram-contact">
+              <div class="telegram-contact-name">TeleCoder</div>
+              <div class="telegram-contact-status">online</div>
+            </div>
+            <div class="telegram-header-icons">
+              <span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7.5 4.5 10 8l-2 2.4a12 12 0 0 0 5.6 5.6L16 14l3.5 2.5-.6 2.6a1.8 1.8 0 0 1-2 1.4C9.6 19.7 4.3 14.4 3.5 7.1a1.8 1.8 0 0 1 1.4-2z"/></svg></span>
+              <span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5.5h.01"/><path d="M12 12h.01"/><path d="M12 18.5h.01"/></svg></span>
+            </div>
+          </div>
+          <div class="telegram-chat" id="chat-messages">
+            <!-- Messages will be added dynamically -->
+          </div>
+          <div class="telegram-input">
+            <span class="telegram-input-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 11.5 12.3 19a4.6 4.6 0 0 1-6.5-6.5l7.7-7.7a3 3 0 0 1 4.3 4.3l-7.7 7.7a1.4 1.4 0 0 1-2-2l7-7"/></svg></span>
+            <input type="text" class="telegram-input-field" placeholder="Message" readonly>
+            <button type="button" class="telegram-send" aria-label="Send message">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      </div>
       </div>
     </section>
 
@@ -1724,37 +1793,6 @@
             per-bot session scoping, each with its own project, model and
             reasoning effort — and a watchdog that notices when a query hangs
             instead of leaving you staring at a silent chat.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="demo" class="telegram-section">
-      <div class="container">
-        <div class="telegram-phone" id="telegram-demo">
-          <div class="telegram-screen">
-            <div class="telegram-header">
-              <span class="telegram-back" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg></span>
-              <div class="telegram-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 17.5 20 4.5l-5 15.5-3.6-6z"/><path d="M11.4 14 20 4.5"/></svg></div>
-              <div class="telegram-contact">
-                <div class="telegram-contact-name">TeleCoder</div>
-                <div class="telegram-contact-status">online</div>
-              </div>
-              <div class="telegram-header-icons">
-                <span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7.5 4.5 10 8l-2 2.4a12 12 0 0 0 5.6 5.6L16 14l3.5 2.5-.6 2.6a1.8 1.8 0 0 1-2 1.4C9.6 19.7 4.3 14.4 3.5 7.1a1.8 1.8 0 0 1 1.4-2z"/></svg></span>
-                <span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5.5h.01"/><path d="M12 12h.01"/><path d="M12 18.5h.01"/></svg></span>
-              </div>
-            </div>
-            <div class="telegram-chat" id="chat-messages">
-              <!-- Messages will be added dynamically -->
-            </div>
-            <div class="telegram-input">
-              <span class="telegram-input-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 11.5 12.3 19a4.6 4.6 0 0 1-6.5-6.5l7.7-7.7a3 3 0 0 1 4.3 4.3l-7.7 7.7a1.4 1.4 0 0 1-2-2l7-7"/></svg></span>
-              <input type="text" class="telegram-input-field" placeholder="Message" readonly>
-              <button type="button" class="telegram-send" aria-label="Send message">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-              </button>
-            </div>
           </div>
         </div>
       </div>
@@ -2820,7 +2858,7 @@
         div.appendChild(document.createElement('br'));
         const sub = document.createElement('span');
         sub.className = 'msg-subtext';
-        sub.style.cssText = 'color: rgba(255,255,255,0.6); font-size: 0.85rem;';
+        // colour comes from .msg-subtext; hardcoded white vanished on light bubbles
         if (msg.isCode || msg.text.includes('Teleport')) {
           const subCode = document.createElement('code');
           subCode.textContent = msg.subtext;
@@ -2858,11 +2896,27 @@
       }
     }
 
+    // The phone is the first thing on the page now, so the opening exchange is
+    // painted instantly and only the agent's work animates. An empty chat is
+    // not an impression of anything, and typing at 25ms/char takes seconds to
+    // become one.
+    const SEEDED = 3;
+
     async function runConversation() {
       if (chatStarted) return;
       chatStarted = true;
 
-      for (const msg of conversation) {
+      for (const [i, msg] of conversation.entries()) {
+        if (i < SEEDED && msg.type !== 'typing') {
+          const seeded = createMessageElement(msg);
+          chatContainer.appendChild(seeded);
+          const seededText = seeded.querySelector('.msg-text');
+          (seededText.querySelector('code, .success') || seededText).textContent = msg.text;
+          seeded.style.opacity = '1';
+          seeded.style.transform = 'translateY(0)';
+          chatContainer.scrollTop = chatContainer.scrollHeight;
+          continue;
+        }
         if (msg.type === 'typing') {
           const typing = createTypingIndicator();
           chatContainer.appendChild(typing);
