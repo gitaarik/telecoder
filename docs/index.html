@@ -569,8 +569,7 @@
       border-bottom: 1px solid var(--glass-border);
     }
 
-    .telegram-back svg, .telegram-avatar svg,
-    .telegram-header-icons svg, .telegram-input-icon svg {
+    .telegram-back svg, .telegram-header-icons svg, .telegram-input-icon svg {
       width: 19px;
       height: 19px;
       fill: none;
@@ -581,7 +580,7 @@
       display: block;
     }
 
-    .telegram-avatar svg { width: 18px; height: 18px; stroke: #fff; }
+    .telegram-avatar svg { width: 21px; height: 21px; }
 
     .telegram-back {
       color: var(--channel);
@@ -592,7 +591,16 @@
       width: 40px;
       height: 40px;
       border-radius: 50%;
-      background: linear-gradient(135deg, var(--brand) 0%, var(--channel) 100%);
+      background: var(--phone-bezel);
+      /*
+        Same plate as the favicon, so the chat contact and the browser tab are
+        recognisably one thing. CSS selectors cannot reach inside <use> shadow
+        content, but custom properties inherit through it — so the on-dark
+        values are re-scoped here. Without this the mark would inherit the
+        light theme's dark blue and coral and disappear against the plate.
+      */
+      --channel: #5fb0f5;
+      --brand: #e08a6b;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1729,7 +1737,7 @@
         <div class="telegram-screen">
           <div class="telegram-header">
             <span class="telegram-back" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg></span>
-            <div class="telegram-avatar" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 17.5 20 4.5l-5 15.5-3.6-6z"/><path d="M11.4 14 20 4.5"/></svg></div>
+            <div class="telegram-avatar" aria-hidden="true"><svg><use href="#i-brand"/></svg></div>
             <div class="telegram-contact">
               <div class="telegram-contact-name">TeleCoder</div>
               <div class="telegram-contact-status">online</div>
