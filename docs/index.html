@@ -49,7 +49,7 @@
       --note: #ffd166;          /* 12.92:1 */
       --text-primary: #e8e6e3;  /* 14.95:1 */
       --text-muted: #939aa6;    /*  6.58:1 */
-      --glass-bg: rgba(22, 28, 36, 0.72);
+      --glass-bg: rgba(22, 28, 36, 0.8);
       --glass-border: rgba(232, 230, 227, 0.1);
       --nav-bg: rgba(15, 19, 25, 0.82);
       --sunken: rgba(0, 0, 0, 0.2);
@@ -83,7 +83,7 @@
       --note: #7a5a0e;          /* 6.11:1 */
       --text-primary: #191c22;  /* 16.36:1 */
       --text-muted: #5c6470;    /*  5.73:1 */
-      --glass-bg: rgba(255, 255, 255, 0.82);
+      --glass-bg: rgba(255, 255, 255, 0.9);
       --glass-border: rgba(25, 28, 34, 0.12);
       --nav-bg: rgba(251, 250, 248, 0.85);
       --sunken: rgba(25, 28, 34, 0.05);
@@ -115,7 +115,7 @@
       --note: #7a5a0e;          /* 6.11:1 */
       --text-primary: #191c22;  /* 16.36:1 */
       --text-muted: #5c6470;    /*  5.73:1 */
-      --glass-bg: rgba(255, 255, 255, 0.82);
+      --glass-bg: rgba(255, 255, 255, 0.9);
       --glass-border: rgba(25, 28, 34, 0.12);
       --nav-bg: rgba(251, 250, 248, 0.85);
       --sunken: rgba(25, 28, 34, 0.05);
@@ -178,12 +178,17 @@
       z-index: 1;
     }
 
+    /*
+      The blur stays — it is what gives these their soft falloff, and a static
+      filter is rasterised once and cached (~3% of a core). What cost real
+      money was the 20s infinite transform on top of it, which forced all
+      three layers to be re-rasterised for the lifetime of the page.
+    */
     .orb {
       position: absolute;
       border-radius: 50%;
       filter: blur(80px);
       pointer-events: none;
-      animation: orbFloat 20s ease-in-out infinite;
     }
 
     .orb-1 {
@@ -192,7 +197,6 @@
       background: radial-gradient(circle, rgba(var(--brand-rgb), 0.15) 0%, transparent 70%);
       top: -200px;
       right: -200px;
-      animation-delay: 0s;
     }
 
     .orb-2 {
@@ -201,7 +205,6 @@
       background: radial-gradient(circle, rgba(var(--brand-2-rgb), 0.12) 0%, transparent 70%);
       bottom: -150px;
       left: -150px;
-      animation-delay: -10s;
     }
 
     .orb-3 {
@@ -211,15 +214,8 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      animation-delay: -5s;
     }
 
-    @keyframes orbFloat {
-      0%, 100% { transform: translate(0, 0) scale(1); }
-      25% { transform: translate(30px, -30px) scale(1.05); }
-      50% { transform: translate(-20px, 20px) scale(0.95); }
-      75% { transform: translate(20px, 30px) scale(1.02); }
-    }
 
     /* Main Content */
     .content {
@@ -272,13 +268,15 @@
       gap: 0.5rem;
     }
 
+    /*
+      This was a 2s infinite text-shadow pulse, and it sat inside the one
+      element on the page carrying backdrop-filter. text-shadow cannot be
+      composited, so it repainted the nav every frame, and every nav repaint
+      forced its 20px backdrop blur to be recomputed — about 30% of a core
+      for a glow nobody asked for. The glow stays; the animation goes.
+    */
     .nav-logo span {
-      animation: pulse-glow 2s ease-in-out infinite;
-    }
-
-    @keyframes pulse-glow {
-      0%, 100% { text-shadow: var(--glow-brand); }
-      50% { text-shadow: 0 0 30px rgba(var(--brand-rgb), 0.8), 0 0 60px rgba(var(--brand-rgb), 0.4); }
+      text-shadow: var(--glow-brand);
     }
 
     .nav-links {
@@ -455,7 +453,6 @@
       color: var(--channel);
       border: 1px solid rgba(var(--channel-rgb), 0.35);
       border-radius: 999px;
-      backdrop-filter: blur(10px);
     }
 
     .btn-secondary:hover {
@@ -770,6 +767,11 @@
         animation: none !important;
       }
       #matrix-canvas { display: none; }
+
+      /* animation does not inherit, so the infinite ones need naming directly */
+      .badge-dot, .typing-indicator span, .flow-arrow {
+        animation: none !important;
+      }
     }
 
     .section-subtitle {
@@ -801,7 +803,6 @@
       border: 1px solid var(--glass-border);
       border-radius: 16px;
       padding: 2rem;
-      backdrop-filter: blur(10px);
       transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
       opacity: 0;
       transform: translateY(30px);
@@ -905,7 +906,6 @@
       background: var(--glass-bg);
       border: 1px solid var(--glass-border);
       border-radius: 20px;
-      backdrop-filter: blur(10px);
     }
 
     .flow-node {
@@ -1138,7 +1138,6 @@
       border: 1px solid var(--glass-border);
       border-radius: 16px;
       padding: 2rem;
-      backdrop-filter: blur(10px);
       min-width: 0;
     }
 
@@ -1187,7 +1186,6 @@
       border: 1px solid var(--glass-border);
       border-radius: 16px;
       padding: 2rem;
-      backdrop-filter: blur(10px);
       min-width: 0;
     }
 
@@ -1266,7 +1264,6 @@
       border: 1px solid var(--glass-border);
       border-radius: 16px;
       padding: 2rem;
-      backdrop-filter: blur(10px);
       min-width: 0;
     }
 
@@ -1344,7 +1341,6 @@
       border: 1px solid var(--glass-border);
       border-radius: 16px;
       padding: 2rem;
-      backdrop-filter: blur(10px);
       min-width: 0;
     }
 
@@ -1476,7 +1472,6 @@
       background: var(--glass-bg);
       border: 1px solid var(--glass-border);
       border-radius: 16px;
-      backdrop-filter: blur(10px);
       text-decoration: none;
       transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
       min-width: 180px;
@@ -2647,8 +2642,34 @@
 
     // Honour reduced-motion: a permanently animating background is exactly
     // what that preference is asking us not to run.
+    //
+    // rAF rather than setInterval: a background tab still runs interval
+    // callbacks (throttled, not stopped), so the old loop kept repainting a
+    // full-viewport fixed canvas nobody was looking at. rAF stops outright
+    // when the tab is hidden, and never queues a frame the compositor has
+    // not drawn. visibilitychange covers the occluded-but-not-hidden case.
     if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      setInterval(drawMatrix, 50);
+      var FRAME_MS = 50;
+      var lastFrame = 0;
+      var rafId = 0;
+
+      function tick(now) {
+        rafId = requestAnimationFrame(tick);
+        if (now - lastFrame < FRAME_MS) return;
+        lastFrame = now;
+        drawMatrix();
+      }
+      function startRain() {
+        if (!rafId) { lastFrame = 0; rafId = requestAnimationFrame(tick); }
+      }
+      function stopRain() {
+        if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+      }
+
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) stopRain(); else startRain();
+      });
+      if (!document.hidden) startRain();
     }
 
     // Intersection Observer for scroll animations
