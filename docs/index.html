@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TeleCoder — Claude Code from Telegram</title>
   <meta name="description" content="Drive a full Claude Code agent from Telegram. Runs on your own machine, and routes through CCR to any model when your usage limit hits.">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f1319'/%3E%3Cpath d='M15 18 29 32 15 46' fill='none' stroke='%235fb0f5' stroke-width='7' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M34 18 48 32 34 46' fill='none' stroke='%23e08a6b' stroke-width='7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="icon" id="favicon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2714%27 fill=%27%230f1319%27/%3E%3Cpath d=%27M15 18 29 32 15 46%27 fill=%27none%27 stroke=%27%235fb0f5%27 stroke-width=%277%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Cpath d=%27M34 18 48 32 34 46%27 fill=%27none%27 stroke=%27%23e08a6b%27 stroke-width=%277%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -17,6 +17,26 @@
         var t = localStorage.getItem('theme');
         if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
       } catch (e) { /* private mode: fall back to auto */ }
+    })();
+
+    // The favicon sits in browser chrome, which follows the OS theme rather
+    // than this page's light/dark switch — so it keys off prefers-color-scheme
+    // and deliberately ignores the site toggle. Chrome does not honour a media
+    // query written inside an SVG favicon, so the swap is done here instead.
+    // The markup keeps the dark plate, which is the safe default if JS is off.
+    (function () {
+      var ICONS = {
+        dark:  'data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2714%27 fill=%27%230f1319%27/%3E%3Cpath d=%27M15 18 29 32 15 46%27 fill=%27none%27 stroke=%27%235fb0f5%27 stroke-width=%277%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Cpath d=%27M34 18 48 32 34 46%27 fill=%27none%27 stroke=%27%23e08a6b%27 stroke-width=%277%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E',
+        light: 'data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect x=%271%27 y=%271%27 width=%2762%27 height=%2762%27 rx=%2713%27 fill=%27%23fbfaf8%27 stroke=%27%23d6d1c9%27 stroke-width=%272%27/%3E%3Cpath d=%27M15 18 29 32 15 46%27 fill=%27none%27 stroke=%27%230b6fa4%27 stroke-width=%277%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Cpath d=%27M34 18 48 32 34 46%27 fill=%27none%27 stroke=%27%23b4502f%27 stroke-width=%277%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E'
+      };
+      var mq = window.matchMedia('(prefers-color-scheme: dark)');
+      function paint() {
+        var link = document.getElementById('favicon');
+        if (link) link.href = mq.matches ? ICONS.dark : ICONS.light;
+      }
+      mq.addEventListener ? mq.addEventListener('change', paint) : mq.addListener(paint);
+      document.addEventListener('DOMContentLoaded', paint);
+      paint();
     })();
   </script>
   <style>
