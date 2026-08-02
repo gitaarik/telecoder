@@ -1319,6 +1319,8 @@
 
     .optional-card .code-block { margin-bottom: 1rem; }
 
+    .optional-card a { color: var(--channel); }
+
     .prereq-badge {
       display: inline-flex;
       align-items: center;
@@ -2172,30 +2174,48 @@
           </div>
 
           <div class="optional-card">
-            <h3>Optional: keep going past your limit</h3>
-            <p>None of this is needed to run TeleCoder. Add it only if you want the bot to
-            carry on when your Claude usage runs out. Claude Code Router is a local proxy
-            that runs the same agent through any model its own config knows about.</p>
+            <h3>Optional: Claude Code Router</h3>
+            <p>CCR is a separate open-source project, not part of TeleCoder — a local proxy
+            that sits in front of the <code>claude</code> binary and can route it to
+            non-Anthropic models. Install it if you want the bot to keep working after your
+            Claude usage runs out. Everything else on this page works without it.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span>Terminal</span>
+                <button type="button" class="copy-btn" onclick="copyCode(this)">Copy</button>
+              </div>
+              <div class="code-content">
+                <pre><span class="command">npm install -g</span> @musistudio/claude-code-router
+<span class="comment"># opens a browser UI to add providers and models</span>
+<span class="command">ccr ui</span></pre>
+              </div>
+            </div>
+            <p>CCR keeps its config and logs in <code>~/.claude-code-router/</code> and serves
+            its proxy on port <code>3456</code>. Once a model is configured there, point
+            TeleCoder at it:</p>
             <div class="code-block">
               <div class="code-header">
                 <span>.env</span>
                 <button type="button" class="copy-btn" onclick="copyCode(this)">Copy</button>
               </div>
               <div class="code-content">
-                <pre><span class="comment"># offer a one-tap switch to CCR when Claude throttles</span>
-CCR_ENABLED=true
-<span class="comment"># start the proxy for you if it is not already running</span>
+                <pre>CCR_ENABLED=true
+CCR_BASE_URL=http://localhost:3456
+CCR_AUTH_TOKEN=your_ccr_token
+<span class="comment"># run `ccr start` automatically if the proxy is down</span>
 CCR_AUTOSTART=true</pre>
               </div>
             </div>
-            <p>With it enabled, a mid-turn throttle offers a switch and replays the message
+            <p>After that, a mid-turn throttle offers a one-tap switch and replays the message
             you just sent. <code>/provider</code> picks a backend at any time and
-            <code>/ccr</code> is a one-tap toggle between the two.</p>
+            <code>/ccr</code> toggles between the two. Full documentation lives in the
+            <a href="https://github.com/musistudio/claude-code-router" target="_blank" rel="noopener">CCR
+            repository</a>.</p>
             <div class="config-note">
-              CCR always takes the SDK path, so PTY-only behaviour does not carry across —
-              and the two backends never share a session, since one model cannot replay
-              another's thinking blocks. Switching starts a fresh session with a plain-text
-              summary carried over.
+              CCR always takes the SDK path, so PTY-only behaviour does not carry across — and
+              the two backends never share a session, since one model cannot replay another's
+              thinking blocks. Switching starts a fresh session with a plain-text summary
+              carried over.
             </div>
           </div>
 
