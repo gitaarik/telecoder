@@ -1207,7 +1207,9 @@
         overflow-x: hidden;
       }
       .prereq-badge { white-space: normal; text-align: center; padding: 0.625rem 1rem; }
-      .step-item { flex-direction: column; text-align: center; transform: none; }
+      /* stack, but keep the prose left-aligned — centred multi-line step
+         text is hard to scan, and desktop is left-aligned anyway */
+      .step-item { flex-direction: column; transform: none; }
       .step-item.visible { transform: none; }
       .step-number { margin-bottom: 0.5rem; }
       .step-content h4, .step-content p { word-wrap: break-word; }
@@ -2101,22 +2103,27 @@
               <div class="step-item">
                 <span class="step-number">3</span>
                 <div class="step-content">
-                  <h4>Create Telegram bot</h4>
-                  <p>Message <code>@BotFather</code> on Telegram and use <code>/newbot</code> to get your token</p>
+                  <h4>Create your bot</h4>
+                  <p>Message <code>@BotFather</code>, send <code>/newbot</code>, then pick a display
+                  name and a username ending in <code>bot</code>. It replies with an API token —
+                  that token <em>is</em> the bot.</p>
                 </div>
               </div>
               <div class="step-item">
                 <span class="step-number">4</span>
                 <div class="step-content">
                   <h4>Get your Telegram user ID</h4>
-                  <p>Message <code>@userinfobot</code> on Telegram to get your numeric user ID</p>
+                  <p>Message <code>@userinfobot</code> for your numeric ID. TeleCoder only answers
+                  accounts on this list, so the bot is inert to anyone else who finds it.</p>
                 </div>
               </div>
               <div class="step-item">
                 <span class="step-number">5</span>
                 <div class="step-content">
-                  <h4>Configure environment</h4>
-                  <p>Copy <code>.env.example</code> to <code>.env</code> and fill in your credentials</p>
+                  <h4>Connect the bot to TeleCoder</h4>
+                  <p>Copy <code>.env.example</code> to <code>.env</code>, then set
+                  <code>TELEGRAM_BOT_TOKEN</code> to the token BotFather gave you and
+                  <code>ALLOWED_USER_IDS</code> to your numeric ID.</p>
                 </div>
               </div>
               <div class="step-item">
@@ -2129,11 +2136,39 @@
               <div class="step-item">
                 <span class="step-number">7</span>
                 <div class="step-content">
-                  <h4>Verify it works</h4>
-                  <p>Send a message to your bot on Telegram and check for a response</p>
+                  <h4>Say hello</h4>
+                  <p>Open the bot in Telegram, send <code>/start</code>, and it should answer. From
+                  there <code>/project</code> points it at a folder to work in.</p>
                 </div>
               </div>
             </div>
+          </div>
+
+          <div class="optional-card">
+            <h3>Optional: run several bots at once</h3>
+            <p>A bot is just a token, so repeat the <code>/newbot</code> step for each one you
+            want. Listing the tokens in <code>instances.json</code> makes a single process run
+            them side by side, each with its own project, model and sessions.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span>instances.json</span>
+                <button type="button" class="copy-btn" onclick="copyCode(this)">Copy</button>
+              </div>
+              <div class="code-content">
+                <pre>{
+  "defaults": { "ALLOWED_USER_IDS": "123456789" },
+  "instances": [
+    { "name": "TeleCoder {n}", "tokens": ["token-one", "token-two"] },
+    { "name": "Admin Bot", "token": "token-three",
+      "overrides": { "WORKSPACE_DIR": "/home/you/projects" } }
+  ]
+}</pre>
+              </div>
+            </div>
+            <p><code>defaults</code> applies to every bot and accepts any <code>.env</code>
+            variable; <code>overrides</code> changes it for one. A list of <code>tokens</code>
+            auto-names the bots, with <code>{n}</code> for the number. Start them with
+            <code>npm run dev:multi</code> in place of <code>npm run dev</code>.</p>
           </div>
 
           <div class="optional-card">
