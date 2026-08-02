@@ -1017,9 +1017,11 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 1rem;
+      /* the five nodes plus four arrows have to clear 1024px, where the layout
+         switches to a column — hence the tight gap and node padding below */
+      gap: 0.65rem;
       flex-wrap: wrap;
-      padding: 3rem;
+      padding: 2.5rem 1.5rem;
       background: var(--glass-bg);
       border: 1px solid var(--glass-border);
       border-radius: 20px;
@@ -1030,7 +1032,7 @@
       flex-direction: column;
       align-items: center;
       gap: 0.75rem;
-      padding: 1.5rem 2rem;
+      padding: 1.25rem 1.2rem;
       background: var(--bg-surface);
       border: 1px solid var(--glass-border);
       border-radius: 12px;
@@ -1043,7 +1045,26 @@
     }
 
     .flow-node-icon {
-      font-size: 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 32px;
+    }
+
+    .flow-node-icon svg {
+      width: 32px;
+      height: 32px;
+      fill: none;
+      stroke: var(--brand);
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      display: block;
+    }
+
+    /* a third-party mark carries its own colours; ours must not stroke it */
+    .flow-node-icon svg.tg-mark {
+      stroke: none;
     }
 
     .flow-node-label {
@@ -1157,6 +1178,15 @@
       display: flex;
       gap: 2rem;
       justify-content: center;
+    }
+
+    .footer-fineprint {
+      margin: 1.5rem auto 0;
+      max-width: 46rem;
+      font-size: 0.78rem;
+      line-height: 1.6;
+      color: var(--text-muted);
+      opacity: 0.8;
     }
 
     .footer-links a {
@@ -1692,10 +1722,23 @@
 </head>
 <body>
 <svg class="icon-sprite" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="tg-grad" x1="50%" y1="0%" x2="50%" y2="99.2583404%">
+      <stop offset="0%" stop-color="#2AABEE"/>
+      <stop offset="100%" stop-color="#229ED9"/>
+    </linearGradient>
+  </defs>
   <symbol id="i-brand" viewBox="0 0 24 24">
     <path d="M3.6 6.4 9.2 12l-5.6 5.6" fill="none" stroke="var(--channel)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
     <path d="M11.2 6.4 16.8 12l-5.6 5.6" fill="none" stroke="var(--brand)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
   </symbol>
+  <!-- Telegram's own mark, unaltered, from telegram.org/press. Used to name the
+       service TeleCoder talks to; the footer disclaims any affiliation. -->
+  <symbol id="i-telegram" viewBox="0 0 1000 1000">
+    <circle cx="500" cy="500" r="500" fill="url(#tg-grad)"/>
+    <path fill="#fff" d="M226.328419,494.722069 C372.088573,431.216685 469.284839,389.350049 517.917216,369.122161 C656.772535,311.36743 685.625481,301.334815 704.431427,301.003532 C708.567621,300.93067 717.815839,301.955743 723.806446,306.816707 C728.864797,310.92121 730.256552,316.46581 730.922551,320.357329 C731.588551,324.248848 732.417879,333.113828 731.758626,340.040666 C724.234007,419.102486 691.675104,610.964674 675.110982,699.515267 C668.10208,736.984342 654.301336,749.547532 640.940618,750.777006 C611.904684,753.448938 589.856115,731.588035 561.733393,713.153237 C517.726886,684.306416 492.866009,666.349181 450.150074,638.200013 C400.78442,605.66878 432.786119,587.789048 460.919462,558.568563 C468.282091,550.921423 596.21508,434.556479 598.691227,424.000355 C599.00091,422.680135 599.288312,417.758981 596.36474,415.160431 C593.441168,412.561881 589.126229,413.450484 586.012448,414.157198 C581.598758,415.158943 511.297793,461.625274 375.109553,553.556189 C355.154858,567.258623 337.080515,573.934908 320.886524,573.585046 C303.033948,573.199351 268.692754,563.490928 243.163606,555.192408 C211.851067,545.013936 186.964484,539.632504 189.131547,522.346309 C190.260287,513.342589 202.659244,504.134509 226.328419,494.722069 Z"/>
+  </symbol>
+  <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4" y="4.4" width="16" height="11" rx="2"/><path d="M2.1 18.8h19.8"/></symbol>
   <symbol id="i-failover" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="12" r="2.5"/><path d="M7.5 10.6c1.6-3 6.4-3 8 0"/><path d="M15.5 13.4c-1.6 3-6.4 3-8 0"/><path d="m14.6 10.9 1.1-.9.5 1.3"/></symbol>
   <symbol id="i-transports" viewBox="0 0 24 24"><path d="M3 7h6.5c2.7 0 2.7 5 5.4 5H21"/><path d="M3 17h6.5c2.7 0 2.7-5 5.4-5H21"/><path d="M18.4 9.4 21 12l-2.6 2.6"/></symbol>
   <symbol id="i-page" viewBox="0 0 24 24"><rect x="3" y="5.5" width="11.5" height="13" rx="2.5"/><path d="M6.5 10 9 12.5 6.5 15"/><path d="M17.8 8.8a4.6 4.6 0 0 1 0 6.4"/><path d="M20.4 6.2a8.2 8.2 0 0 1 0 11.6"/></symbol>
@@ -2380,27 +2423,27 @@ CCR_AUTOSTART=true</pre>
         </div>
         <div class="architecture-flow">
           <div class="flow-node">
-            <span class="flow-node-icon">📱</span>
+            <span class="flow-node-icon"><svg class="tg-mark" aria-hidden="true"><use href="#i-telegram"/></svg></span>
             <span class="flow-node-label">Telegram</span>
           </div>
           <span class="flow-arrow">→</span>
           <div class="flow-node">
-            <span class="flow-node-icon">🤖</span>
+            <span class="flow-node-icon"><svg aria-hidden="true"><use href="#i-brand"/></svg></span>
             <span class="flow-node-label">TeleCoder</span>
           </div>
           <span class="flow-arrow">→</span>
           <div class="flow-node">
-            <span class="flow-node-icon">🔌</span>
+            <span class="flow-node-icon"><svg aria-hidden="true"><use href="#i-transports"/></svg></span>
             <span class="flow-node-label">Provider router</span>
           </div>
           <span class="flow-arrow">→</span>
           <div class="flow-node">
-            <span class="flow-node-icon">🧠</span>
+            <span class="flow-node-icon"><svg aria-hidden="true"><use href="#i-pty"/></svg></span>
             <span class="flow-node-label">Claude Code · CCR</span>
           </div>
           <span class="flow-arrow">→</span>
           <div class="flow-node">
-            <span class="flow-node-icon">💻</span>
+            <span class="flow-node-icon"><svg aria-hidden="true"><use href="#i-laptop"/></svg></span>
             <span class="flow-node-label">Your Machine</span>
           </div>
         </div>
@@ -2749,6 +2792,9 @@ CCR_AUTOSTART=true</pre>
         <a href="#contributors">Contributors</a>
         <a href="https://github.com/gitaarik/telecoder/issues">Issues</a>
       </div>
+      <p class="footer-fineprint">An independent project — not affiliated with, endorsed by, or
+      representing Telegram or Anthropic. Telegram and Claude are trademarks of their respective
+      owners.</p>
     </footer>
   </div>
 
