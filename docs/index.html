@@ -905,6 +905,16 @@
       gap: 1.5rem;
     }
 
+    /*
+      "Why" has exactly four cards. auto-fit at minmax(280px, 1fr) can only get
+      three across a 1100px container, so the fourth was always orphaned on its
+      own row. Two-up gives four equal quadrants instead. The features grid
+      keeps auto-fit — it has 47 cards and no orphan to worry about.
+    */
+    @media (min-width: 720px) {
+      #why .features-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
     .feature-card {
       background: var(--glass-bg);
       border: 1px solid var(--glass-border);
@@ -1791,36 +1801,32 @@
         </div>
         <div class="features-grid">
           <div class="feature-card">
-            <div class="feature-icon"><svg><use href="#i-failover"/></svg></div>
-            <h3>Survives your usage limit</h3>
-            <p>When Claude Max throttles mid-turn, TeleCoder doesn't just report the
-            error — it offers a one-tap switch to Claude Code Router and replays the
-            message you just sent. A provider router sits behind every message, so
-            both Claude and CCR are reachable from <code>/provider</code>.</p>
-          </div>
-          <div class="feature-card">
-            <div class="feature-icon"><svg><use href="#i-transports"/></svg></div>
-            <h3>Two transports, one agent</h3>
-            <p>Run against the Claude Agent SDK, or drive the real <code>claude</code>
-            CLI in a pseudo-terminal with <code>/method</code> — built for the policy
-            split between programmatic usage and a Pro/Max subscription. Session
-            resume, forks and <code>/compact</code> work either way.</p>
+            <div class="feature-icon"><svg><use href="#i-instances"/></svg></div>
+            <h3>A bot per project</h3>
+            <p>Run several bots side by side, each with its own project, model and
+            reasoning effort. A watchdog spots a hung query instead of leaving you
+            staring at a silent chat.</p>
           </div>
           <div class="feature-card">
             <div class="feature-icon"><svg><use href="#i-page"/></svg></div>
-            <h3>It pages you</h3>
-            <p>Long tasks run in the background and ping you when they finish;
-            short ones edit their own message in place so the chat stays quiet.
-            Monitor output, subagent lifecycle and plan mode all surface as they
-            happen instead of arriving in one wall of text at the end.</p>
+            <h3>It tells you when it's done</h3>
+            <p>Long jobs run in the background and ping you the moment they finish.
+            Short ones edit their own message in place, so progress shows as it
+            happens rather than all at the end.</p>
           </div>
           <div class="feature-card">
-            <div class="feature-icon"><svg><use href="#i-instances"/></svg></div>
-            <h3>Many bots, one process</h3>
-            <p>A multi-instance launcher runs several bots side by side with
-            per-bot session scoping, each with its own project, model and
-            reasoning effort — and a watchdog that notices when a query hangs
-            instead of leaving you staring at a silent chat.</p>
+            <div class="feature-icon"><svg><use href="#i-transports"/></svg></div>
+            <h3>Two ways to run it</h3>
+            <p>Point it at the Claude Agent SDK, or drive the real <code>claude</code>
+            CLI in a terminal with <code>/method</code>. Sessions, forks and
+            <code>/compact</code> work the same either way.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon"><svg><use href="#i-failover"/></svg></div>
+            <h3>It keeps going past your limit</h3>
+            <p>When Claude Max throttles mid-turn, one tap switches to a fallback
+            provider and replays the message you just sent. Swap back whenever you
+            like with <code>/provider</code>.</p>
           </div>
         </div>
       </div>
