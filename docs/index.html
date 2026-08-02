@@ -1202,7 +1202,7 @@
       .telegram-phone { max-width: 100%; margin: 0 1rem; box-sizing: border-box; }
       .container { padding: 0 1rem; max-width: 100%; box-sizing: border-box; }
       .getting-started-content { overflow-x: hidden; }
-      .prerequisites-card, .quick-start-card, .steps-card, .config-card {
+      .prerequisites-card, .quick-start-card, .steps-card, .config-card, .optional-card {
         max-width: 100%;
         overflow-x: hidden;
       }
@@ -1270,6 +1270,53 @@
       gap: 0.75rem;
     }
 
+    /*
+      Two tiers rather than a bare colour split. The old list marked both the
+      API key and the subscription "optional", which read as "you need neither"
+      — you need one of them. And nothing on the page said what the colour
+      meant, so the distinction was invisible.
+    */
+    .prereq-group + .prereq-group { margin-top: 1.25rem; }
+
+    .prereq-label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 0.6rem;
+    }
+
+    .prereq-badge.either {
+      background: rgba(var(--note-rgb), 0.1);
+      border-color: rgba(var(--note-rgb), 0.25);
+    }
+
+    .optional-card {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 2rem;
+      min-width: 0;
+    }
+
+    /* advisory, like the config card — not another required step */
+    .optional-card h3 {
+      font-size: 1.25rem;
+      margin-bottom: 1rem;
+      color: var(--note);
+    }
+
+    .optional-card > p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.7;
+      margin-bottom: 1.25rem;
+      max-width: 62ch;
+    }
+
+    .optional-card .code-block { margin-bottom: 1rem; }
+
     .prereq-badge {
       display: inline-flex;
       align-items: center;
@@ -1283,10 +1330,6 @@
       color: var(--text-primary);
     }
 
-    .prereq-badge.optional {
-      background: rgba(var(--note-rgb), 0.1);
-      border-color: rgba(var(--note-rgb), 0.2);
-    }
 
     .prereq-note {
       margin-top: 1rem;
@@ -1999,13 +2042,21 @@
         <div class="getting-started-content">
           <div class="prerequisites-card">
             <h3>Prerequisites</h3>
-            <div class="prereq-grid">
-              <span class="prereq-badge">Node.js v18+</span>
-              <span class="prereq-badge">npm</span>
-              <span class="prereq-badge">Telegram account</span>
-              <span class="prereq-badge optional">Anthropic API key</span>
-              <span class="prereq-badge optional">Claude Max subscription</span>
-              <span class="prereq-badge optional">CCR</span>
+            <div class="prereq-group">
+              <p class="prereq-label">Required</p>
+              <div class="prereq-grid">
+                <span class="prereq-badge">Node.js 18+ and npm</span>
+                <span class="prereq-badge">Claude Code CLI, authenticated</span>
+                <span class="prereq-badge">Telegram bot token</span>
+                <span class="prereq-badge">Your Telegram user ID</span>
+              </div>
+            </div>
+            <div class="prereq-group">
+              <p class="prereq-label">One of these — how the CLI authenticates</p>
+              <div class="prereq-grid">
+                <span class="prereq-badge either">Claude Pro or Max subscription</span>
+                <span class="prereq-badge either">Anthropic API key</span>
+              </div>
             </div>
             <div class="prereq-note">
               <strong>Note:</strong> On macOS, TeleCoder uses <code>caffeinate</code> to prevent sleep during long operations.
@@ -2082,6 +2133,34 @@
                   <p>Send a message to your bot on Telegram and check for a response</p>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <div class="optional-card">
+            <h3>Optional: keep going past your limit</h3>
+            <p>None of this is needed to run TeleCoder. Add it only if you want the bot to
+            carry on when your Claude usage runs out. Claude Code Router is a local proxy
+            that runs the same agent through any model its own config knows about.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span>.env</span>
+                <button type="button" class="copy-btn" onclick="copyCode(this)">Copy</button>
+              </div>
+              <div class="code-content">
+                <pre><span class="comment"># offer a one-tap switch to CCR when Claude throttles</span>
+CCR_ENABLED=true
+<span class="comment"># start the proxy for you if it is not already running</span>
+CCR_AUTOSTART=true</pre>
+              </div>
+            </div>
+            <p>With it enabled, a mid-turn throttle offers a switch and replays the message
+            you just sent. <code>/provider</code> picks a backend at any time and
+            <code>/ccr</code> is a one-tap toggle between the two.</p>
+            <div class="config-note">
+              CCR always takes the SDK path, so PTY-only behaviour does not carry across —
+              and the two backends never share a session, since one model cannot replay
+              another's thinking blocks. Switching starts a fresh session with a plain-text
+              summary carried over.
             </div>
           </div>
 
