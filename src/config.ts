@@ -314,7 +314,21 @@ if (!parsed.success) {
   process.exit(1);
 }
 
-export const config = parsed.data;
+// /reddit is the one integration with a hard credential gate: without an OAuth
+// app it can only ever fail. Unless REDDIT_ENABLED says otherwise, key it off
+// the credentials so a fresh install doesn't advertise a command that cannot
+// work. Setting REDDIT_ENABLED explicitly still wins in both directions.
+const redditConfigured = Boolean(
+  parsed.data.REDDIT_CLIENT_ID &&
+    parsed.data.REDDIT_CLIENT_SECRET &&
+    parsed.data.REDDIT_USERNAME &&
+    parsed.data.REDDIT_PASSWORD
+);
+
+export const config = {
+  ...parsed.data,
+  REDDIT_ENABLED: isEnvSet('REDDIT_ENABLED') ? parsed.data.REDDIT_ENABLED : redditConfigured,
+};
 
 export type Config = typeof config;
 

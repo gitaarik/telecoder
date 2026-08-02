@@ -2075,7 +2075,7 @@
             <div class="feature-icon"><svg><use href="#i-thread"/></svg></div>
             <h3>It reads links for you</h3>
             <p>Paste a YouTube, Reddit, Medium or TikTok link and it fetches the content —
-            transcripts, threads, paywalled articles — without an explicit command.</p>
+            transcripts, threads, full articles — without an explicit command.</p>
           </div>
         </div>
       </div>
@@ -2323,23 +2323,10 @@ CCR_AUTOSTART=true</pre>
                   <td class="required-optional">For voice</td>
                 </tr>
                 <tr>
-                  <td class="var-name">REDDIT_CLIENT_ID</td>
-                  <td>Reddit OAuth2 app client ID</td>
-                  <td class="required-optional">For Reddit</td>
-                </tr>
-                <tr>
-                  <td class="var-name">REDDIT_CLIENT_SECRET</td>
-                  <td>Reddit OAuth2 app client secret</td>
-                  <td class="required-optional">For Reddit</td>
-                </tr>
-                <tr>
-                  <td class="var-name">REDDIT_USERNAME</td>
-                  <td>Reddit bot account username</td>
-                  <td class="required-optional">For Reddit</td>
-                </tr>
-                <tr>
-                  <td class="var-name">REDDIT_PASSWORD</td>
-                  <td>Reddit bot account password</td>
+                  <td class="var-name">REDDIT_CLIENT_ID &amp; 3 more</td>
+                  <td>OAuth2 app credentials for <code>/reddit</code>. Once all four are set the
+                  command turns itself on — see the
+                  <a href="https://github.com/gitaarik/telecoder#optional-integrations">README</a>.</td>
                   <td class="required-optional">For Reddit</td>
                 </tr>
                 <tr><td colspan="3" style="color: var(--brand); font-weight: 600; padding-top: 1.25rem;">Feature Flags</td></tr>
@@ -2350,7 +2337,7 @@ CCR_AUTOSTART=true</pre>
                 </tr>
                 <tr>
                   <td class="var-name">REDDIT_ENABLED</td>
-                  <td>Enable /reddit command (default: true)</td>
+                  <td>Force /reddit on or off (default: on once credentials are set)</td>
                   <td class="required-no">No</td>
                 </tr>
                 <tr>
@@ -2653,7 +2640,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/medium &lt;url&gt;</code>
-              <span class="command-desc">Read Medium articles without paywall</span>
+              <span class="command-desc">Fetch a Medium article as readable text, via Freedium</span>
             </div>
             <div class="command-row">
               <code class="command-code">/file &lt;path&gt;</code>

@@ -31,7 +31,7 @@
 
 ## What is this?
 
-TeleCoder bridges Telegram to a **full Claude Code agent** running locally on your machine. Send a message in Telegram — Claude reads your files, runs commands, writes code, browses Reddit, fetches Medium articles, transcribes voice notes, and speaks responses back. All from your phone.
+TeleCoder bridges Telegram to a **full Claude Code agent** running locally on your machine. Send a message in Telegram — Claude reads your files, runs commands, writes code, transcribes voice notes, and speaks responses back. All from your phone.
 
 This is not a simple API wrapper. It's the real Claude Code agent with tool access — Bash, file I/O, code editing, web browsing — packaged behind a Telegram interface with streaming responses, session memory, and rich output formatting.
 
@@ -54,7 +54,7 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
   failover when Max throttles ([details](#providers))
 
 ### Reddit Integration
-- `/reddit` — posts, subreddits, user profiles
+- `/reddit` — posts, subreddits, user profiles (needs a Reddit OAuth app)
 - `/vreddit` — download & send Reddit-hosted videos
 - Auto-compression for videos > 50 MB (CRF → two-pass)
 - Original oversized videos archived locally
@@ -66,7 +66,7 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 - Requires yt-dlp, ffmpeg (system binaries)
 
 ### Medium Integration
-- `/medium` — fetch paywalled articles via Freedium
+- `/medium` — fetch articles as readable text via Freedium
 - Telegraph Instant View, save as Markdown, or both
 - Pure TypeScript, no Python/Playwright needed
 
@@ -286,7 +286,7 @@ Open your bot in Telegram → `/start`
 <details>
 <summary><strong>Reddit — <code>/reddit</code> & <code>/vreddit</code></strong></summary>
 
-`/reddit` is now a pure TypeScript module using Reddit's OAuth2 API directly — no external Python dependency.
+`/reddit` is a pure TypeScript module using Reddit's OAuth2 API directly — no external Python dependency.
 
 ```bash
 # .env
@@ -296,7 +296,11 @@ REDDIT_USERNAME=bot_account
 REDDIT_PASSWORD=bot_password
 ```
 
-Create a "script" app at https://www.reddit.com/prefs/apps/. Use a dedicated bot account — NOT your personal credentials. Video downloads need `ffmpeg` and `ffprobe` on your PATH.
+Create a "script" app at https://www.reddit.com/prefs/apps/. Use a dedicated bot account — NOT your personal credentials.
+
+`/reddit` turns itself on once all four credentials are present, and stays hidden otherwise, so it never shows up in the command menu as something that can only fail. Set `REDDIT_ENABLED` explicitly to override that either way.
+
+`/vreddit` is separate — it reads Reddit's public JSON and needs no credentials, only `ffmpeg` and `ffprobe` on your PATH.
 
 </details>
 
@@ -380,6 +384,7 @@ All config lives in `.env`. See [`.env.example`](.env.example) for the full anno
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `REDDIT_ENABLED` | on when all four credentials are set | Force `/reddit` on or off |
 | `REDDIT_CLIENT_ID` | — | Reddit OAuth2 client ID |
 | `REDDIT_CLIENT_SECRET` | — | Reddit OAuth2 client secret |
 | `REDDIT_USERNAME` | — | Reddit bot account username |
