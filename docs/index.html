@@ -1926,17 +1926,23 @@
           <div class="feature-card" data-category="session">
             <div class="feature-icon"><svg><use href="#i-save"/></svg></div>
             <h3>Session Persistence</h3>
-            <p>Sessions auto-restore after any restart (planned, crash, or cold start). Recent sessions (under an hour) are silently reattached so your next message just continues. Sessions idle between 1h and 7d get a "Continue or start fresh?" prompt. Older sessions stay parked behind /resume and /continue.</p>
+            <p>Sessions survive any restart. Anything under an hour reattaches silently, older ones
+            ask first, and the rest stay parked behind <code>/resume</code> and
+            <code>/continue</code>.</p>
           </div>
           <div class="feature-card" data-category="session">
             <div class="feature-icon"><svg><use href="#i-predict"/></svg></div>
             <h3>Predicted Next Prompt</h3>
-            <p>Opt in with /suggestions to scrape Claude Code's ghost-text prompt suggestion from the TUI at end-of-turn and surface it as an inline button under each response. Tap to send it as your next message. Free — the suggestion piggybacks on Claude Code's own speculation, no extra API call.</p>
+            <p>Turn on <code>/suggestions</code> and Claude Code’s own next-prompt guess appears as
+            a tappable button under each reply. Free — it piggybacks on speculation the CLI
+            already did.</p>
           </div>
           <div class="feature-card" data-category="session">
             <div class="feature-icon"><svg><use href="#i-reload"/></svg></div>
             <h3>Hot Reload</h3>
-            <p>Rebuild and restart the bot with /rebuildbot. Sessions are automatically restored — no manual button clicks needed. Every restarted instance confirms itself in chat when it's back, so a multi-bot "all instances" restart doesn't leave you guessing whether the siblings came up.</p>
+            <p>Rebuild and restart with <code>/rebuildbot</code>. Sessions restore themselves, and
+            every instance confirms in chat when it is back, so a multi-bot restart leaves
+            nothing to guess.</p>
           </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon"><svg><use href="#i-model"/></svg></div>
@@ -1956,17 +1962,22 @@
           <div class="feature-card" data-category="core">
             <div class="feature-icon"><svg><use href="#i-ask"/></svg></div>
             <h3>Ask User</h3>
-            <p>Claude can pop up a Telegram inline keyboard with multiple-choice options when it needs a clear decision. You're never asked to pick before you've been told why: the comparison or rationale always rides in the same message as the buttons, and any reasoning Claude had already written before it stopped to ask is flushed to the chat just above the question instead of waiting for the end of the turn. While the question is open the status line says it's waiting on you instead of spinning, and the final answer lands as a fresh message <em>below</em> the question rather than being quietly edited in above it. Tap a button to answer; the agent loop continues with your choice. The question loses its keyboard and gets an "✅ Answered" marker, and your choice also posts as its own message replying to the question — so it lands in the conversation flow, notifies the rest of a group chat, and names who tapped.</p>
+            <p>Claude asks for a decision with a Telegram inline keyboard, reasoning in the same
+            message. Tap to answer; your pick posts as its own reply, so a group sees who chose.</p>
           </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon"><svg><use href="#i-swap"/></svg></div>
             <h3>Provider Switching</h3>
-            <p>Switch between Claude and CCR with /provider. CCR routes the same agent through any model its config knows about, so you keep working when Claude is unavailable. Switching a live conversation confirms first, then starts a fresh session on the new backend with a plain-text summary of the prior chat carried over — backends can't share a session (a different model's thinking blocks can't be replayed), so each is kept cleanly separate.</p>
+            <p><code>/provider</code> moves between Claude and CCR, which can route the same agent
+            through any model it knows. Switching mid-conversation starts a fresh session with a
+            summary carried over.</p>
           </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon"><svg><use href="#i-pty"/></svg></div>
             <h3>PTY Mode (Subscription Path)</h3>
-            <p>Switch with /method to drive Claude Code as an interactive pseudo-terminal session instead of the Agent SDK. Built for the 2026-06-15 policy split that separates programmatic-pool usage from Pro/Max subscription. Verbose UI (tool indicators, edit diffs, action log) is delivered via hook events from the spawned <code>claude</code>; reddit / medium / telegraph / set_topic are available as MCP tools loaded from a standalone subprocess. SDK mode remains available as a fallback.</p>
+            <p><code>/method</code> drives the real <code>claude</code> CLI instead of the Agent
+            SDK — the path built for Pro/Max subscriptions. Tool indicators and diffs arrive via
+            its hooks, and SDK mode stays available.</p>
           </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon"><svg><use href="#i-throttle"/></svg></div>
@@ -1976,12 +1987,15 @@
           <div class="feature-card" data-category="session">
             <div class="feature-icon"><svg><use href="#i-star"/></svg></div>
             <h3>Project Favorites</h3>
-            <p>/project opens with your favorite projects — one tap to switch. ⭐ from inside the workspace browser to add the current folder, or use ✍️ Enter path to point at any directory on disk (escapes the workspace root). Favorites persist across restarts in ~/.claudegram/project-favorites.json.</p>
+            <p><code>/project</code> opens on your favorites for one-tap switching. Star a folder
+            from the browser, or type any path on disk. Favorites survive restarts.</p>
           </div>
           <div class="feature-card" data-category="session">
             <div class="feature-icon"><svg><use href="#i-sidechat"/></svg></div>
             <h3>Side Questions</h3>
-            <p>/btw answers a question about the running task without interrupting it. SDK mode asks the live query directly; PTY mode forks the session into a read-only, non-persisted copy that sees the transcript up to the current moment — the working turn never pauses and the transcript is never written to. One labelled message shows live progress while the side question works, then collapses to a receipt (“3 tools · 22s”) with the answer below it.</p>
+            <p><code>/btw</code> answers a question about the running task without pausing it,
+            forking a read-only copy of the transcript. Progress shows live, then collapses to a
+            receipt.</p>
           </div>
           <div class="feature-card" data-category="session">
             <div class="feature-icon"><svg><use href="#i-teleport"/></svg></div>
@@ -2001,7 +2015,9 @@
           <div class="feature-card" data-category="core">
             <div class="feature-icon"><svg><use href="#i-statusline"/></svg></div>
             <h3>Per-Turn Status Line</h3>
-            <p>Sends a small status line after each turn showing the current topic, effort, model, context %, and cost — right above the compose box and visible in the Telegram chat list as the latest message. Active counters (🔄 backgrounded tasks, 📡 monitors, 🔍 PTY bg shells) appear only when non-zero so quiet turns stay quiet. Optional sub-toggles for your last prompt (handy under verbose mode, where the action log can bury what you typed) and a copy-pasteable <code>claude --resume &lt;id&gt;</code> line for CLI fallback. Off by default; opt in with /statusline.</p>
+            <p>An optional line after each turn showing topic, effort, model, context and cost,
+            visible in the Telegram chat list. Background counters appear only when non-zero.
+            Opt in with <code>/statusline</code>.</p>
           </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon"><svg><use href="#i-done"/></svg></div>
@@ -2011,42 +2027,56 @@
           <div class="feature-card" data-category="core">
             <div class="feature-icon"><svg><use href="#i-levels"/></svg></div>
             <h3>Verbosity Tiers</h3>
-            <p>One per-chat setting (quiet / normal / verbose / debug) drives how much detail TeleCoder surfaces each turn. Verbose adds the per-turn usage footer, untruncated tool inputs, and a consolidated action log that streams tool results and diffs live in a single updatable message, then collapses to a Telegraph link at the end of the turn so the chat history stays tidy. Debug extends the action log with longer previews (40 lines vs 20). Quiet drops the completion ping. Set with /verbosity; env-level default via VERBOSITY_DEFAULT.</p>
+            <p>One per-chat setting — quiet, normal, verbose, debug — sets how much each turn
+            shows. Verbose streams a live action log; quiet drops the completion ping. Set with
+            <code>/verbosity</code>.</p>
           </div>
           <div class="feature-card" data-category="session">
             <div class="feature-icon"><svg><use href="#i-back"/></svg></div>
             <h3>Back to Previous Session</h3>
-            <p>After /clear, /project, /newproject, or /start, TeleCoder appends a one-tap inline button that resumes the most recent prior session — handy if you regret a clear or want to jump back to the project you just left.</p>
+            <p>After <code>/clear</code>, <code>/project</code> or <code>/start</code>, a one-tap
+            button resumes the session you just left — handy if you regret the clear.</p>
           </div>
           <div class="feature-card" data-category="session">
             <div class="feature-icon"><svg><use href="#i-recap"/></svg></div>
             <h3>Session Recap</h3>
-            <p>Use /recap [N] to re-read the last N user/assistant exchanges from the active session (default 3). After /resume or /continue, TeleCoder drops a one-line tip pointing at the command so you can quickly orient yourself in a restored session.</p>
+            <p><code>/recap [N]</code> re-reads the last N exchanges from the active session, three
+            by default. After a <code>/resume</code>, a one-line tip points you at it.</p>
           </div>
           <div class="feature-card" data-category="session">
             <div class="feature-icon"><svg><use href="#i-inbox"/></svg></div>
             <h3>Missed-Reply Catch-up</h3>
-            <p>After every turn, TeleCoder cross-checks what it sent against Claude Code's canonical session log and auto-posts anything the extractor missed (pure tool-call turns, multi-block lossy screen-scrape, early end-of-turn flushes). Hit /sync any time to manually re-check — bypasses the queue so it works during hung turns.</p>
+            <p>After every turn TeleCoder checks what it sent against Claude Code’s session log and
+            posts anything missed. <code>/sync</code> re-checks by hand, even during a hung
+            turn.</p>
           </div>
           <div class="feature-card" data-category="session">
             <div class="feature-icon"><svg><use href="#i-fork"/></svg></div>
             <h3>Conversation Forks</h3>
-            <p>Every assistant message gets a 🍴 Fork button that branches the conversation up to that point. Pick "New branch here" to fork into a fresh conversation on the <em>same</em> bot — your current thread is saved to /resume history and you continue from the branch point. Or pick a sibling bot from your multi-bot setup to hand it off: open that bot and your next message triggers an accept/decline prompt (accepting loads the truncated transcript, its prior conversation stays in /resume history). Either way you explore a different angle without losing the original.</p>
+            <p>Every reply carries a 🍴 Fork button that branches from that point — into a fresh
+            conversation, or handed to a sibling bot. The original is saved to
+            <code>/resume</code> history either way.</p>
           </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon"><svg><use href="#i-clock"/></svg></div>
             <h3>Scheduled Tasks</h3>
-            <p>Use /schedule to run a prompt on a recurring cadence. Supports intervals (<code>every 5m</code>, <code>every 1h</code>) and cron-style days/times (<code>daily 9am</code>, <code>weekdays 14:00</code>, <code>mon,wed,fri 10:30</code>). Each fire posts a "🔔 Scheduled" header and runs through the same session as your manual chats. Hard caps (10 active per chat, 50 fires default) keep runaway API spend in check.</p>
+            <p><code>/schedule</code> runs a prompt on a cadence — <code>every 5m</code>,
+            <code>daily 9am</code>, <code>weekdays 14:00</code>. Each fire posts under a 🔔
+            header, with hard caps to keep API spend in check.</p>
           </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon"><svg><use href="#i-autoclock"/></svg></div>
             <h3>Claude Self-Scheduling</h3>
-            <p>In PTY mode, Claude has access to <code>claudegram_loop</code> and <code>claudegram_schedule</code> MCP tools so it can set up its own recurring tasks ("ping me when CI finishes", "remind me about this tomorrow"). Built-in <code>CronCreate</code> / <code>ScheduleWakeup</code> are blocked since they can't reach back into Telegram — set <code>TELECODER_ALLOW_NATIVE_SCHEDULING=1</code> to re-enable for experimentation.</p>
+            <p>In PTY mode Claude can schedule its own recurring tasks — “ping me when CI
+            finishes”. The built-in cron tools stay blocked, since they cannot reach back into
+            Telegram.</p>
           </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon"><svg><use href="#i-relay"/></svg></div>
             <h3>Async Event Relay</h3>
-            <p>In PTY mode, TeleCoder surfaces task-notifications from <code>Monitor</code>, <code>Bash(run_in_background=true)</code>, and <code>Task</code> subagents to Telegram between turns. Each event posts as a "📡 Monitor — ...", "⚙️ Backgrounded: ...", or "🤖 Subagent started: ..." header, with the raw event payload (▸ trigger line) and Claude's analysis. When a backgrounded task or subagent finishes, the original "started" message is edited in place to "✅ Backgrounded: ... (12s)" so the chat doesn't stay stuck on a stale "in progress" line — short tasks edit silently, longer ones (≥ <code>NOTIFICATION_THRESHOLD_SECONDS</code>) and failures also post a fresh message so Telegram pings you. <code>PushNotification</code> is also relayed as "🔔 &lt;message&gt;". Useful for "tail this log and tell me when it errors", "build the docs in the background", or "delegate Y to a subagent" tasks.</p>
+            <p>In PTY mode, events from <code>Monitor</code>, background shells and subagents reach
+            Telegram between turns. Finished work edits its own message; long or failed runs
+            post again so you get a ping.</p>
           </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon"><svg><use href="#i-proxy"/></svg></div>
@@ -2071,7 +2101,8 @@
           <div class="feature-card" data-category="core">
             <div class="feature-icon"><svg><use href="#i-background"/></svg></div>
             <h3>Background Tasks</h3>
-            <p>Long-running subagents run in the background while Claude keeps responding. A compact counter shows how many tasks are active. When a task finishes, the original "started" message is edited in place to show the status and duration; tasks that ran longer than <code>NOTIFICATION_THRESHOLD_SECONDS</code> (default 60s) or that errored also post a fresh notification so Telegram pings you.</p>
+            <p>Long subagents run while Claude keeps answering, with a counter for how many are
+            active. Each edits its own message on finish; slow or failed ones also ping you.</p>
           </div>
           <div class="feature-card" data-category="core">
             <div class="feature-icon"><svg><use href="#i-waveform"/></svg></div>
@@ -2081,7 +2112,9 @@
           <div class="feature-card" data-category="core">
             <div class="feature-icon"><svg><use href="#i-reap"/></svg></div>
             <h3>Background Process Reaper</h3>
-            <p><code>/shells</code> lists the actual OS-level shells the PTY claude session has spawned — every <code>Bash(run_in_background=true)</code> poller and Monitor loop, with cmdline and age. One tap SIGTERMs the chosen process plus its descendants, rescuing sessions whose watcher will never fire.</p>
+            <p><code>/shells</code> lists the OS processes the PTY session has spawned — every
+            background poller and monitor loop, with age. One tap kills the chosen one and its
+            children.</p>
           </div>
         </div>
       </div>
