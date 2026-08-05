@@ -34,6 +34,11 @@ export async function replyTooLargeToFetch(
   kindTitle: string,
   fileSizeBytes?: number
 ): Promise<void> {
+  // Log the answer, not just the drops. The original bug was invisible in the
+  // logs precisely because nothing recorded a decision, and "user reports
+  // nothing arrived" is unfalsifiable without a line to point at.
+  console.log(`[Media] ${kindTitle} over the ${TELEGRAM_DOWNLOAD_LIMIT_MB}MB fetch limit `
+    + `(${((fileSizeBytes ?? 0) / (1024 * 1024)).toFixed(1)}MB) — explained to user`);
   await ctx.reply(
     `❌ *${esc(kindTitle)} too large*${sizeSuffix(fileSizeBytes)}\n\n`
     + `Telegram caps bot downloads at ${TELEGRAM_DOWNLOAD_LIMIT_MB}MB, so I can't fetch this one `
@@ -52,6 +57,7 @@ export async function replyBareAudio(ctx: Context, fileSizeBytes?: number): Prom
     await replyTooLargeToFetch(ctx, 'Audio file', fileSizeBytes);
     return;
   }
+  console.log('[Media] Bare audio upload — pointed user at /transcribe');
   await ctx.reply(
     `🎵 *Audio received*${sizeSuffix(fileSizeBytes)}\n\n`
     + `I don't read audio files on their own\\. To transcribe this, run /transcribe `
@@ -69,6 +75,7 @@ export async function replyUnsupportedVideo(ctx: Context, fileSizeBytes?: number
     await replyTooLargeToFetch(ctx, 'Video', fileSizeBytes);
     return;
   }
+  console.log('[Media] Video upload — unsupported, told user');
   await ctx.reply(
     `🎬 *Video isn't supported*${sizeSuffix(fileSizeBytes)}\n\n`
     + `I can't read video files\\. Extract the audio and send that via /transcribe, `
