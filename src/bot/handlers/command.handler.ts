@@ -26,7 +26,9 @@ import {
 import { switchProvider, switchRequiresConfirm } from '../../providers/provider-switch.js';
 import { config, getReloadMarkerPath } from '../../config.js';
 import { messageSender } from '../../telegram/message-sender.js';
-import { getUptimeFormatted } from '../middleware/stale-filter.js';
+import { getUptimeFormatted, isStaleMessage } from '../middleware/stale-filter.js';
+import { isDuplicate, markProcessed } from '../../telegram/deduplication.js';
+import { replyBareAudio, exceedsDownloadLimit, replyTooLargeToFetch } from './media-fallback.js';
 import { getAvailableCommands } from '../../claude/command-parser.js';
 import {
   cancelRequest,
@@ -3928,7 +3930,8 @@ export async function sendTranscriptResult(ctx: Context, transcript: string): Pr
 async function transcribeAndSend(
   ctx: Context,
   fileId: string,
-  mimeHint?: string
+  mimeHint?: string,
+  fileSizeBytes?: number
 ): Promise<void> {
   if (!config.TRANSCRIBE_ENABLED) {
     await replyFeatureDisabled(ctx, 'Transcribe');
@@ -3937,6 +3940,13 @@ async function transcribeAndSend(
 
   const chatId = ctx.chat?.id;
   if (!chatId) return;
+
+  // Check before the ack, not after: getFile rejects anything over Telegram's
+  // download ceiling, and the bare 400 that comes back reads like a bot fault.
+  if (exceedsDownloadLimit(fileSizeBytes)) {
+    await replyTooLargeToFetch(ctx, 'Audio file', fileSizeBytes);
+    return;
+  }
 
   const ackMsg = await ctx.reply('🎤 Transcribing...', { parse_mode: undefined });
   let tempFilePath: string | null = null;
@@ -4028,20 +4038,40 @@ export async function handleTranscribe(ctx: Context): Promise<void> {
  * Handle audio messages (message:audio) sent as reply to the Transcribe ForceReply.
  */
 export async function handleTranscribeAudio(ctx: Context): Promise<void> {
+  const audio = ctx.message?.audio;
+  const messageId = ctx.message?.message_id;
+  const messageDate = ctx.message?.date;
+  if (!audio || !messageId || !messageDate) return;
+
+  // Guard before replying to anything. This handler used to return silently on
+  // every path, so it never needed these; now that it answers, a restart would
+  // otherwise respond to every audio file sent while the bot was down.
+  if (isStaleMessage(messageDate)) {
+    console.log(`[Transcribe] Ignoring stale audio ${messageId}`);
+    return;
+  }
+  if (isDuplicate(messageId)) {
+    console.log(`[Transcribe] Ignoring duplicate audio ${messageId}`);
+    return;
+  }
+  markProcessed(messageId);
+
   if (!config.TRANSCRIBE_ENABLED) {
     await replyFeatureDisabled(ctx, 'Transcribe');
     return;
   }
 
+  // Transcription is opt-in: the file has to be a reply to the /transcribe
+  // ForceReply prompt. A bare audio upload isn't a transcribe request, but it
+  // isn't nothing either — tell the user how to ask for one.
   const replyTo = ctx.message?.reply_to_message;
-  if (!replyTo || !replyTo.from?.is_bot) return;
-  const replyText = (replyTo as { text?: string }).text || '';
-  if (!replyText.includes('Transcribe Audio')) return;
+  const replyText = replyTo?.from?.is_bot ? ((replyTo as { text?: string }).text || '') : '';
+  if (!replyText.includes('Transcribe Audio')) {
+    await replyBareAudio(ctx, audio.file_size);
+    return;
+  }
 
-  const audio = ctx.message?.audio;
-  if (!audio) return;
-
-  await transcribeAndSend(ctx, audio.file_id, audio.mime_type);
+  await transcribeAndSend(ctx, audio.file_id, audio.mime_type, audio.file_size);
 }
 
 /**
@@ -4061,7 +4091,7 @@ export async function handleTranscribeDocument(ctx: Context): Promise<void> {
   const doc = ctx.message?.document;
   if (!doc || !doc.mime_type?.startsWith('audio/')) return;
 
-  await transcribeAndSend(ctx, doc.file_id, doc.mime_type);
+  await transcribeAndSend(ctx, doc.file_id, doc.mime_type, doc.file_size);
 }
 
 // ── /extract command ───────────────────────────────────────────────

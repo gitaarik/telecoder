@@ -102,9 +102,12 @@ const envSchema = z.object({
     .string()
     .default('20')
     .transform((val) => parseInt(val, 10)),
+  // 19, not 25: Telegram's getFile refuses anything over 20MB, so a 25MB
+  // ceiling let files through this guard only to fail at download with an
+  // opaque 400. Matches VOICE_MAX_FILE_SIZE_MB, which already sat under the cap.
   DOCUMENT_MAX_FILE_SIZE_MB: z
     .string()
-    .default('25')
+    .default('19')
     .transform((val) => parseInt(val, 10)),
   // New config options
   DANGEROUS_MODE: z

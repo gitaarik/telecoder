@@ -90,6 +90,10 @@ import { handleForkCallback, handleAcceptCommand, handleDeclineCommand, handleFo
 import { handleSuggestionTapCallback } from './handlers/suggestion.handler.js';
 import { handleVoice } from './handlers/voice.handler.js';
 import { handlePhoto, handleImageDocument, handleTextDocument } from './handlers/photo.handler.js';
+import {
+  handleUnsupportedVideo,
+  handleUnsupportedMediaDocument,
+} from './handlers/media-fallback.js';
 import { createBatchMiddleware } from './middleware/message-batcher.js';
 import { resolvePendingQuestion, appendAnsweredFooter, buildAnswerConfirmation } from '../claude/ask-user.js';
 import { resolvePendingPoll } from '../claude/poll-user.js';
@@ -517,13 +521,23 @@ export async function createBot(): Promise<Bot> {
       return;
     }
 
-    // Skip audio that isn't being transcribed — voice/audio messages have
-    // their own dedicated handlers, so a stray audio document here is likely
-    // not meant for the agent. Everything else (PDF, text, code, CSV, …)
-    // goes to the document reader.
-    if (mime.startsWith('audio/') || mime.startsWith('video/')) return;
+    // Audio and video documents have no ingestion path, but say so rather than
+    // dropping them. This used to be a bare `return`: an mp3 sent as a file
+    // produced no reply, no log line, nothing — indistinguishable from the bot
+    // being down. Everything else (PDF, text, code, CSV, …) goes to the
+    // document reader.
+    if (mime.startsWith('video/') || mime.startsWith('audio/')) {
+      await handleUnsupportedMediaDocument(ctx);
+      return;
+    }
     await handleTextDocument(ctx);
   });
+
+  // Video, round video notes and GIFs — no handler matched these at all
+  // before, so they fell through the whole chain silently.
+  bot.on('message:video', handleUnsupportedVideo);
+  bot.on('message:video_note', handleUnsupportedVideo);
+  bot.on('message:animation', handleUnsupportedVideo);
 
   // Handle regular text messages
   bot.on('message:text', handleMessage);
