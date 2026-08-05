@@ -27,6 +27,7 @@ import { createPendingPoll } from './poll-user.js';
 import { scheduler } from './scheduler.js';
 import { readLastAssistantTurnText } from './session-jsonl.js';
 import { getDeliveredProse, recordDeliveredProse, stripDeliveredPrefix } from './turn-prose.js';
+import { parseSessionKey } from '../utils/session-key.js';
 
 const TELEGRAM_MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 
@@ -144,7 +145,10 @@ registerIpcHandler('/mcp/ask_user', async (turn, body) => {
   // Telegram returns 400, grammy throws, the IPC server returns 500, and the
   // model just sees the tool fail. The bold on labels was a nice-to-have; the
   // button itself shows the label clearly.
-  const threadId = ctx.message?.is_topic_message ? ctx.message?.message_thread_id : undefined;
+  // From the session key, not `ctx.message` — a turn started by a tapped
+  // button carries a callback-query context with no `message`, which would
+  // silently drop the thread and post the question into General.
+  const threadId = parseSessionKey(turn.sessionKey).threadId;
   await ctx.api.sendMessage(ctx.chat.id, messageText, {
     reply_markup: { inline_keyboard: keyboard },
     ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
@@ -351,7 +355,8 @@ registerIpcHandler('/mcp/poll_user', async (turn, body) => {
     return { success: false, message: 'Error: no Telegram context available to ask the user.' };
   }
 
-  const threadId = ctx.message?.is_topic_message ? ctx.message?.message_thread_id : undefined;
+  // Session key, not `ctx.message` — see the note in the ask_user handler.
+  const threadId = parseSessionKey(turn.sessionKey).threadId;
   const sent = await ctx.api.sendPoll(ctx.chat.id, question, options.map((o) => ({ text: o })), {
     is_anonymous: false,
     allows_multiple_answers: allowsMultiple,

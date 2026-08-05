@@ -406,9 +406,21 @@ export class MessageSender {
       actionLogEnabled,
     };
 
-    // Initialize action logging if enabled
+    // Register before anything else can throw. The typing indicator and the
+    // thinking bubble are already live at this point, and the only handle on
+    // them is `state` — if we bail out before registering, finish/cancel can't
+    // find the stream and the "typing…" interval ticks forever.
+    this.streamStates.set(sessionKey, state);
+    this.interveningPostsThisStream.set(sessionKey, 0);
+
+    // Initialize action logging if enabled. Cosmetic, so a failure here
+    // degrades to a turn without an action log rather than no turn at all.
     if (actionLogEnabled) {
-      await actionLogger.initialize(ctx, sessionKey);
+      try {
+        await actionLogger.initialize(ctx, sessionKey);
+      } catch (error) {
+        console.error('[ActionLog] initialize failed, continuing without it:', error);
+      }
     }
 
     // Periodic refresh so the elapsed timer and spinner update even during long tool runs
@@ -420,9 +432,6 @@ export class MessageSender {
         }
       }, MIN_EDIT_INTERVAL_MS);
     }
-
-    this.streamStates.set(sessionKey, state);
-    this.interveningPostsThisStream.set(sessionKey, 0);
   }
 
   private stopSpinnerAnimation(state: StreamState): void {

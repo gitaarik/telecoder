@@ -17,6 +17,7 @@ import { getWorkspaceRoot, isPathWithinRoot } from '../utils/workspace-guard.js'
 import { setSessionTopic, clearTopicAndRefreshBotName } from '../bot/handlers/command.handler.js';
 import { messageSender } from '../telegram/message-sender.js';
 import { createPendingQuestion, buildAskUserMessageText } from './ask-user.js';
+import { parseSessionKey } from '../utils/session-key.js';
 
 // Lazy imports to avoid circular deps and unnecessary module loading
 async function importReddit() {
@@ -520,7 +521,10 @@ function askUserTool(toolsCtx: McpToolsContext) {
         // backticks (e.g. URL params like `f_WT=2`) that break legacy Markdown
         // parsing — Telegram returns 400 and the tool fails with no useful
         // signal to the model. Button labels still surface the choice clearly.
-        const threadId = ctx.message?.is_topic_message ? ctx.message?.message_thread_id : undefined;
+        // From the session key, not `ctx.message` — a turn started by a tapped
+        // button carries a callback-query context with no `message`, which
+        // would silently drop the thread and post into General.
+        const threadId = parseSessionKey(toolsCtx.sessionKey).threadId;
         await ctx.api.sendMessage(ctx.chat.id, messageText, {
           reply_markup: { inline_keyboard: keyboard },
           ...(threadId !== undefined ? { message_thread_id: threadId } : {}),

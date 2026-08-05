@@ -11,6 +11,7 @@ import { createTelegraphPage } from './telegraph.js';
 import { isTelegraphEnabled } from './telegraph-settings.js';
 import type { ToolResultEvent, EditDiffEvent } from '../providers/types.js';
 import type { TaskState } from './task-tracker.js';
+import { getSessionKeyFromCtx } from '../utils/session-key.js';
 
 // Constants
 const MIN_EDIT_INTERVAL_MS = 10000; // Minimum time between message edits (~5 edits/min safe zone)
@@ -60,8 +61,12 @@ export class ActionLogger {
     const chatId = ctx.chat?.id;
     if (chatId === undefined) return;
 
-    const threadId = 'message_thread_id' in ctx.message! ?
-      ctx.message.message_thread_id : undefined;
+    // Resolve the thread the same way the streaming bubble does. A turn can
+    // start from a callback query (a tapped suggestion button), where
+    // `ctx.message` is undefined and the originating message hangs off
+    // `ctx.callbackQuery` instead — reading `ctx.message` directly threw and
+    // took the whole turn down with it.
+    const threadId = getSessionKeyFromCtx(ctx)?.threadId;
 
     // Just create the state, don't send a message yet
     this.logStates.set(sessionKey, {
