@@ -1,8 +1,6 @@
-import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { z } from 'zod';
-import { atomicWriteFileSync } from '../utils/atomic-write.js';
+import { ensureStateDir, getStateDir, readJsonFile, writeJsonFile } from '../utils/json-store.js';
 import { BOT_ID } from '../config.js';
 
 /**
@@ -24,38 +22,19 @@ const inFlightFileSchema = z.object({
 
 export type InFlightEntry = z.infer<typeof inFlightEntrySchema>;
 
-const HISTORY_DIR = path.join(os.homedir(), '.claudegram');
+const HISTORY_DIR = getStateDir();
 
 function getFile(): string {
   return path.join(HISTORY_DIR, `in-flight-${BOT_ID}.json`);
 }
 
-function ensureDir(): void {
-  if (!fs.existsSync(HISTORY_DIR)) {
-    fs.mkdirSync(HISTORY_DIR, { recursive: true, mode: 0o700 });
-  }
-}
-
 function readAll(): InFlightEntry[] {
-  try {
-    const file = getFile();
-    if (!fs.existsSync(file)) return [];
-    const raw = fs.readFileSync(file, 'utf-8');
-    const result = inFlightFileSchema.safeParse(JSON.parse(raw));
-    if (!result.success) return [];
-    return result.data.entries;
-  } catch {
-    return [];
-  }
+  return readJsonFile(getFile(), inFlightFileSchema, 'InFlight')?.entries ?? [];
 }
 
 function writeAll(entries: InFlightEntry[]): void {
-  try {
-    ensureDir();
-    atomicWriteFileSync(getFile(), JSON.stringify({ entries }, null, 2), { mode: 0o600 });
-  } catch (err) {
-    console.error('[InFlight] Failed to write:', err);
-  }
+  ensureStateDir(HISTORY_DIR, 'InFlight');
+  writeJsonFile(getFile(), { entries }, 'InFlight');
 }
 
 // Cap stored prompt at 50KB so a long interrupted prompt survives the restart

@@ -16,13 +16,11 @@
  * doesn't get a live notification; it polls on each incoming user message.
  */
 
-import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { z } from 'zod';
-import { atomicWriteFileSync } from '../utils/atomic-write.js';
+import { ensureStateDir, getStateDir, readJsonFile, writeJsonFile } from '../utils/json-store.js';
 
-const HISTORY_DIR = path.join(os.homedir(), '.claudegram');
+const HISTORY_DIR = getStateDir();
 
 const pendingForkSchema = z.object({
   fromBotName: z.string(),
@@ -53,30 +51,15 @@ function pathFor(botId: string): string {
   return path.join(HISTORY_DIR, `pending-forks-${botId}.json`);
 }
 
-function ensureDir(): void {
-  if (!fs.existsSync(HISTORY_DIR)) {
-    fs.mkdirSync(HISTORY_DIR, { recursive: true, mode: 0o700 });
-  }
-}
-
 function loadFile(botId: string): { users: Record<string, PendingFork> } {
-  const p = pathFor(botId);
-  if (!fs.existsSync(p)) return { users: {} };
-  try {
-    const raw = fs.readFileSync(p, 'utf-8');
-    const parsed = JSON.parse(raw);
-    const result = fileSchema.safeParse(parsed);
-    if (result.success) return result.data;
-    console.warn(`[PendingForks] Invalid file ${p}, starting fresh:`, result.error.message);
-  } catch (err) {
-    console.warn(`[PendingForks] Failed to load ${p}:`, err instanceof Error ? err.message : err);
-  }
-  return { users: {} };
+  return readJsonFile(pathFor(botId), fileSchema, 'PendingForks') ?? { users: {} };
 }
 
+// rethrow: callers confirm "Forked." to the user immediately after writing, so
+// a swallowed failure would report a handoff that never landed on disk.
 function saveFile(botId: string, data: { users: Record<string, PendingFork> }): void {
-  ensureDir();
-  atomicWriteFileSync(pathFor(botId), JSON.stringify(data, null, 2), { mode: 0o600 });
+  ensureStateDir(HISTORY_DIR, 'PendingForks');
+  writeJsonFile(pathFor(botId), data, 'PendingForks', { rethrow: true });
 }
 
 /** Write a pending fork to the target bot's file, replacing any existing one for this user. */

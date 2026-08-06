@@ -1,10 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { config } from '../config.js';
 import { resolveActiveClaudeExecutable } from '../utils/resolve-claude-bin.js';
+import { ensureStateDir, getStateDir } from '../utils/json-store.js';
 
-const SHIM_DIR = path.join(os.homedir(), '.claudegram');
+const SHIM_DIR = getStateDir();
 const SHIM_PATH = path.join(SHIM_DIR, 'claude-via-ccr.sh');
 
 let cachedShim: string | undefined;
@@ -27,9 +27,7 @@ export function getCcrShimPath(): string {
     return cachedShim;
   }
 
-  if (!fs.existsSync(SHIM_DIR)) {
-    fs.mkdirSync(SHIM_DIR, { recursive: true, mode: 0o700 });
-  }
+  ensureStateDir(SHIM_DIR, 'CcrShim');
 
   const realClaude = resolveActiveClaudeExecutable();
   const baseUrl = shellSingleQuote(config.CCR_BASE_URL);

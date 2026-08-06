@@ -78,13 +78,23 @@ export function readJsonFile<T>(filePath: string, schema: ZodType<T>, label: str
 }
 
 /**
- * Write a JSON state file atomically, owner-readable only. Write failures are
- * logged and swallowed: losing a settings toggle should never take down a turn.
+ * Write a JSON state file atomically, owner-readable only.
+ *
+ * Failures are logged and swallowed by default: losing a settings toggle
+ * should never take down a turn. Pass `rethrow` when the caller reports
+ * success to the user right after writing — there, a silent failure would
+ * claim the write happened when it didn't.
  */
-export function writeJsonFile(filePath: string, data: unknown, label: string): void {
+export function writeJsonFile(
+  filePath: string,
+  data: unknown,
+  label: string,
+  opts?: { rethrow?: boolean },
+): void {
   try {
     atomicWriteFileSync(filePath, JSON.stringify(data, null, 2), { mode: FILE_MODE });
   } catch (error) {
+    if (opts?.rethrow) throw error;
     console.error(`[${label}] Failed to save ${path.basename(filePath)}:`, error);
   }
 }

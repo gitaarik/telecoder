@@ -13,8 +13,8 @@ import { Worker, isMainThread } from 'worker_threads';
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'fs';
 import { config as loadEnv } from 'dotenv';
 import * as path from 'path';
-import * as os from 'os';
 import { fileURLToPath } from 'url';
+import { getStateDir } from './utils/json-store.js';
 import { stripJsonComments, expandName } from './utils/instance-config.js';
 import { legacyEnv } from './utils/legacy-env.js';
 
@@ -180,7 +180,7 @@ interface WorkerMessage {
 // Mirrors getReloadMarkerPathForBotId in src/config.ts. We can't import config
 // here because the launcher process has no TELEGRAM_BOT_TOKEN env var (only
 // workers do), and config.ts validates it at import time.
-const STATE_DIR = path.join(os.homedir(), '.claudegram');
+const STATE_DIR = getStateDir();
 
 function writeReloadMarkerForToken(token: string, instanceName?: string): void {
   let botId = '';

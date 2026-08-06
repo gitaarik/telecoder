@@ -1,9 +1,7 @@
-import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { z } from 'zod';
 import { Cron } from 'croner';
-import { atomicWriteFileSync } from '../utils/atomic-write.js';
+import { ensureStateDir, getStateDir, readJsonFile, writeJsonFile } from '../utils/json-store.js';
 import { BOT_ID } from '../config.js';
 
 /**
@@ -59,16 +57,10 @@ export interface ScheduleSpec {
 
 export type FireHandler = (schedule: Schedule) => Promise<void>;
 
-const HISTORY_DIR = path.join(os.homedir(), '.claudegram');
+const HISTORY_DIR = getStateDir();
 
 function getFile(): string {
   return path.join(HISTORY_DIR, `schedules-${BOT_ID}.json`);
-}
-
-function ensureDir(): void {
-  if (!fs.existsSync(HISTORY_DIR)) {
-    fs.mkdirSync(HISTORY_DIR, { recursive: true, mode: 0o700 });
-  }
 }
 
 function genId(): string {
@@ -93,23 +85,13 @@ class Scheduler {
     }
     this.loaded = true;
 
-    try {
-      const file = getFile();
-      if (!fs.existsSync(file)) return;
-      const raw = fs.readFileSync(file, 'utf-8');
-      const parsed = scheduleFileSchema.safeParse(JSON.parse(raw));
-      if (!parsed.success) {
-        console.warn('[Scheduler] schedules file is corrupt, ignoring:', parsed.error.message);
-        return;
-      }
-      for (const s of parsed.data.schedules) {
-        this.schedules.set(s.id, s);
-      }
-      this.armAll();
-      console.log(`[Scheduler] loaded ${this.schedules.size} schedule(s)`);
-    } catch (err) {
-      console.error('[Scheduler] failed to load:', err);
+    const loaded = readJsonFile(getFile(), scheduleFileSchema, 'Scheduler');
+    if (!loaded) return;
+    for (const s of loaded.schedules) {
+      this.schedules.set(s.id, s);
     }
+    this.armAll();
+    console.log(`[Scheduler] loaded ${this.schedules.size} schedule(s)`);
   }
 
   createSchedule(spec: ScheduleSpec): Schedule {
@@ -273,13 +255,8 @@ class Scheduler {
   }
 
   private persist(): void {
-    try {
-      ensureDir();
-      const data = { schedules: Array.from(this.schedules.values()) };
-      atomicWriteFileSync(getFile(), JSON.stringify(data, null, 2), { mode: 0o600 });
-    } catch (err) {
-      console.error('[Scheduler] failed to persist:', err);
-    }
+    ensureStateDir(HISTORY_DIR, 'Scheduler');
+    writeJsonFile(getFile(), { schedules: Array.from(this.schedules.values()) }, 'Scheduler');
   }
 }
 

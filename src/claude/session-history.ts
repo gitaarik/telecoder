@@ -1,8 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { z } from 'zod';
-import { atomicWriteFileSync } from '../utils/atomic-write.js';
+import { ensureStateDir, getStateDir, readJsonFile, writeJsonFile } from '../utils/json-store.js';
 
 // Zod schema for session history entry
 const sessionHistoryEntrySchema = z.object({
@@ -42,7 +41,7 @@ interface SessionHistoryData {
   sessions: Record<string, SessionHistoryEntry[]>; // sessionKey -> history entries
 }
 
-const HISTORY_DIR = path.join(os.homedir(), '.claudegram');
+const HISTORY_DIR = getStateDir();
 const DEFAULT_HISTORY_FILE = path.join(HISTORY_DIR, 'sessions.json');
 const MAX_HISTORY_PER_CHAT = 20;
 // Cap stored previews at 50KB so multi-chunk content survives a reload intact
@@ -86,42 +85,17 @@ class SessionHistory {
   }
 
   private ensureDirectory(): void {
-    if (!fs.existsSync(HISTORY_DIR)) {
-      fs.mkdirSync(HISTORY_DIR, { recursive: true, mode: 0o700 });
-    }
+    ensureStateDir(HISTORY_DIR, 'SessionHistory');
   }
 
   private load(): void {
-    try {
-      if (fs.existsSync(this.historyFile)) {
-        const content = fs.readFileSync(this.historyFile, 'utf-8');
-        const parsed = JSON.parse(content);
-
-        // Validate with Zod schema
-        const result = sessionHistoryDataSchema.safeParse(parsed);
-        if (result.success) {
-          // Keep string keys as-is (supports both "12345" and "12345:42" formats)
-          this.data = { sessions: {} };
-          for (const [key, value] of Object.entries(result.data.sessions)) {
-            this.data.sessions[key] = value;
-          }
-        } else {
-          console.warn('[SessionHistory] Invalid data format, starting fresh:', result.error.message);
-          this.data = { sessions: {} };
-        }
-      }
-    } catch (error) {
-      console.error('[SessionHistory] Failed to load:', error);
-      this.data = { sessions: {} };
-    }
+    const loaded = readJsonFile(this.historyFile, sessionHistoryDataSchema, 'SessionHistory');
+    // Keep string keys as-is (supports both "12345" and "12345:42" formats)
+    this.data = { sessions: { ...(loaded?.sessions ?? {}) } };
   }
 
   private save(): void {
-    try {
-      atomicWriteFileSync(this.historyFile, JSON.stringify(this.data, null, 2), { mode: 0o600 });
-    } catch (error) {
-      console.error('[SessionHistory] Failed to save:', error);
-    }
+    writeJsonFile(this.historyFile, this.data, 'SessionHistory');
   }
 
   saveSession(

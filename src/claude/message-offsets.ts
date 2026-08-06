@@ -16,12 +16,11 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { z } from 'zod';
-import { atomicWriteFileSync } from '../utils/atomic-write.js';
+import { ensureStateDir, getStateDir, readJsonFile, writeJsonFile } from '../utils/json-store.js';
 import { BOT_ID } from '../config.js';
 
-const HISTORY_DIR = path.join(os.homedir(), '.claudegram');
+const HISTORY_DIR = getStateDir();
 
 const entrySchema = z.object({
   claudeSessionId: z.string(),
@@ -46,38 +45,17 @@ class MessageOffsetStore {
 
   constructor() {
     this.filePath = path.join(HISTORY_DIR, `message-offsets-${BOT_ID}.json`);
-    this.ensureDirectory();
+    ensureStateDir(HISTORY_DIR, 'MessageOffsets');
     this.load();
   }
 
-  private ensureDirectory(): void {
-    if (!fs.existsSync(HISTORY_DIR)) {
-      fs.mkdirSync(HISTORY_DIR, { recursive: true, mode: 0o700 });
-    }
-  }
-
   private load(): void {
-    if (!fs.existsSync(this.filePath)) return;
-    try {
-      const raw = fs.readFileSync(this.filePath, 'utf-8');
-      const parsed = JSON.parse(raw);
-      const result = fileSchema.safeParse(parsed);
-      if (result.success) {
-        this.data = result.data;
-      } else {
-        console.warn('[MessageOffsets] Invalid file, starting fresh:', result.error.message);
-      }
-    } catch (err) {
-      console.warn('[MessageOffsets] Failed to load:', err instanceof Error ? err.message : err);
-    }
+    const loaded = readJsonFile(this.filePath, fileSchema, 'MessageOffsets');
+    if (loaded) this.data = loaded;
   }
 
   private save(): void {
-    try {
-      atomicWriteFileSync(this.filePath, JSON.stringify(this.data, null, 2), { mode: 0o600 });
-    } catch (err) {
-      console.error('[MessageOffsets] Failed to save:', err);
-    }
+    writeJsonFile(this.filePath, this.data, 'MessageOffsets');
   }
 
   record(
