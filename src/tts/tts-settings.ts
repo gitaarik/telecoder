@@ -1,36 +1,16 @@
-import { config } from '../config.js';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+/**
+ * Per-chat text-to-speech settings — whether voice replies are on, which voice
+ * to use, and whether they autoplay.
+ */
+
 import { z } from 'zod';
-import { atomicWriteFileSync } from '../utils/atomic-write.js';
-
-// Zod schema for TTS settings
-const ttsSettingsSchema = z.object({
-  enabled: z.boolean().optional(),
-  voice: z.string().optional(),
-  autoplay: z.boolean().optional(),
-});
-
-// Zod schema for the full TTS settings file
-const ttsSettingsFileSchema = z.object({
-  settings: z.record(z.string(), ttsSettingsSchema),
-});
+import { config } from '../config.js';
+import { createKeyedSettings } from '../utils/keyed-settings.js';
 
 export interface TTSSettings {
   enabled: boolean;
   voice: string;
   autoplay: boolean;
-}
-
-const SETTINGS_DIR = path.join(os.homedir(), '.claudegram');
-const SETTINGS_FILE = path.join(SETTINGS_DIR, 'tts-settings.json');
-const chatTTSSettings: Map<string, TTSSettings> = new Map();
-
-function ensureDirectory(): void {
-  if (!fs.existsSync(SETTINGS_DIR)) {
-    fs.mkdirSync(SETTINGS_DIR, { recursive: true, mode: 0o700 });
-  }
 }
 
 const GROQ_TTS_VOICES = ['autumn', 'diana', 'hannah', 'austin', 'daniel', 'troy'] as const;
@@ -54,85 +34,45 @@ function isValidVoiceForProvider(voice: string): boolean {
   return voices.includes(voice);
 }
 
-function normalizeSettings(settings?: Partial<TTSSettings>): TTSSettings {
-  const voice = typeof settings?.voice === 'string' && settings.voice.length > 0
-    ? settings.voice
-    : getDefaultVoice();
+const store = createKeyedSettings<TTSSettings>({
+  file: 'tts-settings.json',
+  label: 'TTS',
+  entrySchema: z.object({
+    enabled: z.boolean().optional(),
+    voice: z.string().optional(),
+    autoplay: z.boolean().optional(),
+  }),
+  normalize: (stored) => {
+    const voice = typeof stored?.voice === 'string' && stored.voice.length > 0
+      ? stored.voice
+      : getDefaultVoice();
 
-  return {
-    enabled: typeof settings?.enabled === 'boolean' ? settings.enabled : false,
-    voice: isValidVoiceForProvider(voice) ? voice : getDefaultVoice(),
-    autoplay: typeof settings?.autoplay === 'boolean' ? settings.autoplay : true,
-  };
-}
-
-function loadSettings(): void {
-  ensureDirectory();
-  if (!fs.existsSync(SETTINGS_FILE)) return;
-
-  try {
-    const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');
-    const parsed = JSON.parse(raw);
-
-    // Validate with Zod schema
-    const result = ttsSettingsFileSchema.safeParse(parsed);
-    if (!result.success) {
-      console.warn('[TTS] Invalid settings file format, starting fresh:', result.error.message);
-      return;
-    }
-
-    for (const [key, settings] of Object.entries(result.data.settings)) {
-      chatTTSSettings.set(key, normalizeSettings(settings));
-    }
-  } catch (error) {
-    console.error('[TTS] Failed to load settings:', error);
-  }
-}
-
-function saveSettings(): void {
-  ensureDirectory();
-  const settings: Record<string, TTSSettings> = {};
-  for (const [key, value] of chatTTSSettings.entries()) {
-    settings[key] = value;
-  }
-
-  try {
-    atomicWriteFileSync(SETTINGS_FILE, JSON.stringify({ settings }, null, 2), { mode: 0o600 });
-  } catch (error) {
-    console.error('[TTS] Failed to save settings:', error);
-  }
-}
-
-loadSettings();
+    return {
+      enabled: typeof stored?.enabled === 'boolean' ? stored.enabled : false,
+      // A voice saved under a different TTS_PROVIDER won't exist for the
+      // current one — fall back rather than sending an unknown voice id.
+      voice: isValidVoiceForProvider(voice) ? voice : getDefaultVoice(),
+      autoplay: typeof stored?.autoplay === 'boolean' ? stored.autoplay : true,
+    };
+  },
+});
 
 export function getTTSSettings(sessionKey: string): TTSSettings {
-  const existing = chatTTSSettings.get(sessionKey);
-  if (existing) return existing;
-
-  const defaults = normalizeSettings();
-  chatTTSSettings.set(sessionKey, defaults);
-  saveSettings();
-  return defaults;
+  return store.get(sessionKey);
 }
 
 export function setTTSEnabled(sessionKey: string, enabled: boolean): void {
-  const settings = getTTSSettings(sessionKey);
-  settings.enabled = enabled;
-  saveSettings();
+  store.update(sessionKey, { enabled });
 }
 
 export function setTTSVoice(sessionKey: string, voice: string): void {
-  const settings = getTTSSettings(sessionKey);
-  settings.voice = voice;
-  saveSettings();
+  store.update(sessionKey, { voice });
 }
 
 export function setTTSAutoplay(sessionKey: string, autoplay: boolean): void {
-  const settings = getTTSSettings(sessionKey);
-  settings.autoplay = autoplay;
-  saveSettings();
+  store.update(sessionKey, { autoplay });
 }
 
 export function isTTSEnabled(sessionKey: string): boolean {
-  return getTTSSettings(sessionKey).enabled;
+  return store.get(sessionKey).enabled;
 }

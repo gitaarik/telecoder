@@ -1,8 +1,6 @@
-import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { z } from 'zod';
-import { atomicWriteFileSync } from '../utils/atomic-write.js';
+import { ensureStateDir, getStateDir, readJsonFile, writeJsonFile } from '../utils/json-store.js';
 
 const favoriteSchema = z.object({
   path: z.string(),
@@ -15,44 +13,24 @@ const favoritesDataSchema = z.object({
 
 export type Favorite = z.infer<typeof favoriteSchema>;
 
-const FAVORITES_DIR = path.join(os.homedir(), '.claudegram');
+const FAVORITES_DIR = getStateDir();
 const FAVORITES_FILE = path.join(FAVORITES_DIR, 'project-favorites.json');
 
 class ProjectFavoritesManager {
   private data: Record<string, Favorite[]> = {};
 
   constructor() {
-    this.ensureDirectory();
+    ensureStateDir(FAVORITES_DIR, 'ProjectFavorites');
     this.load();
   }
 
-  private ensureDirectory(): void {
-    if (!fs.existsSync(FAVORITES_DIR)) {
-      fs.mkdirSync(FAVORITES_DIR, { recursive: true, mode: 0o700 });
-    }
-  }
-
   private load(): void {
-    try {
-      if (fs.existsSync(FAVORITES_FILE)) {
-        const content = fs.readFileSync(FAVORITES_FILE, 'utf-8');
-        const parsed = JSON.parse(content);
-        const validated = favoritesDataSchema.parse(parsed);
-        this.data = validated.sessions;
-      }
-    } catch (err) {
-      console.error('[ProjectFavorites] Failed to load:', err);
-      this.data = {};
-    }
+    const loaded = readJsonFile(FAVORITES_FILE, favoritesDataSchema, 'ProjectFavorites');
+    this.data = loaded?.sessions ?? {};
   }
 
   private save(): void {
-    try {
-      const toSave = { sessions: this.data };
-      atomicWriteFileSync(FAVORITES_FILE, JSON.stringify(toSave, null, 2), { mode: 0o600 });
-    } catch (err) {
-      console.error('[ProjectFavorites] Failed to save:', err);
-    }
+    writeJsonFile(FAVORITES_FILE, { sessions: this.data }, 'ProjectFavorites');
   }
 
   list(sessionKey: string): Favorite[] {

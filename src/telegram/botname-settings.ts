@@ -4,93 +4,33 @@
  */
 
 import { config, BOT_ID } from '../config.js';
-import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
-import { atomicWriteFileSync } from '../utils/atomic-write.js';
 import { z } from 'zod';
 import { GrammyError, type Context } from 'grammy';
-
-const botnameSettingsSchema = z.object({
-  enabled: z.boolean().optional(),
-});
-
-const botnameSettingsFileSchema = z.object({
-  settings: z.record(z.string(), botnameSettingsSchema),
-});
+import { createKeyedSettings } from '../utils/keyed-settings.js';
+import { ensureStateDir, getStateDir, readJsonFile, writeJsonFile } from '../utils/json-store.js';
 
 export interface BotNameSettings {
   enabled: boolean;
 }
 
-const SETTINGS_DIR = path.join(os.homedir(), '.claudegram');
-const SETTINGS_FILE = path.join(SETTINGS_DIR, 'botname-settings.json');
-const chatBotNameSettings: Map<string, BotNameSettings> = new Map();
+const SETTINGS_DIR = getStateDir();
 
-function ensureDirectory(): void {
-  if (!fs.existsSync(SETTINGS_DIR)) {
-    fs.mkdirSync(SETTINGS_DIR, { recursive: true, mode: 0o700 });
-  }
-}
-
-function normalizeSettings(settings?: Partial<BotNameSettings>): BotNameSettings {
-  return {
-    enabled: typeof settings?.enabled === 'boolean' ? settings.enabled : config.DYNAMIC_BOT_NAME,
-  };
-}
-
-function loadSettings(): void {
-  ensureDirectory();
-  if (!fs.existsSync(SETTINGS_FILE)) return;
-
-  try {
-    const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');
-    const parsed = JSON.parse(raw);
-
-    const result = botnameSettingsFileSchema.safeParse(parsed);
-    if (!result.success) {
-      console.warn('[BotName] Invalid settings file format, starting fresh:', result.error.message);
-      return;
-    }
-
-    for (const [key, settings] of Object.entries(result.data.settings)) {
-      chatBotNameSettings.set(key, normalizeSettings(settings));
-    }
-  } catch (error) {
-    console.error('[BotName] Failed to load settings:', error);
-  }
-}
-
-function saveSettings(): void {
-  ensureDirectory();
-  const settings: Record<string, BotNameSettings> = {};
-  for (const [key, value] of chatBotNameSettings.entries()) {
-    settings[key] = value;
-  }
-
-  try {
-    atomicWriteFileSync(SETTINGS_FILE, JSON.stringify({ settings }, null, 2), { mode: 0o600 });
-  } catch (error) {
-    console.error('[BotName] Failed to save settings:', error);
-  }
-}
-
-loadSettings();
+const store = createKeyedSettings<BotNameSettings>({
+  file: 'botname-settings.json',
+  label: 'BotName',
+  entrySchema: z.object({ enabled: z.boolean().optional() }),
+  normalize: (stored) => ({
+    enabled: typeof stored?.enabled === 'boolean' ? stored.enabled : config.DYNAMIC_BOT_NAME,
+  }),
+});
 
 export function getBotNameSettings(sessionKey: string): BotNameSettings {
-  const existing = chatBotNameSettings.get(sessionKey);
-  if (existing) return existing;
-
-  const defaults = normalizeSettings();
-  chatBotNameSettings.set(sessionKey, defaults);
-  saveSettings();
-  return defaults;
+  return store.get(sessionKey);
 }
 
 export function setBotNameEnabled(sessionKey: string, enabled: boolean): void {
-  const settings = getBotNameSettings(sessionKey);
-  settings.enabled = enabled;
-  saveSettings();
+  store.update(sessionKey, { enabled });
 }
 
 export function isBotNameEnabled(sessionKey: string): boolean {
@@ -120,35 +60,22 @@ const lastSentSchema = z.object({
 const blockedUntilByBot: Map<string, number> = new Map();
 
 function loadCooldowns(): void {
-  ensureDirectory();
-  if (!fs.existsSync(COOLDOWN_FILE)) return;
-  try {
-    const raw = fs.readFileSync(COOLDOWN_FILE, 'utf-8');
-    const result = cooldownsSchema.safeParse(JSON.parse(raw));
-    if (!result.success) {
-      console.warn('[BotName] Invalid cooldowns file, starting fresh:', result.error.message);
-      return;
-    }
-    for (const [botId, { blockedUntil }] of Object.entries(result.data.cooldowns)) {
-      blockedUntilByBot.set(botId, blockedUntil);
-    }
-  } catch (err) {
-    console.error('[BotName] Failed to load cooldowns:', err);
+  ensureStateDir(SETTINGS_DIR, 'BotName');
+  const loaded = readJsonFile(COOLDOWN_FILE, cooldownsSchema, 'BotName');
+  if (!loaded) return;
+  for (const [botId, { blockedUntil }] of Object.entries(loaded.cooldowns)) {
+    blockedUntilByBot.set(botId, blockedUntil);
   }
 }
 
 function saveCooldowns(): void {
-  ensureDirectory();
+  ensureStateDir(SETTINGS_DIR, 'BotName');
   const cooldowns: Record<string, { blockedUntil: number }> = {};
   const now = Date.now();
   for (const [botId, blockedUntil] of blockedUntilByBot.entries()) {
     if (blockedUntil > now) cooldowns[botId] = { blockedUntil };
   }
-  try {
-    atomicWriteFileSync(COOLDOWN_FILE, JSON.stringify({ cooldowns }, null, 2), { mode: 0o600 });
-  } catch (err) {
-    console.error('[BotName] Failed to save cooldowns:', err);
-  }
+  writeJsonFile(COOLDOWN_FILE, { cooldowns }, 'BotName');
 }
 
 loadCooldowns();
@@ -171,34 +98,21 @@ function setBlockedUntil(blockedUntil: number): void {
 const lastSentNameByBot: Map<string, string> = new Map();
 
 function loadLastSentNames(): void {
-  ensureDirectory();
-  if (!fs.existsSync(LAST_SENT_FILE)) return;
-  try {
-    const raw = fs.readFileSync(LAST_SENT_FILE, 'utf-8');
-    const result = lastSentSchema.safeParse(JSON.parse(raw));
-    if (!result.success) {
-      console.warn('[BotName] Invalid last-sent file, starting fresh:', result.error.message);
-      return;
-    }
-    for (const [botId, name] of Object.entries(result.data.names)) {
-      lastSentNameByBot.set(botId, name);
-    }
-  } catch (err) {
-    console.error('[BotName] Failed to load last-sent names:', err);
+  ensureStateDir(SETTINGS_DIR, 'BotName');
+  const loaded = readJsonFile(LAST_SENT_FILE, lastSentSchema, 'BotName');
+  if (!loaded) return;
+  for (const [botId, name] of Object.entries(loaded.names)) {
+    lastSentNameByBot.set(botId, name);
   }
 }
 
 function saveLastSentNames(): void {
-  ensureDirectory();
+  ensureStateDir(SETTINGS_DIR, 'BotName');
   const names: Record<string, string> = {};
   for (const [botId, name] of lastSentNameByBot.entries()) {
     names[botId] = name;
   }
-  try {
-    atomicWriteFileSync(LAST_SENT_FILE, JSON.stringify({ names }, null, 2), { mode: 0o600 });
-  } catch (err) {
-    console.error('[BotName] Failed to save last-sent names:', err);
-  }
+  writeJsonFile(LAST_SENT_FILE, { names }, 'BotName');
 }
 
 loadLastSentNames();

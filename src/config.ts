@@ -353,12 +353,12 @@ export const explicitFlags = {
 // Derived helpers (used by index.ts, command.handler.ts, session-history.ts)
 // ---------------------------------------------------------------------------
 
-import * as os from 'os';
+import { getStateDir } from './utils/json-store.js';
 
 /** Numeric bot ID extracted from the Telegram token (e.g. "123456" from "123456:ABC..."). */
 export const BOT_ID = config.TELEGRAM_BOT_TOKEN.split(':')[0];
 
-const STATE_DIR = path.join(os.homedir(), '.claudegram');
+const STATE_DIR = getStateDir();
 
 /** Per-bot reload marker file path so multi-instance setups don't cross-restore. */
 export function getReloadMarkerPath(): string {

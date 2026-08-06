@@ -8,89 +8,31 @@
  * new session or the PTY is restarted for any other reason.
  */
 
-import { config } from '../config.js';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 import { z } from 'zod';
-
-const suggestionsSettingsSchema = z.object({
-  enabled: z.boolean().optional(),
-});
-
-const suggestionsSettingsFileSchema = z.object({
-  settings: z.record(z.string(), suggestionsSettingsSchema),
-});
+import { config } from '../config.js';
+import { createKeyedSettings } from '../utils/keyed-settings.js';
 
 export interface SuggestionsSettings {
   enabled: boolean;
 }
 
-const SETTINGS_DIR = path.join(os.homedir(), '.claudegram');
-const SETTINGS_FILE = path.join(SETTINGS_DIR, 'suggestions-settings.json');
-const chatSuggestionsSettings: Map<string, SuggestionsSettings> = new Map();
-
-function ensureDirectory(): void {
-  if (!fs.existsSync(SETTINGS_DIR)) {
-    fs.mkdirSync(SETTINGS_DIR, { recursive: true, mode: 0o700 });
-  }
-}
-
-function normalizeSettings(settings?: Partial<SuggestionsSettings>): SuggestionsSettings {
-  return {
-    enabled: typeof settings?.enabled === 'boolean' ? settings.enabled : config.PROMPT_SUGGESTIONS_DEFAULT,
-  };
-}
-
-function loadSettings(): void {
-  ensureDirectory();
-  if (!fs.existsSync(SETTINGS_FILE)) return;
-
-  try {
-    const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');
-    const parsed = JSON.parse(raw);
-    const result = suggestionsSettingsFileSchema.safeParse(parsed);
-    if (!result.success) {
-      console.warn('[Suggestions] Invalid settings file format, starting fresh:', result.error.message);
-      return;
-    }
-    for (const [key, settings] of Object.entries(result.data.settings)) {
-      chatSuggestionsSettings.set(key, normalizeSettings(settings));
-    }
-  } catch (error) {
-    console.error('[Suggestions] Failed to load settings:', error);
-  }
-}
-
-function saveSettings(): void {
-  ensureDirectory();
-  const settings: Record<string, SuggestionsSettings> = {};
-  for (const [key, value] of chatSuggestionsSettings.entries()) {
-    settings[key] = value;
-  }
-  try {
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify({ settings }, null, 2), { mode: 0o600 });
-  } catch (error) {
-    console.error('[Suggestions] Failed to save settings:', error);
-  }
-}
-
-loadSettings();
+const store = createKeyedSettings<SuggestionsSettings>({
+  file: 'suggestions-settings.json',
+  label: 'Suggestions',
+  entrySchema: z.object({ enabled: z.boolean().optional() }),
+  normalize: (stored) => ({
+    enabled: typeof stored?.enabled === 'boolean' ? stored.enabled : config.PROMPT_SUGGESTIONS_DEFAULT,
+  }),
+});
 
 export function getSuggestionsSettings(sessionKey: string): SuggestionsSettings {
-  const existing = chatSuggestionsSettings.get(sessionKey);
-  if (existing) return existing;
-  const defaults = normalizeSettings();
-  chatSuggestionsSettings.set(sessionKey, defaults);
-  return defaults;
+  return store.get(sessionKey);
 }
 
 export function setSuggestionsEnabled(sessionKey: string, enabled: boolean): void {
-  const settings = getSuggestionsSettings(sessionKey);
-  settings.enabled = enabled;
-  saveSettings();
+  store.update(sessionKey, { enabled });
 }
 
 export function isSuggestionsEnabled(sessionKey: string): boolean {
-  return getSuggestionsSettings(sessionKey).enabled;
+  return store.get(sessionKey).enabled;
 }

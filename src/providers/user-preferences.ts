@@ -1,8 +1,6 @@
-import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { z } from 'zod';
-import { atomicWriteFileSync } from '../utils/atomic-write.js';
+import { ensureStateDir, getStateDir, readJsonFile, writeJsonFile } from '../utils/json-store.js';
 
 // Zod schema for user preferences
 const userPreferencesSchema = z.object({
@@ -28,51 +26,49 @@ const preferencesDataSchema = z.object({
 
 export type UserPreferences = z.infer<typeof userPreferencesSchema>;
 
-const PREFS_DIR = path.join(os.homedir(), '.claudegram');
+const PREFS_DIR = getStateDir();
 const PREFS_FILE = path.join(PREFS_DIR, 'user-preferences.json');
 
 class UserPreferencesManager {
   private data: Record<number, UserPreferences> = {};
 
   constructor() {
-    this.ensureDirectory();
+    ensureStateDir(PREFS_DIR, 'UserPreferences');
     this.load();
   }
 
-  private ensureDirectory(): void {
-    if (!fs.existsSync(PREFS_DIR)) {
-      fs.mkdirSync(PREFS_DIR, { recursive: true, mode: 0o700 });
-    }
-  }
-
   private load(): void {
-    try {
-      if (fs.existsSync(PREFS_FILE)) {
-        const content = fs.readFileSync(PREFS_FILE, 'utf-8');
-        const parsed = JSON.parse(content);
-        const validated = preferencesDataSchema.parse(parsed);
-        // Convert string keys back to numbers
-        this.data = Object.fromEntries(
-          Object.entries(validated.users).map(([k, v]) => [parseInt(k, 10), v])
-        ) as Record<number, UserPreferences>;
-      }
-    } catch (err) {
-      console.error('[UserPreferences] Failed to load preferences:', err);
-      this.data = {};
-    }
+    const loaded = readJsonFile(PREFS_FILE, preferencesDataSchema, 'UserPreferences');
+    // Convert string keys back to numbers
+    this.data = Object.fromEntries(
+      Object.entries(loaded?.users ?? {}).map(([k, v]) => [parseInt(k, 10), v])
+    ) as Record<number, UserPreferences>;
   }
 
   private save(): void {
-    try {
-      const toSave = {
-        users: Object.fromEntries(
-          Object.entries(this.data).map(([k, v]) => [k, v])
-        ),
-      };
-      atomicWriteFileSync(PREFS_FILE, JSON.stringify(toSave, null, 2), { mode: 0o600 });
-    } catch (err) {
-      console.error('[UserPreferences] Failed to save preferences:', err);
-    }
+    writeJsonFile(PREFS_FILE, { users: { ...this.data } }, 'UserPreferences');
+  }
+
+  /** Apply a field change for `chatId`, stamping `lastUpdated` and persisting. */
+  private patch(chatId: number, changes: Partial<UserPreferences>): void {
+    this.data[chatId] = {
+      ...this.data[chatId],
+      ...changes,
+      lastUpdated: new Date().toISOString(),
+    };
+    this.save();
+  }
+
+  /**
+   * Drop a single field for `chatId`, if that chat has any preferences at all.
+   * `lastUpdated` is excluded — it is the one required field, and clearing it
+   * would leave an entry that no longer round-trips through the schema.
+   */
+  private unset(chatId: number, field: Exclude<keyof UserPreferences, 'lastUpdated'>): void {
+    if (!this.data[chatId]) return;
+    delete this.data[chatId][field];
+    this.data[chatId].lastUpdated = new Date().toISOString();
+    this.save();
   }
 
   getProvider(chatId: number): 'claude' | 'ccr' | undefined {
@@ -80,12 +76,7 @@ class UserPreferencesManager {
   }
 
   setProvider(chatId: number, provider: 'claude' | 'ccr'): void {
-    if (!this.data[chatId]) {
-      this.data[chatId] = { lastUpdated: new Date().toISOString() };
-    }
-    this.data[chatId].provider = provider;
-    this.data[chatId].lastUpdated = new Date().toISOString();
-    this.save();
+    this.patch(chatId, { provider });
   }
 
   getMethod(chatId: number): 'sdk' | 'pty' | undefined {
@@ -93,12 +84,7 @@ class UserPreferencesManager {
   }
 
   setMethod(chatId: number, method: 'sdk' | 'pty'): void {
-    if (!this.data[chatId]) {
-      this.data[chatId] = { lastUpdated: new Date().toISOString() };
-    }
-    this.data[chatId].method = method;
-    this.data[chatId].lastUpdated = new Date().toISOString();
-    this.save();
+    this.patch(chatId, { method });
   }
 
   getModel(chatId: number): string | undefined {
@@ -106,20 +92,11 @@ class UserPreferencesManager {
   }
 
   setModel(chatId: number, model: string): void {
-    if (!this.data[chatId]) {
-      this.data[chatId] = { lastUpdated: new Date().toISOString() };
-    }
-    this.data[chatId].model = model;
-    this.data[chatId].lastUpdated = new Date().toISOString();
-    this.save();
+    this.patch(chatId, { model });
   }
 
   clearModel(chatId: number): void {
-    if (this.data[chatId]) {
-      delete this.data[chatId].model;
-      this.data[chatId].lastUpdated = new Date().toISOString();
-      this.save();
-    }
+    this.unset(chatId, 'model');
   }
 
   getEffort(chatId: number): string | undefined {
@@ -127,20 +104,11 @@ class UserPreferencesManager {
   }
 
   setEffort(chatId: number, effort: string): void {
-    if (!this.data[chatId]) {
-      this.data[chatId] = { lastUpdated: new Date().toISOString() };
-    }
-    this.data[chatId].effort = effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-    this.data[chatId].lastUpdated = new Date().toISOString();
-    this.save();
+    this.patch(chatId, { effort: effort as UserPreferences['effort'] });
   }
 
   clearEffort(chatId: number): void {
-    if (this.data[chatId]) {
-      delete this.data[chatId].effort;
-      this.data[chatId].lastUpdated = new Date().toISOString();
-      this.save();
-    }
+    this.unset(chatId, 'effort');
   }
 
   getVerbosity(chatId: number): 'quiet' | 'normal' | 'verbose' | 'debug' | undefined {
@@ -148,20 +116,11 @@ class UserPreferencesManager {
   }
 
   setVerbosity(chatId: number, verbosity: 'quiet' | 'normal' | 'verbose' | 'debug'): void {
-    if (!this.data[chatId]) {
-      this.data[chatId] = { lastUpdated: new Date().toISOString() };
-    }
-    this.data[chatId].verbosity = verbosity;
-    this.data[chatId].lastUpdated = new Date().toISOString();
-    this.save();
+    this.patch(chatId, { verbosity });
   }
 
   clearVerbosity(chatId: number): void {
-    if (this.data[chatId]) {
-      delete this.data[chatId].verbosity;
-      this.data[chatId].lastUpdated = new Date().toISOString();
-      this.save();
-    }
+    this.unset(chatId, 'verbosity');
   }
 
   getShowStatusLine(chatId: number): boolean {
@@ -169,12 +128,7 @@ class UserPreferencesManager {
   }
 
   setShowStatusLine(chatId: number, enabled: boolean): void {
-    if (!this.data[chatId]) {
-      this.data[chatId] = { lastUpdated: new Date().toISOString() };
-    }
-    this.data[chatId].showStatusLine = enabled;
-    this.data[chatId].lastUpdated = new Date().toISOString();
-    this.save();
+    this.patch(chatId, { showStatusLine: enabled });
   }
 
   getShowTopicInStatusLine(chatId: number): boolean {
@@ -182,12 +136,7 @@ class UserPreferencesManager {
   }
 
   setShowTopicInStatusLine(chatId: number, enabled: boolean): void {
-    if (!this.data[chatId]) {
-      this.data[chatId] = { lastUpdated: new Date().toISOString() };
-    }
-    this.data[chatId].showTopicInStatusLine = enabled;
-    this.data[chatId].lastUpdated = new Date().toISOString();
-    this.save();
+    this.patch(chatId, { showTopicInStatusLine: enabled });
   }
 
   getShowSessionInStatusLine(chatId: number): boolean {
@@ -195,12 +144,7 @@ class UserPreferencesManager {
   }
 
   setShowSessionInStatusLine(chatId: number, enabled: boolean): void {
-    if (!this.data[chatId]) {
-      this.data[chatId] = { lastUpdated: new Date().toISOString() };
-    }
-    this.data[chatId].showSessionInStatusLine = enabled;
-    this.data[chatId].lastUpdated = new Date().toISOString();
-    this.save();
+    this.patch(chatId, { showSessionInStatusLine: enabled });
   }
 
   getShowPromptInStatusLine(chatId: number): boolean {
@@ -208,12 +152,7 @@ class UserPreferencesManager {
   }
 
   setShowPromptInStatusLine(chatId: number, enabled: boolean): void {
-    if (!this.data[chatId]) {
-      this.data[chatId] = { lastUpdated: new Date().toISOString() };
-    }
-    this.data[chatId].showPromptInStatusLine = enabled;
-    this.data[chatId].lastUpdated = new Date().toISOString();
-    this.save();
+    this.patch(chatId, { showPromptInStatusLine: enabled });
   }
 
   clearPreferences(chatId: number): void {
