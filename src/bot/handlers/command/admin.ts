@@ -18,6 +18,8 @@ import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
 import { sanitizeError } from '../../../utils/sanitize.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 import { replyMd, botctlExists, PROJECT_ROOT, BOTCTL_PATH } from './shared.js';
+import { handleResume, handleContinue } from './session.js';
+import { sessionHistory } from '../../../claude/session-history.js';
 
 /** Write the reload marker so autoResumeAfterReload picks up sessions on restart. */
 export function writeReloadMarker(): void {
@@ -471,6 +473,55 @@ export async function handleRebuildCallback(ctx: Context): Promise<void> {
 
   if (data === 'rebuild:one') {
     await performRebuild(ctx, 'one');
+    return;
+  }
+}
+
+export async function handleRestartCallback(ctx: Context): Promise<void> {
+  const data = ctx.callbackQuery?.data;
+  if (!data) return;
+
+  if (data === 'restart:continue') {
+    await ctx.answerCallbackQuery();
+    await handleContinue(ctx);
+  } else if (data === 'restart:resume') {
+    await ctx.answerCallbackQuery();
+    await handleResume(ctx);
+  } else {
+    await ctx.answerCallbackQuery();
+  }
+}
+
+export async function handleStartupCallback(ctx: Context): Promise<void> {
+  const data = ctx.callbackQuery?.data;
+  if (!data) return;
+
+  await ctx.answerCallbackQuery();
+
+  // Remove the inline keyboard so the buttons can't be tapped twice.
+  try {
+    await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } });
+  } catch {
+    // ignore — message may have been edited or deleted
+  }
+
+  const keyInfo = getSessionKeyFromCtx(ctx);
+
+  if (data === 'startup:continue') {
+    // Continuing counts as engaging with the session: refresh its activity so a
+    // subsequent restart silently restores it (and stays quiet) instead of
+    // re-prompting about an hours-stale session.
+    if (keyInfo) sessionHistory.touchActivity(keyInfo.sessionKey);
+    await handleContinue(ctx);
+    return;
+  }
+
+  if (data === 'startup:fresh') {
+    // Mark the prompt resolved so a later restart stays quiet rather than
+    // re-asking about a session the user has chosen to abandon. No session is in
+    // memory — the next user message naturally starts a new conversation.
+    if (keyInfo) sessionHistory.resolveStartupPrompt(keyInfo.sessionKey);
+    await replyMd(ctx, '🆕 Starting fresh\\. Send a message to begin a new session\\.');
     return;
   }
 }
