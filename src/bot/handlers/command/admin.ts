@@ -12,7 +12,6 @@ import * as path from 'path';
 import { execFile, spawn } from 'child_process';
 import { isMainThread } from 'worker_threads';
 import { config, getReloadMarkerPath } from '../../../config.js';
-import { sessionHistory } from '../../../claude/session-history.js';
 import { getModel } from '../../../providers/provider-router.js';
 import { messageSender } from '../../../telegram/message-sender.js';
 import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
