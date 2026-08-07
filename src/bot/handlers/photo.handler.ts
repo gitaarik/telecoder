@@ -20,6 +20,7 @@ import { sanitizeError } from '../../utils/sanitize.js';
 import { isValidImageFile, getFileType } from '../../utils/file-type.js';
 import { type PhotoSize } from 'grammy/types';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
+import { requireSession } from './session-guard.js';
 
 const UPLOADS_DIR = '.claudegram/uploads';
 
@@ -159,20 +160,8 @@ export async function handlePhoto(ctx: Context): Promise<void> {
   }
   markProcessed(messageId);
 
-  const { session, restored } = sessionManager.getOrRestoreSession(sessionKey);
-  if (!session) {
-    await ctx.reply(
-      '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
-      { parse_mode: 'MarkdownV2' }
-    );
-    return;
-  }
-  if (restored) {
-    await ctx.reply(
-      `↩️ Resumed previous session: *${esc(path.basename(session.workingDirectory))}*`,
-      { parse_mode: 'MarkdownV2' }
-    );
-  }
+  const session = await requireSession(ctx, sessionKey);
+  if (!session) return;
 
   const largest = pickLargestPhoto(photos);
   const fileSizeBytes = largest.file_size || 0;
@@ -258,20 +247,8 @@ export async function handleTextDocument(ctx: Context): Promise<void> {
   }
   markProcessed(messageId);
 
-  const { session, restored } = sessionManager.getOrRestoreSession(sessionKey);
-  if (!session) {
-    await ctx.reply(
-      '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
-      { parse_mode: 'MarkdownV2' }
-    );
-    return;
-  }
-  if (restored) {
-    await ctx.reply(
-      `↩️ Resumed previous session: *${esc(path.basename(session.workingDirectory))}*`,
-      { parse_mode: 'MarkdownV2' }
-    );
-  }
+  const session = await requireSession(ctx, sessionKey);
+  if (!session) return;
 
   const fileSizeMB = (document.file_size || 0) / (1024 * 1024);
   if (fileSizeMB > config.DOCUMENT_MAX_FILE_SIZE_MB) {
@@ -372,20 +349,8 @@ export async function handleImageDocument(ctx: Context): Promise<void> {
   }
   markProcessed(messageId);
 
-  const { session, restored } = sessionManager.getOrRestoreSession(sessionKey);
-  if (!session) {
-    await ctx.reply(
-      '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
-      { parse_mode: 'MarkdownV2' }
-    );
-    return;
-  }
-  if (restored) {
-    await ctx.reply(
-      `↩️ Resumed previous session: *${esc(path.basename(session.workingDirectory))}*`,
-      { parse_mode: 'MarkdownV2' }
-    );
-  }
+  const session = await requireSession(ctx, sessionKey);
+  if (!session) return;
 
   const fileSizeBytes = document.file_size || 0;
   const fileSizeMB = fileSizeBytes / (1024 * 1024);

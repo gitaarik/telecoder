@@ -17,6 +17,7 @@ import { getWorkspaceRoot, isPathWithinRoot } from '../../utils/workspace-guard.
 import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
 import { replyMd, getEffortLabel, buildBackToPreviousButton } from './command/shared.js';
 import { getSessionTopic } from './command/topic.js';
+import { requireActiveSession } from './session-guard.js';
 
 // Re-exported so the modules that already import from this file keep working
 // while the command handlers are split out domain by domain.
@@ -340,14 +341,8 @@ export async function handleContext(ctx: Context): Promise<void> {
   if (!keyInfo) return;
   const { chatId, sessionKey } = keyInfo;
 
-  const session = sessionManager.getSession(sessionKey);
-  if (!session) {
-    await ctx.reply(
-      '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
-      { parse_mode: 'MarkdownV2' }
-    );
-    return;
-  }
+  const session = await requireActiveSession(ctx, sessionKey);
+  if (!session) return;
 
   // Try cached SDK usage first (instant, no CLI shell-out)
   const cached = getCachedUsage(sessionKey);
@@ -432,11 +427,8 @@ export async function handlePlan(ctx: Context): Promise<void> {
   if (!keyInfo) return;
   const { sessionKey } = keyInfo;
 
-  const session = sessionManager.getSession(sessionKey);
-  if (!session) {
-    await replyMd(ctx, '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.');
-    return;
-  }
+  const session = await requireActiveSession(ctx, sessionKey);
+  if (!session) return;
 
   const text = ctx.message?.text || '';
   const task = text.split(' ').slice(1).join(' ').trim();
@@ -491,11 +483,8 @@ export async function handleExplore(ctx: Context): Promise<void> {
   if (!keyInfo) return;
   const { sessionKey } = keyInfo;
 
-  const session = sessionManager.getSession(sessionKey);
-  if (!session) {
-    await replyMd(ctx, '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.');
-    return;
-  }
+  const session = await requireActiveSession(ctx, sessionKey);
+  if (!session) return;
 
   const text = ctx.message?.text || '';
   const question = text.split(' ').slice(1).join(' ').trim();
@@ -608,11 +597,8 @@ export async function handleLoop(ctx: Context): Promise<void> {
   if (!keyInfo) return;
   const { sessionKey } = keyInfo;
 
-  const session = sessionManager.getSession(sessionKey);
-  if (!session) {
-    await replyMd(ctx, '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.');
-    return;
-  }
+  const session = await requireActiveSession(ctx, sessionKey);
+  if (!session) return;
 
   const text = ctx.message?.text || '';
   const task = text.split(' ').slice(1).join(' ').trim();
@@ -669,11 +655,8 @@ export async function handleFile(ctx: Context): Promise<void> {
   const text = ctx.message?.text || '';
   const filePath = text.split(' ').slice(1).join(' ').trim();
 
-  const session = sessionManager.getSession(sessionKey);
-  if (!session) {
-    await replyMd(ctx, '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project <path>` to open a project first\\.');
-    return;
-  }
+  const session = await requireActiveSession(ctx, sessionKey);
+  if (!session) return;
 
   if (!filePath) {
     // List some files in the project to help user
@@ -741,11 +724,8 @@ export async function handleTelegraph(ctx: Context): Promise<void> {
     return;
   }
 
-  const session = sessionManager.getSession(sessionKey);
-  if (!session) {
-    await replyMd(ctx, '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project <path>` to open a project first\\.');
-    return;
-  }
+  const session = await requireActiveSession(ctx, sessionKey);
+  if (!session) return;
 
   const fullPath = filePath.startsWith('/')
     ? filePath

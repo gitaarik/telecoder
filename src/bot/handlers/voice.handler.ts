@@ -4,7 +4,6 @@ import * as os from 'os';
 import * as path from 'path';
 import { config } from '../../config.js';
 import { sendToAgent } from '../../claude/agent.js';
-import { sessionManager } from '../../claude/session-manager.js';
 import { messageSender } from '../../telegram/message-sender.js';
 import { isDuplicate, markProcessed } from '../../telegram/deduplication.js';
 import { isStaleMessage } from '../middleware/stale-filter.js';
@@ -22,6 +21,7 @@ import { sendTranscriptResult } from './command.handler.js';
 import { downloadFileSecure, getTelegramFileUrl } from '../../utils/download.js';
 import { sanitizeError, sanitizePath } from '../../utils/sanitize.js';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
+import { requireSession } from './session-guard.js';
 
 export async function handleVoice(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
@@ -54,20 +54,8 @@ export async function handleVoice(ctx: Context): Promise<void> {
   }
 
   // Check session — fall back to disk if the bot restarted recently.
-  const { session, restored } = sessionManager.getOrRestoreSession(sessionKey);
-  if (!session) {
-    await ctx.reply(
-      '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
-      { parse_mode: 'MarkdownV2' }
-    );
-    return;
-  }
-  if (restored) {
-    await ctx.reply(
-      `↩️ Resumed previous session: *${esc(path.basename(session.workingDirectory))}*`,
-      { parse_mode: 'MarkdownV2' }
-    );
-  }
+  const session = await requireSession(ctx, sessionKey);
+  if (!session) return;
 
   // Check file size
   const fileSizeBytes = voice.file_size || 0;

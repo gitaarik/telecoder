@@ -11,7 +11,7 @@ import { Context } from 'grammy';
 import * as fs from 'fs';
 import * as path from 'path';
 import { config } from '../../../config.js';
-import { sessionManager, type Session } from '../../../claude/session-manager.js';
+import { sessionManager } from '../../../claude/session-manager.js';
 import { queueRequest } from '../../../claude/request-queue.js';
 import { summarizeTopicWithHaiku } from '../../../claude/auto-topic-haiku.js';
 import { readLastAiTitle } from '../../../claude/session-jsonl.js';
@@ -21,6 +21,9 @@ import { userPreferences } from '../../../providers/user-preferences.js';
 import { parseSessionKey } from '../../../utils/session-key.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../../../utils/workspace-guard.js';
 import { getSessionTopic, setSessionTopic } from '../command.handler.js';
+import { requireSession } from '../session-guard.js';
+
+export { requireSession } from '../session-guard.js';
 
 export async function replyFeatureDisabled(ctx: Context, feature: string): Promise<void> {
   await ctx.reply(`⚠️ ${feature} feature is disabled in configuration.`, { parse_mode: undefined });
@@ -62,30 +65,6 @@ export function fireAutoTopic(ctx: Context, sessionKey: string, userMessage: str
   })();
 }
 
-/**
- * Resolve the session for this turn — restoring from disk if the bot was
- * restarted since the last message. Posts a "no project set" message and
- * returns null when no session exists, or a "↩️ Resumed previous session"
- * notice when one was just rehydrated from disk. Callers should early-return
- * on null.
- */
-export async function requireSession(ctx: Context, sessionKey: string): Promise<Session | null> {
-  const { session, restored } = sessionManager.getOrRestoreSession(sessionKey);
-  if (!session) {
-    await ctx.reply(
-      '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
-      { parse_mode: 'MarkdownV2' },
-    );
-    return null;
-  }
-  if (restored) {
-    await ctx.reply(
-      `↩️ Resumed previous session: *${esc(path.basename(session.workingDirectory))}*`,
-      { parse_mode: 'MarkdownV2' },
-    );
-  }
-  return session;
-}
 
 /**
  * Resolve a user-typed file path against the active session, enforcing the
