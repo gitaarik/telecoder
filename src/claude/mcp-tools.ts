@@ -14,7 +14,7 @@ import * as path from 'path';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../utils/workspace-guard.js';
-import { setSessionTopic, clearTopicAndRefreshBotName } from '../bot/handlers/command.handler.js';
+import { setSessionTopic, clearTopicAndRefreshBotName } from '../bot/handlers/command/topic-store.js';
 import { messageSender } from '../telegram/message-sender.js';
 import { createPendingQuestion, buildAskUserMessageText } from './ask-user.js';
 import { parseSessionKey } from '../utils/session-key.js';

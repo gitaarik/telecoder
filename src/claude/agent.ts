@@ -25,7 +25,7 @@ import { hasPendingQuestionForSession } from './ask-user.js';
 import { createTeleCoderMcpServer } from './mcp-tools.js';
 import { isSubagentTool } from './subagent-tools.js';
 import { isNativeCompactCommand } from './command-parser.js';
-import { getSessionTopic, getMsSinceTopicSet } from '../bot/handlers/command.handler.js';
+import { getSessionTopic, getMsSinceTopicSet } from '../bot/handlers/command/topic-store.js';
 import {
   createAgentTimer,
   recordMessage,
