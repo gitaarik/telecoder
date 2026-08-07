@@ -1,7 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
+import { fmtTokens, getProgressBar } from '../../src/utils/format.js';
 import {
-  fmtTokens,
-  getProgressBar,
   extractRedditUrl,
   getAutoVRedditUrl,
   formatResetIn,

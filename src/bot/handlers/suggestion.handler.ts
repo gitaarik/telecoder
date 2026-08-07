@@ -14,9 +14,7 @@
 import { Context } from 'grammy';
 import { consumeSuggestion } from '../../claude/pending-suggestions.js';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
-import { queueRequest } from '../../claude/request-queue.js';
 import { sessionManager } from '../../claude/session-manager.js';
-import { getStreamingMode } from './command.handler.js';
 import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
 
 export async function handleSuggestionTapCallback(ctx: Context): Promise<void> {
@@ -59,14 +57,8 @@ export async function handleSuggestionTapCallback(ctx: Context): Promise<void> {
 
   // Dispatch through the normal pipeline. Lazy import avoids a circular
   // import between this file and message.handler.ts.
-  const { dispatchPromptFromCallback } = await import('./message.handler.js');
-  try {
-    await queueRequest(sessionKey, entry.text, async () => {
-      await dispatchPromptFromCallback(ctx, sessionKey, chatId, entry.text, getStreamingMode());
-    });
-  } catch (error) {
-    if ((error as Error).message === 'Queue cleared') return;
-    const errMsg = error instanceof Error ? error.message : 'Unknown error';
-    await ctx.reply(`❌ Error: ${esc(errMsg)}`, { parse_mode: 'MarkdownV2' });
-  }
+  const { dispatchPromptFromCallback, runQueuedTurn } = await import('./message.handler.js');
+  await runQueuedTurn(ctx, sessionKey, entry.text, 'Suggestion', () =>
+    dispatchPromptFromCallback(ctx, sessionKey, chatId, entry.text),
+  );
 }

@@ -1,7 +1,7 @@
 import { Context } from 'grammy';
 import { sendToAgent, sendLoopToAgent, clearConversation, getActiveProviderName, type AgentUsage } from '../../providers/provider-router.js';
 import { switchProvider } from '../../providers/provider-switch.js';
-import type { ThrottleInfo, ToolResultEvent, EditDiffEvent } from '../../providers/types.js';
+import type { ThrottleInfo, ToolResultEvent, EditDiffEvent, TaskEvent } from '../../providers/types.js';
 import { sessionManager, type Session } from '../../claude/session-manager.js';
 import { config } from '../../config.js';
 import { messageSender } from '../../telegram/message-sender.js';
@@ -33,6 +33,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getWorkspaceRoot, isPathWithinRoot } from '../../utils/workspace-guard.js';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
+import { fmtTokens, getProgressBar } from '../../utils/format.js';
 
 async function replyFeatureDisabled(ctx: Context, feature: string): Promise<void> {
   await ctx.reply(`⚠️ ${feature} feature is disabled in configuration.`, { parse_mode: undefined });
@@ -99,6 +100,43 @@ function makeEditDiffHandler(ctx: Context): (event: EditDiffEvent) => Promise<vo
     const flags = resolveVerbosityFlags(cid);
     if (!flags.showDiffs) return;
     return messageSender.postEditDiff(ctx, event, flags.diffMaxLines);
+  };
+}
+
+/**
+ * Callbacks that render a turn's progress into the streaming message. Shared
+ * by every streaming entry point, including /loop — which takes only these,
+ * since `sendLoopToAgent` reports iteration progress rather than individual
+ * tool calls.
+ */
+function progressCallbacks(ctx: Context) {
+  return {
+    onProgress: (progressText: string) => {
+      messageSender.updateStream(ctx, progressText);
+    },
+    onTip: (tip: string | null) => {
+      messageSender.updateTip(ctx, tip);
+    },
+    onToolResult: makeToolResultHandler(ctx),
+    onEditDiff: makeEditDiffHandler(ctx),
+  };
+}
+
+/**
+ * Per-tool telemetry on top of `progressCallbacks`, for the `sendToAgent`
+ * paths that surface the running tool in the stream header and relay
+ * sub-agent output.
+ */
+function toolCallbacks(ctx: Context, sessionKey: string) {
+  return {
+    onToolStart: (toolName: string, input?: Record<string, unknown>) => {
+      messageSender.updateToolOperation(sessionKey, toolName, input, ctx);
+    },
+    onToolEnd: () => {
+      messageSender.clearToolOperation(sessionKey);
+    },
+    onTaskEvent: (event: TaskEvent) => messageSender.notifyTaskEvent(ctx, sessionKey, event),
+    onSubTurnResponse: (text: string) => messageSender.postSubTurnResponse(ctx, text),
   };
 }
 
@@ -200,20 +238,6 @@ export function extractRedditUrl(text: string): string | null {
   return null;
 }
 
-export function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k';
-  return String(n);
-}
-
-export function getProgressBar(pct: number): string {
-  const clamped = Math.max(0, Math.min(100, pct));
-  const filled = Math.round(clamped / 10);
-  const empty = 10 - filled;
-  const color = clamped >= 80 ? '🔴' : clamped >= 60 ? '🟡' : '🟢';
-  return color + ' [' + '█'.repeat(filled) + '░'.repeat(empty) + ']';
-}
-
 async function sendUsageFooter(
   ctx: Context,
   usage: AgentUsage | undefined,
@@ -282,6 +306,25 @@ async function sendSessionInitNotification(
       + `_The agent may not remember earlier details\\. Consider sharing context\\._`;
     await ctx.reply(msg, { parse_mode: 'MarkdownV2' });
   }
+}
+
+/**
+ * The context-visibility notices every finished turn posts, in the order the
+ * user expects to read them. Each one decides for itself whether the chat's
+ * verbosity settings want it, so callers just fire all three.
+ */
+async function sendTurnNotifications(
+  ctx: Context,
+  sessionKey: string,
+  response: {
+    usage?: AgentUsage;
+    compaction?: { trigger: 'manual' | 'auto'; preTokens: number };
+    sessionInit?: { model: string; sessionId: string };
+  },
+): Promise<void> {
+  await sendUsageFooter(ctx, response.usage);
+  await sendCompactionNotification(ctx, response.compaction);
+  await sendSessionInitNotification(ctx, sessionKey, response.sessionInit);
 }
 
 export function getAutoVRedditUrl(text: string): string | null {
@@ -436,21 +479,8 @@ export async function handleMessage(ctx: Context): Promise<void> {
     return;
   }
 
-  // Check for active session — fall back to disk if the bot restarted recently.
-  const { session, restored } = sessionManager.getOrRestoreSession(sessionKey);
-  if (!session) {
-    await ctx.reply(
-      '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.',
-      { parse_mode: 'MarkdownV2' }
-    );
-    return;
-  }
-  if (restored) {
-    await ctx.reply(
-      `↩️ Resumed previous session: *${esc(path.basename(session.workingDirectory))}*`,
-      { parse_mode: 'MarkdownV2' }
-    );
-  }
+  // Check for active session — falls back to disk if the bot restarted recently.
+  if (!await requireSession(ctx, sessionKey)) return;
 
   // If CANCEL_ON_NEW_MESSAGE is enabled, auto-cancel the running query;
   // otherwise queue the new message behind it and show the queue position.
@@ -466,23 +496,10 @@ export async function handleMessage(ctx: Context): Promise<void> {
 
   fireAutoTopic(ctx, sessionKey, text);
 
-  try {
-    // Queue the request - process one at a time per session
-    await queueRequest(sessionKey, text, async () => {
-      if (getStreamingMode() === 'streaming') {
-        await handleStreamingResponse(ctx, sessionKey, text);
-      } else {
-        await handleWaitResponse(ctx, sessionKey, chatId, text);
-      }
-    });
-  } catch (error) {
-    if ((error as Error).message === 'Queue cleared') {
-      return;
-    }
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('Error handling message:', error);
-    await ctx.reply(`❌ Error: ${esc(errorMessage)}`, { parse_mode: 'MarkdownV2' });
-  }
+  // Queue the request - process one at a time per session
+  await runQueuedTurn(ctx, sessionKey, text, 'Message', () =>
+    runTurn(ctx, sessionKey, chatId, text),
+  );
 }
 
 // Handle reply to project ForceReply prompt
@@ -533,12 +550,24 @@ async function handleProjectReply(ctx: Context, sessionKey: string, projectPath:
   }
 }
 
-// Handle reply to file ForceReply prompt
-async function handleFileReply(ctx: Context, sessionKey: string, filePath: string): Promise<void> {
+/**
+ * Resolve a user-typed file path against the active session, enforcing the
+ * workspace boundary and that the target is an existing regular file.
+ *
+ * Every rejection is reported to the chat and returns null, so callers only
+ * need to early-return. Shared by the /file and /telegraph reply handlers —
+ * they used to carry identical copies of these three checks, which meant a
+ * tightening of the containment rule could reach one and miss the other.
+ */
+async function resolveUserFilePath(
+  ctx: Context,
+  sessionKey: string,
+  filePath: string,
+): Promise<string | null> {
   const trimmedPath = filePath.trim();
 
   const session = await requireSession(ctx, sessionKey);
-  if (!session) return;
+  if (!session) return null;
 
   const fullPath = trimmedPath.startsWith('/')
     ? trimmedPath
@@ -550,7 +579,7 @@ async function handleFileReply(ctx: Context, sessionKey: string, filePath: strin
       `❌ File path must be within workspace root: \`${esc(workspaceRoot)}\``,
       { parse_mode: 'MarkdownV2' }
     );
-    return;
+    return null;
   }
 
   if (!fs.existsSync(fullPath)) {
@@ -558,7 +587,7 @@ async function handleFileReply(ctx: Context, sessionKey: string, filePath: strin
       `❌ File not found: \`${esc(trimmedPath)}\``,
       { parse_mode: 'MarkdownV2' }
     );
-    return;
+    return null;
   }
 
   if (fs.statSync(fullPath).isDirectory()) {
@@ -566,8 +595,16 @@ async function handleFileReply(ctx: Context, sessionKey: string, filePath: strin
       `❌ That's a directory, not a file: \`${esc(trimmedPath)}\``,
       { parse_mode: 'MarkdownV2' }
     );
-    return;
+    return null;
   }
+
+  return fullPath;
+}
+
+// Handle reply to file ForceReply prompt
+async function handleFileReply(ctx: Context, sessionKey: string, filePath: string): Promise<void> {
+  const fullPath = await resolveUserFilePath(ctx, sessionKey, filePath);
+  if (!fullPath) return;
 
   const success = await messageSender.sendDocument(ctx, fullPath, `📎 ${path.basename(fullPath)}`);
 
@@ -599,114 +636,54 @@ async function handleAgentReply(
 
   fireAutoTopic(ctx, sessionKey, trimmedInput);
 
-  try {
-    await queueRequest(sessionKey, trimmedInput, async () => {
-      const startTime = Date.now();
-      await messageSender.startStreaming(ctx);
+  await runQueuedTurn(ctx, sessionKey, trimmedInput, `AgentReply:${mode}`, async () => {
+    const startTime = Date.now();
+    await messageSender.startStreaming(ctx);
 
-      const abortController = new AbortController();
-      setAbortController(sessionKey, abortController);
+    const abortController = new AbortController();
+    setAbortController(sessionKey, abortController);
 
-      try {
-        let response;
-        if (mode === 'loop') {
-          response = await sendLoopToAgent(sessionKey, trimmedInput, {
-            onProgress: (progressText) => {
-              messageSender.updateStream(ctx, progressText);
-            },
-            onTip: (tip) => {
-              messageSender.updateTip(ctx, tip);
-            },
-            onToolResult: makeToolResultHandler(ctx),
-            onEditDiff: makeEditDiffHandler(ctx),
-            abortController,
-            telegramCtx: ctx,
-          });
-        } else {
-          response = await sendToAgent(sessionKey, trimmedInput, {
-            onProgress: (progressText) => {
-              messageSender.updateStream(ctx, progressText);
-            },
-            onTip: (tip) => {
-              messageSender.updateTip(ctx, tip);
-            },
-            onToolStart: (toolName, input) => {
-              messageSender.updateToolOperation(sessionKey, toolName, input, ctx);
-            },
-            onToolEnd: () => {
-              messageSender.clearToolOperation(sessionKey);
-            },
-            onTaskEvent: (event) => messageSender.notifyTaskEvent(ctx, sessionKey, event),
-            onSubTurnResponse: (text) => messageSender.postSubTurnResponse(ctx, text),
-            onToolResult: makeToolResultHandler(ctx),
-            onEditDiff: makeEditDiffHandler(ctx),
-            abortController,
-            command: mode,
-            telegramCtx: ctx,
-          });
-        }
-
-        await messageSender.finishStreaming(ctx, response.text, { nextPromptSuggestion: response.nextPromptSuggestion });
-        await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
-        await maybeSendVoiceReply(ctx, response.text);
-
-        // Completion notification for long tasks
-        await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
-
-        // Context visibility notifications
-        await sendUsageFooter(ctx, response.usage);
-        await sendCompactionNotification(ctx, response.compaction);
-        await sendSessionInitNotification(ctx, sessionKey, response.sessionInit);
-
-        const chatId = ctx.chat?.id;
-        if (chatId !== undefined) await sendStatusLine(ctx, chatId, sessionKey, response.usage, trimmedInput);
-      } catch (error) {
-        await messageSender.cancelStreaming(ctx, error as Error);
-        throw error;
+    try {
+      let response;
+      if (mode === 'loop') {
+        response = await sendLoopToAgent(sessionKey, trimmedInput, {
+          ...progressCallbacks(ctx),
+          abortController,
+          telegramCtx: ctx,
+        });
+      } else {
+        response = await sendToAgent(sessionKey, trimmedInput, {
+          ...progressCallbacks(ctx),
+          ...toolCallbacks(ctx, sessionKey),
+          abortController,
+          command: mode,
+          telegramCtx: ctx,
+        });
       }
-    });
-  } catch (error) {
-    if ((error as Error).message === 'Queue cleared') return;
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    await ctx.reply(`❌ Error: ${esc(errorMessage)}`, { parse_mode: 'MarkdownV2' });
-  }
+
+      await messageSender.finishStreaming(ctx, response.text, { nextPromptSuggestion: response.nextPromptSuggestion });
+      await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
+      await maybeSendVoiceReply(ctx, response.text);
+
+      // Completion notification for long tasks
+      await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
+
+      // Context visibility notifications
+      await sendTurnNotifications(ctx, sessionKey, response);
+
+      const chatId = ctx.chat?.id;
+      if (chatId !== undefined) await sendStatusLine(ctx, chatId, sessionKey, response.usage, trimmedInput);
+    } catch (error) {
+      await messageSender.cancelStreaming(ctx, error as Error);
+      throw error;
+    }
+  });
 }
 
 // Handle reply to telegraph ForceReply prompt
 async function handleTelegraphReply(ctx: Context, sessionKey: string, filePath: string): Promise<void> {
-  const trimmedPath = filePath.trim();
-
-  const session = await requireSession(ctx, sessionKey);
-  if (!session) return;
-
-  const fullPath = trimmedPath.startsWith('/')
-    ? trimmedPath
-    : path.join(session.workingDirectory, trimmedPath);
-  const workspaceRoot = getWorkspaceRoot();
-
-  if (!isPathWithinRoot(workspaceRoot, fullPath)) {
-    await ctx.reply(
-      `❌ File path must be within workspace root: \`${esc(workspaceRoot)}\``,
-      { parse_mode: 'MarkdownV2' }
-    );
-    return;
-  }
-
-  if (!fs.existsSync(fullPath)) {
-    await ctx.reply(
-      `❌ File not found: \`${esc(trimmedPath)}\``,
-      { parse_mode: 'MarkdownV2' }
-    );
-    return;
-  }
-
-  if (fs.statSync(fullPath).isDirectory()) {
-    await ctx.reply(
-      `❌ That's a directory, not a file: \`${esc(trimmedPath)}\``,
-      { parse_mode: 'MarkdownV2' }
-    );
-    return;
-  }
+  const fullPath = await resolveUserFilePath(ctx, sessionKey, filePath);
+  if (!fullPath) return;
 
   const ext = path.extname(fullPath).toLowerCase();
   if (ext !== '.md' && ext !== '.markdown') {
@@ -827,42 +804,70 @@ export async function handleCcrThrottleCallback(ctx: Context): Promise<void> {
     }
 
     await ctx.reply('🔁 Retrying via CCR\\.\\.\\.', { parse_mode: 'MarkdownV2' });
-    try {
-      await queueRequest(sessionKey, pending, async () => {
-        if (getStreamingMode() === 'streaming') {
-          await handleStreamingResponse(ctx, sessionKey, pending);
-        } else {
-          await handleWaitResponse(ctx, sessionKey, chatId, pending);
-        }
-      });
-    } catch (error) {
-      if ((error as Error).message === 'Queue cleared') return;
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      await ctx.reply(`❌ Error: ${esc(errorMessage)}`, { parse_mode: 'MarkdownV2' });
-    }
+    await runQueuedTurn(ctx, sessionKey, pending, 'CcrRetry', () =>
+      runTurn(ctx, sessionKey, chatId, pending),
+    );
+  }
+}
+
+/**
+ * Run one prompt in whichever response mode the chat is currently set to.
+ * Every entry point that executes a user prompt funnels through here, so the
+ * streaming-vs-wait decision lives in exactly one place.
+ */
+async function runTurn(
+  ctx: Context,
+  sessionKey: string,
+  chatId: number,
+  message: string,
+): Promise<void> {
+  if (getStreamingMode() === 'streaming') {
+    await handleStreamingResponse(ctx, sessionKey, message);
+  } else {
+    await handleWaitResponse(ctx, sessionKey, chatId, message);
+  }
+}
+
+/**
+ * Queue a turn and turn any failure into a user-facing error.
+ *
+ * "Queue cleared" is the normal signal that a newer message superseded this
+ * one, so it exits quietly. Anything else is logged as well as reported —
+ * three of the four call sites this replaces only replied to the chat, which
+ * left failures in the plan/explore, suggestion-tap and throttle-retry paths
+ * invisible from the server side.
+ */
+export async function runQueuedTurn(
+  ctx: Context,
+  sessionKey: string,
+  message: string,
+  label: string,
+  run: () => Promise<void>,
+): Promise<void> {
+  try {
+    await queueRequest(sessionKey, message, run);
+  } catch (error) {
+    if ((error as Error).message === 'Queue cleared') return;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[${label}] Turn failed:`, error);
+    await ctx.reply(`❌ Error: ${esc(errorMessage)}`, { parse_mode: 'MarkdownV2' });
   }
 }
 
 /**
  * Entry point used by callback-triggered prompts (suggestion-tap, CCR
- * throttle retry). Mirrors what handleMessage does after queueRequest:
- * picks streaming vs wait based on the chat's current mode and dispatches
- * through the same code path a typed message would take. fireAutoTopic is
- * fired so the bot name still tracks the topic the user implicitly chose.
+ * throttle retry). Dispatches through the same code path a typed message
+ * would take, and fires the topic update so the bot name still tracks the
+ * topic the user implicitly chose by tapping.
  */
 export async function dispatchPromptFromCallback(
   ctx: Context,
   sessionKey: string,
   chatId: number,
   message: string,
-  streamingMode: 'streaming' | 'wait',
 ): Promise<void> {
   fireAutoTopic(ctx, sessionKey, message);
-  if (streamingMode === 'streaming') {
-    await handleStreamingResponse(ctx, sessionKey, message);
-  } else {
-    await handleWaitResponse(ctx, sessionKey, chatId, message);
-  }
+  await runTurn(ctx, sessionKey, chatId, message);
 }
 
 async function handleStreamingResponse(
@@ -878,22 +883,8 @@ async function handleStreamingResponse(
 
   try {
     const response = await sendToAgent(sessionKey, message, {
-      onProgress: (progressText) => {
-        messageSender.updateStream(ctx, progressText);
-      },
-      onTip: (tip) => {
-        messageSender.updateTip(ctx, tip);
-      },
-      onToolStart: (toolName, input) => {
-        messageSender.updateToolOperation(sessionKey, toolName, input, ctx);
-      },
-      onToolEnd: () => {
-        messageSender.clearToolOperation(sessionKey);
-      },
-      onTaskEvent: (event) => messageSender.notifyTaskEvent(ctx, sessionKey, event),
-      onSubTurnResponse: (text) => messageSender.postSubTurnResponse(ctx, text),
-      onToolResult: makeToolResultHandler(ctx),
-      onEditDiff: makeEditDiffHandler(ctx),
+      ...progressCallbacks(ctx),
+      ...toolCallbacks(ctx, sessionKey),
       abortController,
       telegramCtx: ctx,
     });
@@ -905,9 +896,7 @@ async function handleStreamingResponse(
     await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
 
     // Context visibility notifications
-    await sendUsageFooter(ctx, response.usage);
-    await sendCompactionNotification(ctx, response.compaction);
-    await sendSessionInitNotification(ctx, sessionKey, response.sessionInit);
+    await sendTurnNotifications(ctx, sessionKey, response);
 
     const chatId = ctx.chat?.id;
     if (chatId !== undefined) await sendStatusLine(ctx, chatId, sessionKey, response.usage, message);
@@ -950,9 +939,7 @@ async function handleWaitResponse(
     await maybeSendVoiceReply(ctx, response.text);
 
     // Context visibility notifications
-    await sendUsageFooter(ctx, response.usage);
-    await sendCompactionNotification(ctx, response.compaction);
-    await sendSessionInitNotification(ctx, sessionKey, response.sessionInit);
+    await sendTurnNotifications(ctx, sessionKey, response);
 
     await sendStatusLine(ctx, chatId, sessionKey, response.usage, message);
 

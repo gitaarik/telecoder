@@ -9,7 +9,7 @@ import { cancelRequest, clearQueue, isProcessing, queueRequest, setAbortControll
 import { createTelegraphFromFile } from '../../telegram/telegraph.js';
 import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
 import { maybeSendVoiceReply } from '../../tts/voice-reply.js';
-import { fmtTokens, getProgressBar } from './message.handler.js';
+import { fmtTokens, getProgressBar } from '../../utils/format.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';

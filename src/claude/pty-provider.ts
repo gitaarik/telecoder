@@ -11,6 +11,7 @@ import { isNativeCompactCommand } from './command-parser.js';
 import { isCancelled } from './request-queue.js';
 import { getWorkspaceRoot } from '../utils/workspace-guard.js';
 import { parseSessionKey } from '../utils/session-key.js';
+import { fmtTokens } from '../utils/format.js';
 import { envWithoutParentSession } from '../utils/claude-env.js';
 import { legacyEnv } from '../utils/legacy-env.js';
 import { userPreferences } from '../providers/user-preferences.js';
@@ -52,16 +53,6 @@ const COLS = 120;
 const ROWS = 40;
 const IDLE_MS = 1200;
 
-/**
- * Compact "12.3k" / "1.2M" token count for user-facing messages. Kept local to
- * avoid importing from the bot handler layer (which imports the providers back,
- * closing a require cycle). Mirrors fmtTokens in message.handler.ts.
- */
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k';
-  return String(n);
-}
 /**
  * Short window we wait *after* the Stop hook fires before extracting the
  * screen. Stop fires when claude finishes the response, but the TUI is
