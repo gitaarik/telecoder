@@ -2,9 +2,9 @@ import type { Bot, Context } from 'grammy';
 import { sendToAgent } from '../providers/provider-router.js';
 import { sessionManager } from './session-manager.js';
 import { sessionHistory } from './session-history.js';
-import { queueRequest, setAbortController } from './request-queue.js';
+import { queueRequest } from './request-queue.js';
 import { messageSender } from '../telegram/message-sender.js';
-import { resolveVerbosityFlags } from '../utils/verbosity.js';
+import { progressCallbacks, toolCallbacks, withStreamingTurn } from '../telegram/streaming-turn.js';
 import { maybeSendVoiceReply } from '../tts/voice-reply.js';
 import { relayCatchUpIfMissed } from '../bot/handlers/message.handler.js';
 import { parseSessionKey } from '../utils/session-key.js';
@@ -87,38 +87,11 @@ async function fireSchedule(bot: Bot, schedule: Schedule): Promise<void> {
 
 async function runScheduledTurn(ctx: Context, sessionKey: string, prompt: string): Promise<void> {
   const startTime = Date.now();
-  await messageSender.startStreaming(ctx);
 
-  const abortController = new AbortController();
-  setAbortController(sessionKey, abortController);
-
-  try {
+  await withStreamingTurn(ctx, sessionKey, async (abortController) => {
     const response = await sendToAgent(sessionKey, prompt, {
-      onProgress: (progressText) => {
-        messageSender.updateStream(ctx, progressText);
-      },
-      onToolStart: (toolName, input) => {
-        messageSender.updateToolOperation(sessionKey, toolName, input, ctx);
-      },
-      onToolEnd: () => {
-        messageSender.clearToolOperation(sessionKey);
-      },
-      onTaskEvent: (event) => messageSender.notifyTaskEvent(ctx, sessionKey, event),
-      onSubTurnResponse: (text) => messageSender.postSubTurnResponse(ctx, text),
-      onToolResult: (event) => {
-        const cid = ctx.chat?.id;
-        if (cid === undefined) return;
-        const flags = resolveVerbosityFlags(cid);
-        if (!flags.showToolResults) return;
-        return messageSender.postToolResult(ctx, event, flags.toolResultMaxLines, flags.toolResultMaxChars);
-      },
-      onEditDiff: (event) => {
-        const cid = ctx.chat?.id;
-        if (cid === undefined) return;
-        const flags = resolveVerbosityFlags(cid);
-        if (!flags.showDiffs) return;
-        return messageSender.postEditDiff(ctx, event, flags.diffMaxLines);
-      },
+      ...progressCallbacks(ctx),
+      ...toolCallbacks(ctx, sessionKey),
       abortController,
       telegramCtx: ctx,
     });
@@ -127,8 +100,5 @@ async function runScheduledTurn(ctx: Context, sessionKey: string, prompt: string
     await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
     await maybeSendVoiceReply(ctx, response.text);
     await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
-  } catch (error) {
-    await messageSender.cancelStreaming(ctx, error as Error);
-    throw error;
-  }
+  });
 }

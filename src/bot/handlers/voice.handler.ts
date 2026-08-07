@@ -22,6 +22,7 @@ import { downloadFileSecure, getTelegramFileUrl } from '../../utils/download.js'
 import { sanitizeError, sanitizePath } from '../../utils/sanitize.js';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
 import { requireSession } from './session-guard.js';
+import { progressCallbacks, withStreamingTurn } from '../../telegram/streaming-turn.js';
 
 export async function handleVoice(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
@@ -136,25 +137,15 @@ export async function handleVoice(ctx: Context): Promise<void> {
     // Feed transcript into agent
     await queueRequest(sessionKey, transcript, async () => {
       if (getStreamingMode() === 'streaming') {
-        await messageSender.startStreaming(ctx);
-
-        const abortController = new AbortController();
-        setAbortController(sessionKey, abortController);
-
-        try {
+        await withStreamingTurn(ctx, sessionKey, async (abortController) => {
           const response = await sendToAgent(sessionKey, transcript, {
-            onProgress: (progressText) => {
-              messageSender.updateStream(ctx, progressText);
-            },
+            ...progressCallbacks(ctx),
             abortController,
           });
 
           await messageSender.finishStreaming(ctx, response.text);
           await maybeSendVoiceReply(ctx, response.text);
-        } catch (error) {
-          await messageSender.cancelStreaming(ctx, error as Error);
-          throw error;
-        }
+        });
       } else {
         await ctx.replyWithChatAction('typing');
 

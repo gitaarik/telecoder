@@ -5,7 +5,7 @@ import { config } from '../../config.js';
 import { messageSender } from '../../telegram/message-sender.js';
 import { getUptimeFormatted } from '../middleware/stale-filter.js';
 import { getAvailableCommands } from '../../claude/command-parser.js';
-import { cancelRequest, clearQueue, isProcessing, queueRequest, setAbortController } from '../../claude/request-queue.js';
+import { cancelRequest, clearQueue, isProcessing, queueRequest } from '../../claude/request-queue.js';
 import { createTelegraphFromFile } from '../../telegram/telegraph.js';
 import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
 import { maybeSendVoiceReply } from '../../tts/voice-reply.js';
@@ -18,6 +18,7 @@ import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.j
 import { replyMd, getEffortLabel, buildBackToPreviousButton } from './command/shared.js';
 import { getSessionTopic } from './command/topic.js';
 import { requireActiveSession } from './session-guard.js';
+import { progressCallbacks, withStreamingTurn } from '../../telegram/streaming-turn.js';
 
 // Re-exported so the modules that already import from this file keep working
 // while the command handlers are split out domain by domain.
@@ -450,26 +451,16 @@ export async function handlePlan(ctx: Context): Promise<void> {
 
   try {
     await queueRequest(sessionKey, task, async () => {
-      await messageSender.startStreaming(ctx);
-
-      const abortController = new AbortController();
-      setAbortController(sessionKey, abortController);
-
-      try {
+      await withStreamingTurn(ctx, sessionKey, async (abortController) => {
         const response = await sendToAgent(sessionKey, task, {
-          onProgress: (progressText) => {
-            messageSender.updateStream(ctx, progressText);
-          },
+          ...progressCallbacks(ctx),
           abortController,
           command: 'plan',
         });
 
         await messageSender.finishStreaming(ctx, response.text);
         await maybeSendVoiceReply(ctx, response.text);
-      } catch (error) {
-        await messageSender.cancelStreaming(ctx, error as Error);
-        throw error;
-      }
+      });
     });
   } catch (error) {
     if ((error as Error).message === 'Queue cleared') return;
@@ -506,26 +497,16 @@ export async function handleExplore(ctx: Context): Promise<void> {
 
   try {
     await queueRequest(sessionKey, question, async () => {
-      await messageSender.startStreaming(ctx);
-
-      const abortController = new AbortController();
-      setAbortController(sessionKey, abortController);
-
-      try {
+      await withStreamingTurn(ctx, sessionKey, async (abortController) => {
         const response = await sendToAgent(sessionKey, question, {
-          onProgress: (progressText) => {
-            messageSender.updateStream(ctx, progressText);
-          },
+          ...progressCallbacks(ctx),
           abortController,
           command: 'explore',
         });
 
         await messageSender.finishStreaming(ctx, response.text);
         await maybeSendVoiceReply(ctx, response.text);
-      } catch (error) {
-        await messageSender.cancelStreaming(ctx, error as Error);
-        throw error;
-      }
+      });
     });
   } catch (error) {
     if ((error as Error).message === 'Queue cleared') return;
@@ -620,25 +601,15 @@ export async function handleLoop(ctx: Context): Promise<void> {
 
   try {
     await queueRequest(sessionKey, task, async () => {
-      await messageSender.startStreaming(ctx);
-
-      const abortController = new AbortController();
-      setAbortController(sessionKey, abortController);
-
-      try {
+      await withStreamingTurn(ctx, sessionKey, async (abortController) => {
         const response = await sendLoopToAgent(sessionKey, task, {
-          onProgress: (progressText) => {
-            messageSender.updateStream(ctx, progressText);
-          },
+          ...progressCallbacks(ctx),
           abortController,
         });
 
         await messageSender.finishStreaming(ctx, response.text);
         await maybeSendVoiceReply(ctx, response.text);
-      } catch (error) {
-        await messageSender.cancelStreaming(ctx, error as Error);
-        throw error;
-      }
+      });
     });
   } catch (error) {
     if ((error as Error).message === 'Queue cleared') return;

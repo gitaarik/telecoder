@@ -11,81 +11,17 @@
 import { Context } from 'grammy';
 import { sendToAgent, getActiveProviderName } from '../../../providers/provider-router.js';
 import { switchProvider } from '../../../providers/provider-switch.js';
-import type { ToolResultEvent, EditDiffEvent, TaskEvent } from '../../../providers/types.js';
 import { config } from '../../../config.js';
 import { setAbortController } from '../../../claude/request-queue.js';
 import { messageSender } from '../../../telegram/message-sender.js';
+import { makeToolResultHandler, makeEditDiffHandler, progressCallbacks, toolCallbacks, withStreamingTurn } from '../../../telegram/streaming-turn.js';
 import { maybeSendVoiceReply } from '../../../tts/voice-reply.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
-import { resolveVerbosityFlags } from '../../../utils/verbosity.js';
 import { getStreamingMode, sendStatusLine } from '../command.handler.js';
 import { fireAutoTopic, runQueuedTurn } from './shared.js';
 import { sendTurnNotifications } from './turn-notify.js';
 import { lastThrottledPrompt, postThrottlePrompt } from './throttle.js';
 
-/**
- * Build the `onToolResult` callback passed to the provider runner. Resolves
- * verbosity flags lazily on each event so a /verbosity change mid-turn takes
- * effect immediately, and short-circuits when the chat opts out of tool
- * previews entirely.
- */
-function makeToolResultHandler(ctx: Context): (event: ToolResultEvent) => Promise<void> | undefined {
-  return (event) => {
-    const cid = ctx.chat?.id;
-    if (cid === undefined) return;
-    const flags = resolveVerbosityFlags(cid);
-    if (!flags.showToolResults) return;
-    return messageSender.postToolResult(ctx, event, flags.toolResultMaxLines, flags.toolResultMaxChars);
-  };
-}
-
-/** Companion to `makeToolResultHandler` for Edit/Write diff previews. */
-function makeEditDiffHandler(ctx: Context): (event: EditDiffEvent) => Promise<void> | undefined {
-  return (event) => {
-    const cid = ctx.chat?.id;
-    if (cid === undefined) return;
-    const flags = resolveVerbosityFlags(cid);
-    if (!flags.showDiffs) return;
-    return messageSender.postEditDiff(ctx, event, flags.diffMaxLines);
-  };
-}
-
-/**
- * Callbacks that render a turn's progress into the streaming message. Shared
- * by every streaming entry point, including /loop — which takes only these,
- * since `sendLoopToAgent` reports iteration progress rather than individual
- * tool calls.
- */
-export function progressCallbacks(ctx: Context) {
-  return {
-    onProgress: (progressText: string) => {
-      messageSender.updateStream(ctx, progressText);
-    },
-    onTip: (tip: string | null) => {
-      messageSender.updateTip(ctx, tip);
-    },
-    onToolResult: makeToolResultHandler(ctx),
-    onEditDiff: makeEditDiffHandler(ctx),
-  };
-}
-
-/**
- * Per-tool telemetry on top of `progressCallbacks`, for the `sendToAgent`
- * paths that surface the running tool in the stream header and relay
- * sub-agent output.
- */
-export function toolCallbacks(ctx: Context, sessionKey: string) {
-  return {
-    onToolStart: (toolName: string, input?: Record<string, unknown>) => {
-      messageSender.updateToolOperation(sessionKey, toolName, input, ctx);
-    },
-    onToolEnd: () => {
-      messageSender.clearToolOperation(sessionKey);
-    },
-    onTaskEvent: (event: TaskEvent) => messageSender.notifyTaskEvent(ctx, sessionKey, event),
-    onSubTurnResponse: (text: string) => messageSender.postSubTurnResponse(ctx, text),
-  };
-}
 
 export async function handleCcrThrottleCallback(ctx: Context): Promise<void> {
   const data = ctx.callbackQuery?.data;
@@ -180,12 +116,8 @@ async function handleStreamingResponse(
   message: string
 ): Promise<void> {
   const startTime = Date.now();
-  await messageSender.startStreaming(ctx);
 
-  const abortController = new AbortController();
-  setAbortController(sessionKey, abortController);
-
-  try {
+  await withStreamingTurn(ctx, sessionKey, async (abortController) => {
     const response = await sendToAgent(sessionKey, message, {
       ...progressCallbacks(ctx),
       ...toolCallbacks(ctx, sessionKey),
@@ -210,10 +142,7 @@ async function handleStreamingResponse(
     } else {
       lastThrottledPrompt.delete(sessionKey);
     }
-  } catch (error) {
-    await messageSender.cancelStreaming(ctx, error as Error);
-    throw error;
-  }
+  });
 }
 
 async function handleWaitResponse(

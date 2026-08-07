@@ -25,6 +25,7 @@ import { sanitizeError } from '../../../utils/sanitize.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 import { replyMd, replyFeatureDisabled, parseCallback } from './shared.js';
 import { getStreamingMode } from './streaming-mode.js';
+import { progressCallbacks, withStreamingTurn } from '../../../telegram/streaming-turn.js';
 
 /**
  * Tokenize a user-provided argument string, preserving quoted substrings.
@@ -337,22 +338,14 @@ export async function handleRedditActionCallback(ctx: Context): Promise<void> {
         try {
           await queueRequest(sessionKey, prompt, async () => {
             if (getStreamingMode() === 'streaming') {
-              await messageSender.startStreaming(ctx);
-              const abortController = new AbortController();
-              setAbortController(sessionKey, abortController);
-              try {
+              await withStreamingTurn(ctx, sessionKey, async (abortController) => {
                 const response = await sendToAgent(sessionKey, prompt, {
-                  onProgress: (progressText) => {
-                    messageSender.updateStream(ctx, progressText);
-                  },
+                  ...progressCallbacks(ctx),
                   abortController,
                 });
                 await messageSender.finishStreaming(ctx, response.text);
                 await maybeSendVoiceReply(ctx, response.text);
-              } catch (error) {
-                await messageSender.cancelStreaming(ctx, error as Error);
-                throw error;
-              }
+              });
             } else {
               await ctx.replyWithChatAction('typing');
               const abortController = new AbortController();

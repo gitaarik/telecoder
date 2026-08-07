@@ -11,7 +11,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { sendToAgent, sendLoopToAgent, clearConversation } from '../../../providers/provider-router.js';
 import { sessionManager } from '../../../claude/session-manager.js';
-import { setAbortController } from '../../../claude/request-queue.js';
 import { messageSender } from '../../../telegram/message-sender.js';
 import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
 import { createTelegraphFromFile } from '../../../telegram/telegraph.js';
@@ -23,7 +22,7 @@ import {
   sendStatusLine,
 } from '../command.handler.js';
 import { fireAutoTopic, requireSession, resolveUserFilePath, runQueuedTurn } from './shared.js';
-import { progressCallbacks, toolCallbacks } from './turn-runner.js';
+import { progressCallbacks, toolCallbacks, withStreamingTurn } from '../../../telegram/streaming-turn.js';
 import { relayCatchUpIfMissed, sendTurnNotifications } from './turn-notify.js';
 
 // Handle reply to project ForceReply prompt
@@ -111,12 +110,8 @@ export async function handleAgentReply(
 
   await runQueuedTurn(ctx, sessionKey, trimmedInput, `AgentReply:${mode}`, async () => {
     const startTime = Date.now();
-    await messageSender.startStreaming(ctx);
 
-    const abortController = new AbortController();
-    setAbortController(sessionKey, abortController);
-
-    try {
+    await withStreamingTurn(ctx, sessionKey, async (abortController) => {
       let response;
       if (mode === 'loop') {
         response = await sendLoopToAgent(sessionKey, trimmedInput, {
@@ -146,10 +141,7 @@ export async function handleAgentReply(
 
       const chatId = ctx.chat?.id;
       if (chatId !== undefined) await sendStatusLine(ctx, chatId, sessionKey, response.usage, trimmedInput);
-    } catch (error) {
-      await messageSender.cancelStreaming(ctx, error as Error);
-      throw error;
-    }
+    });
   });
 }
 

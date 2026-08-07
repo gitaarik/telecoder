@@ -21,6 +21,7 @@ import { isValidImageFile, getFileType } from '../../utils/file-type.js';
 import { type PhotoSize } from 'grammy/types';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
 import { requireSession } from './session-guard.js';
+import { progressCallbacks, withStreamingTurn } from '../../telegram/streaming-turn.js';
 
 const UPLOADS_DIR = '.claudegram/uploads';
 
@@ -105,16 +106,10 @@ async function handleSavedImage(
   await queueRequest(sessionKey, agentPrompt, async () => {
     if (getStreamingMode() === 'streaming') {
       const startTime = Date.now();
-      await messageSender.startStreaming(ctx);
 
-      const abortController = new AbortController();
-      setAbortController(sessionKey, abortController);
-
-      try {
+      await withStreamingTurn(ctx, sessionKey, async (abortController) => {
         const response = await sendToAgent(sessionKey, agentPrompt, {
-          onProgress: (progressText) => {
-            messageSender.updateStream(ctx, progressText);
-          },
+          ...progressCallbacks(ctx),
           abortController,
           images,
           telegramCtx: ctx,
@@ -122,10 +117,7 @@ async function handleSavedImage(
 
         await messageSender.finishStreaming(ctx, response.text);
         await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
-      } catch (error) {
-        await messageSender.cancelStreaming(ctx, error as Error);
-        throw error;
-      }
+      });
     } else {
       await ctx.replyWithChatAction('typing');
       const abortController = new AbortController();
@@ -290,23 +282,16 @@ export async function handleTextDocument(ctx: Context): Promise<void> {
     await queueRequest(sessionKey, agentPrompt, async () => {
       if (getStreamingMode() === 'streaming') {
         const startTime = Date.now();
-        await messageSender.startStreaming(ctx);
-        const abortController = new AbortController();
-        setAbortController(sessionKey, abortController);
-        try {
+
+        await withStreamingTurn(ctx, sessionKey, async (abortController) => {
           const response = await sendToAgent(sessionKey, agentPrompt, {
-            onProgress: (progressText) => {
-              messageSender.updateStream(ctx, progressText);
-            },
+            ...progressCallbacks(ctx),
             abortController,
             telegramCtx: ctx,
           });
           await messageSender.finishStreaming(ctx, response.text);
           await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
-        } catch (error) {
-          await messageSender.cancelStreaming(ctx, error as Error);
-          throw error;
-        }
+        });
       } else {
         await ctx.replyWithChatAction('typing');
         const abortController = new AbortController();
