@@ -342,6 +342,7 @@ export async function handleRedditActionCallback(ctx: Context): Promise<void> {
                 const response = await sendToAgent(sessionKey, prompt, {
                   ...progressCallbacks(ctx),
                   abortController,
+                  telegramCtx: ctx,
                 });
                 await messageSender.finishStreaming(ctx, response.text);
                 await maybeSendVoiceReply(ctx, response.text);
@@ -350,7 +351,7 @@ export async function handleRedditActionCallback(ctx: Context): Promise<void> {
               await ctx.replyWithChatAction('typing');
               const abortController = new AbortController();
               setAbortController(sessionKey, abortController);
-              const response = await sendToAgent(sessionKey, prompt, { abortController });
+              const response = await sendToAgent(sessionKey, prompt, { abortController, telegramCtx: ctx });
               await messageSender.sendMessage(ctx, response.text);
               await maybeSendVoiceReply(ctx, response.text);
             }

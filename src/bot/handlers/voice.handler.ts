@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { config } from '../../config.js';
-import { sendToAgent } from '../../claude/agent.js';
+import { sendToAgent } from '../../providers/provider-router.js';
 import { messageSender } from '../../telegram/message-sender.js';
 import { isDuplicate, markProcessed } from '../../telegram/deduplication.js';
 import { isStaleMessage } from '../middleware/stale-filter.js';
@@ -141,6 +141,7 @@ export async function handleVoice(ctx: Context): Promise<void> {
           const response = await sendToAgent(sessionKey, transcript, {
             ...progressCallbacks(ctx),
             abortController,
+            telegramCtx: ctx,
           });
 
           await messageSender.finishStreaming(ctx, response.text);
@@ -152,7 +153,7 @@ export async function handleVoice(ctx: Context): Promise<void> {
         const abortController = new AbortController();
         setAbortController(sessionKey, abortController);
 
-        const response = await sendToAgent(sessionKey, transcript, { abortController });
+        const response = await sendToAgent(sessionKey, transcript, { abortController, telegramCtx: ctx });
         await messageSender.sendMessage(ctx, response.text);
         await maybeSendVoiceReply(ctx, response.text);
       }

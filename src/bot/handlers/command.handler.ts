@@ -455,6 +455,7 @@ export async function handlePlan(ctx: Context): Promise<void> {
         const response = await sendToAgent(sessionKey, task, {
           ...progressCallbacks(ctx),
           abortController,
+          telegramCtx: ctx,
           command: 'plan',
         });
 
@@ -501,6 +502,7 @@ export async function handleExplore(ctx: Context): Promise<void> {
         const response = await sendToAgent(sessionKey, question, {
           ...progressCallbacks(ctx),
           abortController,
+          telegramCtx: ctx,
           command: 'explore',
         });
 
@@ -605,6 +607,7 @@ export async function handleLoop(ctx: Context): Promise<void> {
         const response = await sendLoopToAgent(sessionKey, task, {
           ...progressCallbacks(ctx),
           abortController,
+          telegramCtx: ctx,
         });
 
         await messageSender.finishStreaming(ctx, response.text);
