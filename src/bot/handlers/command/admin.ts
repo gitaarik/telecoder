@@ -20,6 +20,7 @@ import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 import { replyMd, botctlExists, PROJECT_ROOT, BOTCTL_PATH } from './shared.js';
 import { handleResume, handleContinue } from './session.js';
 import { sessionHistory } from '../../../claude/session-history.js';
+import { requestRestart, requestRestartAll, requestSiblingRestart } from '../../../worker-restart.js';
 
 /** Write the reload marker so autoResumeAfterReload picks up sessions on restart. */
 export function writeReloadMarker(): void {
@@ -206,7 +207,6 @@ async function performRestart(ctx: Context, scope: RestartScope): Promise<void> 
       }
       // Marker writing for sibling bots happens in the launcher — it has the
       // tokens to derive each bot's marker path. We can't write them here.
-      const { requestRestartAll } = await import('../../../index.js');
       requestRestartAll(config.AUTO_RESTORE_SESSION);
       return;
     }
@@ -219,7 +219,6 @@ async function performRestart(ctx: Context, scope: RestartScope): Promise<void> 
       await sendRestoreButtons(ctx);
     }
 
-    const { requestRestart } = await import('../../../index.js');
     requestRestart();
     return;
   }
@@ -255,7 +254,6 @@ export async function handleRestartBot(ctx: Context): Promise<void> {
 
   // Cross-bot restart: /restartbot <name> — direct, no menu
   if (args && !isMainThread && args.toLowerCase() !== 'all' && args.toLowerCase() !== 'one' && args.toLowerCase() !== 'this') {
-    const { requestSiblingRestart } = await import('../../../index.js');
     const result = await requestSiblingRestart(args, config.AUTO_RESTORE_SESSION);
     if (result.success) {
       await replyMd(ctx, `🔁 Restarting *${esc(result.name ?? args)}*\\.\\.\\. it should be back in ~10 seconds\\.`);
@@ -372,13 +370,11 @@ async function performRebuild(ctx: Context, scope: RebuildScope): Promise<void> 
   if (!isMainThread) {
     if (scope === 'all') {
       await ctx.reply('✅ Build succeeded. Restarting all instances...');
-      const { requestRestartAll } = await import('../../../index.js');
       requestRestartAll(config.AUTO_RESTORE_SESSION);
     } else {
       if (config.AUTO_RESTORE_SESSION) writeReloadMarker();
       await ctx.reply('✅ Build succeeded. Restarting this instance...');
       if (!config.AUTO_RESTORE_SESSION) await sendRestoreButtons(ctx);
-      const { requestRestart } = await import('../../../index.js');
       requestRestart();
     }
     return;
