@@ -85,7 +85,8 @@ async function main() {
   // Start concurrent runner — updates are processed in parallel,
   // with per-chat ordering enforced by the sequentialize middleware in bot.ts.
   // This lets /cancel bypass the per-chat queue and interrupt running queries.
-  const runner = run(bot);
+  // Reassigned when a polling conflict forces a fresh runner (see below).
+  let runner = run(bot);
 
   // Chats that received a startup message, so the restart confirmation below
   // doesn't pile a second one on top.
@@ -172,8 +173,11 @@ async function main() {
   const HEARTBEAT_INTERVAL_MS = 60_000;
   const MAX_HEARTBEAT_FAILURES = 3;
   let heartbeatFailures = 0;
+  // True only while we're deliberately between runners, waiting out a polling
+  // conflict. The check below would otherwise read that gap as a dead runner.
+  let replacingRunner = false;
   const heartbeatTimer = setInterval(async () => {
-    if (!runner.isRunning()) {
+    if (!replacingRunner && !runner.isRunning()) {
       console.error('[HEARTBEAT] Runner is no longer running — exiting for restart');
       process.exit(1);
     }
@@ -230,8 +234,42 @@ async function main() {
     workerHeartbeat.unref();
   }
 
-  // Keep alive until the runner stops (crash or explicit stop)
-  await runner.task();
+  // Keep alive until the runner stops (crash or explicit stop).
+  //
+  // A 409 from getUpdates means something else is polling this same token —
+  // nearly always our own predecessor, whose long poll Telegram hasn't dropped
+  // yet during a restart. grammY's runner classes it as unrecoverable and stops
+  // (throwIfUnrecoverable in @grammyjs/runner), but the condition clears itself
+  // within a poll timeout. Exiting over it would tear down every live Claude
+  // session this bot owns, so put a fresh runner on the same bot instead and
+  // only give up if the conflict is still there after several tries — by then
+  // it's a real second instance, not an overlap.
+  const CONFLICT_RETRY_DELAYS_MS = [5_000, 15_000, 30_000, 60_000];
+  const isConflict = (err: unknown): boolean =>
+    typeof err === 'object' && err !== null &&
+    (err as { error_code?: unknown }).error_code === 409;
+
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await runner.task();
+      return;
+    } catch (err) {
+      if (shuttingDown || !isConflict(err)) throw err;
+
+      const delay = CONFLICT_RETRY_DELAYS_MS[attempt];
+      if (delay === undefined) {
+        console.error(`[Conflict] getUpdates still conflicting after ${CONFLICT_RETRY_DELAYS_MS.length} retries — another instance is polling this token for real`);
+        throw err;
+      }
+
+      console.warn(`[Conflict] Another poller holds this bot's token — retrying in ${Math.round(delay / 1000)}s (attempt ${attempt + 1}/${CONFLICT_RETRY_DELAYS_MS.length})`);
+      replacingRunner = true;
+      await new Promise(resolve => setTimeout(resolve, delay));
+      if (shuttingDown) return;
+      runner = run(bot);
+      replacingRunner = false;
+    }
+  }
 }
 
 main().catch((error) => {
