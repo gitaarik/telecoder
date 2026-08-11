@@ -8,13 +8,9 @@ import {
   getCachedUsage as claudeGetCachedUsage,
   isDangerousMode as claudeIsDangerousMode,
 } from '../claude/agent.js';
+import { getModelsForBinary } from '../claude/model-catalog.js';
+import { resolveActiveClaudeExecutable } from '../utils/resolve-claude-bin.js';
 import type { Provider, AgentOptions, LoopOptions, AgentResponse, AgentUsage, ModelInfo } from './types.js';
-
-const CLAUDE_MODELS: ModelInfo[] = [
-  { id: 'opus', label: 'opus', description: 'Most capable (default)' },
-  { id: 'sonnet', label: 'sonnet', description: 'Balanced' },
-  { id: 'haiku', label: 'haiku', description: 'Fast & light' },
-];
 
 export const sdkProvider: Provider = {
   name: 'claude',
@@ -52,6 +48,9 @@ export const sdkProvider: Provider = {
   },
 
   async getAvailableModels(): Promise<ModelInfo[]> {
-    return CLAUDE_MODELS;
+    // The SDK forwards `model` to whichever binary it spawns — usually the one
+    // bundled with claude-agent-sdk, which lags the CLI on PATH. Ask that
+    // binary rather than assuming it matches PTY mode's.
+    return getModelsForBinary(resolveActiveClaudeExecutable());
   },
 };

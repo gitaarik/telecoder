@@ -67,8 +67,8 @@ export async function replyFeatureDisabled(ctx: Context, feature: string): Promi
 export const EFFORT_LEVELS: { id: EffortLevel; label: string; description: string }[] = [
   { id: 'low', label: '🐇 Low', description: 'Minimal thinking, fastest' },
   { id: 'medium', label: '⚖️ Medium', description: 'Balanced speed/quality' },
-  { id: 'high', label: '🧠 High', description: 'Deep reasoning (default)' },
-  { id: 'xhigh', label: '🔬 XHigh', description: 'Extra deep (Opus 4.8)' },
+  { id: 'high', label: '🧠 High', description: 'Deep reasoning' },
+  { id: 'xhigh', label: '🔬 XHigh', description: 'Deeper than high (default on current models)' },
   { id: 'max', label: '🚀 Max', description: 'Maximum effort' },
 ];
 

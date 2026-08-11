@@ -17,6 +17,7 @@ import {
   getAvailableModels,
   type ProviderName,
 } from '../../../providers/provider-router.js';
+import { isPassthroughModelId } from '../../../claude/model-catalog.js';
 import { switchProvider, switchRequiresConfirm } from '../../../providers/provider-switch.js';
 import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
@@ -28,7 +29,11 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
   const { chatId } = keyInfo;
 
   const text = ctx.message?.text || '';
-  const args = text.split(' ').slice(1).join(' ').trim().toLowerCase();
+  // Aliases are all lowercase, but a hand-typed full ID may not be — match
+  // case-insensitively, then pass the original through so vendor-cased IDs
+  // reach the CLI intact.
+  const rawArg = text.split(' ').slice(1).join(' ').trim();
+  const args = rawArg.toLowerCase();
 
   const providerName = getActiveProviderName(chatId);
   const models = await getAvailableModels(chatId);
@@ -37,18 +42,27 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
   if (!args) {
     const currentModel = getModel(chatId);
 
-    const keyboard = models.map((m) => {
-      const isCurrent = m.id === currentModel;
-      const label = isCurrent ? `✓ ${m.label}` : m.label;
-      return [{ text: label, callback_data: `model:${m.id}` }];
-    });
+    // Two per row — the alias list is long enough now (fable/opus/sonnet/haiku
+    // plus opusplan, best and the [1m] variants) that one row each turns the
+    // picker into a scroll on mobile.
+    const buttons = models.map((m) => ({
+      text: m.id === currentModel ? `✓ ${m.label}` : m.label,
+      callback_data: `model:${m.id}`,
+    }));
+    const keyboard: (typeof buttons)[] = [];
+    for (let i = 0; i < buttons.length; i += 2) {
+      keyboard.push(buttons.slice(i, i + 2));
+    }
 
     const descriptions = models
       .map(m => `• *${esc(m.label)}* \\- ${esc(m.description || '')}`)
       .join('\n');
 
     await ctx.reply(
-      `🤖 *Select Model* \\(${esc(providerName)}\\)\n\n_Current: ${esc(currentModel)}_\n\n${descriptions}`,
+      `🤖 *Select Model* \\(${esc(providerName)}\\)\n\n_Current: ${esc(currentModel)}_\n\n${descriptions}\n\n` +
+        // No escaping inside the code spans — MarkdownV2 only escapes ` and \
+        // there, so a \\- would render as a literal backslash.
+        `Or \`/model <full-id>\` to pin an exact release, e\\.g\\. \`claude-opus-4-8\`\\.`,
       {
         parse_mode: 'MarkdownV2',
         reply_markup: {
@@ -59,14 +73,30 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
     return;
   }
 
-  if (!validIds.includes(args)) {
-    await replyMd(ctx, `❌ Unknown model "${esc(args)}"\\.\n\nAvailable: ${validIds.join(', ')}`);
+  // Anything off the catalog is taken at face value — the CLI accepts a full
+  // model name wherever it accepts an alias, and pinning an exact release is a
+  // legitimate thing to want. We can't verify it, so say so rather than
+  // pretending the choice was checked.
+  const known = validIds.includes(args);
+  if (!known && !isPassthroughModelId(rawArg)) {
+    await replyMd(
+      ctx,
+      `❌ "${esc(rawArg)}" isn't a usable model name\\.\n\n` +
+        `Aliases: ${esc(validIds.join(', '))}\n` +
+        `Or pass a full model ID \\(e\\.g\\. \`claude-opus-5\`\\)\\.`,
+    );
     return;
   }
 
-  setModel(chatId, args);
+  setModel(chatId, known ? args : rawArg);
   const restarted = restartPtyForSettingChange(chatId, keyInfo.sessionKey);
-  await replyMd(ctx, `✅ Model set to *${esc(args)}*${restarted ? PTY_RESTART_NOTE : ''}`);
+  const caution = known
+    ? ''
+    : `\n\n⚠️ Not a known alias — passed to the CLI as\\-is\\. If your install can't serve it, the next turn fails; /model to pick again\\.`;
+  await replyMd(
+    ctx,
+    `✅ Model set to *${esc(known ? args : rawArg)}*${restarted ? PTY_RESTART_NOTE : ''}${caution}`,
+  );
 }
 
 export async function handleModelCallback(ctx: Context): Promise<void> {

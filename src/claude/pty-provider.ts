@@ -35,6 +35,7 @@ import {
   buildMcpEnv,
   buildMcpToolsSystemPromptNote,
 } from './pty-spawn-config.js';
+import { getModelsForBinary } from './model-catalog.js';
 import { scrapePromptSuggestion } from './prompt-suggestion-scraper.js';
 import { scrapeTip } from './tip-scraper.js';
 import { isSuggestionsEnabled } from '../telegram/suggestions-settings.js';
@@ -1248,13 +1249,10 @@ export class PtyProvider implements Provider {
   }
 
   async getAvailableModels(chatId: number): Promise<ModelInfo[]> {
-    // The same aliases the CLI accepts for --model. Matches SDK mode's list so
-    // /model offers the same choices whichever method the chat is on.
-    return Promise.resolve([
-      { id: 'opus', label: 'opus', description: 'Most capable (default)' },
-      { id: 'sonnet', label: 'sonnet', description: 'Balanced' },
-      { id: 'haiku', label: 'haiku', description: 'Fast & light' },
-    ]);
+    // The aliases CLAUDE_BIN accepts for --model, minus any it predates. SDK
+    // mode asks the same question of its own binary, so the two lists agree
+    // whenever both point at the same install.
+    return getModelsForBinary(CLAUDE_BIN);
   }
 }
 

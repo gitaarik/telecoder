@@ -13,8 +13,10 @@ import { ensureCcrRunning } from './ccr-health.js';
 import type { Provider, AgentOptions, LoopOptions, AgentResponse, AgentUsage, ModelInfo } from './types.js';
 
 // CCR's router config decides the actual backend model per request — the
-// SDK-level model name is largely advisory. We expose the same labels the
-// Claude provider does so the /model UI keeps working.
+// SDK-level model name is largely advisory. Deliberately just the three tiers
+// CCR configs actually route on, rather than the Claude provider's full alias
+// list: aliases like `opusplan` or `fable[1m]` mean nothing to a router whose
+// rules key off opus/sonnet/haiku.
 const CCR_MODELS: ModelInfo[] = [
   { id: 'opus', label: 'opus', description: 'Routed via CCR' },
   { id: 'sonnet', label: 'sonnet', description: 'Routed via CCR' },
