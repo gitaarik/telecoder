@@ -2027,14 +2027,15 @@
           <div class="feature-card" data-category="background">
             <div class="feature-icon"><svg><use href="#i-done"/></svg></div>
             <h3>It pings you when it's done</h3>
-            <p>Long work runs in the background with a counter of what is active. Each task edits
-            its own message when it finishes; slow or failed ones send you a push.</p>
+            <p>The activity card lists everything running with its elapsed time and ticks tasks off
+            as they land. Slow or failed ones re-post the card so your phone still buzzes.</p>
           </div>
           <div class="feature-card" data-category="background">
             <div class="feature-icon"><svg><use href="#i-relay"/></svg></div>
             <h3>Live event relay</h3>
-            <p>Log tails, file watches and subagents report into the chat between turns, each event
-            as its own message so you can react while it happens.</p>
+            <p>Log tails, file watches and subagents report into the chat between turns — all onto
+            one activity card that updates in place, so a monitor firing ten times costs you one
+            message, not ten.</p>
           </div>
           <div class="feature-card" data-category="background">
             <div class="feature-icon"><svg><use href="#i-clock"/></svg></div>
@@ -2576,7 +2577,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/tasks</code>
-              <span class="command-desc">List active background tasks; tap a number to view details</span>
+              <span class="command-desc">List active background work — subagents, monitors, backgrounded shells and workflows — grouped by kind, with elapsed time; tap a number to view details. Works in both SDK and PTY mode. In PTY mode, <strong>🔎 Ask claude</strong> types <code>/tasks</code> into the live TUI and relays Claude Code's own background view, which also covers shells it started on its own and anything armed before the last bot restart.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/shells</code>

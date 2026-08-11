@@ -10,6 +10,7 @@ import { Context } from 'grammy';
 import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
 import { taskTracker, type TaskState } from '../../../telegram/task-tracker.js';
 import { getPtyProvider } from '../../../providers/claude-provider.js';
+import { scrapeTasksOverlay } from '../../../claude/tasks-overlay-scraper.js';
 import {
   getDirectChildren,
   describeProcess,
@@ -90,7 +91,10 @@ function renderTasksList(sessionKey: string, tasks: TaskState[]): { text: string
     }
     return {
       text: lines.join('\n'),
-      keyboard: [[{ text: '🔄 Refresh', callback_data: 'tasks:refresh' }]],
+      keyboard: [[
+        { text: '🔄 Refresh', callback_data: 'tasks:refresh' },
+        { text: '🔎 Ask claude', callback_data: 'tasks:ask' },
+      ]],
     };
   }
 
@@ -125,7 +129,10 @@ function renderTasksList(sessionKey: string, tasks: TaskState[]): { text: string
       numberRow.length = 0;
     }
   });
-  keyboard.push([{ text: '🔄 Refresh', callback_data: 'tasks:refresh' }]);
+  keyboard.push([
+    { text: '🔄 Refresh', callback_data: 'tasks:refresh' },
+    { text: '🔎 Ask claude', callback_data: 'tasks:ask' },
+  ]);
 
   return { text: lines.join('\n'), keyboard };
 }
@@ -228,6 +235,11 @@ export async function handleTasksCallback(ctx: Context): Promise<void> {
     return;
   }
 
+  if (data === 'tasks:ask') {
+    await handleAskClaude(ctx, sessionKey);
+    return;
+  }
+
   if (data.startsWith('tasks:view:')) {
     const taskId = data.substring('tasks:view:'.length);
     const task = taskTracker.getTask(sessionKey, taskId);
@@ -261,6 +273,70 @@ export async function handleTasksCallback(ctx: Context): Promise<void> {
   }
 
   await ctx.answerCallbackQuery().catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
+// "🔎 Ask claude" — relay claude's own /tasks overlay
+// ---------------------------------------------------------------------------
+
+/**
+ * The tracker above is reconstructed from tool-arm and task-notification
+ * events, so it only knows about work TeleCoder saw start. Claude's own
+ * `/tasks` overlay is the live process's view: it also covers shells claude
+ * backgrounded on its own initiative, and everything armed before the last bot
+ * restart (relay state doesn't persist). This button asks it directly.
+ *
+ * PTY-only — there is no TUI to drive in SDK mode, where the tracker is fed
+ * from the event stream and is already authoritative.
+ */
+async function handleAskClaude(ctx: Context, sessionKey: string): Promise<void> {
+  await ctx.answerCallbackQuery({ text: 'Asking claude…' }).catch(() => {});
+
+  const result = await getPtyProvider().runOverlayCommand(sessionKey, '/tasks');
+  if (!result.ok) {
+    const reason =
+      result.reason === 'turn-active'
+        ? 'Claude is mid\\-turn — the TUI keyboard is busy\\. Try again once it finishes\\.'
+        : result.reason === 'not-ready'
+          ? 'The Claude TUI is not at a prompt right now\\. Try again in a moment\\.'
+          : 'No active PTY session for this chat\\. In SDK mode the list above is already authoritative\\.';
+    await ctx.reply(`🔎 *Claude's background view*\n\n${reason}`, { parse_mode: 'MarkdownV2' });
+    return;
+  }
+
+  const overlay = scrapeTasksOverlay(result.screen);
+  if (!overlay) {
+    // The overlay's layout is a Claude Code implementation detail and can move
+    // between releases — say so plainly rather than showing a mangled guess.
+    await ctx.reply(
+      "🔎 *Claude's background view*\n\n" +
+        "Couldn't read the `/tasks` overlay — Claude Code may have changed its layout\\. " +
+        'The list above still works\\.',
+      { parse_mode: 'MarkdownV2' },
+    );
+    return;
+  }
+
+  if (overlay.empty) {
+    // A code block for one line of "nothing running" is noise. Worth saying
+    // out loud though: claude reporting empty while the list above shows
+    // tasks means our tracker is holding entries claude no longer knows about.
+    const tracked = getActiveTasks(sessionKey).length;
+    const note = tracked > 0
+      ? `\n\n_The ${tracked} task\\(s\\) listed above are unknown to claude — likely finished already\\._`
+      : '';
+    await ctx.reply(
+      `🔎 *Claude's background view*\n\nNothing running\\.${note}`,
+      { parse_mode: 'MarkdownV2' },
+    );
+    return;
+  }
+
+  const body = overlay.text.length > 3000 ? overlay.text.slice(0, 2997) + '...' : overlay.text;
+  await ctx.reply(
+    `🔎 *Claude's background view*\n\n\`\`\`\n${body}\n\`\`\``,
+    { parse_mode: 'MarkdownV2' },
+  );
 }
 
 // ── /shells ─────────────────────────────────────────────────────

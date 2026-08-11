@@ -1,8 +1,18 @@
 import * as fs from 'fs';
 import type { Bot } from 'grammy';
 import { sessionJsonlPath } from './session-jsonl.js';
+import { isSubagentTool } from './subagent-tools.js';
 import { parseSessionKey } from '../utils/session-key.js';
 import { convertToTelegramMarkdown } from '../telegram/markdown.js';
+import { taskTracker } from '../telegram/task-tracker.js';
+import {
+  setBackgroundCardBot,
+  noteTaskArmed,
+  noteTaskFinished,
+  noteMonitorEvent,
+  sealCard,
+  clearCard,
+} from '../telegram/background-activity-card.js';
 import { config } from '../config.js';
 
 /**
@@ -20,6 +30,18 @@ import { config } from '../config.js';
  *
  * State is per-sessionKey and torn down with the session. No persistence:
  * if the bot restarts, the user has to re-arm any monitors they want.
+ *
+ * This module is also the PTY-mode feed for `taskTracker`. The SDK path gets
+ * task lifecycle from `onTaskEvent` (src/claude/agent.ts), which the PTY
+ * provider never emits — so without this, /tasks and the streaming footer's
+ * 🔄/📡 counters would read "nothing running" while monitors and subagents
+ * were live. The arm/terminal-notification pair already tracked here for
+ * message editing is exactly that lifecycle, so it drives both.
+ *
+ * Chat output is not one message per event. Arms, monitor firings and
+ * completions are all folded into a single re-anchoring card per session
+ * (src/telegram/background-activity-card.ts); this module supplies the
+ * entries, and the turn boundaries that tell the card when to re-post.
  */
 
 interface MonitorState {
@@ -28,7 +50,6 @@ interface MonitorState {
   claudeSessionId: string;
   jsonlPosition: number;
   watcher: fs.FSWatcher | null;
-  descriptions: string[];
   inTurn: boolean;
   /** Coalesce rapid-fire change events into one read. */
   pendingRead: NodeJS.Timeout | null;
@@ -40,16 +61,16 @@ interface MonitorState {
    */
   pendingNotification: TaskNotification | null;
   /**
-   * Armed-message bookkeeping keyed by tool_use_id. Populated by
-   * onAsyncToolArmed → postArmed when an async tool fires; consumed by
-   * handleChange when its terminal task-notification arrives so the original
-   * "armed" Telegram message gets edited in place instead of going stale.
+   * Armed-task bookkeeping keyed by tool_use_id. Populated by
+   * onAsyncToolArmed when an async tool fires; consumed by handleChange
+   * when the matching terminal task-notification arrives — the only place
+   * the task's kind, description and start time are still available to
+   * render its completion.
    */
   armedTasks: Map<string, ArmedTask>;
 }
 
 interface ArmedTask {
-  messageId: number;
   kind: AsyncToolKind;
   description: string;
   startedAt: number;
@@ -130,19 +151,52 @@ async function sendFormatted(
   }
 }
 
-const MAX_EVENT_CHARS = 2000;
 const COALESCE_MS = 200;
 
 export function setMonitorRelayBot(bot: Bot): void {
   botRef = bot;
+  setBackgroundCardBot(bot);
 }
 
-export type AsyncToolKind = 'monitor' | 'bash_background' | 'subagent';
+export type AsyncToolKind = 'monitor' | 'bash_background' | 'subagent' | 'workflow';
 
 /**
- * Register that an async tool (Monitor, backgrounded Bash, or subagent Task)
- * was invoked. Arms the JSONL watcher on first call per session so future
- * task-notifications and their assistant responses get relayed to Telegram.
+ * Kind → the `taskType` string /tasks groups on. Keeps the PTY-mode buckets
+ * identical to the SDK-mode ones so the command renders the same either way.
+ */
+const TASK_TYPE_BY_KIND: Record<AsyncToolKind, string> = {
+  monitor: 'monitor_mcp',
+  bash_background: 'local_bash',
+  subagent: 'local_agent',
+  workflow: 'local_workflow',
+};
+
+/**
+ * Which tool calls are backgrounded — i.e. PostToolUse fires almost at once,
+ * the user-turn returns, and the real outcome arrives later as a
+ * task-notification. Returns null for everything synchronous.
+ *
+ * A tool missing from this list is invisible twice over: its completion never
+ * reaches Telegram, and it never appears in /tasks. Add new backgrounded
+ * tools here.
+ */
+export function classifyAsyncTool(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+): AsyncToolKind | null {
+  if (toolName === 'Monitor') return 'monitor';
+  // Bash is only async on the explicit opt-in; the common case is synchronous.
+  if (toolName === 'Bash') return toolInput.run_in_background === true ? 'bash_background' : null;
+  if (toolName === 'Workflow') return 'workflow';
+  if (isSubagentTool(toolName)) return 'subagent';
+  return null;
+}
+
+/**
+ * Register that an async tool was invoked (see classifyAsyncTool). Arms the
+ * JSONL watcher on first call per session so future task-notifications and
+ * their assistant responses get relayed to Telegram, and records the task
+ * with `taskTracker` so /tasks and the footer counters can see it.
  *
  * Idempotent — multiple async tool calls in one session share one watcher.
  */
@@ -162,7 +216,6 @@ export function onAsyncToolArmed(
       claudeSessionId,
       jsonlPosition: 0,
       watcher: null,
-      descriptions: [],
       inTurn: true,
       pendingRead: null,
       pendingNotification: null,
@@ -178,22 +231,42 @@ export function onAsyncToolArmed(
     stopWatcher(state);
     startWatching(state);
   }
-  state.descriptions.push(description);
-  postArmed(sessionKey, kind, description).then((messageId) => {
-    if (messageId !== null && toolUseId) {
-      state!.armedTasks.set(toolUseId, {
-        messageId,
-        kind,
-        description,
-        startedAt: Date.now(),
-      });
-    }
-  }).catch(() => { /* postArmed already logs */ });
+  // Register before the Telegram round-trip, not after it. These entries are
+  // what /tasks and the footer counters read, so a failed sendMessage must
+  // not render a live background task invisible.
+  //
+  // A task without a tool_use_id is untrackable rather than merely unposted:
+  // the terminal task-notification identifies itself by that id, so there'd
+  // be nothing to match the completion against and the entry would leak as a
+  // permanently-"running" ghost. Relay it to chat, but don't track it.
+  if (toolUseId) {
+    state.armedTasks.set(toolUseId, {
+      kind,
+      description,
+      startedAt: Date.now(),
+    });
+    taskTracker.handleEvent(sessionKey, {
+      type: 'started',
+      taskId: toolUseId,
+      toolUseId,
+      description,
+      taskType: TASK_TYPE_BY_KIND[kind],
+      // Everything routed through this relay is backgrounded by definition —
+      // that's the property that made it need a relay in the first place.
+      isBackgrounded: true,
+    });
+  }
+
+  noteTaskArmed(sessionKey, kind, description, toolUseId);
 }
 
 export function markTurnStart(sessionKey: string): void {
   const state = states.get(sessionKey);
   if (state) state.inTurn = true;
+  // The user's own message has just buried any card left over from the
+  // previous quiet window; start a fresh one rather than going on editing
+  // where nobody is looking.
+  sealCard(sessionKey);
 }
 
 export function markTurnEnd(sessionKey: string): void {
@@ -215,6 +288,10 @@ export function markTurnEnd(sessionKey: string): void {
   try {
     state.jsonlPosition = fs.statSync(filePath).size;
   } catch { /* file gone or unreadable; next change event will rediscover */ }
+  // The turn pipeline posts its reply as soon as this returns, so whatever
+  // is on the card is about to be buried. Seal it — with the completions
+  // drained above already on it.
+  sealCard(sessionKey);
 }
 
 export function teardown(sessionKey: string): void {
@@ -226,6 +303,11 @@ export function teardown(sessionKey: string): void {
     state.pendingRead = null;
   }
   states.delete(sessionKey);
+  clearCard(sessionKey);
+  // This relay owns the PTY-side tracker entries, and teardown is PTY-only
+  // (_cleanupSession is its sole caller). Drop them with the session so a
+  // respawned one doesn't inherit tasks that died with the old process.
+  taskTracker.clear(sessionKey);
 }
 
 function startWatching(state: MonitorState): void {
@@ -302,9 +384,7 @@ function handleChange(state: MonitorState): void {
         // on "in progress" forever — markTurnEnd would snap the JSONL cursor
         // past the notification and the watcher would never revisit it.
         if (notif.status && notif.toolUseId && state.armedTasks.has(notif.toolUseId)) {
-          handleTerminalNotification(state, notif).catch((err) => {
-            console.error('[Monitor] terminal notification handler failed:', err instanceof Error ? err.message : err);
-          });
+          handleTerminalNotification(state, notif);
           continue;
         }
         // Non-terminal event notifications stay gated on !inTurn — during a
@@ -357,118 +437,40 @@ export function relayPushNotification(sessionKey: string, message: string): void
   sendFormatted(chatId, threadOpts, `🔔 ${preview}`, 'push').catch(() => {});
 }
 
-async function postArmed(sessionKey: string, kind: AsyncToolKind, description: string): Promise<number | null> {
-  if (!botRef) return null;
-  const { chatId, threadId } = parseSessionKey(sessionKey);
-  const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};
-  const preview = description.length > 200 ? description.slice(0, 197) + '...' : description;
-  const header = armedHeader(kind);
-  return await sendFormattedReturnId(chatId, threadOpts, `${header}: ${preview}`, 'armed');
-}
-
-function armedHeader(kind: AsyncToolKind): string {
-  return kind === 'monitor' ? '📡 Monitor armed' :
-    kind === 'bash_background' ? '⚙️ Backgrounded' :
-    '🤖 Subagent started';
-}
-
-/**
- * Variant of sendFormatted that returns the resulting message_id (or null on
- * failure) so callers can edit the message in place later.
- */
-async function sendFormattedReturnId(
-  chatId: number,
-  threadOpts: { message_thread_id?: number },
-  text: string,
-  context: string,
-): Promise<number | null> {
-  if (!botRef) return null;
-  const converted = convertToTelegramMarkdown(text);
-  try {
-    const msg = await botRef.api.sendMessage(chatId, converted, { ...threadOpts, parse_mode: 'MarkdownV2' });
-    return msg.message_id;
-  } catch (mdErr) {
-    console.error(`[Monitor] MarkdownV2 send failed (${context}), falling back to plain text:`, mdErr instanceof Error ? mdErr.message : mdErr);
-    try {
-      const msg = await botRef.api.sendMessage(chatId, text, threadOpts);
-      return msg.message_id;
-    } catch (plainErr) {
-      console.error(`[Monitor] plain text send also failed (${context}):`, plainErr instanceof Error ? plainErr.message : plainErr);
-      return null;
-    }
-  }
-}
-
-function formatDuration(elapsedMs: number): string {
-  const seconds = Math.max(0, Math.round(elapsedMs / 1000));
-  return seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
-}
-
-function completionIcon(kind: AsyncToolKind, status: string): string {
-  if (status === 'failed') return '❌';
-  if (status === 'killed' || status === 'stopped') return '🛑';
-  // completed (or unknown) — keep the kind's badge but flip Monitor's ⚡ feel
-  // to the same 📡 it had while armed; backgrounded/subagent get ✅.
-  return kind === 'monitor' ? '📡' : '✅';
-}
-
-function completionLabel(kind: AsyncToolKind): string {
-  return kind === 'monitor' ? 'Monitor' :
-    kind === 'bash_background' ? 'Backgrounded' :
-    'Subagent';
-}
-
 /**
  * Called when a task-notification's status indicates the task is done.
- * Edits the original armed message in place ("⚙️ Backgrounded: foo" →
- * "✅ Backgrounded: foo (12s)") and, when the task ran long enough that
- * the user might've scrolled away — or when it errored — also posts a
- * fresh chat message so Telegram raises a notification.
+ * Retires the task from the card's running list and records how it ended.
  *
- * Returns true when the notification was consumed as a completion; the
- * caller then skips the event-payload pairing path so we don't double-post.
+ * Whether that gets the user's attention is the card's call: a failure is
+ * urgent enough to re-post immediately, a task that ran past the notification
+ * threshold is worth a ping if the card has been sitting a while, and a quick
+ * success just folds into the card silently.
+ *
+ * Returns true when the notification was consumed as a completion; the caller
+ * then skips the event-payload pairing path so we don't double-report.
  */
-async function handleTerminalNotification(
+function handleTerminalNotification(
   state: MonitorState,
   notif: TaskNotification,
-): Promise<boolean> {
+): boolean {
   const armed = state.armedTasks.get(notif.toolUseId);
   if (!armed) return false;
   state.armedTasks.delete(notif.toolUseId);
-  if (!botRef) return true;
+  // Retire the tracker entry before any chat I/O, mirroring the SDK path's
+  // remove-after-notification. /tasks filters to running/pending, so dropping
+  // it outright is equivalent to recording a terminal status.
+  taskTracker.remove(state.sessionKey, notif.toolUseId);
 
   const elapsedMs = Date.now() - armed.startedAt;
-  const duration = formatDuration(elapsedMs);
-  const icon = completionIcon(armed.kind, notif.status);
-  const label = completionLabel(armed.kind);
-  const preview = armed.description.length > 200
-    ? armed.description.slice(0, 197) + '...'
-    : armed.description;
   const isError = notif.status === 'failed' || notif.status === 'killed';
   const longRunning = elapsedMs >= config.NOTIFICATION_THRESHOLD_SECONDS * 1000;
 
-  const body = `${icon} ${label}: ${preview} (${duration})`;
-
-  const { chatId, threadId } = parseSessionKey(state.sessionKey);
-  const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};
-
-  try {
-    await botRef.api.editMessageText(
-      chatId,
-      armed.messageId,
-      convertToTelegramMarkdown(body),
-      { parse_mode: 'MarkdownV2' },
-    );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!/not modified/i.test(msg)) {
-      console.error('[Monitor] failed to edit armed message:', msg);
-    }
-  }
-
-  if (longRunning || isError) {
-    await sendFormatted(chatId, threadOpts, body, 'completion');
-  }
+  noteTaskFinished(
+    state.sessionKey,
+    notif.toolUseId,
+    { kind: armed.kind, description: armed.description, status: notif.status, elapsedMs },
+    { notify: isError || longRunning, urgent: isError },
+  );
   return true;
 }
 
@@ -483,30 +485,15 @@ function postMonitorMessage(
   notif: TaskNotification | null,
   response: string,
 ): void {
-  if (!botRef) return;
   if (!notif && !response) return;
-
-  const { chatId, threadId } = parseSessionKey(sessionKey);
-  const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};
-
-  const lines: string[] = [];
-  let header = '📡 Monitor';
-  if (notif?.summary) {
-    const desc = stripSummaryPrefix(notif.summary);
-    if (desc) header += ` — ${desc}`;
-  }
-  lines.push(header);
-
-  if (notif?.event) {
-    const ep = notif.event.length > 500 ? notif.event.slice(0, 497) + '...' : notif.event;
-    lines.push(`▸ ${ep}`);
-  }
-
-  if (response) {
-    const rp = response.length > MAX_EVENT_CHARS ? response.slice(0, MAX_EVENT_CHARS - 3) + '...' : response;
-    if (lines.length > 1) lines.push('');
-    lines.push(rp);
-  }
-
-  sendFormatted(chatId, threadOpts, lines.join('\n'), 'event').catch(() => {});
+  // A monitor firing is the whole reason the user armed it, so it always
+  // wants the user's attention — the card decides whether that means a fresh
+  // message or a silent edit onto one it posted moments ago.
+  noteMonitorEvent(
+    sessionKey,
+    notif?.summary ? stripSummaryPrefix(notif.summary) : '',
+    notif?.event ?? '',
+    response,
+    { notify: true },
+  );
 }

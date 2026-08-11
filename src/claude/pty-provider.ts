@@ -25,8 +25,7 @@ import {
 // Side-effect import: registers /mcp/* IPC handlers that bridge the standalone
 // MCP subprocess back to bot-side state (Telegram API, session topic, …).
 import './mcp-bridge.js';
-import { onAsyncToolArmed, markTurnStart, markTurnEnd, teardown as teardownMonitorRelay, relayPushNotification, type AsyncToolKind } from './monitor-relay.js';
-import { isSubagentTool } from './subagent-tools.js';
+import { onAsyncToolArmed, markTurnStart, markTurnEnd, teardown as teardownMonitorRelay, relayPushNotification, classifyAsyncTool } from './monitor-relay.js';
 import { relayUpdateBanner, scrapeUpdateBanner } from './update-banner-relay.js';
 import { evaluateToolCall, isPermissionGateEnabled, DENY_MARKER_START, DENY_MARKER_END } from './permission-gate.js';
 import {
@@ -94,6 +93,25 @@ const RESUME_STARTUP_MAX_MS = 180_000;
  */
 const SUBMIT_CONFIRM_CAP_MS = 30_000;
 const SUBMIT_RETRY_EVERY_MS = 3_000;
+
+/**
+ * Timings for runOverlayCommand. An `immediate` slash command renders locally
+ * with no API call, so it draws in well under a second — these only need to
+ * outlast one render, not a model turn. The paste settle mirrors the gap
+ * _runPtyTurn leaves between pasting text and pressing Enter.
+ */
+const OVERLAY_PASTE_SETTLE_MS = 300;
+const OVERLAY_IDLE_MS = 700;
+const OVERLAY_MAX_MS = 8_000;
+
+/**
+ * Outcome of runOverlayCommand. The failures are all "ask again later"
+ * conditions rather than errors, and each maps to different user-facing
+ * advice, so they stay distinguishable instead of collapsing to null.
+ */
+export type OverlayResult =
+  | { ok: true; screen: string }
+  | { ok: false; reason: 'no-session' | 'turn-active' | 'not-ready' };
 
 /**
  * The slice of a prompt we look for on the rendered screen: leading
@@ -967,6 +985,55 @@ export class PtyProvider implements Provider {
   }
 
   /**
+   * Wait until stdout has been quiet for `idleMs`, capped at `capMs`. The
+   * weaker sibling of _waitForReady: it can't require the input prompt glyph,
+   * because an overlay covers it. Returns true if it settled, false on cap.
+   */
+  private async _waitQuiet(session: PtySession, idleMs: number, capMs: number): Promise<boolean> {
+    const start = Date.now();
+    while (Date.now() - start < capMs) {
+      if (Date.now() - session.lastChunkAt >= idleMs) return true;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return false;
+  }
+
+  /**
+   * Type an `immediate` slash command into the live TUI, scrape what it draws,
+   * then dismiss it with Esc. Built for `/tasks`, whose answer exists only in
+   * the running process's memory — the `-p --resume --fork-session` shell-out
+   * that backs /context would spawn a process with no background work at all
+   * and dutifully report none.
+   *
+   * Refuses while a turn is in flight. The keyboard belongs to the turn: our
+   * keystrokes would land in its input box, and the overlay would corrupt the
+   * screen extraction its response is scraped from.
+   */
+  async runOverlayCommand(sessionKey: string, command: string): Promise<OverlayResult> {
+    const session = this.sessions.get(sessionKey);
+    if (!session) return { ok: false, reason: 'no-session' };
+    if (session.endOfTurnResolver) return { ok: false, reason: 'turn-active' };
+    if (!this._isPromptVisible(session)) return { ok: false, reason: 'not-ready' };
+
+    try {
+      // Same submission path as a prompt: bracketed paste so the TUI takes the
+      // text verbatim, then \r to run it.
+      session.term.write(`\x1b[200~${command}\x1b[201~`);
+      await new Promise((r) => setTimeout(r, OVERLAY_PASTE_SETTLE_MS));
+      session.term.write('\r');
+      const settled = await this._waitQuiet(session, OVERLAY_IDLE_MS, OVERLAY_MAX_MS);
+      if (!settled) {
+        console.warn(`[PtyProvider] overlay "${command}" did not settle within ${OVERLAY_MAX_MS}ms; scraping anyway`);
+      }
+      return { ok: true, screen: this._getScreenText(session) };
+    } finally {
+      // Unconditional: an overlay left open would swallow the next turn's
+      // prompt, so this has to run even if the settle threw.
+      try { session.term.write('\x1b'); } catch { /* pty already gone */ }
+    }
+  }
+
+  /**
    * Wait for evidence that claude took delivery of the prompt: a user record
    * appearing in the session log. While it hasn't, and our text is still
    * visible in the input box, re-send \r every SUBMIT_RETRY_EVERY_MS — the
@@ -1453,21 +1520,16 @@ registerIpcHandler('/hook/preToolUse', async (turn, body) => {
   fireAndForget('onToolStart', () => turn.options.onToolStart?.(toolName, toolInput));
 
   // Arm the relay so any task-notifications that fire AFTER this turn ends
-  // still get routed to Telegram. Three async tool families need this:
-  //   - Monitor (continuous event stream)
-  //   - Bash with run_in_background=true (single completion notification)
-  //   - Task/Agent (subagent — completion notification)
-  // Each is backgrounded: PostToolUse fires almost immediately, the user-turn
-  // returns, and the actual outcome arrives later as a task-notification.
-  const asyncKind: AsyncToolKind | null =
-    toolName === 'Monitor' ? 'monitor' :
-    (toolName === 'Bash' && toolInput.run_in_background === true) ? 'bash_background' :
-    isSubagentTool(toolName) ? 'subagent' :
-    null;
+  // still get routed to Telegram, and register the task with the tracker
+  // behind /tasks. See classifyAsyncTool for which tools qualify.
+  const asyncKind = classifyAsyncTool(toolName, toolInput);
   if (asyncKind) {
     const session = sessionManager.getSession(turn.sessionKey);
     const description = String(
       toolInput.description ??
+      // Workflow documents `description` as ignored, so it's often absent;
+      // `name` is the field that actually identifies the run.
+      toolInput.name ??
       toolInput.target ??
       toolInput.file_path ??
       toolInput.path ??
