@@ -17,6 +17,7 @@ import { fileURLToPath } from 'url';
 import { getStateDir } from './utils/json-store.js';
 import { stripJsonComments, expandName } from './utils/instance-config.js';
 import { legacyEnv } from './utils/legacy-env.js';
+import { planRespawn } from './utils/respawn-backoff.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
@@ -46,6 +47,16 @@ const RESTART_GRACEFUL_EXIT_MS = 10_000;
 // longest legitimate block (/rebuildbot's 120s build cap) so a slow-but-alive
 // worker is never punished.
 const RESTART_WEDGED_ESCALATION_MS = 180_000;
+
+// An unplanned worker exit — a crash, or a fatal error the bot exited on — used
+// to drop that instance for good. Bring it back instead, backing off so an
+// instance that cannot start (a revoked token, say) doesn't spin. One delay per
+// attempt; running out of delays is what "give up" means.
+const CRASH_RESPAWN_DELAYS_MS = [1_000, 5_000, 15_000, 60_000];
+// Crashes only count as a streak while they cluster. An instance that stayed up
+// this long before dying starts its retry budget over, so two unrelated crashes
+// days apart don't add up to a give-up.
+const CRASH_STREAK_RESET_MS = 300_000;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -157,6 +168,17 @@ const lastHeartbeat = new Map<string, number>();
 // path (self, sibling, all, missed heartbeat) goes through these rather than
 // calling terminate() directly.
 const restarters = new Map<string, () => void>();
+// Consecutive unplanned exits per instance, used to pick a backoff delay and to
+// decide when to stop trying. Reset by a planned restart or by an instance that
+// stayed up longer than CRASH_STREAK_RESET_MS.
+const crashStreaks = new Map<string, number>();
+// Instances waiting out a respawn backoff. They have no entry in `workers`
+// during the gap, so without this the "everything's gone" check below would
+// fire mid-backoff and take the launcher down with it.
+const respawning = new Set<string>();
+// Set once a shutdown signal arrives. Workers exiting after that are supposed
+// to be gone, so nothing should respawn them.
+let shuttingDown = false;
 
 function restartWorker(name: string): void {
   const begin = restarters.get(name);
@@ -165,6 +187,35 @@ function restartWorker(name: string): void {
     return;
   }
   begin();
+}
+
+function scheduleRespawn(inst: ResolvedInstance, delayMs: number): void {
+  if (shuttingDown) return;
+  respawning.add(inst.name);
+  setTimeout(() => {
+    respawning.delete(inst.name);
+    if (shuttingDown) return;
+    spawnWorker(inst);
+    console.log(`[Launcher] ✓ ${inst.name} respawned`);
+  }, delayMs);
+}
+
+function shutdownIfNothingLeft(code: number | null): void {
+  if (workers.size > 0 || respawning.size > 0) return;
+  // Every worker fired its exit event, so no thread is left to block teardown
+  // and a plain exit is safe here — unlike hardExit()'s case below.
+  console.log('All workers exited. Shutting down launcher.');
+  process.exit(code ?? 0);
+}
+
+// process.exit() is not an escape hatch from a wedged worker. Node's teardown
+// joins the worker threads on the way out, so the very thread stuck in a native
+// call that defeated terminate() also blocks the exit: the process stops
+// logging, never dies, and the process manager goes on reporting it healthy.
+// SIGKILL is handled by the kernel and cannot be blocked by anything in-process.
+// The brief delay is only to give the reason a chance to reach the log.
+function hardExit(): void {
+  setTimeout(() => process.kill(process.pid, 'SIGKILL'), 250);
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +294,7 @@ function spawnWorker(inst: ResolvedInstance): Worker {
   };
 
   const worker = new Worker(workerEntry, workerOptions);
+  const spawnedAt = Date.now();
   lastHeartbeat.set(inst.name, Date.now());
 
   let exited = false;
@@ -272,8 +324,8 @@ function spawnWorker(inst: ResolvedInstance): Worker {
 
     setTimeout(() => {
       if (exited) return;
-      console.error(`[Launcher] ${inst.name} still alive ${Math.round(RESTART_WEDGED_ESCALATION_MS / 1000)}s after a restart was requested — the thread is wedged in native code and terminate() cannot reach it. Exiting the launcher so the process manager restarts every instance.`);
-      process.exit(1);
+      console.error(`[Launcher] ${inst.name} still alive ${Math.round(RESTART_WEDGED_ESCALATION_MS / 1000)}s after a restart was requested — the thread is wedged in native code and terminate() cannot reach it. Killing the launcher so the process manager restarts every instance.`);
+      hardExit();
     }, RESTART_WEDGED_ESCALATION_MS).unref();
   };
 
@@ -332,7 +384,13 @@ function spawnWorker(inst: ResolvedInstance): Worker {
         console.warn(`[Launcher] restart_all: configured instances with no live worker (won't be respawned by terminate): ${missingFromWorkers.join(', ')}`);
       }
       for (const i of instances) {
-        pendingRestarts.add(i.name);
+        // Only instances we're about to restart get the flag. Setting it for one
+        // that has no worker leaves it stuck there with nothing to consume it,
+        // and the next exit of that instance — whenever it comes back — reads as
+        // planned, clearing its crash streak and skipping the backoff.
+        if (liveNames.has(i.name)) pendingRestarts.add(i.name);
+        // The marker still goes to everyone: an instance mid-backoff should
+        // auto-resume when it does come up.
         if (msg.autoResume) {
           writeReloadMarkerForToken(i.token, i.name);
         }
@@ -359,24 +417,41 @@ function spawnWorker(inst: ResolvedInstance): Worker {
     exited = true;
     lastHeartbeat.delete(inst.name);
     restarters.delete(inst.name);
+    // Drop it now, in every path: the heartbeat monitor keys off `workers`, and
+    // leaving a dead entry there makes it chase an instance that no longer has
+    // a restarter to drive.
+    workers.delete(inst.name);
 
     if (pendingRestarts.has(inst.name)) {
       // Planned restart — respawn after a short delay
       pendingRestarts.delete(inst.name);
+      crashStreaks.delete(inst.name);
       console.log(`[Launcher] Respawning ${inst.name} in 1s...`);
-      setTimeout(() => {
-        const newWorker = spawnWorker(inst);
-        workers.set(inst.name, newWorker);
-        console.log(`[Launcher] ✓ ${inst.name} respawned`);
-      }, 1000);
-    } else {
-      console.warn(`[Launcher] ${inst.name} exited without a pending restart — not respawning (sessions for this bot won't be auto-resumed)`);
-      workers.delete(inst.name);
-      if (workers.size === 0) {
-        console.log('All workers exited. Shutting down launcher.');
-        process.exit(code ?? 0);
-      }
+      scheduleRespawn(inst, 1000);
+      return;
     }
+
+    // Unplanned exit. Whatever took it down — a fatal error, a 409 from a
+    // predecessor's long poll that hadn't been dropped yet — this bot is now
+    // silently offline and nothing else will notice, because the heartbeat
+    // monitor only watches instances that still have a worker. Respawn it.
+    const aliveMs = Date.now() - spawnedAt;
+    const { streak, delayMs: delay } = planRespawn({
+      aliveMs,
+      previousStreak: crashStreaks.get(inst.name) ?? 0,
+      delays: CRASH_RESPAWN_DELAYS_MS,
+      streakResetMs: CRASH_STREAK_RESET_MS,
+    });
+    crashStreaks.set(inst.name, streak);
+
+    if (delay === null) {
+      console.error(`[Launcher] ${inst.name} exited unexpectedly ${streak} times in a row — giving up on it (restart the launcher to bring it back)`);
+      shutdownIfNothingLeft(code);
+      return;
+    }
+
+    console.warn(`[Launcher] ${inst.name} exited unexpectedly (code ${code}) after ${Math.round(aliveMs / 1000)}s up — respawning in ${Math.round(delay / 1000)}s (attempt ${streak}/${CRASH_RESPAWN_DELAYS_MS.length})`);
+    scheduleRespawn(inst, delay);
   });
 
   workers.set(inst.name, worker);
@@ -466,7 +541,9 @@ setInterval(() => {
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
     console.log(`\n\ud83d\udc4b Received ${signal}, stopping all instances...`);
-    // Clear pending restarts so workers don't respawn during shutdown
+    // Stop every respawn path: the planned one keys off pendingRestarts, the
+    // crash-backoff one off this flag.
+    shuttingDown = true;
     pendingRestarts.clear();
     for (const [name, worker] of workers) {
       console.log(`  Stopping ${name}...`);
