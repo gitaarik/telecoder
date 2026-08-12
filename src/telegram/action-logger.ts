@@ -6,7 +6,7 @@
 
 import { Context, GrammyError } from 'grammy';
 import { escapeMarkdownV2 } from './markdown.js';
-import { getToolIcon, extractToolDetail, elideToolOutput } from './terminal-renderer.js';
+import { getToolIcon, extractToolDetail, elideToolOutput, stripAnsi } from './terminal-renderer.js';
 import { createTelegraphPage } from './telegraph.js';
 import { isTelegraphEnabled } from './telegraph-settings.js';
 import type { ToolResultEvent, EditDiffEvent } from '../providers/types.js';
@@ -93,7 +93,7 @@ export class ActionLogger {
     const state = this.logStates.get(sessionKey);
     if (!state) return;
 
-    const cleaned = event.content.replace(/\s+$/u, '');
+    const cleaned = stripAnsi(event.content).replace(/\s+$/u, '');
     if (!cleaned && !event.isError) return;
 
     const icon = event.toolName ? getToolIcon(event.toolName) : '🔹';
@@ -187,9 +187,10 @@ export class ActionLogger {
     const state = this.logStates.get(sessionKey);
     if (!state || task.skipTranscript) return;
 
-    const truncated = eventText.length > 500
-      ? eventText.substring(0, 497) + '...'
-      : eventText;
+    const cleaned = stripAnsi(eventText);
+    const truncated = cleaned.length > 500
+      ? cleaned.substring(0, 497) + '...'
+      : cleaned;
 
     const entry: ActionEntry = {
       id: `monitor-${Date.now()}-${Math.random()}`,

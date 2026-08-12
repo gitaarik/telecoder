@@ -510,6 +510,26 @@ function elideMiddle(text: string, maxLen: number): string {
 }
 
 /**
+ * Remove ANSI CSI/OSC escape sequences from tool output.
+ *
+ * The ESC byte is non-printing, so an unstripped sequence does not merely look
+ * wrong in Telegram's plain-text view — the client swallows the ESC and renders
+ * the remainder as a literal `[1m`. The bytes also count against the caller's
+ * truncation budget, so colourised output loses most of its char cap to codes
+ * the reader never sees.
+ *
+ * Written with `\x1b`/`\x07` escapes rather than literal control bytes on
+ * purpose: if a raw ESC is ever lost in transit, `\x1b\][^\x07]*` degrades to
+ * `\][^]*`, which matches everything after the first `]` and silently shreds
+ * output instead of failing loudly.
+ */
+const ANSI_RE = /\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*(?:\x07|\x1b\\)/g;
+
+export function stripAnsi(text: string): string {
+  return text.replace(ANSI_RE, '');
+}
+
+/**
  * Truncate tool/command output for display (action log + inline tool-result
  * posts), bounded by both a line cap and a char cap.
  *

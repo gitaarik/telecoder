@@ -13,6 +13,7 @@ import {
   extractToolDetail,
   formatBashCommandBlock,
   elideToolOutput,
+  stripAnsi,
   TOOL_ICONS,
 } from './terminal-renderer.js';
 import { taskTracker, type TaskState } from './task-tracker.js';
@@ -112,13 +113,6 @@ interface TodoItem {
 const TYPING_INTERVAL_MS = 4000; // Send typing every 4 seconds
 const MIN_EDIT_INTERVAL_MS = 10000; // Minimum time between message edits (~5 edits/min safe zone)
 const MONITOR_TASK_TYPE = 'monitor_mcp';
-
-// ANSI CSI/OSC sequence remover — tool output occasionally still carries
-// color codes that render as garbage in Telegram's plain-text view.
-const ANSI_RE = /\[[0-9;?]*[a-zA-Z]|\][^]*(?:|\\)/g;
-function stripAnsi(text: string): string {
-  return text.replace(ANSI_RE, '');
-}
 
 // `mcp__claudegram-tools__claudegram_send_file` → `claudegram_send_file`
 function stripMcpServerPrefix(toolName: string): string {

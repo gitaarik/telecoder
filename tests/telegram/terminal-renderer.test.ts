@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatBashCommandBlock, elideToolOutput } from '../../src/telegram/terminal-renderer.js';
+import { formatBashCommandBlock, elideToolOutput, stripAnsi } from '../../src/telegram/terminal-renderer.js';
 
 describe('formatBashCommandBlock', () => {
   it('returns undefined for empty or whitespace-only input', () => {
@@ -98,5 +98,41 @@ describe('elideToolOutput', () => {
     expect(out).toContain('ERR_HEAD');
     expect(out).toContain('ERR_TAIL'); // tail of the line survives
     expect(out).toContain('chars truncated');
+  });
+});
+
+describe('stripAnsi', () => {
+  const ESC = String.fromCharCode(27);
+  const BEL = String.fromCharCode(7);
+
+  it('strips CSI colour codes from real vitest output', () => {
+    // The ESC byte is non-printing, so leaving these in reaches Telegram as a
+    // literal `[1m` rather than as colour.
+    const line = `${ESC}[1m${ESC}[30m${ESC}[46m RUN ${ESC}[49m${ESC}[39m${ESC}[22m  ${ESC}[36mv4.1.10${ESC}[39m ${ESC}[90m/app${ESC}[39m`;
+    expect(stripAnsi(line)).toBe(' RUN   v4.1.10 /app');
+    expect(stripAnsi(line)).not.toContain('[1m');
+  });
+
+  it('strips OSC sequences with either terminator', () => {
+    expect(stripAnsi(`${ESC}]0;window title${BEL}after`)).toBe('after');
+    expect(stripAnsi(`${ESC}]8;;https://example.com${ESC}\\link`)).toBe('link');
+  });
+
+  it('leaves ordinary bracketed text alone', () => {
+    // Guards the degradation this regex is written to survive: without the ESC
+    // anchor, `\][^]*` would swallow everything after the first `]`.
+    const text = 'see [note] here] and [INFO] tags and array[0]';
+    expect(stripAnsi(text)).toBe(text);
+  });
+
+  it('is a no-op on plain output', () => {
+    const text = '1849 passed | 1 skipped (1850)';
+    expect(stripAnsi(text)).toBe(text);
+  });
+
+  it('frees the truncation budget that escape codes would otherwise consume', () => {
+    const line = `${ESC}[1m${ESC}[30m${ESC}[46m RUN ${ESC}[49m${ESC}[39m${ESC}[22m  ${ESC}[36mv4.1.10${ESC}[39m ${ESC}[90m/app${ESC}[39m`;
+    expect(line.length).toBe(68);
+    expect(stripAnsi(line).length).toBe(19);
   });
 });
