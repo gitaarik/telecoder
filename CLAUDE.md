@@ -5,14 +5,18 @@
 **ALWAYS update `docs/index.html` when adding features, commands, or contributors.** This is a required step in every PR that changes functionality. Do not commit feature/command changes without the corresponding website update.
 
 ### New Features
-Add a feature card to the features grid. Use the `data-category` attribute for tab filtering (valid values: `core`, `voice`, `media`, `session`):
+Add a feature card to the features grid. Use the `data-category` attribute for tab filtering (valid values: `agent`, `reliability`, `sessions`, `background`, `media` — these must match the `data-category` on the filter tabs):
 ```html
-<div class="feature-card" data-category="core">
-  <div class="feature-icon">[emoji]</div>
+<div class="feature-card" data-category="agent">
+  <div class="feature-icon"><svg><use href="#i-name"/></svg></div>
   <h3>Feature Name</h3>
   <p>Brief description of what the feature does.</p>
 </div>
 ```
+
+Icons are inline `<symbol>` definitions near the top of `docs/index.html`, not emoji — the
+page ships no external assets. Reuse an existing `#i-*` id, or add a new `<symbol>` in the
+same 24x24 stroke style if none fits.
 
 ### New Commands
 Add a command row to the appropriate category section in the commands grid:
