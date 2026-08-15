@@ -27,6 +27,7 @@ import { syncBotNameOnStartup } from './telegram/botname-settings.js';
 import { autoResumeAfterReload } from './startup/auto-resume.js';
 import { autoContinueOnStartup } from './startup/auto-continue.js';
 import { notifyInterruptedSessions, notifyRestartComplete } from './startup/notices.js';
+import { tickWasStalled } from './utils/host-stall.js';
 
 export { requestRestart, requestSiblingRestart, requestRestartAll } from './worker-restart.js';
 
@@ -172,11 +173,34 @@ async function main() {
   // exit so PM2 can restart the process.
   const HEARTBEAT_INTERVAL_MS = 60_000;
   const MAX_HEARTBEAT_FAILURES = 3;
+  // Timeouts get a longer leash than errors. An error is Telegram answering
+  // with a fault we can act on; a timeout is us not hearing back, which on a
+  // host under memory pressure says more about the host than the bot — and
+  // exiting there tears down every live Claude session to "fix" a machine
+  // that's merely busy. Restarting doesn't cure a stall, so ride it out.
+  const MAX_HEARTBEAT_TIMEOUTS = 10;
+  // Same reasoning as the launcher's stall guard: an interval that fires far
+  // later than scheduled means this thread wasn't running, so the round it
+  // would have done tells us nothing about Telegram's reachability.
+  const HEARTBEAT_STALL_SLACK_MS = 30_000;
+  const isTimeoutError = (err: unknown): boolean =>
+    err instanceof Error && /timed out after/i.test(err.message);
   let heartbeatFailures = 0;
+  let heartbeatTimeouts = 0;
+  let lastHeartbeatAt = Date.now();
   // True only while we're deliberately between runners, waiting out a polling
   // conflict. The check below would otherwise read that gap as a dead runner.
   let replacingRunner = false;
   const heartbeatTimer = setInterval(async () => {
+    const now = Date.now();
+    const sinceLast = now - lastHeartbeatAt;
+    lastHeartbeatAt = now;
+    if (tickWasStalled({ sinceLastTickMs: sinceLast, intervalMs: HEARTBEAT_INTERVAL_MS, slackMs: HEARTBEAT_STALL_SLACK_MS })) {
+      console.warn(`[HEARTBEAT] tick fired ${Math.round(sinceLast / 1000)}s late (expected ${Math.round(HEARTBEAT_INTERVAL_MS / 1000)}s) — host was frozen, skipping this round`);
+      heartbeatFailures = 0;
+      heartbeatTimeouts = 0;
+      return;
+    }
     if (!replacingRunner && !runner.isRunning()) {
       console.error('[HEARTBEAT] Runner is no longer running — exiting for restart');
       process.exit(1);
@@ -184,7 +208,17 @@ async function main() {
     try {
       await bot.api.getMe();
       heartbeatFailures = 0;
+      heartbeatTimeouts = 0;
     } catch (err) {
+      if (isTimeoutError(err)) {
+        heartbeatTimeouts++;
+        console.error(`[HEARTBEAT] getMe timed out (${heartbeatTimeouts}/${MAX_HEARTBEAT_TIMEOUTS}):`, err);
+        if (heartbeatTimeouts >= MAX_HEARTBEAT_TIMEOUTS) {
+          console.error('[HEARTBEAT] Telegram unreachable for too long — exiting for restart');
+          process.exit(1);
+        }
+        return;
+      }
       heartbeatFailures++;
       console.error(`[HEARTBEAT] getMe failed (${heartbeatFailures}/${MAX_HEARTBEAT_FAILURES}):`, err);
       if (heartbeatFailures >= MAX_HEARTBEAT_FAILURES) {

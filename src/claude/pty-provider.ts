@@ -85,6 +85,18 @@ const STARTUP_MAX_MS = 15_000;
 const RESUME_SETTLE_IDLE_MS = 3_000;
 const RESUME_STARTUP_MAX_MS = 180_000;
 /**
+ * Absolute ceilings for the readiness wait. The `MAX` values above bound how
+ * long we tolerate *silence*; these bound the wait as a whole. A host under
+ * memory pressure replays a transcript in slow bursts, and a cap counted from
+ * the moment we started waiting expires mid-replay even though claude is
+ * plainly still coming up — we then paste into an editor that isn't listening
+ * and the turn dies with "Claude never received your message". So long as
+ * bytes keep arriving we keep waiting; reaching one of these means the TUI is
+ * genuinely stuck rather than merely slow.
+ */
+const STARTUP_READY_CEILING_MS = 60_000;
+const RESUME_READY_CEILING_MS = 600_000;
+/**
  * After writing \r we confirm claude actually took the prompt — it appears in
  * the session log as a user record. Until that lands (or we give up), re-send
  * \r periodically as long as our text is still sitting in the input box: a
@@ -577,10 +589,26 @@ export class PtyProvider implements Provider {
       // A pty spawned with --resume is still replaying the transcript; give it
       // the patience that needs rather than pasting into a busy editor.
       if (session.awaitingResumeReplay) {
-        await this._waitForReady(session, RESUME_SETTLE_IDLE_MS, RESUME_STARTUP_MAX_MS);
+        const ready = await this._waitForReady(
+          session, RESUME_SETTLE_IDLE_MS, RESUME_STARTUP_MAX_MS, RESUME_READY_CEILING_MS,
+        );
+        // Leave awaitingResumeReplay set on failure: the replay is still the
+        // thing we're waiting out, so the retry deserves the same patience.
+        if (!ready) {
+          throw new Error(
+            "Claude Code is still replaying this session's transcript and hasn't opened its input box, so your message wasn't delivered. That normally means the machine is under heavy load — please send it again in a minute.",
+          );
+        }
         session.awaitingResumeReplay = false;
       } else {
-        await this._waitForReady(session, IDLE_MS, STARTUP_MAX_MS);
+        const ready = await this._waitForReady(
+          session, IDLE_MS, STARTUP_MAX_MS, STARTUP_READY_CEILING_MS,
+        );
+        if (!ready) {
+          throw new Error(
+            "Claude Code's input box never appeared, so your message wasn't delivered. Please send it again.",
+          );
+        }
       }
       this._maybeRelayUpdateBanner(session, sessionKey);
 
@@ -971,17 +999,34 @@ export class PtyProvider implements Provider {
    * screen. Stdout-idle alone is unsafe — claude's startup pauses (plugin
    * loading, settings parse) can exceed idleMs before the input box is drawn,
    * so a prompt written then gets silently consumed by the startup flow.
-   * Caps at `capMs` so we never hang forever; logs a warning if the cap is
-   * hit and proceeds anyway (better than freezing the bot).
+   *
+   * `capMs` bounds *silence*, not the wait as a whole: output still arriving
+   * means the TUI is still coming up, and however long that takes, submitting
+   * into it only gets the keystroke swallowed. `ceilingMs` bounds the wait
+   * overall so a pty that renders forever can't hold the turn open.
+   *
+   * Returns false when neither condition was met. The caller must not submit
+   * on false — a prompt written into a TUI that never opened its input box is
+   * lost silently, and the turn then resolves on the previous turn's log.
    */
-  private async _waitForReady(session: PtySession, idleMs: number, capMs: number): Promise<void> {
+  private async _waitForReady(
+    session: PtySession, idleMs: number, capMs: number, ceilingMs: number,
+  ): Promise<boolean> {
     const start = Date.now();
-    while (Date.now() - start < capMs) {
+    while (Date.now() - start < ceilingMs) {
       const since = Date.now() - session.lastChunkAt;
-      if (since >= idleMs && this._isPromptVisible(session)) return;
+      if (since >= idleMs && this._isPromptVisible(session)) return true;
+      // Quiet this long with no input box is a stuck TUI, not a slow one.
+      if (since >= capMs) break;
       await new Promise((r) => setTimeout(r, 50));
     }
-    console.warn(`[PtyProvider] _waitForReady cap reached (${capMs}ms) without confirmed input prompt; proceeding anyway`);
+    const waited = Math.round((Date.now() - start) / 1000);
+    const quiet = Math.round((Date.now() - session.lastChunkAt) / 1000);
+    console.warn(
+      `[PtyProvider] TUI not ready after ${waited}s (quiet ${quiet}s, input prompt `
+      + `${this._isPromptVisible(session) ? 'visible' : 'absent'}) — refusing to submit into it`,
+    );
+    return false;
   }
 
   /**

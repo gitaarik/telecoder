@@ -18,6 +18,7 @@ import { getStateDir } from './utils/json-store.js';
 import { stripJsonComments, expandName } from './utils/instance-config.js';
 import { legacyEnv } from './utils/legacy-env.js';
 import { planRespawn } from './utils/respawn-backoff.js';
+import { tickWasStalled, withinStallCooldown, shouldEscalateWedged } from './utils/host-stall.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
@@ -34,6 +35,22 @@ const HEARTBEAT_STALL_SLACK_MS = 30_000;
 // bots. Hold off this many consecutive checks before restarting them, so a
 // transient stall doesn't trigger a fleet-wide thundering-herd respawn.
 const HEARTBEAT_MASS_SILENCE_LIMIT = 3;
+// How long a detected host stall keeps the monitor's hands off. The stall
+// guard above only covers the tick that fired late; a freeze that starves the
+// workers without delaying our own tick — or one that lifts a moment before
+// the next tick — still leaves them looking silent through no fault of their
+// own. Workers go quiet one at a time in that state, which slips past the
+// mass-silence guard, so give the whole fleet a quiet period to check back in
+// after any stall we saw.
+const HEARTBEAT_STALL_COOLDOWN_MS = 180_000;
+
+// While a wedged worker is being escalated, how often to re-check whether the
+// host has recovered enough to tell "wedged" from "starved" apart, and how
+// long to keep deferring before escalating anyway. A host that stalls every
+// few minutes for hours would otherwise defer forever, leaving the instance
+// offline for good — the outcome the escalation exists to prevent.
+const RESTART_WEDGED_RECHECK_MS = 30_000;
+const RESTART_WEDGED_MAX_DEFER_MS = 1_800_000;
 
 // A worker asked to restart exits itself (see 'exit_for_restart' in index.ts),
 // which unwinds cleanly. If it hasn't gone this long after being asked, fall
@@ -179,6 +196,15 @@ const respawning = new Set<string>();
 // Set once a shutdown signal arrives. Workers exiting after that are supposed
 // to be gone, so nothing should respawn them.
 let shuttingDown = false;
+// When the heartbeat monitor last caught its own event loop running late —
+// proof the host froze. Both the monitor and the wedged-worker escalation
+// consult it before concluding a worker is at fault.
+let lastHostStallAt = 0;
+
+/** How long ago the host was last seen frozen. Infinity if we've never seen it. */
+function hostStalledAgoMs(): number {
+  return lastHostStallAt === 0 ? Infinity : Date.now() - lastHostStallAt;
+}
 
 function restartWorker(name: string): void {
   const begin = restarters.get(name);
@@ -322,11 +348,31 @@ function spawnWorker(inst: ResolvedInstance): Worker {
       worker.terminate();
     }, RESTART_GRACEFUL_EXIT_MS).unref();
 
-    setTimeout(() => {
+    // A thread starved of CPU looks exactly like one wedged in native code:
+    // both ignore terminate() and neither reaches the exit handler. Taking the
+    // whole fleet down is the right answer only for the wedged one, so hold
+    // off while the host is still frozen and re-check until it recovers.
+    const restartAskedAt = Date.now();
+    const escalationDueAt = restartAskedAt + RESTART_WEDGED_ESCALATION_MS;
+    const escalateIfWedged = (): void => {
       if (exited) return;
-      console.error(`[Launcher] ${inst.name} still alive ${Math.round(RESTART_WEDGED_ESCALATION_MS / 1000)}s after a restart was requested — the thread is wedged in native code and terminate() cannot reach it. Killing the launcher so the process manager restarts every instance.`);
+      const stalledAgo = hostStalledAgoMs();
+      const aliveFor = Math.round((Date.now() - restartAskedAt) / 1000);
+      const escalate = shouldEscalateWedged({
+        stalledAgoMs: stalledAgo,
+        cooldownMs: HEARTBEAT_STALL_COOLDOWN_MS,
+        deferredForMs: Date.now() - escalationDueAt,
+        maxDeferMs: RESTART_WEDGED_MAX_DEFER_MS,
+      });
+      if (!escalate) {
+        console.warn(`[Launcher] ${inst.name} hasn't exited ${aliveFor}s after being asked to restart, but the host stalled ${Math.round(stalledAgo / 1000)}s ago — a starved thread is indistinguishable from a wedged one, so re-checking in ${Math.round(RESTART_WEDGED_RECHECK_MS / 1000)}s instead of killing the launcher`);
+        setTimeout(escalateIfWedged, RESTART_WEDGED_RECHECK_MS).unref();
+        return;
+      }
+      console.error(`[Launcher] ${inst.name} still alive ${aliveFor}s after a restart was requested — the thread is wedged in native code and terminate() cannot reach it. Killing the launcher so the process manager restarts every instance.`);
       hardExit();
-    }, RESTART_WEDGED_ESCALATION_MS).unref();
+    };
+    setTimeout(escalateIfWedged, RESTART_WEDGED_ESCALATION_MS).unref();
   };
 
   restarters.set(inst.name, beginRestart);
@@ -483,8 +529,9 @@ setInterval(() => {
   // worker's "silence" is an artifact of that freeze, not a hung worker, and
   // their lastHeartbeat baselines haven't had a fair chance to update. Skip
   // this round and re-baseline so workers get a grace tick to check back in.
-  if (sinceLastCheck > HEARTBEAT_CHECK_MS + HEARTBEAT_STALL_SLACK_MS) {
+  if (tickWasStalled({ sinceLastTickMs: sinceLastCheck, intervalMs: HEARTBEAT_CHECK_MS, slackMs: HEARTBEAT_STALL_SLACK_MS })) {
     console.warn(`[Launcher] heartbeat monitor stalled for ${Math.round(sinceLastCheck / 1000)}s (expected ${Math.round(HEARTBEAT_CHECK_MS / 1000)}s) — host was likely frozen; skipping this round to let workers recover`);
+    lastHostStallAt = now;
     consecutiveMassSilence = 0;
     return;
   }
@@ -501,6 +548,19 @@ setInterval(() => {
   }
 
   if (silent.length === 0) {
+    consecutiveMassSilence = 0;
+    return;
+  }
+
+  // Guard 1b — stall cooldown: our own loop ran on time, but the host was
+  // frozen recently enough that this silence is far more likely to be the
+  // tail of that freeze than a hung bot. Restarting now would kill a live
+  // session to fix a problem the worker doesn't have.
+  const stalledAgo = hostStalledAgoMs();
+  if (withinStallCooldown({ stalledAgoMs: stalledAgo, cooldownMs: HEARTBEAT_STALL_COOLDOWN_MS })) {
+    console.warn(`[Launcher] ${silent.length} worker(s) silent (${silent.join(', ')}) but the host stalled ${Math.round(stalledAgo / 1000)}s ago — holding off restarts for another ${Math.round((HEARTBEAT_STALL_COOLDOWN_MS - stalledAgo) / 1000)}s`);
+    // Ticks spent inside the cooldown aren't evidence of a hung fleet, so the
+    // mass-silence tally starts over once the host is trusted again.
     consecutiveMassSilence = 0;
     return;
   }
