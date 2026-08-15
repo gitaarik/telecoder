@@ -37,6 +37,7 @@ import {
 import { getModelsForBinary } from './model-catalog.js';
 import { scrapePromptSuggestion } from './prompt-suggestion-scraper.js';
 import { scrapeTip } from './tip-scraper.js';
+import { isGenerating, isPromptVisible, screenSignature } from './tui-state.js';
 import { isSuggestionsEnabled } from '../telegram/suggestions-settings.js';
 import type { Context } from 'grammy';
 import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions, type EditDiffEvent, type ToolResultEvent, type ImageAttachment } from '../providers/types.js';
@@ -96,6 +97,40 @@ const RESUME_STARTUP_MAX_MS = 180_000;
  */
 const STARTUP_READY_CEILING_MS = 60_000;
 const RESUME_READY_CEILING_MS = 600_000;
+/**
+ * How long a prompt waits for a turn that is already running in the pty.
+ *
+ * Separate from the ceilings above because it bounds something different:
+ * those cover a TUI that may never open its input box, this covers one that
+ * is plainly working and will. Waiting is the right answer — the prompt goes
+ * in when the turn ends, which is what a person at the terminal would get —
+ * but not forever, so a turn that outlives this reports the delay honestly
+ * rather than the bot sitting mute on it.
+ */
+const BUSY_READY_CEILING_MS = 30 * 60_000;
+/** Poll interval for the readiness wait. */
+const READY_POLL_MS = 50;
+/**
+ * How often the end-of-turn check re-reads the screen while claude is plainly
+ * still generating. The default re-arm is a 50ms tick meant to catch a turn
+ * ending between chunks; holding that rate through a silent tool call would
+ * scan the whole xterm buffer twenty times a second for as long as the call
+ * runs. Any new output re-arms the timer anyway, so this only paces the wait.
+ */
+const GENERATING_RECHECK_MS = 500;
+
+/**
+ * What the chat is told when a prompt can't be delivered because the session
+ * is still working. Names the real cause: the earlier version of this path
+ * blamed transcript replay for every unmet readiness wait, which sent people
+ * looking at session size when the session was simply mid-turn.
+ */
+function stillWorkingError(): string {
+  const minutes = Math.round(BUSY_READY_CEILING_MS / 60_000);
+  return `Claude is still working on an earlier message — it's been going for over ${minutes} minutes, `
+    + "so this one wasn't delivered. Send it again once that turn finishes, or /stop to cut it short.";
+}
+
 /**
  * After writing \r we confirm claude actually took the prompt — it appears in
  * the session log as a user record. Until that lands (or we give up), re-send
@@ -589,22 +624,27 @@ export class PtyProvider implements Provider {
       // A pty spawned with --resume is still replaying the transcript; give it
       // the patience that needs rather than pasting into a busy editor.
       if (session.awaitingResumeReplay) {
-        const ready = await this._waitForReady(
-          session, RESUME_SETTLE_IDLE_MS, RESUME_STARTUP_MAX_MS, RESUME_READY_CEILING_MS,
+        const verdict = await this._waitForReady(
+          session, sessionKey, RESUME_SETTLE_IDLE_MS, RESUME_STARTUP_MAX_MS, RESUME_READY_CEILING_MS,
+          abortSignal,
         );
         // Leave awaitingResumeReplay set on failure: the replay is still the
         // thing we're waiting out, so the retry deserves the same patience.
-        if (!ready) {
+        if (verdict === 'aborted') return this._getScreenText(session);
+        if (verdict === 'busy') throw new Error(stillWorkingError());
+        if (verdict !== 'ready') {
           throw new Error(
             "Claude Code is still replaying this session's transcript and hasn't opened its input box, so your message wasn't delivered. That normally means the machine is under heavy load — please send it again in a minute.",
           );
         }
         session.awaitingResumeReplay = false;
       } else {
-        const ready = await this._waitForReady(
-          session, IDLE_MS, STARTUP_MAX_MS, STARTUP_READY_CEILING_MS,
+        const verdict = await this._waitForReady(
+          session, sessionKey, IDLE_MS, STARTUP_MAX_MS, STARTUP_READY_CEILING_MS, abortSignal,
         );
-        if (!ready) {
+        if (verdict === 'aborted') return this._getScreenText(session);
+        if (verdict === 'busy') throw new Error(stillWorkingError());
+        if (verdict !== 'ready') {
           throw new Error(
             "Claude Code's input box never appeared, so your message wasn't delivered. Please send it again.",
           );
@@ -915,9 +955,20 @@ export class PtyProvider implements Provider {
     const sawJsonlActivity = jsonlMtime > session.jsonlMtimeAtSubmit;
     const sinceSubmit = Date.now() - session.submitTimeMs;
     const claudeProducedSomething = sawJsonlActivity || sinceSubmit >= NO_JSONL_FALLBACK_MS;
+    // Idle plus a visible prompt is not end-of-turn. The glyph is drawn for
+    // the whole turn, so all that separates a finished turn from a paused one
+    // is how long the pty has been quiet — and a turn long enough to pause
+    // past the idle window reads as finished. A 51-minute turn was handed
+    // back that way: the queue moved on and pushed the next message into a
+    // claude still working on the previous one, which then sat in the
+    // readiness wait until its ceiling ran out. The interrupt hint is on
+    // screen for exactly as long as there is a generation to interrupt. Stop
+    // stays authoritative — it fires at the real end of the turn — and
+    // MAX_TURN_MS remains the backstop for a turn neither path resolves.
+    const stillGenerating = isGenerating(this._getScreenText(session));
     const canResolve = session.stopReceived
       ? isIdle
-      : isIdle && this._isPromptVisible(session) && claudeProducedSomething;
+      : isIdle && this._isPromptVisible(session) && !stillGenerating && claudeProducedSomething;
 
     if (canResolve) {
       const resolved = session.endOfTurnResolver;
@@ -929,7 +980,7 @@ export class PtyProvider implements Provider {
       // If we're only waiting on NO_JSONL_FALLBACK_MS, re-arm just past the
       // deadline so a no-op slash command doesn't sit on an idle timer that
       // only re-fires when the pty produces another chunk.
-      const idleRemaining = Math.max(50, idleMs - sinceLast);
+      const idleRemaining = Math.max(stillGenerating ? GENERATING_RECHECK_MS : 50, idleMs - sinceLast);
       const fallbackRemaining = claudeProducedSomething
         ? Infinity
         : Math.max(50, NO_JSONL_FALLBACK_MS - sinceSubmit);
@@ -957,12 +1008,7 @@ export class PtyProvider implements Provider {
   }
 
   private _isPromptVisible(session: PtySession): boolean {
-    // ❯ appears in claude's input box. We use includes() rather than
-    // startsWith() because the box-drawing chrome wraps the line as
-    // `│ ❯ <typed text> │`, which trims to a string that doesn't *start*
-    // with ❯. claude's own assistant output uses ● for bullets, not ❯,
-    // so false positives are unlikely.
-    return this._getScreenText(session).includes('❯');
+    return isPromptVisible(this._getScreenText(session));
   }
 
   private _awaitEndOfTurn(session: PtySession): Promise<string> {
@@ -994,39 +1040,110 @@ export class PtyProvider implements Provider {
   }
 
   /**
-   * Wait until claude is actually ready to receive a prompt: stdout has been
-   * idle for `idleMs` AND the input prompt glyph is visible on the rendered
-   * screen. Stdout-idle alone is unsafe — claude's startup pauses (plugin
-   * loading, settings parse) can exceed idleMs before the input box is drawn,
-   * so a prompt written then gets silently consumed by the startup flow.
+   * Wait until claude is actually ready to receive a prompt: it isn't
+   * generating, the input prompt glyph is on screen, and the render has stood
+   * still for `idleMs`.
    *
-   * `capMs` bounds *silence*, not the wait as a whole: output still arriving
-   * means the TUI is still coming up, and however long that takes, submitting
-   * into it only gets the keystroke swallowed. `ceilingMs` bounds the wait
-   * overall so a pty that renders forever can't hold the turn open.
+   * Stillness rather than stdout-idle, because a working TUI never falls
+   * silent: it redraws several times a second for as long as the turn lasts,
+   * so waiting for quiet on a session that is mid-turn can only end in the
+   * ceiling expiring. That is what cost a delivery ten minutes and then
+   * blamed transcript replay for it. The input glyph doesn't separate the two
+   * either; claude draws it throughout a turn. `isGenerating` reads the state
+   * off the TUI's own chrome instead of guessing at it from the pipe.
    *
-   * Returns false when neither condition was met. The caller must not submit
-   * on false — a prompt written into a TUI that never opened its input box is
-   * lost silently, and the turn then resolves on the previous turn's log.
+   * Three outcomes, because they need different answers:
+   *  - `ready`: submit.
+   *  - `busy`: claude is mid-turn and stayed there past BUSY_READY_CEILING_MS.
+   *    The prompt was never the problem and a retry will behave the same until
+   *    the turn ends.
+   *  - `unready`: the input box never appeared. `capMs` bounds *silence* here
+   *    and `ceilingMs` the wait as a whole, measured from when the TUI last
+   *    stopped working — a session that spent twenty minutes on a turn hasn't
+   *    used up its startup budget.
+   *  - `aborted`: the user cancelled while we waited. Nothing was submitted,
+   *    so the caller hands back the screen as it stands.
+   *
+   * The caller must not submit on anything but `ready` — a prompt written into
+   * a TUI that isn't listening is lost silently, and the turn then resolves on
+   * the previous turn's log.
    */
   private async _waitForReady(
-    session: PtySession, idleMs: number, capMs: number, ceilingMs: number,
-  ): Promise<boolean> {
-    const start = Date.now();
-    while (Date.now() - start < ceilingMs) {
-      const since = Date.now() - session.lastChunkAt;
-      if (since >= idleMs && this._isPromptVisible(session)) return true;
-      // Quiet this long with no input box is a stuck TUI, not a slow one.
-      if (since >= capMs) break;
-      await new Promise((r) => setTimeout(r, 50));
+    session: PtySession, sessionKey: string, idleMs: number, capMs: number, ceilingMs: number,
+    abortSignal?: AbortSignal,
+  ): Promise<'ready' | 'busy' | 'unready' | 'aborted'> {
+    let waitingSince = Date.now();
+    let generatingSince: number | null = null;
+    let sawGenerating = false;
+    let signature = screenSignature(this._getScreenText(session));
+    // Anchored to the last chunk, not to now: nothing can have redrawn the
+    // screen since then, so a pty that has sat at its prompt for an hour is
+    // already still and submits immediately instead of waiting out `idleMs`
+    // it has plainly served — or tripping the silence cap on the way there.
+    let stillSince = session.lastChunkAt;
+    // Back-to-back turns — a session driven from elsewhere, or one working
+    // through its own background-task notifications — reset both budgets
+    // below every time generation resumes, so bound the wait as a whole too.
+    const hardDeadline = Date.now() + BUSY_READY_CEILING_MS + ceilingMs;
+
+    for (;;) {
+      // The wait can now outlast a turn, so /stop has to reach it. The abort
+      // handler has already written Esc at the pty; there is no prompt to
+      // deliver on the other side of that.
+      if (abortSignal?.aborted) return 'aborted';
+      if (Date.now() >= hardDeadline) {
+        console.warn(
+          `[PtyProvider] ${sessionKey}: pty never came free within `
+          + `${Math.round((BUSY_READY_CEILING_MS + ceilingMs) / 60_000)}m — not submitting into it`,
+        );
+        return sawGenerating ? 'busy' : 'unready';
+      }
+      const screenText = this._getScreenText(session);
+      const current = screenSignature(screenText);
+      if (current !== signature) {
+        signature = current;
+        stillSince = Date.now();
+      }
+
+      if (isGenerating(screenText)) {
+        sawGenerating = true;
+        if (generatingSince === null) {
+          generatingSince = Date.now();
+          console.warn(
+            `[PtyProvider] ${sessionKey}: claude is mid-turn — holding this prompt until it finishes`,
+          );
+        }
+        if (Date.now() - generatingSince >= BUSY_READY_CEILING_MS) {
+          const busyFor = Math.round((Date.now() - generatingSince) / 60_000);
+          console.warn(
+            `[PtyProvider] ${sessionKey}: still generating after ${busyFor}m — not submitting into it`,
+          );
+          return 'busy';
+        }
+      } else {
+        // The turn just ended: the screen is mid-redraw and the startup
+        // budget starts from here, not from a wait spent watching it work.
+        if (generatingSince !== null) {
+          generatingSince = null;
+          waitingSince = Date.now();
+          stillSince = session.lastChunkAt;
+        }
+        if (Date.now() - stillSince >= idleMs && isPromptVisible(screenText)) return 'ready';
+
+        const waited = Date.now() - waitingSince;
+        const quiet = Date.now() - session.lastChunkAt;
+        // Quiet this long with no input box is a stuck TUI, not a slow one.
+        if (waited >= ceilingMs || quiet >= capMs) {
+          console.warn(
+            `[PtyProvider] ${sessionKey}: TUI not ready after ${Math.round(waited / 1000)}s `
+            + `(quiet ${Math.round(quiet / 1000)}s, still ${Math.round((Date.now() - stillSince) / 1000)}s, `
+            + `input prompt ${isPromptVisible(screenText) ? 'visible' : 'absent'}) — refusing to submit into it`,
+          );
+          return 'unready';
+        }
+      }
+      await new Promise((r) => setTimeout(r, READY_POLL_MS));
     }
-    const waited = Math.round((Date.now() - start) / 1000);
-    const quiet = Math.round((Date.now() - session.lastChunkAt) / 1000);
-    console.warn(
-      `[PtyProvider] TUI not ready after ${waited}s (quiet ${quiet}s, input prompt `
-      + `${this._isPromptVisible(session) ? 'visible' : 'absent'}) — refusing to submit into it`,
-    );
-    return false;
   }
 
   /**
