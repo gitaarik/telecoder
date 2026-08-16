@@ -19,6 +19,7 @@ import { stripJsonComments, expandName } from './utils/instance-config.js';
 import { legacyEnv } from './utils/legacy-env.js';
 import { planRespawn } from './utils/respawn-backoff.js';
 import { tickWasStalled, withinStallCooldown, shouldEscalateWedged } from './utils/host-stall.js';
+import { fingerprintModuleGraph } from './utils/stale-launcher.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
@@ -176,6 +177,14 @@ const workerEntry = existsSync(path.join(projectRoot, 'dist', 'index.js'))
   : path.join(projectRoot, 'src', 'index.ts');
 
 const isTsx = workerEntry.endsWith('.ts');
+
+// The launcher's own code, as it was when this process loaded it. A rebuild
+// replaces the file on disk and respawns every worker off the new one, but
+// nothing can replace what this process is already running — so this value is
+// taken once and never refreshed, and a later build that disagrees with it is
+// a build the launcher hasn't picked up.
+const launcherEntry = fileURLToPath(import.meta.url);
+const launcherCodeAtStartup = fingerprintModuleGraph(launcherEntry);
 
 const workers: Map<string, Worker> = new Map();
 const pendingRestarts = new Set<string>();
@@ -422,6 +431,15 @@ function spawnWorker(inst: ResolvedInstance): Worker {
         restartTarget(targetName);
         worker.postMessage({ type: 'restart_sibling_result', success: true, name: targetName });
       }
+    } else if (msg?.type === 'launcher_stale') {
+      // Answered from disk each time it's asked: the question only comes up
+      // right after a build, and that build is what we're comparing against.
+      const current = fingerprintModuleGraph(launcherEntry);
+      const stale = !!launcherCodeAtStartup && !!current && current !== launcherCodeAtStartup;
+      if (stale) {
+        console.warn(`[Launcher] ${inst.name} rebuilt the launcher's own code — this process keeps running the copy it started with until it is restarted`);
+      }
+      worker.postMessage({ type: 'launcher_stale_result', stale });
     } else if (msg?.type === 'restart_all') {
       console.log(`[Launcher] ${inst.name} requested restart of ALL instances${msg.autoResume ? ' (with auto-resume)' : ''} — ${instances.length} configured, ${workers.size} live`);
       const liveNames = new Set(workers.keys());

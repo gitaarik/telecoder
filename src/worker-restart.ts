@@ -1,8 +1,10 @@
 /**
- * Restart requests from a worker to the launcher.
+ * Restart requests from a worker to the launcher, and the one question that
+ * goes with them: whether the launcher is still running the code it started
+ * with.
  *
  * Split out of index.ts so callers don't have to import the process entry
- * point to reach three message-posting helpers. The command handlers used to
+ * point to reach a handful of message-posting helpers. The command handlers used to
  * do exactly that, via `await import('../../../index.js')` — a dynamic import
  * purely to dodge the cycle a static one would create. This module imports
  * nothing but `worker_threads`, so they can import it directly.
@@ -46,6 +48,37 @@ export function requestSiblingRestart(name: string, autoResume = false): Promise
       pp.off('message', handler);
       resolve({ success: false, reason: 'timeout' });
     }, 5000);
+  });
+}
+
+/**
+ * Ask the launcher whether its own code has been rebuilt since it started.
+ *
+ * False whenever we can't tell — single-instance mode has no launcher to ask,
+ * and a query that goes unanswered must not turn into a restart nag on every
+ * build. See utils/stale-launcher.ts for why only the launcher needs asking.
+ */
+export function launcherIsStale(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (isMainThread || !parentPort) return resolve(false);
+    const pp = parentPort;
+    const handler = (msg: { type?: string; stale?: boolean }) => {
+      if (msg?.type === 'launcher_stale_result') {
+        pp.off('message', handler);
+        clearTimeout(timer);
+        resolve(!!msg.stale);
+      }
+    };
+    pp.on('message', handler);
+    pp.postMessage({ type: 'launcher_stale' });
+    // Short: the answer is a hash of seven small files, and a launcher old
+    // enough not to know the question never answers at all — which is exactly
+    // the launcher this exists for. Nobody should wait on that to be told
+    // their build is restarting.
+    const timer = setTimeout(() => {
+      pp.off('message', handler);
+      resolve(false);
+    }, 2000);
   });
 }
 

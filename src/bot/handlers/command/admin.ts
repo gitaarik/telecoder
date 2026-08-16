@@ -20,7 +20,8 @@ import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 import { replyMd, botctlExists, PROJECT_ROOT, BOTCTL_PATH } from './shared.js';
 import { handleResume, handleContinue } from './session.js';
 import { sessionHistory } from '../../../claude/session-history.js';
-import { requestRestart, requestRestartAll, requestSiblingRestart } from '../../../worker-restart.js';
+import { requestRestart, requestRestartAll, requestSiblingRestart, launcherIsStale } from '../../../worker-restart.js';
+import { launcherRestartHint } from '../../../utils/stale-launcher.js';
 
 /** Write the reload marker so autoResumeAfterReload picks up sessions on restart. */
 export function writeReloadMarker(): void {
@@ -352,6 +353,18 @@ function runBuild(): Promise<void> {
   });
 }
 
+/**
+ * What to add to a "restarting..." reply when the build also changed the
+ * launcher, which respawning the instances cannot reload. Empty the rest of
+ * the time — the reply is right as it stands then, and a warning that shows up
+ * after every build is one nobody reads.
+ */
+async function staleLauncherNote(): Promise<string> {
+  if (!await launcherIsStale()) return '';
+  return `\n\n⚠️ The launcher itself changed too, and restarting instances can't reload it — `
+    + `to pick that up, ${launcherRestartHint()}. That drops every live session, so pick your moment.`;
+}
+
 async function performRebuild(ctx: Context, scope: RebuildScope): Promise<void> {
   // Step 1: Build
   await ctx.reply('🔨 Building...');
@@ -368,12 +381,15 @@ async function performRebuild(ctx: Context, scope: RebuildScope): Promise<void> 
   // (we can't — markers live at per-bot paths keyed by each bot's token). For
   // 'one' and single-instance, write the local marker now.
   if (!isMainThread) {
+    // Asked before the restart is requested: this worker is about to exit, and
+    // a second message sent into that gap may never make it out.
+    const launcherNote = await staleLauncherNote();
     if (scope === 'all') {
-      await ctx.reply('✅ Build succeeded. Restarting all instances...');
+      await ctx.reply(`✅ Build succeeded. Restarting all instances...${launcherNote}`);
       requestRestartAll(config.AUTO_RESTORE_SESSION);
     } else {
       if (config.AUTO_RESTORE_SESSION) writeReloadMarker();
-      await ctx.reply('✅ Build succeeded. Restarting this instance...');
+      await ctx.reply(`✅ Build succeeded. Restarting this instance...${launcherNote}`);
       if (!config.AUTO_RESTORE_SESSION) await sendRestoreButtons(ctx);
       requestRestart();
     }
