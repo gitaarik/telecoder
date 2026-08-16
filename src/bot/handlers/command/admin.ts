@@ -182,6 +182,10 @@ export async function handleBotStatus(ctx: Context): Promise<void> {
   const pid = process.pid;
   const memMB = (process.memoryUsage.rss() / 1024 / 1024).toFixed(1);
 
+  // The uptime above is this worker's, and a worker that restarted an hour ago
+  // says nothing about the process it restarted inside.
+  const warning = await staleLauncherWarning();
+
   const msg =
     `🟢 *${esc(config.BOT_NAME)} is running*\n\n` +
     `*Mode:* ${esc(mode)}\n` +
@@ -189,7 +193,8 @@ export async function handleBotStatus(ctx: Context): Promise<void> {
     `*PID:* ${pid}\n` +
     `*Memory:* ${esc(memMB)} MB\n` +
     `*Model:* ${esc(model)}\n` +
-    `*Streaming:* ${esc(streaming)}`;
+    `*Streaming:* ${esc(streaming)}` +
+    (warning ? `\n\n${esc(warning)}` : '');
 
   await replyMd(ctx, msg);
 }
@@ -199,11 +204,16 @@ type RestartScope = 'one' | 'all';
 async function performRestart(ctx: Context, scope: RestartScope): Promise<void> {
   // Multi-instance mode (worker thread) — restart via launcher, not shell script
   if (!isMainThread) {
+    // A restart can't make the launcher stale — only a build does that — but
+    // it is the moment someone concludes everything is running current code.
+    const warning = await staleLauncherWarning();
+    const note = warning ? `\n\n${esc(warning)}` : '';
+
     if (scope === 'all') {
       if (config.AUTO_RESTORE_SESSION) {
-        await replyMd(ctx, '🔁 Restarting all bot instances\\.\n\n⏳ Sessions will be restored automatically\\.');
+        await replyMd(ctx, `🔁 Restarting all bot instances\\.\n\n⏳ Sessions will be restored automatically\\.${note}`);
       } else {
-        await replyMd(ctx, '🔁 Restarting all bot instances\\.\n\n⏳ Please wait ~10 seconds\\.');
+        await replyMd(ctx, `🔁 Restarting all bot instances\\.\n\n⏳ Please wait ~10 seconds\\.${note}`);
         await sendRestoreButtons(ctx);
       }
       // Marker writing for sibling bots happens in the launcher — it has the
@@ -213,10 +223,10 @@ async function performRestart(ctx: Context, scope: RestartScope): Promise<void> 
     }
 
     if (config.AUTO_RESTORE_SESSION) {
-      await replyMd(ctx, '🔁 Restarting this bot instance\\.\n\n⏳ Session will be restored automatically\\.');
+      await replyMd(ctx, `🔁 Restarting this bot instance\\.\n\n⏳ Session will be restored automatically\\.${note}`);
       writeReloadMarker();
     } else {
-      await replyMd(ctx, '🔁 Restarting this bot instance\\.\n\n⏳ Other bots will not be affected\\. Please wait ~10 seconds\\.');
+      await replyMd(ctx, `🔁 Restarting this bot instance\\.\n\n⏳ Other bots will not be affected\\. Please wait ~10 seconds\\.${note}`);
       await sendRestoreButtons(ctx);
     }
 
@@ -354,15 +364,23 @@ function runBuild(): Promise<void> {
 }
 
 /**
- * What to add to a "restarting..." reply when the build also changed the
- * launcher, which respawning the instances cannot reload. Empty the rest of
- * the time — the reply is right as it stands then, and a warning that shows up
- * after every build is one nobody reads.
+ * Said wherever someone is about to believe their code is now current: the
+ * launcher is running what it loaded at startup, and neither a rebuild nor a
+ * restart of the instances reaches it.
+ *
+ * Note what this does not claim — that the build in hand is the one that
+ * changed the launcher. The fingerprint only knows the launcher differs from
+ * the copy this process started with, which stays true for every later build
+ * until someone restarts it.
+ *
+ * Empty whenever the launcher is current or can't be asked, and in plain text:
+ * callers that reply in MarkdownV2 escape it themselves.
  */
-async function staleLauncherNote(): Promise<string> {
+async function staleLauncherWarning(): Promise<string> {
   if (!await launcherIsStale()) return '';
-  return `\n\n⚠️ The launcher itself changed too, and restarting instances can't reload it — `
-    + `to pick that up, ${launcherRestartHint()}. That drops every live session, so pick your moment.`;
+  return `⚠️ The launcher is still running the code it started with — a build since then replaced it `
+    + `on disk, and restarting instances can't reload it. To pick that up, ${launcherRestartHint()}; `
+    + `that drops every live session.`;
 }
 
 async function performRebuild(ctx: Context, scope: RebuildScope): Promise<void> {
@@ -383,13 +401,14 @@ async function performRebuild(ctx: Context, scope: RebuildScope): Promise<void> 
   if (!isMainThread) {
     // Asked before the restart is requested: this worker is about to exit, and
     // a second message sent into that gap may never make it out.
-    const launcherNote = await staleLauncherNote();
+    const warning = await staleLauncherWarning();
+    const note = warning ? `\n\n${warning}` : '';
     if (scope === 'all') {
-      await ctx.reply(`✅ Build succeeded. Restarting all instances...${launcherNote}`);
+      await ctx.reply(`✅ Build succeeded. Restarting all instances...${note}`);
       requestRestartAll(config.AUTO_RESTORE_SESSION);
     } else {
       if (config.AUTO_RESTORE_SESSION) writeReloadMarker();
-      await ctx.reply(`✅ Build succeeded. Restarting this instance...${launcherNote}`);
+      await ctx.reply(`✅ Build succeeded. Restarting this instance...${note}`);
       if (!config.AUTO_RESTORE_SESSION) await sendRestoreButtons(ctx);
       requestRestart();
     }

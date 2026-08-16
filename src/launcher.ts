@@ -19,7 +19,7 @@ import { stripJsonComments, expandName } from './utils/instance-config.js';
 import { legacyEnv } from './utils/legacy-env.js';
 import { planRespawn } from './utils/respawn-backoff.js';
 import { tickWasStalled, withinStallCooldown, shouldEscalateWedged } from './utils/host-stall.js';
-import { fingerprintModuleGraph } from './utils/stale-launcher.js';
+import { fingerprintModuleGraph, launcherHasChanged } from './utils/stale-launcher.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
@@ -434,8 +434,7 @@ function spawnWorker(inst: ResolvedInstance): Worker {
     } else if (msg?.type === 'launcher_stale') {
       // Answered from disk each time it's asked: the question only comes up
       // right after a build, and that build is what we're comparing against.
-      const current = fingerprintModuleGraph(launcherEntry);
-      const stale = !!launcherCodeAtStartup && !!current && current !== launcherCodeAtStartup;
+      const stale = launcherHasChanged(launcherCodeAtStartup, fingerprintModuleGraph(launcherEntry));
       if (stale) {
         console.warn(`[Launcher] ${inst.name} rebuilt the launcher's own code — this process keeps running the copy it started with until it is restarted`);
       }

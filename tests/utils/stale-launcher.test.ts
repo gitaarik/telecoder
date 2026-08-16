@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { fingerprintModuleGraph, launcherRestartHint } from '../../src/utils/stale-launcher.js';
+import { fingerprintModuleGraph, launcherHasChanged, launcherRestartHint } from '../../src/utils/stale-launcher.js';
 
 const dirs: string[] = [];
 
@@ -85,6 +85,19 @@ describe('fingerprintModuleGraph', () => {
   it('returns nothing at all when the entry is unreadable', () => {
     const dir = graph({});
     expect(fingerprintModuleGraph(path.join(dir, 'absent.js'))).toBe('');
+  });
+});
+
+describe('launcherHasChanged', () => {
+  it('is true only when two readable fingerprints disagree', () => {
+    expect(launcherHasChanged('aaa', 'bbb')).toBe(true);
+    expect(launcherHasChanged('aaa', 'aaa')).toBe(false);
+  });
+
+  it('says no rather than guess when a fingerprint is missing', () => {
+    expect(launcherHasChanged('', 'bbb')).toBe(false);
+    expect(launcherHasChanged('aaa', '')).toBe(false);
+    expect(launcherHasChanged('', '')).toBe(false);
   });
 });
 

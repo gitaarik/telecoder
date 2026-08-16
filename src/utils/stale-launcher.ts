@@ -85,6 +85,18 @@ export function fingerprintModuleGraph(entry: string): string {
 }
 
 /**
+ * Has the launcher's code changed under it?
+ *
+ * Only ever true when both fingerprints could be read. An empty one means we
+ * couldn't tell, and "couldn't tell" must not reach anyone as "restart your
+ * launcher" — the check runs on every rebuild, restart and status, so being
+ * wrong in that direction would train people to ignore it.
+ */
+export function launcherHasChanged(atStartup: string, now: string): boolean {
+  return atStartup !== '' && now !== '' && atStartup !== now;
+}
+
+/**
  * What to tell someone to do about it, phrased to drop into a sentence.
  *
  * pm2 hands every process it manages its app name and id, so under pm2 we can
