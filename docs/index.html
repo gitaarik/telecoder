@@ -1747,6 +1747,7 @@
   <symbol id="i-mobile" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10.5 5.6h3"/><path d="M9 10.5h6"/><path d="M9 14h4"/></symbol>
   <symbol id="i-stream" viewBox="0 0 24 24"><path d="M3 8h9"/><path d="M3 12h6"/><path d="M3 16h9"/><path d="M15.5 7.5 20 12l-4.5 4.5"/></symbol>
   <symbol id="i-tools" viewBox="0 0 24 24"><path d="M17.6 2.8a5.5 5.5 0 0 0-6.4 7.1L3.5 17.6a2.1 2.1 0 0 0 3 3l7.7-7.7a5.5 5.5 0 0 0 7.1-6.4l-3.1 3.1-2.7-.7z"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 2.8v4.4"/><path d="M15 2.8v4.4"/><path d="M6.5 7.2h11v3.3a5.5 5.5 0 0 1-11 0z"/><path d="M12 16v5.2"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.5c0 4.3-3.1 7-7.5 7.8-4.4-.8-7.5-3.5-7.5-7.8V6z"/><circle cx="12" cy="10.8" r="1.6"/><path d="M12 12.4v2.4"/></symbol>
   <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2.8" width="6" height="11" rx="3"/><path d="M5.2 11.5a6.8 6.8 0 0 0 13.6 0"/><path d="M12 18.3v2.9"/></symbol>
   <symbol id="i-thread" viewBox="0 0 24 24"><path d="M20.5 12.5c0 3.9-3.8 7-8.5 7a9.9 9.9 0 0 1-2.6-.3L4.5 21l1.2-3.4a7.5 7.5 0 0 1-2.2-5.1c0-3.9 3.8-7 8.5-7s8.5 3.1 8.5 7z"/><path d="M12 15.6V9.9"/><path d="m9.6 12.3 2.4-2.4 2.4 2.4"/></symbol>
@@ -1962,6 +1963,12 @@
             <h3>Skills</h3>
             <p>Claude invokes project-level skills from <code>.claude/skills/</code> via the Skill
             tool, with user-level skills loadable too.</p>
+          </div>
+          <div class="feature-card" data-category="agent">
+            <div class="feature-icon"><svg><use href="#i-plug"/></svg></div>
+            <h3>Your own MCP servers</h3>
+            <p>Point <code>EXTRA_MCP_CONFIG</code> at a JSON file and its servers spawn beside the
+            bot's own, without dragging in every server the machine has ever registered.</p>
           </div>
           <div class="feature-card" data-category="agent">
             <div class="feature-icon"><svg><use href="#i-levels"/></svg></div>

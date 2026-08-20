@@ -45,6 +45,15 @@ const envSchema = z.object({
     .string()
     .default('false')
     .transform((val) => val.toLowerCase() === 'true'),
+  // Path to a JSON file of extra MCP servers ({"mcpServers": {...}}) to hand the
+  // pty alongside the bot's own. Opt-in and named explicitly for the same reason
+  // the flag above defaults to false: the spawn passes --strict-mcp-config, which
+  // is what keeps the tool surface predictable, and the alternative to this is
+  // loading every server the user has ever configured — broken ones included.
+  // Named separately from CLAUDE_SDK_LOAD_USER_SETTINGS because MCP servers live
+  // in ~/.claude.json rather than in settings.json: --setting-sources cannot
+  // reach them either way.
+  EXTRA_MCP_CONFIG: z.string().optional(),
   CLAUDE_REASONING_SUMMARY: z
     .string()
     .default('true')

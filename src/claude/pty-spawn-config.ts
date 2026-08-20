@@ -13,6 +13,7 @@
  * registers; it is prose describing that registry, not derived from it.
  */
 
+import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from '../config.js';
@@ -172,13 +173,52 @@ export function buildMcpEnv(required: Record<string, string>): Record<string, st
 }
 
 /**
+ * Extra MCP servers to spawn beside our own, from the file EXTRA_MCP_CONFIG
+ * names. `{}` when the var is unset, which is the default.
+ *
+ * A file rather than the user's own MCP config, because the spawn passes
+ * `--strict-mcp-config`: that flag is what stops every server in
+ * ~/.claude.json — auth-expired ones, failing ones, and their combined tool
+ * counts — from landing in the bot's context. Naming a file keeps that
+ * property and adds only what was asked for.
+ *
+ * Never throws. This runs on the path that starts the agent, and a typo in an
+ * optional file must not be the reason the bot does not come up; a warning on
+ * stderr and no extra servers is the failure that leaves everything else
+ * working. Same reasoning as the missing-token read in the pm2 config.
+ */
+function readExtraMcpServers(): Record<string, unknown> {
+  const file = config.EXTRA_MCP_CONFIG;
+  if (!file) return {};
+
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const servers = (parsed as { mcpServers?: unknown } | null)?.mcpServers;
+    if (!servers || typeof servers !== 'object' || Array.isArray(servers)) {
+      console.warn(`[mcp] ${file} has no "mcpServers" object; no extra servers loaded`);
+      return {};
+    }
+    return servers as Record<string, unknown>;
+  } catch (err) {
+    console.warn(`[mcp] could not read EXTRA_MCP_CONFIG ${file}:`, err);
+    return {};
+  }
+}
+
+/**
  * Build the `--mcp-config` JSON we inject at spawn time. claude will spawn the
  * referenced node script as a stdio MCP subprocess. The env we pass through is
  * what the subprocess uses to reach back to our loopback IPC server.
+ *
+ * Ours is written last on purpose: an extra config that happens to define
+ * `claudegram-tools` cannot shadow the tools this bot needs to talk to Telegram
+ * at all, which is the one server whose absence has no visible failure mode —
+ * it just stops answering.
  */
 export function buildMcpConfigJson(env: Record<string, string>): string {
   return JSON.stringify({
     mcpServers: {
+      ...readExtraMcpServers(),
       'claudegram-tools': {
         command: 'node',
         args: [MCP_SERVER_JS],
