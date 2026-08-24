@@ -1954,6 +1954,14 @@
             effort per bot. Opus by default.</p>
           </div>
           <div class="feature-card" data-category="agent">
+            <div class="feature-icon"><svg><use href="#i-relay"/></svg></div>
+            <h3>One bot, or all of them</h3>
+            <p><code>/model</code> and <code>/effort</code> change the bot you typed them in.
+            Add <code>all</code>, or tap the button on the confirmation, and the change is relayed
+            to every instance — which then tells you which ones took it, which are on another
+            backend, and which were mid-turn.</p>
+          </div>
+          <div class="feature-card" data-category="agent">
             <div class="feature-icon"><svg><use href="#i-todo"/></svg></div>
             <h3>Plans and decisions</h3>
             <p>Claude posts a live checklist for multi-step work, and when it needs a decision it
@@ -2603,12 +2611,12 @@ CCR_AUTOSTART=true</pre>
               <span class="command-desc">Toggle routing through Claude Code Router (sticky fallback when Max runs out)</span>
             </div>
             <div class="command-row">
-              <code class="command-code">/model</code>
-              <span class="command-desc">Switch AI model (provider-aware). Offers every alias Claude Code's <code>--model</code> accepts — fable, opus, sonnet, haiku, opusplan, best and the fable/opus/sonnet 1M-context variants — filtered to what your installed CLI actually supports, so an alias your binary predates never reaches a turn. Pass a full model ID instead (<code>/model claude-opus-4-8</code>) to pin an exact release; unrecognised names are forwarded to the CLI as-is with a warning. Works in both SDK and PTY mode; in PTY mode Claude Code restarts on your next message to pick it up, keeping the conversation. Reports the model that actually served the last turn rather than a default.</span>
+              <code class="command-code">/model [all]</code>
+              <span class="command-desc">Switch AI model (provider-aware). Offers every alias Claude Code's <code>--model</code> accepts — fable, opus, sonnet, haiku, opusplan, best and the fable/opus/sonnet 1M-context variants — filtered to what your installed CLI actually supports, so an alias your binary predates never reaches a turn. Pass a full model ID instead (<code>/model claude-opus-4-8</code>) to pin an exact release; unrecognised names are forwarded to the CLI as-is with a warning. Applies to the bot you typed it in; add <code>all</code> (<code>/model sonnet all</code>) or tap the button on the confirmation to set every instance at once. Works in both SDK and PTY mode; in PTY mode Claude Code restarts on your next message to pick it up, keeping the conversation. Reports the model that actually served the last turn rather than a default.</span>
             </div>
             <div class="command-row">
-              <code class="command-code">/effort &lt;level&gt;</code>
-              <span class="command-desc">Set reasoning effort (low/medium/high/xhigh/max/auto). Works in both SDK and PTY mode; in PTY mode Claude Code restarts on your next message to pick it up, keeping the conversation. Enable /statusline to see the current level's icon (🐇/⚖️/🧠/🔬/🚀) after each turn.</span>
+              <code class="command-code">/effort &lt;level&gt; [all]</code>
+              <span class="command-desc">Set reasoning effort (low/medium/high/xhigh/max/auto). Per bot, with the same <code>all</code> argument and one-tap fan-out as /model. Works in both SDK and PTY mode; in PTY mode Claude Code restarts on your next message to pick it up, keeping the conversation. Enable /statusline to see the current level's icon (🐇/⚖️/🧠/🔬/🚀) after each turn.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/verbosity &lt;tier&gt;</code>

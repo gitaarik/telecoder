@@ -22,6 +22,13 @@ import { switchProvider, switchRequiresConfirm } from '../../../providers/provid
 import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 import { replyMd, parseCallback, restartPtyForSettingChange, PTY_RESTART_NOTE } from './shared.js';
+import {
+  parseScopeArg,
+  applyToAllBots,
+  buildApplyToAllKeyboard,
+  prefsConfirmation,
+  hasSiblings,
+} from './prefs-scope.js';
 
 export async function handleModelCommand(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
@@ -32,7 +39,7 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
   // Aliases are all lowercase, but a hand-typed full ID may not be — match
   // case-insensitively, then pass the original through so vendor-cased IDs
   // reach the CLI intact.
-  const rawArg = text.split(' ').slice(1).join(' ').trim();
+  const { value: rawArg, scope } = parseScopeArg(text.split(' ').slice(1).join(' '));
   const args = rawArg.toLowerCase();
 
   const providerName = getActiveProviderName(chatId);
@@ -58,17 +65,35 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
       .map(m => `• *${esc(m.label)}* \\- ${esc(m.description || '')}`)
       .join('\n');
 
+    // Picking from the keyboard applies to this bot; the confirmation then
+    // offers the fan-out. Say so up front so nobody assumes either scope.
+    const scopeHint = hasSiblings()
+      ? `\n\nApplies to *${esc(config.BOT_NAME)}* only — add \`all\` \\(\`/model sonnet all\`\\) or use the button afterwards to set every bot\\.`
+      : '';
+
     await ctx.reply(
       `🤖 *Select Model* \\(${esc(providerName)}\\)\n\n_Current: ${esc(currentModel)}_\n\n${descriptions}\n\n` +
         // No escaping inside the code spans — MarkdownV2 only escapes ` and \
         // there, so a \\- would render as a literal backslash.
-        `Or \`/model <full-id>\` to pin an exact release, e\\.g\\. \`claude-opus-4-8\`\\.`,
+        `Or \`/model <full-id>\` to pin an exact release, e\\.g\\. \`claude-opus-4-8\`\\.${scopeHint}`,
       {
         parse_mode: 'MarkdownV2',
         reply_markup: {
           inline_keyboard: keyboard,
         },
       }
+    );
+    return;
+  }
+
+  // `all` on its own is a scope with no model attached. Passthrough would
+  // otherwise take it at face value and hand the CLI `--model all`, which is
+  // a confusing way to learn the argument order.
+  if (args === 'all' || args === 'everywhere') {
+    await replyMd(
+      ctx,
+      `\`all\` sets every bot, but it needs a model to set them to\\.\n\n` +
+        `Try \`/model sonnet all\`, or /model to pick one\\.`,
     );
     return;
   }
@@ -88,15 +113,30 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
     return;
   }
 
-  setModel(chatId, known ? args : rawArg);
+  const chosen = known ? args : rawArg;
+  setModel(chatId, chosen);
   const restarted = restartPtyForSettingChange(chatId, keyInfo.sessionKey);
   const caution = known
     ? ''
     : `\n\n⚠️ Not a known alias — passed to the CLI as\\-is\\. If your install can't serve it, the next turn fails; /model to pick again\\.`;
-  await replyMd(
-    ctx,
-    `✅ Model set to *${esc(known ? args : rawArg)}*${restarted ? PTY_RESTART_NOTE : ''}${caution}`,
-  );
+  const confirmation = `${prefsConfirmation('model', chosen)}${restarted ? PTY_RESTART_NOTE : ''}${caution}`;
+
+  if (scope === 'all') {
+    const summary = await applyToAllBots({
+      chatId,
+      setting: 'model',
+      value: chosen,
+      provider: providerName,
+    });
+    await replyMd(ctx, `${confirmation}${summary}`);
+    return;
+  }
+
+  const keyboard = buildApplyToAllKeyboard('model', chosen);
+  await ctx.reply(confirmation, {
+    parse_mode: 'MarkdownV2',
+    ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
+  });
 }
 
 export async function handleModelCallback(ctx: Context): Promise<void> {
@@ -122,9 +162,13 @@ export async function handleModelCallback(ctx: Context): Promise<void> {
   const displayName = modelInfo?.label || model;
 
   await ctx.answerCallbackQuery({ text: `Model set to ${displayName}!` });
+  const keyboard = buildApplyToAllKeyboard('model', model);
   await ctx.editMessageText(
-    `✅ Model set to *${esc(displayName)}*${restarted ? PTY_RESTART_NOTE : ''}`,
-    { parse_mode: 'MarkdownV2' }
+    `${prefsConfirmation('model', displayName)}${restarted ? PTY_RESTART_NOTE : ''}`,
+    {
+      parse_mode: 'MarkdownV2',
+      ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
+    },
   );
 }
 

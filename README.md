@@ -232,8 +232,8 @@ Open your bot in Telegram → `/start`
 | `/plan` | Plan mode for complex tasks |
 | `/explore` | Explore codebase to answer questions |
 | `/loop` | Run iteratively until task complete |
-| `/model` | Switch Sonnet / Opus / Haiku |
-| `/effort` | Set reasoning effort (low / medium / high / xhigh / max / auto) |
+| `/model` | Switch Sonnet / Opus / Haiku — this bot, or add `all` for every instance |
+| `/effort` | Set reasoning effort (low / medium / high / xhigh / max / auto); `all` works here too |
 | `/btw` | Ask a side question without interrupting the running task |
 | `/mode` | Toggle streaming / wait |
 | `/method` | Switch Claude transport (SDK / PTY) |
@@ -535,7 +535,8 @@ TeleCoder is maintained independently by [@gitaarik](https://github.com/gitaarik
   work topic, derived via parallel Haiku side-call; per-chat /topic and
   /botname controls
 - **Multi-instance launcher** — run multiple bots from one process with
-  per-bot session scoping
+  per-bot session scoping, per-bot model/effort preferences, and an opt-in
+  fan-out (`/model sonnet all`) that relays a setting to every instance
 - **Background task lifecycle** — surface SDK task lifecycle (started,
   progress, notifications) in the streaming UI; /tasks command to inspect
 - **Monitor events** — separate Telegram messages for streaming Monitor

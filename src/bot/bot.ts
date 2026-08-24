@@ -35,6 +35,7 @@ import {
   handleCommands,
   handleModelCommand,
   handleModelCallback,
+  handlePrefsAllCallback,
   handleProviderCommand,
   handleProviderCallback,
   handleProviderSwitchCallback,
@@ -443,6 +444,8 @@ export async function createBot(): Promise<Bot> {
       await handleProviderSwitchCallback(ctx);
     } else if (data.startsWith('provider:')) {
       await handleProviderCallback(ctx);
+    } else if (data.startsWith('prefs_all:')) {
+      await handlePrefsAllCallback(ctx);
     } else if (data.startsWith('model:')) {
       await handleModelCallback(ctx);
     } else if (data.startsWith('mode:')) {

@@ -159,10 +159,19 @@ export function buildBackToPreviousButton(
  * keeping the conversation itself intact. No-op for non-PTY providers.
  */
 export function restartPtyForSettingChange(chatId: number, sessionKey: string): boolean {
-  if (getActiveProviderName(chatId) !== 'claude') return false;
-  if (userPreferences.getMethod(chatId) !== 'pty') return false;
+  if (!needsPtyRestart(chatId)) return false;
   getPtyProvider().clearConversation(sessionKey);
   return true;
+}
+
+/**
+ * Whether a spawn-time setting change would need a pty restart for this chat —
+ * the same test restartPtyForSettingChange makes, without doing it. For
+ * rebuilding a confirmation whose restart already happened.
+ */
+export function needsPtyRestart(chatId: number): boolean {
+  if (getActiveProviderName(chatId) !== 'claude') return false;
+  return userPreferences.getMethod(chatId) === 'pty';
 }
 
 /** Escaped MarkdownV2 note appended when a pty restart is pending. */

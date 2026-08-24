@@ -44,6 +44,13 @@ import {
 import { getSessionTopic } from './topic.js';
 import { getStreamingMode, setStreamingMode } from './streaming-mode.js';
 import { getBgProcesses } from './tasks.js';
+import {
+  parseScopeArg,
+  applyToAllBots,
+  buildApplyToAllKeyboard,
+  prefsConfirmation,
+  hasSiblings,
+} from './prefs-scope.js';
 
 const OPENAI_TTS_VOICES = [
   'alloy', 'ash', 'ballad', 'coral',
@@ -385,7 +392,9 @@ export async function handleEffort(ctx: Context): Promise<void> {
   const { chatId, sessionKey } = keyInfo;
 
   const text = ctx.message?.text || '';
-  const args = text.split(' ').slice(1).join(' ').trim().toLowerCase();
+  const parsed = parseScopeArg(text.split(' ').slice(1).join(' '));
+  const args = parsed.value.toLowerCase();
+  const scope = parsed.scope;
 
   if (!args) {
     const currentEffort = getEffort(chatId) || 'default';
@@ -402,8 +411,14 @@ export async function handleEffort(ctx: Context): Promise<void> {
       .map(l => `• *${esc(l.label)}* \\- ${esc(l.description)}`)
       .join('\n');
 
+    // Same scoping as /model: the tap sets this bot, the confirmation offers
+    // the rest. Stated here so neither scope has to be guessed at.
+    const scopeHint = hasSiblings()
+      ? `\n\nApplies to *${esc(config.BOT_NAME)}* only — add \`all\` \\(\`/effort high all\`\\) or use the button afterwards to set every bot\\.`
+      : '';
+
     await ctx.reply(
-      `🎯 *Effort Level*\n\n_Current: ${esc(currentEffort)}_\n\n${descriptions}\n• *Auto* \\- SDK default`,
+      `🎯 *Effort Level*\n\n_Current: ${esc(currentEffort)}_\n\n${descriptions}\n• *Auto* \\- SDK default${scopeHint}`,
       {
         parse_mode: 'MarkdownV2',
         reply_markup: { inline_keyboard: keyboard },
@@ -415,7 +430,20 @@ export async function handleEffort(ctx: Context): Promise<void> {
   if (args === 'auto' || args === 'default' || args === 'reset') {
     clearEffort(chatId);
     const restarted = restartPtyForSettingChange(chatId, sessionKey);
-    await replyMd(ctx, `✅ Effort reset to *auto* \\(CLI default\\)${restarted ? PTY_RESTART_NOTE : ''}`);
+    const where = hasSiblings() ? ` for *${esc(config.BOT_NAME)}*` : '';
+    const confirmation = `✅ Effort reset to *auto* \\(CLI default\\)${where}${restarted ? PTY_RESTART_NOTE : ''}`;
+    await replyWithScope(ctx, chatId, confirmation, 'effort', null, 'auto', scope);
+    return;
+  }
+
+  // A bare `all` is a scope with no level attached — point at the form that
+  // works rather than rejecting it as an unknown level.
+  if (args === 'all' || args === 'everywhere') {
+    await replyMd(
+      ctx,
+      `\`all\` sets every bot, but it needs a level to set them to\\.\n\n` +
+        `Try \`/effort high all\`, or /effort to pick one\\.`,
+    );
     return;
   }
 
@@ -427,7 +455,40 @@ export async function handleEffort(ctx: Context): Promise<void> {
   setEffort(chatId, args);
   const restarted = restartPtyForSettingChange(chatId, sessionKey);
   const info = EFFORT_LEVELS.find(l => l.id === args);
-  await replyMd(ctx, `✅ Effort set to *${esc(info?.label || args)}*${restarted ? PTY_RESTART_NOTE : ''}`);
+  const confirmation = `${prefsConfirmation('effort', info?.label || args)}${restarted ? PTY_RESTART_NOTE : ''}`;
+  await replyWithScope(ctx, chatId, confirmation, 'effort', args, args, scope);
+}
+
+/**
+ * Send a settings confirmation, either fanning the change out to the other
+ * bots (scope 'all') or offering to. `buttonValue` is what the fan-out button
+ * carries — the same spelling the picker uses, so 'auto' rather than null.
+ */
+async function replyWithScope(
+  ctx: Context,
+  chatId: number,
+  confirmation: string,
+  setting: 'model' | 'effort',
+  value: string | null,
+  buttonValue: string,
+  scope: 'this' | 'all',
+): Promise<void> {
+  if (scope === 'all') {
+    const summary = await applyToAllBots({
+      chatId,
+      setting,
+      value,
+      provider: getActiveProviderName(chatId),
+    });
+    await replyMd(ctx, `${confirmation}${summary}`);
+    return;
+  }
+
+  const keyboard = buildApplyToAllKeyboard(setting, buttonValue);
+  await ctx.reply(confirmation, {
+    parse_mode: 'MarkdownV2',
+    ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
+  });
 }
 
 export async function handleEffortCallback(ctx: Context): Promise<void> {
@@ -444,9 +505,14 @@ export async function handleEffortCallback(ctx: Context): Promise<void> {
     clearEffort(chatId);
     const restarted = restartPtyForSettingChange(chatId, sessionKey);
     await ctx.answerCallbackQuery({ text: 'Effort reset to auto!' });
+    const where = hasSiblings() ? ` for *${esc(config.BOT_NAME)}*` : '';
+    const keyboard = buildApplyToAllKeyboard('effort', 'auto');
     await ctx.editMessageText(
-      `✅ Effort reset to *auto* \\(CLI default\\)${restarted ? PTY_RESTART_NOTE : ''}`,
-      { parse_mode: 'MarkdownV2' },
+      `✅ Effort reset to *auto* \\(CLI default\\)${where}${restarted ? PTY_RESTART_NOTE : ''}`,
+      {
+        parse_mode: 'MarkdownV2',
+        ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
+      },
     );
     return;
   }
@@ -463,9 +529,13 @@ export async function handleEffortCallback(ctx: Context): Promise<void> {
   const displayName = info?.label || level;
 
   await ctx.answerCallbackQuery({ text: `Effort set to ${displayName}!` });
+  const keyboard = buildApplyToAllKeyboard('effort', level);
   await ctx.editMessageText(
-    `✅ Effort set to *${esc(displayName)}*${restarted ? PTY_RESTART_NOTE : ''}`,
-    { parse_mode: 'MarkdownV2' },
+    `${prefsConfirmation('effort', displayName)}${restarted ? PTY_RESTART_NOTE : ''}`,
+    {
+      parse_mode: 'MarkdownV2',
+      ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
+    },
   );
 }
 

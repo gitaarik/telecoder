@@ -52,6 +52,11 @@ export function markInFlight(sessionKey: string, messagePreview: string): void {
   writeAll(others);
 }
 
+/** Whether a turn is running for this session right now. */
+export function isInFlight(sessionKey: string): boolean {
+  return readAll().some((e) => e.sessionKey === sessionKey);
+}
+
 export function clearInFlight(sessionKey: string): void {
   const all = readAll();
   const filtered = all.filter((e) => e.sessionKey !== sessionKey);

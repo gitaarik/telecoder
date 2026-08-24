@@ -314,6 +314,15 @@ export class PtyProvider implements Provider {
     return this.sessions.get(sessionKey)?.term.pid;
   }
 
+  /**
+   * Live session keys belonging to `chatId` — the chat itself plus any forum
+   * topics under it. Spawn-time settings changed for a whole chat have to
+   * reach every one of them, and only this map knows which exist.
+   */
+  listSessionKeysForChat(chatId: number): string[] {
+    return [...this.sessions.keys()].filter((key) => parseSessionKey(key).chatId === chatId);
+  }
+
   async sendToAgent(sessionKey: string, message: string, options?: AgentOptions): Promise<AgentResponse> {
     const commandWrapped = wrapCommandPrompt(message, options?.command);
     const { prompt: promptToSend, tempPaths } = stageImagesForPty(commandWrapped, options?.images);

@@ -123,6 +123,7 @@ export {
   handleProviderCallback,
   handleProviderSwitchCallback,
 } from './command/model.js';
+export { handlePrefsAllCallback } from './command/prefs-scope.js';
 
 export function parseContextOutput(raw: string): string {
   const trimmed = raw.trim();

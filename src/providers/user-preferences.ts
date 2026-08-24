@@ -1,6 +1,21 @@
+/**
+ * Per-chat settings — model, effort, verbosity, transport, status-line toggles.
+ *
+ * One file per bot. Every instance used to share a single `user-preferences.json`
+ * keyed by chatId alone, which in a private chat is the same key on every bot:
+ * a `/model` on one instance silently became everyone's model, and — because
+ * each worker holds the whole file in memory and rewrites all of it on any
+ * change — the next instance to save any setting at all clobbered that choice
+ * back. Splitting the file by BOT_ID makes each bot the sole writer of its own
+ * state; deliberately sharing a setting across bots is now an explicit
+ * broadcast (see providers/prefs-sync.ts) rather than an accident of storage.
+ */
+
+import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
 import { ensureStateDir, getStateDir, readJsonFile, writeJsonFile } from '../utils/json-store.js';
+import { BOT_ID } from '../config.js';
 
 // Zod schema for user preferences
 const userPreferencesSchema = z.object({
@@ -27,7 +42,9 @@ const preferencesDataSchema = z.object({
 export type UserPreferences = z.infer<typeof userPreferencesSchema>;
 
 const PREFS_DIR = getStateDir();
-const PREFS_FILE = path.join(PREFS_DIR, 'user-preferences.json');
+const PREFS_FILE = path.join(PREFS_DIR, `user-preferences-${BOT_ID}.json`);
+/** The single shared file every instance wrote to before preferences were per-bot. */
+const LEGACY_PREFS_FILE = path.join(PREFS_DIR, 'user-preferences.json');
 
 class UserPreferencesManager {
   private data: Record<number, UserPreferences> = {};
@@ -38,11 +55,26 @@ class UserPreferencesManager {
   }
 
   private load(): void {
-    const loaded = readJsonFile(PREFS_FILE, preferencesDataSchema, 'UserPreferences');
+    // First start after the split: inherit whatever the shared file holds, so
+    // nobody's model or effort resets. The legacy file is read, never removed
+    // — sibling bots still on their first start need to seed from it too, and
+    // a downgrade should still find it.
+    const seeding = !fs.existsSync(PREFS_FILE);
+    const loaded = seeding
+      ? readJsonFile(LEGACY_PREFS_FILE, preferencesDataSchema, 'UserPreferences')
+      : readJsonFile(PREFS_FILE, preferencesDataSchema, 'UserPreferences');
+
     // Convert string keys back to numbers
     this.data = Object.fromEntries(
       Object.entries(loaded?.users ?? {}).map(([k, v]) => [parseInt(k, 10), v])
     ) as Record<number, UserPreferences>;
+
+    // Claim the per-bot file straight away rather than on the next setting
+    // change, so the inherited values are visibly this bot's from now on.
+    if (seeding && Object.keys(this.data).length > 0) {
+      console.log(`[UserPreferences] Seeded ${path.basename(PREFS_FILE)} from ${path.basename(LEGACY_PREFS_FILE)} (${Object.keys(this.data).length} chat(s))`);
+      this.save();
+    }
   }
 
   private save(): void {

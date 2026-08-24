@@ -20,6 +20,7 @@ import { legacyEnv } from './utils/legacy-env.js';
 import { planRespawn } from './utils/respawn-backoff.js';
 import { tickWasStalled, withinStallCooldown, shouldEscalateWedged } from './utils/host-stall.js';
 import { fingerprintModuleGraph, launcherHasChanged } from './utils/stale-launcher.js';
+import { PrefsRelay } from './utils/prefs-relay.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
@@ -261,7 +262,30 @@ interface WorkerMessage {
   type: string;
   name?: string;
   autoResume?: boolean;
+  /** prefs_broadcast / prefs_apply_result — see relayPrefsBroadcast below. */
+  requestId?: string;
+  change?: unknown;
+  status?: string;
+  reason?: string;
+  busy?: number;
 }
+
+// ---------------------------------------------------------------------------
+// Preference broadcasts
+//
+// One bot's /model or /effort, applied to the rest on request. The launcher is
+// only a relay: it forwards the change to every other live worker, collects
+// what each did with it and hands the summary back to whoever asked, so the
+// confirmation in Telegram names the bots that actually took the change rather
+// than the ones that were merely configured. See providers/prefs-sync.ts for
+// both ends, and utils/prefs-relay.ts for the bookkeeping in between.
+// ---------------------------------------------------------------------------
+
+const prefsRelay = new PrefsRelay();
+
+// Shorter than the requesting worker's own timeout, so a silent sibling costs
+// it a partial answer rather than no answer at all.
+const PREFS_BROADCAST_TIMEOUT_MS = 3500;
 
 // Mirrors getReloadMarkerPathForBotId in src/config.ts. We can't import config
 // here because the launcher process has no TELEGRAM_BOT_TOKEN env var (only
@@ -439,6 +463,50 @@ function spawnWorker(inst: ResolvedInstance): Worker {
         console.warn(`[Launcher] ${inst.name} rebuilt the launcher's own code — this process keeps running the copy it started with until it is restarted`);
       }
       worker.postMessage({ type: 'launcher_stale_result', stale });
+    } else if (msg?.type === 'prefs_broadcast') {
+      const requestId = msg.requestId;
+      if (!requestId) return;
+
+      const liveNames = new Set(workers.keys());
+      const unreachable = instances.filter(i => !liveNames.has(i.name)).map(i => i.name);
+      const delivered: string[] = [];
+
+      for (const [name, sibling] of workers) {
+        if (name === inst.name) continue;
+        try {
+          sibling.postMessage({ type: 'prefs_apply', requestId, change: msg.change });
+          delivered.push(name);
+        } catch (err) {
+          console.warn(`[Launcher] Could not relay preference change to ${name}: ${err instanceof Error ? err.message : err}`);
+          unreachable.push(name);
+        }
+      }
+
+      console.log(`[Launcher] ${inst.name} broadcast a preference change to ${delivered.length} sibling(s)${unreachable.length ? ` (${unreachable.length} unreachable)` : ''}`);
+
+      prefsRelay.begin(requestId, {
+        awaiting: delivered,
+        unreachable,
+        timeoutMs: PREFS_BROADCAST_TIMEOUT_MS,
+        onTimeout: (stillAwaiting) => {
+          console.warn(`[Launcher] prefs broadcast ${requestId} timed out waiting on: ${stillAwaiting.join(', ')}`);
+        },
+        onSettle: (summary) => {
+          try {
+            worker.postMessage({ type: 'prefs_broadcast_result', requestId, ...summary });
+          } catch (err) {
+            console.warn(`[Launcher] Could not return prefs broadcast result to ${inst.name}: ${err instanceof Error ? err.message : err}`);
+          }
+        },
+      });
+    } else if (msg?.type === 'prefs_apply_result') {
+      if (!msg.requestId) return;
+      prefsRelay.record(msg.requestId, {
+        name: inst.name,
+        status: msg.status === 'applied' ? 'applied' : 'skipped',
+        reason: msg.reason,
+        busy: msg.busy,
+      });
     } else if (msg?.type === 'restart_all') {
       console.log(`[Launcher] ${inst.name} requested restart of ALL instances${msg.autoResume ? ' (with auto-resume)' : ''} — ${instances.length} configured, ${workers.size} live`);
       const liveNames = new Set(workers.keys());
@@ -484,6 +552,9 @@ function spawnWorker(inst: ResolvedInstance): Worker {
     // leaving a dead entry there makes it chase an instance that no longer has
     // a restarter to drive.
     workers.delete(inst.name);
+    // A dead worker will never answer a preference broadcast. Say so now
+    // rather than making the bot that asked wait out the timeout.
+    prefsRelay.abandonEverywhere(inst.name);
 
     if (pendingRestarts.has(inst.name)) {
       // Planned restart — respawn after a short delay

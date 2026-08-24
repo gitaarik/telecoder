@@ -22,6 +22,7 @@ import { startScheduledRunner } from './claude/scheduled-runner.js';
 import { setMonitorRelayBot } from './claude/monitor-relay.js';
 import { setUpdateBannerRelayBot } from './claude/update-banner-relay.js';
 import { startPendingForkWatcher } from './bot/handlers/fork.handler.js';
+import { initPrefsSync } from './providers/prefs-sync.js';
 import { stripParentClaudeSession } from './utils/claude-env.js';
 import { syncBotNameOnStartup } from './telegram/botname-settings.js';
 import { autoResumeAfterReload } from './startup/auto-resume.js';
@@ -72,6 +73,9 @@ async function main() {
 
   // Scope session history to this bot instance so multi-bot setups don't cross-restore
   sessionHistory.initForBot(BOT_ID);
+
+  // Accept model/effort changes another instance chose to apply fleet-wide.
+  initPrefsSync();
 
   // Prevent system sleep on macOS (only when running standalone, not as worker)
   if (isMainThread) preventSleep();
