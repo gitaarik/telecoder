@@ -33,11 +33,49 @@ interface JsonlRecord {
    * status line ends up showing 0 tokens / `<synthetic>` model.
    */
   isApiErrorMessage?: boolean;
+  /**
+   * Provenance of a user-role record. `origin.kind` is `'human'` for something
+   * the user actually sent and `'task-notification'` for a background task
+   * reporting in; `promptSource` is `'system'` for anything Claude Code
+   * injected on its own. `isMeta` marks the `<local-command-caveat>` wrapper a
+   * local slash command writes, `isCompactSummary` the summary a compaction
+   * leaves behind. See isSyntheticUserRecord.
+   */
+  origin?: { kind?: string };
+  promptSource?: string;
+  isMeta?: boolean;
+  isCompactSummary?: boolean;
 }
 
 /** True if this record is the synthetic "API Error" stop record Claude Code writes when an in-flight request dies. */
 function isApiErrorRecord(rec: JsonlRecord | Record<string, unknown>): boolean {
   return (rec as JsonlRecord).isApiErrorMessage === true;
+}
+
+/**
+ * True if a user-role record carrying prose was injected by Claude Code rather
+ * than sent by the user — so it must not be treated as a turn boundary.
+ *
+ * The one that actually bites is `<task-notification>`: a background task
+ * (Bash `run_in_background`, a Task/Agent subagent, the post-push security
+ * review) finishing mid-turn writes a *user*-role record with real text in it.
+ * Boundary logic that only asks "is this a user record with prose?" then slices
+ * the turn at the notification and hands back nothing but the tail the model
+ * wrote after it — the whole answer above it is silently dropped. That is the
+ * "reply arrives truncated, /recap shows the rest" bug, and it lands exactly
+ * where the user least wants it: long turns that ran background work.
+ *
+ * Denylist rather than `origin.kind === 'human'` allowlist on purpose. Records
+ * written by older Claude Code versions carry none of these fields, and an
+ * allowlist would classify every one of them as synthetic — leaving no
+ * boundary at all and degrading a working read into a screen-scrape fallback.
+ * Unknown shapes keep the old behaviour; only the known-synthetic ones move.
+ */
+function isSyntheticUserRecord(rec: JsonlRecord): boolean {
+  return rec.origin?.kind === 'task-notification'
+    || rec.promptSource === 'system'
+    || rec.isMeta === true
+    || rec.isCompactSummary === true;
 }
 
 /** Build the path Claude Code uses to store a session's JSONL log. */
@@ -232,6 +270,10 @@ export function readLastAssistantTurnText(
   // dropping all assistant text emitted earlier in the same turn. Filtering
   // user records by `text.length > 0` discards tool_result-only records
   // (extractText returns '' for those) and isolates real prompts.
+  //
+  // Prose alone isn't enough to prove a record is a prompt, though: a
+  // background task reporting in writes a user-role record full of text.
+  // isSyntheticUserRecord keeps those from stealing the boundary.
   let lastPromptIdx = -1;
   const records: { role: 'user' | 'assistant'; text: string }[] = [];
   for (const line of lines) {
@@ -248,7 +290,9 @@ export function readLastAssistantTurnText(
     if (isApiErrorRecord(rec)) continue;
     const text = extractText(rec.message?.content);
     records.push({ role, text });
-    if (role === 'user' && text.length > 0) lastPromptIdx = records.length - 1;
+    if (role === 'user' && text.length > 0 && !isSyntheticUserRecord(rec)) {
+      lastPromptIdx = records.length - 1;
+    }
   }
 
   if (lastPromptIdx === -1) return undefined;
@@ -282,7 +326,11 @@ export interface UserPromptMarker {
  * if it were a fresh one.
  *
  * tool_result records are user-role too, so real prompts are isolated the same
- * way as above: by requiring non-empty prose after tool blocks are filtered.
+ * way as above: by requiring non-empty prose after tool blocks are filtered,
+ * and by skipping the injected records isSyntheticUserRecord names. Without
+ * that second filter a background task finishing between submit and end-of-turn
+ * moves the marker on its own, and a prompt the editor swallowed reads as
+ * delivered.
  */
 export function readLastUserPromptMarker(
   workingDirectory: string,
@@ -302,6 +350,7 @@ export function readLastUserPromptMarker(
     try { rec = JSON.parse(line) as JsonlRecord; }
     catch { continue; }
     if (rec.type !== 'user') continue;
+    if (isSyntheticUserRecord(rec)) continue;
     const text = extractText(rec.message?.content);
     if (!text) continue;
     last = { id: rec.uuid ?? `${rec.timestamp ?? ''}|${text.slice(0, 120)}`, text };
@@ -341,7 +390,7 @@ export function readLastApiErrorFromJsonl(
     if (!role) continue;
     const text = extractText(rec.message?.content);
     records.push({ role, apiError: isApiErrorRecord(rec), text });
-    if (role === 'user' && text.length > 0 && !isApiErrorRecord(rec)) {
+    if (role === 'user' && text.length > 0 && !isApiErrorRecord(rec) && !isSyntheticUserRecord(rec)) {
       lastPromptIdx = records.length - 1;
     }
   }
@@ -427,6 +476,11 @@ export function readRecentExchanges(
     const role = rec.type === 'user' ? 'user' : rec.type === 'assistant' ? 'assistant' : null;
     if (!role) continue;
     if (isApiErrorRecord(rec)) continue;
+    // Injected user-role records (a background task reporting in, a slash
+    // command's caveat wrapper) are not something the user said. Left in, they
+    // read as the user pasting XML and they split one reply into two
+    // exchanges, so the recap shows half an answer per entry.
+    if (role === 'user' && isSyntheticUserRecord(rec)) continue;
 
     const text = extractText(rec.message?.content);
     if (!text) continue; // pure tool_result / tool_use / thinking — skip

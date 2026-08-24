@@ -75,6 +75,21 @@ describe('readLastUserPromptMarker', () => {
     expect(readLastUserPromptMarker(CWD, SESSION)?.id).toBe('u1');
   });
 
+  it('ignores a background task notification, which is user-role and carries text', () => {
+    // Otherwise a task finishing between submit and end-of-turn moves the
+    // marker by itself, and a prompt the editor swallowed reads as delivered.
+    writeLog([
+      userPrompt('u1', 'the real prompt'),
+      assistant('a1', 'working'),
+      {
+        type: 'user', uuid: 'n1', timestamp: '2026-07-29T18:00:03.000Z',
+        promptSource: 'system', origin: { kind: 'task-notification' },
+        message: { role: 'user', content: '<task-notification>\n<status>completed</status>\n</task-notification>' },
+      },
+    ]);
+    expect(readLastUserPromptMarker(CWD, SESSION)?.id).toBe('u1');
+  });
+
   it('changes identity once a new prompt lands — the signal that a turn was delivered', () => {
     writeLog([userPrompt('u1', 'in what dir are you now?')]);
     const before = readLastUserPromptMarker(CWD, SESSION);

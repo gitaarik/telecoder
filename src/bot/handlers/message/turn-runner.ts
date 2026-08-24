@@ -19,7 +19,7 @@ import { maybeSendVoiceReply } from '../../../tts/voice-reply.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 import { getStreamingMode, sendStatusLine } from '../command.handler.js';
 import { fireAutoTopic, runQueuedTurn } from './shared.js';
-import { sendTurnNotifications } from './turn-notify.js';
+import { relayCatchUpIfMissed, sendTurnNotifications } from './turn-notify.js';
 import { lastThrottledPrompt, postThrottlePrompt } from './throttle.js';
 
 
@@ -126,6 +126,7 @@ async function handleStreamingResponse(
     });
 
     await messageSender.finishStreaming(ctx, response.text, { nextPromptSuggestion: response.nextPromptSuggestion });
+    await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
     await maybeSendVoiceReply(ctx, response.text);
 
     // Completion notification for long tasks (streaming edits don't trigger push notifications)
@@ -169,6 +170,7 @@ async function handleWaitResponse(
 
     const sentId = await messageSender.sendMessage(ctx, response.text);
     await messageSender.attachForkButton(ctx, sessionKey, sentId);
+    await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
     await maybeSendVoiceReply(ctx, response.text);
 
     // Context visibility notifications
