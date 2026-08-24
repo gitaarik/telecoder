@@ -223,13 +223,47 @@ What that buys you:
   is in force, your role, the guarded patterns, and a warning if the current
   chat is on a transport where the gate can't fire.
 
+Write the house rules in `CHARTER.md` at your workspace root — see
+[`docs/CHARTER.example.md`](docs/CHARTER.example.md) for a starting point.
+
 > [!IMPORTANT]
-> This is supervision, not isolation. Claude still runs as your Unix user with
-> permissions bypassed, so a guest's session can read anything that user can —
-> including other projects, `~/.ssh`, and this bot's own `.env`. `WORKSPACE_DIR`
-> scopes the project picker, not the filesystem. If the people you're sharing
-> with shouldn't have that reach, run the shared instance as a **separate Unix
-> user** whose home holds only the shared projects.
+> All of the above is supervision, not isolation. Claude still runs as your Unix
+> user with permissions bypassed, so a guest's session can reach anything that
+> user can. `WORKSPACE_DIR` scopes the project picker, not the filesystem. For a
+> real boundary, run the shared instance as its own Unix account — below.
+
+### A real boundary: its own Unix account
+
+Supervision decides what needs your attention. Unix decides what is reachable at
+all. If the people you're sharing with shouldn't be able to read your other
+projects even in principle, the shared bot needs an account that owns nothing but
+the shared projects:
+
+```bash
+sudo ./scripts/setup-shared-bot-user.sh --operator "$USER"
+```
+
+That script locks down your home directory, creates a `telefriends` account with
+no sudo and no docker (the docker group is root-equivalent), gives it a projects
+directory and its own TeleCoder checkout, writes a starter `.env` with the
+sharing settings already filled in, and installs a lingering `systemd --user`
+service so it survives a reboot. Authenticating Claude and pasting the bot token
+stay yours — both are interactive, and neither belongs in a script's arguments.
+
+It ends by verifying its own work, which you can re-run at any time:
+
+```bash
+sudo ./scripts/setup-shared-bot-user.sh --verify
+```
+
+The check doesn't reason about modes; it becomes the account and *tries* to read
+your secrets, which is the only form of that answer worth trusting.
+
+> [!WARNING]
+> Check this before adding any account: a home directory at mode `0751` lets
+> other accounts traverse into it, so every world-readable file inside is
+> reachable by absolute path — and a `.env` written at the default `0664` is one
+> of them. `--verify` reports it; the setup script fixes it.
 
 ---
 
