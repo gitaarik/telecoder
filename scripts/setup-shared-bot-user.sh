@@ -30,6 +30,15 @@ REPO_SRC=""
 VERIFY_ONLY=false
 HARDEN=true
 
+# Resource ceilings. A shared bot runs builds, and a build with no ceiling on a
+# machine that is already busy does not fail politely — it takes the other
+# services down with it. Defaults leave roughly half of a 4-core / 8GB box for
+# whatever else is running; override on a bigger machine.
+MEM_HIGH="1G"     # soft: the kernel throttles and reclaims past this
+MEM_MAX="2G"      # hard: OOM-kill the service, not the machine
+CPU_QUOTA="200%"  # two cores' worth
+TASKS_MAX="2048"  # builds fan out; too low breaks npm, too high is no limit
+
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 say() { printf '\033[36m==>\033[0m %s\n' "$*"; }
 ok()  { printf '  \033[32m✓\033[0m %s\n' "$*"; }
@@ -46,6 +55,8 @@ while [ $# -gt 0 ]; do
     --operator) OPERATOR="${2:?--operator needs a name}"; shift 2 ;;
     --repo)     REPO_SRC="${2:?--repo needs a path}"; shift 2 ;;
     --no-harden) HARDEN=false; shift ;;
+    --memory-max) MEM_MAX="${2:?--memory-max needs a value}"; shift 2 ;;
+    --cpu-quota)  CPU_QUOTA="${2:?--cpu-quota needs a value}"; shift 2 ;;
     --verify)   VERIFY_ONLY=true; shift ;;
     -h|--help)  usage ;;
     *) die "unknown argument: $1" ;;
@@ -110,6 +121,15 @@ EOF
     else
       failures=$((failures + leaked))
     fi
+
+    say "Resource use"
+    local used; used="$(du -sh "$BOT_HOME" 2>/dev/null | cut -f1)"
+    local free; free="$(df -h --output=avail "$BOT_HOME" 2>/dev/null | tail -1 | tr -d ' ')"
+    ok "$BOT_HOME uses $used; $free free on that filesystem"
+    # systemd caps memory, CPU and process count, but not disk. Filesystem
+    # quotas are the only real answer there and they need the filesystem set up
+    # for it, so this reports rather than enforces.
+    warn "disk is not capped — set a filesystem quota if that matters to you"
 
     if sudo -u "$BOT_USER" sudo -n true 2>/dev/null; then
       warn "$BOT_USER has passwordless sudo — that defeats the whole exercise"
@@ -269,6 +289,16 @@ PrivateTmp=true
 NoNewPrivileges=true
 ProtectKernelTunables=true
 RestrictSUIDSGID=true
+
+# Ceilings. MemoryHigh throttles first so an ordinary large build slows down
+# instead of being killed; MemoryMax is the backstop that keeps a runaway from
+# taking the host with it. IOWeight below the default means this service yields
+# disk to everything else rather than competing with it.
+MemoryHigh=$MEM_HIGH
+MemoryMax=$MEM_MAX
+CPUQuota=$CPU_QUOTA
+TasksMax=$TASKS_MAX
+IOWeight=50
 
 [Install]
 WantedBy=default.target
