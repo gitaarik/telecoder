@@ -5,6 +5,7 @@ import {
   buildAnswerConfirmation,
   createPendingQuestion,
   resolvePendingQuestion,
+  getQuestionResponders,
   hasPendingQuestionForSession,
 } from '../../src/claude/ask-user.js';
 
@@ -105,7 +106,7 @@ describe('hasPendingQuestionForSession', () => {
     const { id, promise } = createPendingQuestion(['A', 'B'], undefined, 'chat-1');
     expect(hasPendingQuestionForSession('chat-1')).toBe(true);
 
-    expect(resolvePendingQuestion(id, 1)).toBe(true);
+    expect(resolvePendingQuestion(id, 1)).toBe('resolved');
     await expect(promise).resolves.toEqual({ label: 'B', index: 1 });
     expect(hasPendingQuestionForSession('chat-1')).toBe(false);
   });
@@ -136,8 +137,53 @@ describe('hasPendingQuestionForSession', () => {
 
   it('does not leak the flag when the tapped index has no matching option', async () => {
     const { id, promise } = createPendingQuestion(['A', 'B'], undefined, 'chat-4');
-    expect(resolvePendingQuestion(id, 9)).toBe(true);
+    expect(resolvePendingQuestion(id, 9)).toBe('resolved');
     await expect(promise).resolves.toBeNull();
     expect(hasPendingQuestionForSession('chat-4')).toBe(false);
+  });
+});
+
+describe('restricted questions', () => {
+  it('lets a listed responder answer', async () => {
+    const { id, promise } = createPendingQuestion(['A', 'B'], undefined, 'chat-r1', [7, 8]);
+    expect(resolvePendingQuestion(id, 0, 7)).toBe('resolved');
+    await expect(promise).resolves.toEqual({ label: 'A', index: 0 });
+  });
+
+  it('refuses an unlisted responder and keeps the question open', async () => {
+    const { id, promise } = createPendingQuestion(['A', 'B'], undefined, 'chat-r2', [7]);
+
+    expect(resolvePendingQuestion(id, 0, 99)).toBe('forbidden');
+    // Still answerable by the right person — a refused tap must not consume it.
+    expect(hasPendingQuestionForSession('chat-r2')).toBe(true);
+    expect(resolvePendingQuestion(id, 1, 7)).toBe('resolved');
+    await expect(promise).resolves.toEqual({ label: 'B', index: 1 });
+  });
+
+  it('fails closed when no responder id is supplied', async () => {
+    const { id } = createPendingQuestion(['A', 'B'], undefined, 'chat-r3', [7]);
+    expect(resolvePendingQuestion(id, 0)).toBe('forbidden');
+  });
+
+  it('ignores the responder id on an unrestricted question', () => {
+    const { id } = createPendingQuestion(['A', 'B'], undefined, 'chat-r4');
+    expect(resolvePendingQuestion(id, 0, 12345)).toBe('resolved');
+  });
+
+  it('treats an empty responder list as unrestricted rather than unanswerable', () => {
+    const { id } = createPendingQuestion(['A', 'B'], undefined, 'chat-r5', []);
+    expect(getQuestionResponders(id)).toBeUndefined();
+    expect(resolvePendingQuestion(id, 0, 999)).toBe('resolved');
+  });
+
+  it('reports the allowed responders so the refusal can name them', () => {
+    const { id } = createPendingQuestion(['A', 'B'], undefined, 'chat-r6', [7, 8]);
+    expect(getQuestionResponders(id)).toEqual([7, 8]);
+    resolvePendingQuestion(id, 0, 7);
+    expect(getQuestionResponders(id)).toBeUndefined();
+  });
+
+  it('reports expired for an unknown id regardless of responder', () => {
+    expect(resolvePendingQuestion('deadbeef', 0, 7)).toBe('expired');
   });
 });

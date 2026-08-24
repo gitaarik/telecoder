@@ -6,6 +6,7 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import { config } from '../config.js';
 import { buildSessionKey } from '../utils/session-key.js';
 import { authMiddleware } from './middleware/auth.middleware.js';
+import { adminOnly } from './middleware/admin-only.js';
 import {
   handleStart,
   handleClear,
@@ -96,7 +97,13 @@ import {
   handleUnsupportedMediaDocument,
 } from './handlers/media-fallback.js';
 import { createBatchMiddleware } from './middleware/message-batcher.js';
-import { resolvePendingQuestion, appendAnsweredFooter, buildAnswerConfirmation } from '../claude/ask-user.js';
+import {
+  resolvePendingQuestion,
+  getQuestionResponders,
+  appendAnsweredFooter,
+  buildAnswerConfirmation,
+} from '../claude/ask-user.js';
+import { describeResponderRefusal } from '../telegram/admin-mention.js';
 import { resolvePendingPoll } from '../claude/poll-user.js';
 import { registerBotCommandName } from '../claude/command-parser.js';
 
@@ -111,9 +118,17 @@ async function handleAskUserCallback(ctx: Context): Promise<void> {
   const idx = parseInt(idxStr, 10);
   if (Number.isNaN(idx)) return;
 
-  const resolved = resolvePendingQuestion(id, idx);
-  if (!resolved) {
+  const outcome = resolvePendingQuestion(id, idx, ctx.from?.id);
+  if (outcome === 'expired') {
     await ctx.answerCallbackQuery({ text: 'This question already expired.' });
+    return;
+  }
+  if (outcome === 'forbidden') {
+    // Leave the keyboard up — the people who *can* answer still need it.
+    await ctx.answerCallbackQuery({
+      text: describeResponderRefusal(getQuestionResponders(id)),
+      show_alert: true,
+    });
     return;
   }
 
@@ -303,8 +318,11 @@ export async function createBot(): Promise<Bot> {
   cmd('stop', handleCancel); // alias — natural expectation for "stop the current turn"
   cmd('ping', handlePing);
   cmd('status', handleStatus);
-  cmd('restartbot', handleRestartBot);
-  cmd('rebuildbot', handleRebuild);
+  // Lifecycle and transport are admin-only: they act on every session in the
+  // bot, not just the caller's, and /method decides whether the permission gate
+  // (a PreToolUse hook, so PTY-only) is in the loop at all.
+  cmd('restartbot', adminOnly(handleRestartBot));
+  cmd('rebuildbot', adminOnly(handleRebuild));
   cmd('btw', handleBtw); // Side question — must bypass queue to work mid-task
   cmd('tasks', handleTasks); // Read-only; must bypass queue so it works mid-stream
   cmd('shells', handleShells); // Lists/kills OS-level bg processes; must bypass queue to rescue hung sessions
@@ -339,8 +357,8 @@ export async function createBot(): Promise<Bot> {
   // for the same reason their parent commands do: users tap these precisely
   // when the bot is hung, so the callback can't be queued behind the stuck
   // request.
-  bot.callbackQuery(/^restartbot:/, handleRestartBotCallback);
-  bot.callbackQuery(/^rebuild:/, handleRebuildCallback);
+  bot.callbackQuery(/^restartbot:/, adminOnly(handleRestartBotCallback));
+  bot.callbackQuery(/^rebuild:/, adminOnly(handleRebuildCallback));
 
   // Batch consecutive text messages BEFORE sequentialize.
   // When Telegram splits a long paste into multiple messages, this combines
@@ -372,18 +390,18 @@ export async function createBot(): Promise<Bot> {
   // here (rather than relying on fall-through to the text handler) makes dispatch
   // explicit and lets grammY match the group-chat `/compact@BotName` form.
   cmd('compact', handleMessage, { forwardsToAgent: true });
-  cmd('update', handleUpdate);
+  cmd('update', adminOnly(handleUpdate));
 
   cmd('commands', handleCommands);
   cmd('model', handleModelCommand);
   cmd('effort', handleEffort);
   cmd('verbosity', handleVerbosity);
-  cmd('method', handleMethodCommand);
+  cmd('method', adminOnly(handleMethodCommand));
   if (config.CCR_ENABLED) {
-    cmd('provider', handleProviderCommand);
+    cmd('provider', adminOnly(handleProviderCommand));
   }
   if (config.CCR_ENABLED) {
-    cmd('ccr', handleCcrCommand);
+    cmd('ccr', adminOnly(handleCcrCommand));
   }
   cmd('plan', handlePlan);
   cmd('explore', handleExplore);
@@ -441,9 +459,9 @@ export async function createBot(): Promise<Bot> {
     if (data.startsWith('resume:')) {
       await handleResumeCallback(ctx);
     } else if (data.startsWith('provider_switch:')) {
-      await handleProviderSwitchCallback(ctx);
+      await adminOnly(handleProviderSwitchCallback)(ctx);
     } else if (data.startsWith('provider:')) {
-      await handleProviderCallback(ctx);
+      await adminOnly(handleProviderCallback)(ctx);
     } else if (data.startsWith('prefs_all:')) {
       await handlePrefsAllCallback(ctx);
     } else if (data.startsWith('model:')) {
@@ -477,13 +495,13 @@ export async function createBot(): Promise<Bot> {
     } else if (data.startsWith('startup:')) {
       await handleStartupCallback(ctx);
     } else if (data.startsWith('update:')) {
-      await handleUpdateCallback(ctx);
+      await adminOnly(handleUpdateCallback)(ctx);
     } else if (data.startsWith('effort:')) {
       await handleEffortCallback(ctx);
     } else if (data.startsWith('verbosity:')) {
       await handleVerbosityCallback(ctx);
     } else if (data.startsWith('method:')) {
-      await handleMethodCallback(ctx);
+      await adminOnly(handleMethodCallback)(ctx);
     } else if (data.startsWith('ccr_throttle:')) {
       await handleCcrThrottleCallback(ctx);
     } else if (data.startsWith('sgt:')) {

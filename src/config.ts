@@ -23,6 +23,48 @@ const envSchema = z.object({
     .string()
     .default('')
     .transform((val) => val ? val.split(',').map((id) => parseInt(id.trim(), 10)) : []),
+  // The subset of ALLOWED_USER_IDS that may approve permission prompts and run
+  // bot-lifecycle / transport commands. Empty means every allowed user is an
+  // admin, which is the behaviour every install had before this existed — so a
+  // solo bot is unaffected and only a shared one needs to set it.
+  // See src/utils/admins.ts for the roster logic.
+  ADMIN_USER_IDS: z
+    .string()
+    .default('')
+    .transform((val) =>
+      val
+        ? val.split(',').map((id) => parseInt(id.trim(), 10)).filter((id) => Number.isFinite(id))
+        : []
+    ),
+  // Confine non-admins to the groups in ALLOWED_GROUP_IDS. Without this a
+  // shared bot is still reachable in a private chat, where the owner cannot
+  // see what is being asked of it — which defeats the point of sharing it in a
+  // group. Admins are unaffected and can always DM the bot.
+  RESTRICT_TO_GROUPS: z.string().default('false').transform(toBool),
+  // Scope guard: prompt when a tool call names a path outside the shared
+  // projects, or a credential path anywhere. 'auto' follows the permission
+  // gate, which is what a shared bot wants; 'on'/'off' force it.
+  SCOPE_GUARD: z.enum(['auto', 'on', 'off']).default('auto'),
+  // Extra directories the scope guard treats as in-bounds, on top of
+  // WORKSPACE_DIR and the temp dir. Comma-separated absolute paths.
+  SCOPE_ALLOWED_PATHS: z
+    .string()
+    .default('')
+    .transform((val) => (val ? val.split(',').map((p) => p.trim()).filter(Boolean) : [])),
+  // Charter judge: a Haiku side-call that reads each guest's message against a
+  // plain-language charter and holds anything out of bounds for an admin.
+  // 'auto' turns it on when the bot has guests.
+  CHARTER_JUDGE: z.enum(['auto', 'on', 'off']).default('auto'),
+  // Path to the charter the judge reads. Defaults to CHARTER.md in the
+  // workspace root when that file exists, and to a generated one otherwise.
+  CHARTER_FILE: z.string().default(''),
+  // How long a permission prompt waits for an admin before auto-denying.
+  // Ten minutes is fine when the approver is the person who typed the request;
+  // when it is someone else's request waiting on you, it usually is not.
+  PERMISSION_PROMPT_TIMEOUT_MINUTES: z
+    .string()
+    .default('10')
+    .transform((val) => parseInt(val, 10)),
   ANTHROPIC_API_KEY: z.string().optional(), // Optional - uses Claude Max subscription if not set
   // OpenAI (TTS)
   OPENAI_API_KEY: z.string().optional(),
@@ -83,6 +125,11 @@ const envSchema = z.object({
     .default('false')
     .transform((val) => val.toLowerCase() === 'true'),
   BOT_MODE: z.enum(['dev', 'prod']).default('dev'),
+  // Transport a chat uses until someone picks one with /method. The permission
+  // gate is a PreToolUse hook on the spawned CLI, so it only exists on 'pty' —
+  // a supervised bot wants that as the default rather than relying on someone
+  // remembering to switch. Per-chat /method still wins.
+  CLAUDE_METHOD_DEFAULT: z.enum(['sdk', 'pty']).default('sdk'),
   STREAMING_MODE: z.enum(['streaming', 'wait']).default('streaming'),
   STREAMING_DEBOUNCE_MS: z
     .string()

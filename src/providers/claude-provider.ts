@@ -3,6 +3,7 @@ import { userPreferences } from './user-preferences.js';
 import { sdkProvider } from './sdk-provider.js';
 import { PtyProvider } from '../claude/pty-provider.js';
 import { parseSessionKey } from '../utils/session-key.js';
+import { config } from '../config.js';
 import type { Provider, AgentOptions, LoopOptions, AgentResponse, AgentUsage, ModelInfo } from './types.js';
 
 // Instantiate both providers. The router will decide which one to use.
@@ -13,7 +14,10 @@ export function getPtyProvider(): PtyProvider {
 }
 
 function getMethod(chatId: number): 'sdk' | 'pty' {
-  return userPreferences.getMethod(chatId) || 'sdk'; // Default to SDK
+  // Per-chat /method wins; CLAUDE_METHOD_DEFAULT decides for a chat that has
+  // never picked one. A supervised bot sets it to 'pty', where the permission
+  // gate's PreToolUse hook actually runs.
+  return userPreferences.getMethod(chatId) || config.CLAUDE_METHOD_DEFAULT;
 }
 
 /**

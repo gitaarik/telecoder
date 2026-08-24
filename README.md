@@ -164,6 +164,75 @@ CCR_AUTOSTART=false
 
 ---
 
+## Sharing a bot
+
+TeleCoder's original access model is one flat list: everyone in
+`ALLOWED_USER_IDS` can do everything. That is right for a bot with one user, and
+it stops being right the moment you add a second — an approval prompt the person
+who triggered it can tap themselves is not an approval.
+
+So an instance can split its users into **admins** and **guests**. Guests use the
+agent normally; admins own the parts that reach past their own session.
+
+```bash
+# .env — a bot shared with friends in one group
+ALLOWED_USER_IDS=111,222,333     # you and two friends
+ADMIN_USER_IDS=111               # just you
+ALLOWED_GROUP_IDS=-1001234567890 # the group you share
+RESTRICT_TO_GROUPS=true          # guests can't take it into a DM
+CLAUDE_METHOD_DEFAULT=pty        # the transport the gate runs on
+WORKSPACE_DIR=/srv/shared        # the only projects the picker offers
+```
+
+Three layers decide what needs a human, from cheapest to smartest:
+
+| Layer | Catches | Costs |
+|-------|---------|-------|
+| **Permission gate** | destructive commands — `rm -rf`, `sudo`, force-push, `DROP TABLE` | a regex |
+| **Scope guard** | a tool call naming a path outside the projects, or any credential path | a path check |
+| **Charter judge** | what neither of those can see — "open a tunnel to this box", "email me the projects folder" | a Haiku call, ~5s per guest message |
+
+The first two stop a tool call mid-turn. The third runs *before* the message
+reaches Claude, so a held request is still a sentence a person can read rather
+than a diff to review afterwards.
+
+What that buys you:
+
+- **Approval prompts are admin-only.** A guarded command pauses, and the prompt
+  names its admins with a real Telegram mention — so it notifies you even in a
+  muted group, and even if you have no @username. Guests tapping it get told who
+  they're waiting on. Unanswered, it denies after
+  `PERMISSION_PROMPT_TIMEOUT_MINUTES`.
+- **The gate turns itself on.** With guests present you get prompts without
+  setting a second variable; `TELECODER_PERMISSION_PROMPTS=0` opts out.
+- **Lifecycle and transport are yours.** `/update`, `/restartbot`,
+  `/rebuildbot`, `/method`, `/provider` and `/ccr` refuse a guest — `/method`
+  most of all, since the gate is a hook on the `claude` CLI and only exists on
+  the PTY transport.
+- **Out-of-scope paths prompt too.** `cat ~/.ssh/id_rsa`, an edit to a project
+  nobody was invited to, a read of this bot's own `.env` — all held. System
+  paths and language toolchains stay readable without prompting, because a
+  guardrail that fires on `cat /etc/os-release` is one people learn to tap
+  through.
+- **A charter in plain language.** Drop a `CHARTER.md` in your workspace root
+  (or point `CHARTER_FILE` at one) and every guest message is read against it
+  first. No charter, no problem — a default is generated from the allowed
+  roots. The judge only ever *asks*; it never refuses on its own, and it fails
+  open, with the scope guard underneath as the deterministic backstop.
+- **`/permissions` reports the truth.** Gate state, scope roots, which charter
+  is in force, your role, the guarded patterns, and a warning if the current
+  chat is on a transport where the gate can't fire.
+
+> [!IMPORTANT]
+> This is supervision, not isolation. Claude still runs as your Unix user with
+> permissions bypassed, so a guest's session can read anything that user can —
+> including other projects, `~/.ssh`, and this bot's own `.env`. `WORKSPACE_DIR`
+> scopes the project picker, not the filesystem. If the people you're sharing
+> with shouldn't have that reach, run the shared instance as a **separate Unix
+> user** whose home holds only the shared projects.
+
+---
+
 ## Quick Start
 
 ### Prerequisites
@@ -236,9 +305,9 @@ Open your bot in Telegram → `/start`
 | `/effort` | Set reasoning effort (low / medium / high / xhigh / max / auto); `all` works here too |
 | `/btw` | Ask a side question without interrupting the running task |
 | `/mode` | Toggle streaming / wait |
-| `/method` | Switch Claude transport (SDK / PTY) |
-| `/provider` | Switch backend — Claude / CCR (shown when `CCR_ENABLED`) |
-| `/ccr` | Sticky toggle between Claude and CCR routing (shown when `CCR_ENABLED`) |
+| `/method` | Switch Claude transport (SDK / PTY) — admin-only |
+| `/provider` | Switch backend — Claude / CCR (shown when `CCR_ENABLED`) — admin-only |
+| `/ccr` | Sticky toggle between Claude and CCR routing (shown when `CCR_ENABLED`) — admin-only |
 | `/verbosity` | Pick verbosity tier (quiet / normal / verbose / debug) |
 | `/terminalui` | Toggle terminal-style display |
 
@@ -271,11 +340,11 @@ Open your bot in Telegram → `/start`
 | `/topic` | Set or clear the conversation topic |
 | `/tasks` | List active background tasks |
 | `/shells` | List and kill OS-level background shells from the PTY session |
-| `/permissions` | Show the permission-gate state and the patterns it enforces |
+| `/permissions` | Show the permission-gate state, your role, and the patterns it enforces |
 | `/botstatus` | Bot process status |
-| `/restartbot` | Restart the bot |
-| `/rebuildbot` | Rebuild code and restart |
-| `/update` | Update the Claude Code CLI |
+| `/restartbot` | Restart the bot — admin-only |
+| `/rebuildbot` | Rebuild code and restart — admin-only |
+| `/update` | Update the Claude Code CLI — admin-only |
 | `/cancel` | Cancel current request (alias: `/stop`) |
 | `/commands` | Show all commands |
 
@@ -355,6 +424,26 @@ All config lives in `.env`. See [`.env.example`](.env.example) for the full anno
 |----------|-------------|
 | `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather |
 | `ALLOWED_USER_IDS` | Comma-separated Telegram user IDs |
+
+### Sharing (admins & guests)
+
+Only needed for a bot other people use. Unset, every allowed user is an admin
+and nothing below changes anything.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ADMIN_USER_IDS` | all allowed users | Who may approve permission prompts and run lifecycle/transport commands |
+| `ALLOWED_GROUP_IDS` | — | Group/supergroup chat IDs the bot is shared in |
+| `RESTRICT_TO_GROUPS` | `false` | Confine guests to those groups; admins can still DM the bot |
+| `TELECODER_PERMISSION_PROMPTS` | on when guests exist | `1`/`0` to force the permission gate on or off |
+| `PERMISSION_PROMPT_TIMEOUT_MINUTES` | `10` | How long a prompt or held message waits for an admin |
+| `SCOPE_GUARD` | `auto` | Prompt on tool calls naming paths outside the shared projects |
+| `SCOPE_ALLOWED_PATHS` | — | Extra in-bounds directories, comma-separated |
+| `CHARTER_JUDGE` | `auto` | Read each guest message against a charter before it runs |
+| `CHARTER_FILE` | `WORKSPACE_DIR/CHARTER.md` | The charter the judge reads |
+| `CLAUDE_METHOD_DEFAULT` | `sdk` | Transport for chats that haven't run `/method`; the gate only runs on `pty` |
+
+See [Sharing a bot](#sharing-a-bot) for how the pieces fit together.
 
 ### Core
 
@@ -516,7 +605,14 @@ Then `/continue` or `/resume` in Telegram to restore your session.
 ## Security
 
 - **User whitelist** — only approved Telegram IDs can interact
-- **Project sandbox** — Claude operates within the configured working directory
+- **Admins & guests** — a shared bot can reserve approvals, lifecycle and
+  transport for `ADMIN_USER_IDS`; see [Sharing a bot](#sharing-a-bot)
+- **Group confinement** — `RESTRICT_TO_GROUPS` keeps guests out of private chats
+- **Permission gate** — dangerous Bash patterns pause for an admin's approval
+- **Scope guard** — tool calls reaching outside the shared projects, or at any
+  credential path, pause too
+- **Charter judge** — guest messages are read against a charter before they run
+- **Project sandbox** — the project picker is scoped to `WORKSPACE_DIR`
 - **Permission mode** — uses `acceptEdits` by default
 - **Dangerous mode** — opt-in auto-approve for all tool permissions
 - **Secrets** — loaded from `.env` (gitignored), never committed

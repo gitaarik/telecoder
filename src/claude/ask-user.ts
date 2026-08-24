@@ -124,7 +124,25 @@ interface PendingEntry {
   timer: NodeJS.Timeout;
   optionLabels: string[];
   sessionKey?: string;
+  /**
+   * When set, only these Telegram user ids may answer. Left undefined the
+   * question is open to anyone the auth middleware already let in, which is
+   * what an ordinary `claudegram_ask_user` wants — the whole point of a poll
+   * in a group is that any member can answer it.
+   *
+   * The permission gate sets it, because a question guarding a destructive
+   * command is not answered by whoever asked for the command.
+   */
+  allowedResponderIds?: number[];
 }
+
+/**
+ * Outcome of a button tap.
+ *   - `resolved`  — the waiting agent got its answer
+ *   - `expired`   — no such question: already answered, or timed out
+ *   - `forbidden` — this question is restricted and the tapper is not on the list
+ */
+export type ResolveOutcome = 'resolved' | 'expired' | 'forbidden';
 
 const pending: Map<string, PendingEntry> = new Map();
 // Per-sessionKey pending counter — read by the agent watchdog so it can
@@ -155,6 +173,7 @@ export function createPendingQuestion(
   optionLabels: string[],
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
   sessionKey?: string,
+  allowedResponderIds?: number[],
 ): { id: string; promise: Promise<AskUserAnswer | null> } {
   const id = crypto.randomBytes(4).toString('hex');
   let resolveFn!: (answer: AskUserAnswer | null) => void;
@@ -167,7 +186,13 @@ export function createPendingQuestion(
     if (entry) entry.resolve(null);
   }, timeoutMs);
 
-  pending.set(id, { resolve: resolveFn, timer, optionLabels, sessionKey });
+  pending.set(id, {
+    resolve: resolveFn,
+    timer,
+    optionLabels,
+    sessionKey,
+    ...(allowedResponderIds && allowedResponderIds.length > 0 ? { allowedResponderIds } : {}),
+  });
   if (sessionKey) {
     pendingBySession.set(sessionKey, (pendingBySession.get(sessionKey) ?? 0) + 1);
   }
@@ -177,17 +202,44 @@ export function createPendingQuestion(
 /**
  * Resolve a pending question with the user's selection. Called by the
  * Telegram callback-query dispatcher on button tap.
+ *
+ * The responder check lives in here rather than at the call site on purpose:
+ * a restricted question must be impossible to resolve without passing the id
+ * of whoever tapped, so a future caller cannot forget the check and quietly
+ * reopen the question to everyone.
  */
-export function resolvePendingQuestion(id: string, optionIndex: number): boolean {
-  const entry = clearPending(id);
-  if (!entry) return false;
+export function resolvePendingQuestion(
+  id: string,
+  optionIndex: number,
+  responderId?: number,
+): ResolveOutcome {
+  const entry = pending.get(id);
+  if (!entry) return 'expired';
+
+  const allowed = entry.allowedResponderIds;
+  // Fails closed: no responder id on a restricted question is a refusal, not
+  // a pass. Unrestricted questions ignore the id entirely.
+  if (allowed && (responderId === undefined || !allowed.includes(responderId))) {
+    return 'forbidden';
+  }
+
+  clearPending(id);
   const label = entry.optionLabels[optionIndex];
   if (label === undefined) {
     entry.resolve(null);
-    return true;
+    return 'resolved';
   }
   entry.resolve({ label, index: optionIndex });
-  return true;
+  return 'resolved';
+}
+
+/**
+ * The ids allowed to answer this question, or undefined when it is open to
+ * everyone. Lets the callback handler tell the tapper who they are waiting on
+ * instead of a bare refusal.
+ */
+export function getQuestionResponders(id: string): number[] | undefined {
+  return pending.get(id)?.allowedResponderIds;
 }
 
 /**

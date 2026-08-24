@@ -1,5 +1,6 @@
 import { Context, NextFunction } from 'grammy';
 import { config } from '../../config.js';
+import { GROUP_ANONYMOUS_BOT_ID, isAdmin } from '../../utils/admins.js';
 
 /**
  * Log authentication attempt for security auditing.
@@ -17,9 +18,6 @@ function logAuthAttempt(
   const status = success ? 'ALLOWED' : 'DENIED';
   console.log(`[auth] ${timestamp} ${status} ${userInfo} ${usernameInfo} chat:${chatType || 'unknown'}`);
 }
-
-// Telegram's GroupAnonymousBot ID — used when admins post anonymously in groups/forums
-const GROUP_ANONYMOUS_BOT_ID = 1087968824;
 
 export async function authMiddleware(
   ctx: Context,
@@ -46,6 +44,23 @@ export async function authMiddleware(
     logAuthAttempt(false, userId, username, chatType);
     await ctx.reply('⛔ You are not authorized to use this bot.');
     return;
+  }
+
+  // Confine non-admins to the allow-listed groups. A bot shared in a group is
+  // shared on the understanding that the owner can see what is asked of it, and
+  // a private chat with the same bot is the one place they cannot. Admins are
+  // exempt — being able to DM your own bot is the normal way to use it.
+  //
+  // Fails closed on a missing chat id: an update we can't place is not an
+  // update we can say is inside the group.
+  if (config.RESTRICT_TO_GROUPS && !isAdmin(userId)) {
+    if (chatId === undefined || !config.ALLOWED_GROUP_IDS.includes(chatId)) {
+      logAuthAttempt(false, userId, username, chatType);
+      await ctx.reply(
+        '⛔ This bot only works in its shared group chat, not in private messages.'
+      );
+      return;
+    }
   }
 
   logAuthAttempt(true, userId, username, chatType);

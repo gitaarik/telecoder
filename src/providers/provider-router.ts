@@ -1,3 +1,4 @@
+import type { Context } from 'grammy';
 import { config } from '../config.js';
 import { claudeProvider } from './claude-provider.js';
 import { ccrProvider } from './ccr-provider.js';
@@ -66,11 +67,38 @@ export function getAvailableProviders(): ProviderName[] {
   return list;
 }
 
+/**
+ * The screening point for guest messages.
+ *
+ * Every user-originated prompt funnels through the two exports below — typed
+ * text, a transcribed voice note, a photo caption, a reply, /plan, /explore,
+ * /btw — so this is the one place a hold can be applied without having to be
+ * remembered at a dozen call sites. Loop iterations and scheduled fires call
+ * their provider directly and are deliberately not re-screened: they are
+ * continuations of a prompt that was already screened once.
+ *
+ * A blocked message returns as an ordinary response rather than an error, so
+ * the streaming UI already in flight renders the explanation in place.
+ */
+async function screened(
+  sessionKey: string,
+  message: string,
+  options: { telegramCtx?: unknown } | undefined,
+): Promise<AgentResponse | null> {
+  const { screenPrompt } = await import('../claude/prompt-hold.js');
+  const outcome = await screenPrompt(options?.telegramCtx as Context | undefined, sessionKey, message);
+  if (outcome.proceed) return null;
+  return { text: outcome.message, toolsUsed: [] };
+}
+
 export async function sendToAgent(
   sessionKey: string,
   message: string,
   options?: AgentOptions
 ): Promise<AgentResponse> {
+  const blocked = await screened(sessionKey, message, options);
+  if (blocked) return blocked;
+
   const chatId = parseSessionKey(sessionKey).chatId;
   const providerName = getActiveProviderName(chatId);
   return getProvider(chatId).sendToAgent(sessionKey, message, { ...options, providerName });
@@ -81,6 +109,9 @@ export async function sendLoopToAgent(
   message: string,
   options?: LoopOptions
 ): Promise<AgentResponse> {
+  const blocked = await screened(sessionKey, message, options);
+  if (blocked) return blocked;
+
   const chatId = parseSessionKey(sessionKey).chatId;
   const providerName = getActiveProviderName(chatId);
   return getProvider(chatId).sendLoopToAgent(sessionKey, message, { ...options, providerName });

@@ -523,7 +523,9 @@ export async function handleExplore(ctx: Context): Promise<void> {
 
 /** Show the current permission-gate state and the patterns it enforces. */
 export async function handlePermissions(ctx: Context): Promise<void> {
-  const { isPermissionGateEnabled, listDangerousPatterns } = await import('../../claude/permission-gate.js');
+  const { isPermissionGateEnabled, isPermissionGateImplicit, listDangerousPatterns } =
+    await import('../../claude/permission-gate.js');
+  const { getAdminIds, getGuestIds, hasGuestUsers, isAdmin } = await import('../../utils/admins.js');
   const enabled = isPermissionGateEnabled();
   const patterns = listDangerousPatterns();
 
@@ -533,10 +535,67 @@ export async function handlePermissions(ctx: Context): Promise<void> {
     enabled
       ? 'Bash commands matching the patterns below trigger a Telegram approval prompt before claude executes them\\. Other tools auto\\-allow\\.'
       : 'Disabled\\. Set `TELECODER_PERMISSION_PROMPTS=1` and restart the bot to enable\\.',
-    '',
-    '*Guarded patterns:*',
-    ...patterns.map((p) => `• ${esc(p.reason)}`),
   ];
+
+  if (enabled && isPermissionGateImplicit()) {
+    lines.push(
+      '',
+      'On automatically because this bot has non\\-admin users\\. Set `TELECODER_PERMISSION_PROMPTS=0` to turn it off\\.',
+    );
+  }
+
+  // The gate is a PreToolUse hook on the spawned CLI, so it only exists on the
+  // PTY transport. Reporting "enabled" in a chat where the hook can never fire
+  // would be worse than reporting nothing.
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (enabled && keyInfo) {
+    const { getActiveMethod } = await import('../../providers/claude-provider.js');
+    if (getActiveMethod(keyInfo.chatId) !== 'pty') {
+      lines.push(
+        '',
+        '⚠️ This chat is on the *SDK* transport, where the gate does not run — it is a hook on the `claude` CLI\\. Switch with `/method pty`\\.',
+      );
+    }
+  }
+
+  if (enabled) {
+    const { isScopeGuardEnabled, getAllowedRoots } = await import('../../claude/scope-guard.js');
+    if (isScopeGuardEnabled(true)) {
+      const roots = getAllowedRoots();
+      lines.push(
+        '',
+        '*Scope guard:* ✅ on',
+        'Tool calls naming a path outside these prompt too:',
+        ...roots.map((r) => `• \`${esc(r)}\``),
+      );
+    } else {
+      lines.push('', '*Scope guard:* ⛔️ off');
+    }
+  }
+
+  const { isCharterJudgeEnabled, getCharter } = await import('../../claude/charter-judge.js');
+  if (isCharterJudgeEnabled()) {
+    const { source } = getCharter();
+    lines.push(
+      '',
+      '*Charter judge:* ✅ on',
+      `Every guest message is read against ${source === '(default)' ? 'the built\\-in charter' : `\`${esc(source)}\``} before it reaches Claude\\.`,
+    );
+  }
+
+  if (hasGuestUsers()) {
+    const admins = getAdminIds();
+    const guests = getGuestIds();
+    lines.push(
+      '',
+      `*Roles:* ${admins.length} admin${admins.length === 1 ? '' : 's'}, ${guests.length} guest${guests.length === 1 ? '' : 's'}`,
+      isAdmin(ctx.from?.id)
+        ? 'You are an *admin* — approval prompts and bot\\-lifecycle commands are yours to answer\\.'
+        : 'You are a *guest* — an admin approves guarded commands and owns bot\\-lifecycle commands\\.',
+    );
+  }
+
+  lines.push('', '*Guarded patterns:*', ...patterns.map((p) => `• ${esc(p.reason)}`));
   await replyMd(ctx, lines.join('\n'));
 }
 

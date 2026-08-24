@@ -1,4 +1,5 @@
 import { config } from '../config.js';
+import { hasGuestUsers } from '../utils/admins.js';
 
 export interface ParsedCommand {
   command: string | null;
@@ -65,6 +66,10 @@ export function isNativeCompactCommand(text: string): boolean {
 
 // Returns MarkdownV2 escaped command list
 export function getAvailableCommands(): string {
+  // Only worth saying on a bot that actually has guests — on a solo bot every
+  // user is an admin, so the tag would mark every line without narrowing
+  // anything.
+  const adminTag = hasGuestUsers() ? ' \\(admin\\)' : '';
   const sections: Array<{ title: string; commands: string[] }> = [
     {
       title: 'Claude Commands',
@@ -73,7 +78,7 @@ export function getAvailableCommands(): string {
         '• `/explore <question>` \\- Use explore agent for codebase questions',
         '• `/loop <task>` \\- Run iteratively until task complete',
         '• `/model [name]` \\- Show or set AI model',
-        ...(config.CCR_ENABLED ? ['• `/provider` \\- Switch AI provider \\(Claude / CCR\\)'] : []),
+        ...(config.CCR_ENABLED ? [`• \`/provider\` \\- Switch AI provider \\(Claude / CCR\\)${adminTag}`] : []),
         '• `/commands` \\- Show this list',
       ],
     },
@@ -138,8 +143,8 @@ export function getAvailableCommands(): string {
       '• `/context` \\- Show Claude context usage',
       '• `/compact` \\- Compact the context window \\(reports the token reduction\\)',
       '• `/botstatus` \\- Show bot process status',
-      '• `/restartbot` \\- Restart the bot process',
-      '• `/rebuildbot` \\- Rebuild and restart with auto\\-resume',
+      `• \`/restartbot\` \\- Restart the bot process${adminTag}`,
+      `• \`/rebuildbot\` \\- Rebuild and restart with auto\\-resume${adminTag}`,
       '• `/ping` \\- Check if bot is responsive',
       '• `/cancel` \\- Cancel current request',
       '• `/mode` \\- Toggle streaming mode',
