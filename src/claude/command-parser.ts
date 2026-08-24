@@ -72,7 +72,7 @@ export function getAvailableCommands(): string {
         '• `/plan <task>` \\- Enter plan mode for complex tasks',
         '• `/explore <question>` \\- Use explore agent for codebase questions',
         '• `/loop <task>` \\- Run iteratively until task complete',
-        '• `/model \\[name\\]` \\- Show or set AI model',
+        '• `/model [name]` \\- Show or set AI model',
         ...(config.CCR_ENABLED ? ['• `/provider` \\- Switch AI provider \\(Claude / CCR\\)'] : []),
         '• `/commands` \\- Show this list',
       ],
@@ -136,7 +136,7 @@ export function getAvailableCommands(): string {
     commands: [
       '• `/tts` \\- Toggle voice replies',
       '• `/context` \\- Show Claude context usage',
-      '• `/compact` \\- Compact the context window \\(PTY mode; reports the token reduction\\)',
+      '• `/compact` \\- Compact the context window \\(reports the token reduction\\)',
       '• `/botstatus` \\- Show bot process status',
       '• `/restartbot` \\- Restart the bot process',
       '• `/rebuildbot` \\- Rebuild and restart with auto\\-resume',
@@ -150,10 +150,57 @@ export function getAvailableCommands(): string {
     ],
   });
 
+  sections.push({
+    title: 'Claude Code Commands',
+    commands: [
+      'Claude Code\'s own slash commands pass straight through — `/code-review`,',
+      '`/security-review`, `/simplify`, `/init`, `/run` and any `.claude/commands/`',
+      'command all work by typing them here\\.',
+      '',
+      '⚠️ Where a bot command shares the name, the bot wins — `/loop` and',
+      '`/schedule` are TeleCoder\'s, not Claude Code\'s\\. The overlap shifts with',
+      'each Claude Code release, so `/projectcommands` reports the current one\\.',
+      '',
+      '• `/projectcommands` \\- List everything this project offers, shadowing included',
+    ],
+  });
+
   const lines: string[] = [];
   for (const section of sections) {
     lines.push(`*${section.title}:*`, '', ...section.commands, '');
   }
 
   return lines.join('\n').trimEnd();
+}
+
+/**
+ * Command names TeleCoder registers with grammY that do NOT reach Claude Code,
+ * recorded as they register (see the `cmd()` wrapper in `bot.ts`).
+ *
+ * A bot command wins over the native Claude Code command of the same name:
+ * grammY matches it first and the text never reaches the agent. `/loop` and
+ * `/schedule` are TeleCoder's own features rather than Claude Code's skills of
+ * those names, and `/model` answers about the bot's state rather than the
+ * CLI's. Keeping the list live rather than hand-maintained means
+ * `/projectcommands` names the shadowed commands accurately — the overlap
+ * shifts with every Claude Code release.
+ *
+ * `forwardsToAgent` marks the exception: a name registered only so grammY
+ * routes it (and its group-chat `@BotName` form) into the normal message
+ * pipeline, which hands it to Claude Code unchanged. `/compact` is one. Those
+ * are not shadowed and must not be reported as such.
+ */
+const registeredBotCommands = new Set<string>();
+
+export function registerBotCommandName(name: string, forwardsToAgent = false): void {
+  if (forwardsToAgent) {
+    registeredBotCommands.delete(name);
+    return;
+  }
+  registeredBotCommands.add(name);
+}
+
+/** Names that shadow a same-named Claude Code command. */
+export function getBotCommandNames(): ReadonlySet<string> {
+  return registeredBotCommands;
 }

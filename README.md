@@ -209,7 +209,7 @@ Open your bot in Telegram → `/start`
 | `/start` | Welcome message |
 | `/project` | Set working directory (interactive picker) |
 | `/newproject <name>` | Create and switch to a new project |
-| `/projectcommands` | List the project's `.claude/commands/*.md` slash commands |
+| `/projectcommands` | List every slash command available here — project, built-in skills, plugins — and the ones TeleCoder shadows |
 | `/clear` | Clear conversation history (project stays selected) |
 | `/status` | Current session info |
 | `/sessions` | List saved sessions |
@@ -265,7 +265,7 @@ Open your bot in Telegram → `/start`
 |---------|-------------|
 | `/ping` | Health check |
 | `/context` | Show Claude context / token usage |
-| `/compact` | Compact the context window (PTY mode) |
+| `/compact` | Compact the context window (SDK and PTY), reporting the token reduction |
 | `/statusline` | Toggle per-turn status line (effort, model, context %, cost) |
 | `/botname` | Toggle dynamic bot name (shows the active project) |
 | `/topic` | Set or clear the conversation topic |

@@ -1890,7 +1890,8 @@
             <h3>Two ways to run it</h3>
             <p>Point it at the Claude Agent SDK, or drive the real <code>claude</code>
             CLI in a terminal with <code>/method</code>. Sessions, forks and
-            <code>/compact</code> work the same either way.</p>
+            <code>/compact</code> work the same either way, and each mode reports the
+            commands its own CLI build actually has.</p>
           </div>
           <div class="feature-card">
             <div class="feature-icon"><svg><use href="#i-failover"/></svg></div>
@@ -1963,6 +1964,14 @@
             <h3>Skills</h3>
             <p>Claude invokes project-level skills from <code>.claude/skills/</code> via the Skill
             tool, with user-level skills loadable too.</p>
+          </div>
+          <div class="feature-card" data-category="agent">
+            <div class="feature-icon"><svg><use href="#i-todo"/></svg></div>
+            <h3>Claude Code's own slash commands</h3>
+            <p><code>/code-review</code>, <code>/security-review</code>, <code>/simplify</code>,
+            <code>/init</code> — Claude Code's built-in commands work by typing them in chat, as
+            do your <code>.claude/commands/</code> ones. <code>/projectcommands</code> lists what
+            this project has, and flags the few names TeleCoder claims for itself.</p>
           </div>
           <div class="feature-card" data-category="agent">
             <div class="feature-icon"><svg><use href="#i-plug"/></svg></div>
@@ -2509,7 +2518,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/projectcommands</code>
-              <span class="command-desc">List the current project's <code>.claude/commands/*.md</code> slash commands. They pass straight through to Claude Code, so typing <code>/mycommand</code> in chat just works — this is purely a discoverability helper.</span>
+              <span class="command-desc">List every slash command this project offers — <code>.claude/commands/*.md</code>, Claude Code's built-in skills like <code>/code-review</code>, and any plugin commands. They pass straight through, so typing one in chat just works. Also names the commands TeleCoder shadows, where the bot's version runs instead of Claude Code's.</span>
             </div>
           </div>
         </div>
@@ -2718,7 +2727,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/compact</code>
-              <span class="command-desc">Compact the context window (PTY mode) — runs native Claude Code compaction and replies with the token reduction. In SDK mode it explains that manual compaction is PTY-only.</span>
+              <span class="command-desc">Compact the context window — runs native Claude Code compaction and replies with the token reduction. Works in both SDK and PTY mode; when the context is already small enough to skip, it says so instead.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/cancel</code>

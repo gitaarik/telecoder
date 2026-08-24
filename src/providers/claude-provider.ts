@@ -16,6 +16,15 @@ function getMethod(chatId: number): 'sdk' | 'pty' {
   return userPreferences.getMethod(chatId) || 'sdk'; // Default to SDK
 }
 
+/**
+ * Which transport this chat's turns run through. Exported for the handlers
+ * that need to match the transport's behaviour without routing a turn — e.g.
+ * inspecting the CLI build that would actually serve the chat.
+ */
+export function getActiveMethod(chatId: number): 'sdk' | 'pty' {
+  return getMethod(chatId);
+}
+
 function getInternalProvider(chatId: number): Provider {
   const method = getMethod(chatId);
   if (method === 'pty') {

@@ -5,6 +5,7 @@ import {
   type SDKCompactBoundaryMessage,
   type SDKStatusMessage,
   type SDKSystemMessage,
+  type SDKLocalCommandOutputMessage,
   type SDKTaskStartedMessage,
   type SDKTaskProgressMessage,
   type SDKTaskUpdatedMessage,
@@ -25,6 +26,7 @@ import { hasPendingQuestionForSession } from './ask-user.js';
 import { createTeleCoderMcpServer } from './mcp-tools.js';
 import { isSubagentTool } from './subagent-tools.js';
 import { isNativeCompactCommand } from './command-parser.js';
+import { recordAvailableCommands } from './available-commands.js';
 import { getSessionTopic, getMsSinceTopicSet } from '../bot/handlers/command/topic-store.js';
 import {
   createAgentTimer,
@@ -37,7 +39,8 @@ import { userPreferences } from '../providers/user-preferences.js';
 import { hasForeignThinkingSignatures } from './session-jsonl.js';
 import { BoundedMap } from '../utils/bounded-map.js';
 import { parseSessionKey } from '../utils/session-key.js';
-import { resolveBundledClaudeBin } from '../utils/resolve-claude-bin.js';
+import { resolveBundledClaudeBin, resolveActiveClaudeExecutable } from '../utils/resolve-claude-bin.js';
+import { formatCompactionConfirmation } from '../utils/format.js';
 
 import type { AgentUsage, AgentResponse, AgentOptions, LoopOptions, ImageAttachment, TaskEvent, ToolResultEvent, EditDiffEvent, ThrottleInfo } from '../providers/types.js';
 import { taskTracker } from '../telegram/task-tracker.js';
@@ -211,23 +214,15 @@ export async function sendToAgent(
 ): Promise<AgentResponse> {
   const { onProgress, onToolStart, onToolEnd, onTaskEvent, onSubTurnResponse, onToolResult, onEditDiff, abortController, command, model, images, executableOverride, providerName } = options;
 
-  // Native `/compact` is a Claude Code CLI slash command handled by the
-  // interactive TUI — it only works in PTY mode. In SDK mode we reach this
-  // function with the raw string prompt, and the SDK has no manual-compact
-  // control (its control requests need streaming input, which we don't use),
-  // so "/compact" would just be sent to the model as literal text and echoed
-  // back — no compaction happens. Intercept it here and explain, rather than
-  // forwarding a confusing no-op. Automatic compaction near the context limit
-  // still works in SDK mode and emits a compact_boundary as usual.
-  if (isNativeCompactCommand(message)) {
-    return {
-      text:
-        '⚠️ `/compact` only works in PTY mode — switch with /method.\n\n' +
-        'In SDK mode (the default) manual compaction isn\'t available, but the context ' +
-        'is compacted automatically as it approaches the limit.',
-      toolsUsed: [],
-    };
-  }
+  // Native `/compact` used to be intercepted here and refused as PTY-only.
+  // It isn't: the CLI runs local slash commands in headless mode too, so a
+  // `/compact` on a resumed session emits `status: compacting`, then a
+  // `compact_boundary` carrying the token reduction, and writes the boundary
+  // into the session JSONL so the next resume picks up the compacted context.
+  // We forward it like any other prompt and report the outcome below — the
+  // result message's own text is empty for a manual compact, so the
+  // confirmation has to be synthesized from the boundary.
+  const manualCompact = isNativeCompactCommand(message);
 
   async function emitTaskEvent(event: TaskEvent): Promise<void> {
     try {
@@ -326,6 +321,14 @@ export async function sendToAgent(
   let gotResult = false;
   let resultUsage: AgentUsage | undefined;
   let compactionEvent: { trigger: 'manual' | 'auto'; preTokens: number } | undefined;
+  // Post-compaction size, kept alongside compactionEvent rather than on it:
+  // the shared AgentResponse.compaction shape only carries preTokens, and the
+  // "before → after" confirmation for a manual /compact needs both.
+  let compactionPostTokens: number | undefined;
+  // Set when a manual /compact finished without producing a boundary, e.g.
+  // "Not enough messages to compact." The CLI reports it on the status
+  // message; the result message text is empty.
+  let compactError: string | undefined;
   let initEvent: { model: string; sessionId: string } | undefined;
   let throttleInfo: ThrottleInfo | undefined;
 
@@ -537,6 +540,14 @@ export async function sendToAgent(
       mcpServers['claudegram-tools'] = server;
     }
 
+    // Resolved once, because two things need it: the SDK, and the command
+    // cache below — whose entries are only valid for the binary that reported
+    // them. Undefined means "let the SDK pick", which is its own auto-detect.
+    const sdkExecutable = executableOverride
+      ?? (config.CLAUDE_USE_BUNDLED_EXECUTABLE
+        ? resolveBundledClaudeBin()
+        : config.CLAUDE_EXECUTABLE_PATH);
+
     const queryOptions: Parameters<typeof query>[0]['options'] = {
       cwd,
       tools: toolsOption,
@@ -555,16 +566,7 @@ export async function sendToAgent(
       ...(effectiveEffort ? { effort: effectiveEffort } : {}),
       resume: existingSessionId,
       ...(permissionMode === 'bypassPermissions' ? { allowDangerouslySkipPermissions: true } : {}),
-      ...(() => {
-        if (executableOverride) {
-          return { pathToClaudeCodeExecutable: executableOverride };
-        }
-        if (!config.CLAUDE_USE_BUNDLED_EXECUTABLE) {
-          return { pathToClaudeCodeExecutable: config.CLAUDE_EXECUTABLE_PATH };
-        }
-        const bundled = resolveBundledClaudeBin();
-        return bundled ? { pathToClaudeCodeExecutable: bundled } : {};
-      })(),
+      ...(sdkExecutable ? { pathToClaudeCodeExecutable: sdkExecutable } : {}),
       includePartialMessages: config.CLAUDE_SDK_INCLUDE_PARTIAL || getLogLevel() === 'trace',
       hooks,
       ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
@@ -813,7 +815,8 @@ export async function sendToAgent(
             trigger: cbMsg.compact_metadata.trigger,
             preTokens: cbMsg.compact_metadata.pre_tokens,
           };
-          logAt('basic', `[Claude] COMPACTION: trigger=${cbMsg.compact_metadata.trigger}, pre_tokens=${cbMsg.compact_metadata.pre_tokens}`);
+          compactionPostTokens = cbMsg.compact_metadata.post_tokens;
+          logAt('basic', `[Claude] COMPACTION: trigger=${cbMsg.compact_metadata.trigger}, pre_tokens=${cbMsg.compact_metadata.pre_tokens}, post_tokens=${cbMsg.compact_metadata.post_tokens ?? '?'}`);
         } else if (responseMessage.subtype === 'init') {
           const sysMsg = responseMessage as SDKSystemMessage;
           initEvent = {
@@ -824,6 +827,17 @@ export async function sendToAgent(
           chatSessionIds.set(sessionKey, sysMsg.session_id);
           sessionManager.setClaudeSessionId(sessionKey, sysMsg.session_id, providerName);
           logAt('basic', `[Claude] SESSION INIT: model=${sysMsg.model}, session=${sysMsg.session_id}`);
+
+          // The init message is the only in-band source for what slash
+          // commands and skills this working directory actually has —
+          // built-ins, plugin commands and `.claude/commands/` alike. Cache
+          // it so /projectcommands can list them without paying for a probe.
+          recordAvailableCommands(
+            sysMsg.cwd,
+            sdkExecutable ?? resolveActiveClaudeExecutable(),
+            sysMsg.slash_commands,
+            sysMsg.skills,
+          );
 
           // Detect SDK-driven sub-turns. The first init in a query is the
           // user's own turn (owns the streaming bubble). Subsequent inits
@@ -838,6 +852,28 @@ export async function sendToAgent(
           const statusMsg = responseMessage as SDKStatusMessage;
           if (statusMsg.status === 'compacting') {
             logAt('basic', '[Claude] STATUS: compacting in progress');
+          }
+          // A finished compaction reports its outcome on a second status
+          // message with status: null. On failure the reason lives here and
+          // nowhere else — the boundary is never written and the result text
+          // is empty, so without this a failed /compact answers with silence.
+          if (statusMsg.compact_result === 'failed') {
+            compactError = statusMsg.compact_error || 'compaction failed';
+            logAt('basic', `[Claude] COMPACTION FAILED: ${compactError}`);
+          }
+        } else if (responseMessage.subtype === 'local_command_output') {
+          // Output from a slash command the CLI ran locally rather than
+          // sending to the model. Most locally-handled commands answer with a
+          // synthetic assistant message (which the assistant branch above
+          // already collects); this subtype is the other shape they can take,
+          // and dropping it would answer the user with an empty turn.
+          const localMsg = responseMessage as SDKLocalCommandOutputMessage;
+          if (localMsg.content) {
+            if (pendingTextSeparator && fullText.length > 0) fullText += '\n\n───\n\n';
+            pendingTextSeparator = false;
+            fullText += localMsg.content;
+            onProgress?.(fullText);
+            logAt('verbose', `[Claude] LOCAL COMMAND OUTPUT: ${localMsg.content.length} chars`);
           }
         } else if (responseMessage.subtype === 'task_started') {
           const m = responseMessage as SDKTaskStartedMessage;
@@ -1094,6 +1130,27 @@ export async function sendToAgent(
     clearInterval(previewFlushTimer);
     watchdog?.stop();
     clearActiveQuery(sessionKey);
+  }
+
+  // Report a manual /compact. The CLI answers it with an empty result and,
+  // on success, a compact_boundary carrying the numbers — so the confirmation
+  // is synthesized here rather than relayed. Mirrors what the PTY provider
+  // reports for the same command, down to the wording.
+  if (manualCompact && !abortController?.signal.aborted) {
+    if (compactionEvent) {
+      fullText = formatCompactionConfirmation({
+        preTokens: compactionEvent.preTokens,
+        postTokens: compactionPostTokens,
+      });
+      // The confirmation already carries the token detail; drop the separate
+      // generic notification so the user gets one clean message.
+      compactionEvent = undefined;
+    } else if (compactError) {
+      // The CLI's reason is already a complete user-facing sentence
+      // ("Not enough messages to compact."), so relay it rather than wrapping
+      // it in a prefix that repeats it.
+      fullText = `ℹ️ ${compactError.endsWith('.') ? compactError : compactError + '.'}`;
+    }
   }
 
   // Add assistant response to history

@@ -11,7 +11,7 @@ import { isNativeCompactCommand } from './command-parser.js';
 import { isCancelled } from './request-queue.js';
 import { getWorkspaceRoot } from '../utils/workspace-guard.js';
 import { parseSessionKey } from '../utils/session-key.js';
-import { fmtTokens } from '../utils/format.js';
+import { formatCompactionConfirmation } from '../utils/format.js';
 import { envWithoutParentSession } from '../utils/claude-env.js';
 import { legacyEnv } from '../utils/legacy-env.js';
 import { userPreferences } from '../providers/user-preferences.js';
@@ -445,7 +445,7 @@ export class PtyProvider implements Provider {
     if (compactedThisTurn && postCompact) {
       compaction = { trigger: postCompact.trigger, preTokens: postCompact.preTokens };
       if (isManualCompact) {
-        text = this._formatCompactionConfirmation(postCompact);
+        text = formatCompactionConfirmation(postCompact);
         // The confirmation text already carries the token detail; drop the
         // separate generic notification so the user gets one clean message.
         compaction = undefined;
@@ -472,14 +472,6 @@ export class PtyProvider implements Provider {
     return readLastCompactionFromJsonl(botSession.workingDirectory, botSession.claudeSessionId);
   }
 
-  /** One-line manual `/compact` confirmation with the token reduction. */
-  private _formatCompactionConfirmation(c: CompactionInfo): string {
-    const before = fmtTokens(c.preTokens);
-    // postTokens is absent on older Claude Code builds — omit the arrow then.
-    return c.postTokens > 0
-      ? `🗜️ Context compacted — ${before} → ${fmtTokens(c.postTokens)} tokens.`
-      : `🗜️ Context compacted — was ${before} tokens.`;
-  }
 
   /**
    * After end-of-turn extraction completes, poll the xterm buffer briefly

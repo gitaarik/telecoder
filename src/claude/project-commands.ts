@@ -4,11 +4,13 @@ import * as path from 'path';
 /**
  * Read project-level slash commands from `.claude/commands/*.md`. Each file
  * defines a command whose name is the basename and whose first non-frontmatter
- * line is the description. Used to surface custom commands to the Telegram
- * bot menu and to a `/projectcommands` listing.
+ * line is the description. Feeds the `/projectcommands` listing only — these
+ * are never registered with Telegram's command menu, which would reject the
+ * hyphens Claude Code command names routinely use.
  *
- * Returns at most 30 commands (Telegram menu cap) sorted by name. Returns
- * [] silently if the directory doesn't exist — most projects don't have any.
+ * Returns at most 30 commands sorted by name — enough to fill a Telegram
+ * message alongside the rest of the listing. Returns [] silently if the
+ * directory doesn't exist — most projects don't have any.
  */
 
 export interface ProjectCommand {
@@ -16,7 +18,7 @@ export interface ProjectCommand {
   description: string;
 }
 
-const MAX_COMMANDS = 30;
+const MAX_COMMANDS = 30;  // keeps the listing inside one Telegram message
 const DESC_MAX = 80;
 
 export function getProjectCommands(workingDirectory: string): ProjectCommand[] {
@@ -34,7 +36,9 @@ export function getProjectCommands(workingDirectory: string): ProjectCommand[] {
   for (const entry of entries) {
     if (!entry.endsWith('.md')) continue;
     const name = entry.slice(0, -3);
-    if (!/^[a-z0-9_-]+$/i.test(name)) continue; // Telegram only allows alphanum + _
+    // Claude Code's own charset for a command name. Hyphens are fine here
+    // because this list is only ever rendered as text.
+    if (!/^[a-z0-9_-]+$/i.test(name)) continue;
     let description = '';
     try {
       const content = fs.readFileSync(path.join(dir, entry), 'utf-8');

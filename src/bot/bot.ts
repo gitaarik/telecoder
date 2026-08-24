@@ -97,6 +97,7 @@ import {
 import { createBatchMiddleware } from './middleware/message-batcher.js';
 import { resolvePendingQuestion, appendAnsweredFooter, buildAnswerConfirmation } from '../claude/ask-user.js';
 import { resolvePendingPoll } from '../claude/poll-user.js';
+import { registerBotCommandName } from '../claude/command-parser.js';
 
 // Resolve sequentialize constraint: same-chat updates are ordered,
 // but /cancel is registered BEFORE this middleware so it bypasses it.
@@ -281,28 +282,42 @@ export async function createBot(): Promise<Bot> {
   // Apply auth middleware to all updates
   bot.use(authMiddleware);
 
+  // Register through `cmd` rather than `bot.command` directly so the set of
+  // names TeleCoder claims stays discoverable at runtime. Registration order
+  // and placement relative to sequentialize are unchanged — `cmd` calls
+  // `bot.command` immediately. /projectcommands uses the recorded names to
+  // report which native Claude Code commands this bot shadows.
+  const cmd = (
+    name: string,
+    handler: Parameters<typeof bot.command>[1],
+    opts?: { forwardsToAgent?: boolean },
+  ): void => {
+    registerBotCommandName(name, opts?.forwardsToAgent);
+    bot.command(name, handler);
+  };
+
   // These commands fire BEFORE sequentialize so they bypass per-chat ordering.
   // This lets them interrupt, inspect, or restart even when a query is hung.
-  bot.command('cancel', handleCancel);
-  bot.command('stop', handleCancel); // alias — natural expectation for "stop the current turn"
-  bot.command('ping', handlePing);
-  bot.command('status', handleStatus);
-  bot.command('restartbot', handleRestartBot);
-  bot.command('rebuildbot', handleRebuild);
-  bot.command('btw', handleBtw); // Side question — must bypass queue to work mid-task
-  bot.command('tasks', handleTasks); // Read-only; must bypass queue so it works mid-stream
-  bot.command('shells', handleShells); // Lists/kills OS-level bg processes; must bypass queue to rescue hung sessions
+  cmd('cancel', handleCancel);
+  cmd('stop', handleCancel); // alias — natural expectation for "stop the current turn"
+  cmd('ping', handlePing);
+  cmd('status', handleStatus);
+  cmd('restartbot', handleRestartBot);
+  cmd('rebuildbot', handleRebuild);
+  cmd('btw', handleBtw); // Side question — must bypass queue to work mid-task
+  cmd('tasks', handleTasks); // Read-only; must bypass queue so it works mid-stream
+  cmd('shells', handleShells); // Lists/kills OS-level bg processes; must bypass queue to rescue hung sessions
   // /sync exists for the "I think a reply went missing" scenario, which by
   // definition includes hung or sluggish turns — gating it on sequentialize
   // would queue it behind the very turn the user wants to inspect.
-  bot.command('sync', handleSync);
-  bot.command('handoff', handleHandoff);
+  cmd('sync', handleSync);
+  cmd('handoff', handleHandoff);
   // Schedule commands bypass sequentialize so they remain responsive even
   // when a scheduled-fire turn is already running (the cap-enforcing create,
   // the list, and the remove all need to work mid-stream).
-  bot.command('schedule', handleSchedule);
-  bot.command('schedules', handleSchedules);
-  bot.command('unschedule', handleUnschedule);
+  cmd('schedule', handleSchedule);
+  cmd('schedules', handleSchedules);
+  cmd('unschedule', handleUnschedule);
   // /tasks inline-keyboard buttons (view/back/refresh) also need to bypass
   // sequentialize so they're responsive while a stream is active.
   bot.callbackQuery(/^tasks:/, handleTasksCallback);
@@ -337,85 +352,85 @@ export async function createBot(): Promise<Bot> {
   bot.use(sequentialize(getSequentializeKey));
 
   // Bot command handlers (sequentialized per chat)
-  bot.command('start', handleStart);
-  bot.command('clear', handleClear);
-  bot.command('project', handleProject);
-  bot.command('newproject', handleNewProject);
-  bot.command('mode', handleMode);
-  bot.command('terminalui', handleTerminalUI);
-  bot.command('statusline', handleStatusLine);
-  bot.command('botname', handleBotName);
-  bot.command('topic', handleTopic);
-  bot.command('tts', handleTTS);
-  bot.command('botstatus', handleBotStatus);
-  bot.command('context', handleContext);
+  cmd('start', handleStart);
+  cmd('clear', handleClear);
+  cmd('project', handleProject);
+  cmd('newproject', handleNewProject);
+  cmd('mode', handleMode);
+  cmd('terminalui', handleTerminalUI);
+  cmd('statusline', handleStatusLine);
+  cmd('botname', handleBotName);
+  cmd('topic', handleTopic);
+  cmd('tts', handleTTS);
+  cmd('botstatus', handleBotStatus);
+  cmd('context', handleContext);
   // /compact is a native Claude Code slash command, not a bot command — route it
   // through the normal message pipeline (handleMessage), which forwards it to
   // the active provider. The PTY provider runs the real compaction and reports
   // the token reduction; the SDK provider explains it's PTY-only. Registering it
   // here (rather than relying on fall-through to the text handler) makes dispatch
   // explicit and lets grammY match the group-chat `/compact@BotName` form.
-  bot.command('compact', handleMessage);
-  bot.command('update', handleUpdate);
+  cmd('compact', handleMessage, { forwardsToAgent: true });
+  cmd('update', handleUpdate);
 
-  bot.command('commands', handleCommands);
-  bot.command('model', handleModelCommand);
-  bot.command('effort', handleEffort);
-  bot.command('verbosity', handleVerbosity);
-  bot.command('method', handleMethodCommand);
+  cmd('commands', handleCommands);
+  cmd('model', handleModelCommand);
+  cmd('effort', handleEffort);
+  cmd('verbosity', handleVerbosity);
+  cmd('method', handleMethodCommand);
   if (config.CCR_ENABLED) {
-    bot.command('provider', handleProviderCommand);
+    cmd('provider', handleProviderCommand);
   }
   if (config.CCR_ENABLED) {
-    bot.command('ccr', handleCcrCommand);
+    cmd('ccr', handleCcrCommand);
   }
-  bot.command('plan', handlePlan);
-  bot.command('explore', handleExplore);
+  cmd('plan', handlePlan);
+  cmd('explore', handleExplore);
 
   // Session resume commands
-  bot.command('resume', handleResume);
-  bot.command('continue', handleContinue);
-  bot.command('sessions', handleSessions);
-  bot.command('recap', handleRecap);
+  cmd('resume', handleResume);
+  cmd('continue', handleContinue);
+  cmd('sessions', handleSessions);
+  cmd('recap', handleRecap);
 
   // Fork: /fork forks from current state; /accept and /decline are the
   // slash-command equivalents of the target-side inline buttons.
-  bot.command('fork', handleForkCommand);
-  bot.command('accept', handleAcceptCommand);
-  bot.command('decline', handleDeclineCommand);
+  cmd('fork', handleForkCommand);
+  cmd('accept', handleAcceptCommand);
+  cmd('decline', handleDeclineCommand);
 
   // Loop mode
-  bot.command('loop', handleLoop);
-  bot.command('projectcommands', handleProjectCommands);
-  bot.command('permissions', handlePermissions);
+  cmd('loop', handleLoop);
+  cmd('projectcommands', handleProjectCommands);
+  cmd('permissions', handlePermissions);
 
   // Teleport to terminal
-  bot.command('teleport', handleTeleport);
+  cmd('teleport', handleTeleport);
 
   // File commands
-  bot.command('file', handleFile);
-  bot.command('telegraph', handleTelegraph);
-  bot.command('suggestions', handleSuggestions);
+  cmd('file', handleFile);
+  cmd('telegraph', handleTelegraph);
+  cmd('suggestions', handleSuggestions);
 
   // Reddit
   if (config.REDDIT_ENABLED) {
-    bot.command('reddit', handleReddit);
+    cmd('reddit', handleReddit);
   }
   if (config.VREDDIT_ENABLED) {
-    bot.command('vreddit', handleVReddit);
+    cmd('vreddit', handleVReddit);
   }
   if (config.MEDIUM_ENABLED) {
-    bot.command('medium', handleMedium);
+    cmd('medium', handleMedium);
   }
 
   // Transcribe
   if (config.TRANSCRIBE_ENABLED) {
-    bot.command('transcribe', handleTranscribe);
+    cmd('transcribe', handleTranscribe);
   }
 
   // Media extraction
   if (config.EXTRACT_ENABLED) {
-    bot.command('extract', handleExtract);
+    cmd('extract', handleExtract);
   }
 
   // Callback query handler for inline keyboards

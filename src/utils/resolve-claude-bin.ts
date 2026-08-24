@@ -51,3 +51,16 @@ export function resolveBundledClaudeBin(): string | undefined {
     return undefined;
   }
 }
+
+/**
+ * The executable a given transport actually runs, so anything that inspects
+ * the CLI (its command list, its version) inspects the same build the user's
+ * turns go through. The two can be different installs at different versions:
+ * SDK mode prefers the binary bundled in node_modules, PTY mode spawns
+ * CLAUDE_BIN — the same precedence `/context` already follows.
+ */
+export function resolveClaudeExecutableForMethod(method: 'sdk' | 'pty'): string {
+  return method === 'pty'
+    ? process.env.CLAUDE_BIN || config.CLAUDE_EXECUTABLE_PATH
+    : resolveActiveClaudeExecutable();
+}

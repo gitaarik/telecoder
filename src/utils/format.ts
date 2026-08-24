@@ -24,3 +24,18 @@ export function getProgressBar(pct: number): string {
   const color = clamped >= 80 ? '🔴' : clamped >= 60 ? '🟡' : '🟢';
   return color + ' [' + '█'.repeat(filled) + '░'.repeat(empty) + ']';
 }
+
+/**
+ * One-line manual `/compact` confirmation with the token reduction.
+ *
+ * Shared by both providers: the PTY provider reads the numbers back out of the
+ * session JSONL, the SDK provider gets them on the `compact_boundary` message.
+ * Same command, same wording, whichever transport ran it.
+ */
+export function formatCompactionConfirmation(c: { preTokens: number; postTokens?: number }): string {
+  const before = fmtTokens(c.preTokens);
+  // postTokens is absent on older Claude Code builds — omit the arrow then.
+  return c.postTokens && c.postTokens > 0
+    ? `🗜️ Context compacted — ${before} → ${fmtTokens(c.postTokens)} tokens.`
+    : `🗜️ Context compacted — was ${before} tokens.`;
+}

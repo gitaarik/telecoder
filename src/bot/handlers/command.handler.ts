@@ -7,13 +7,16 @@ import { getUptimeFormatted } from '../middleware/stale-filter.js';
 import { getAvailableCommands } from '../../claude/command-parser.js';
 import { cancelRequest, clearQueue, isProcessing, queueRequest } from '../../claude/request-queue.js';
 import { createTelegraphFromFile } from '../../telegram/telegraph.js';
-import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
+import { escapeMarkdownV2 as esc, escapeMarkdownV2Code as escCode } from '../../telegram/markdown.js';
 import { maybeSendVoiceReply } from '../../tts/voice-reply.js';
 import { fmtTokens, getProgressBar } from '../../utils/format.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { getWorkspaceRoot, isPathWithinRoot } from '../../utils/workspace-guard.js';
+import { resolveClaudeExecutableForMethod } from '../../utils/resolve-claude-bin.js';
+import { getActiveMethod } from '../../providers/claude-provider.js';
+import { groupAvailableCommands, type AvailableCommands } from '../../claude/available-commands.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
 import { replyMd, getEffortLabel, buildBackToPreviousButton } from './command/shared.js';
 import { getSessionTopic } from './command/topic.js';
@@ -554,25 +557,112 @@ export async function handleProjectCommands(ctx: Context): Promise<void> {
   }
 
   const { getProjectCommands } = await import('../../claude/project-commands.js');
-  const commands = getProjectCommands(session.workingDirectory);
-  if (commands.length === 0) {
-    await replyMd(
-      ctx,
-      `No project slash commands in \`${esc(path.basename(session.workingDirectory))}\`\\.\n\n` +
-      `Add markdown files under \`.claude/commands/\` to define them — see [docs](https://docs.claude.com/en/docs/claude-code/slash-commands)\\.`,
-    );
-    return;
+  const { getAvailableCommands: getClaudeCommands } = await import('../../claude/available-commands.js');
+  const { getBotCommandNames } = await import('../../claude/command-parser.js');
+
+  const projectCommands = getProjectCommands(session.workingDirectory);
+  // Ask the binary this chat's turns actually run through. SDK and PTY mode
+  // can be different installs at different versions, and their command sets
+  // differ — listing the wrong one would name commands that don't exist here.
+  const executable = resolveClaudeExecutableForMethod(getActiveMethod(keyInfo.chatId));
+  // A cold cache means a probe — a fresh headless process — so show a typing
+  // indicator rather than leaving the chat silent for a second or two.
+  const typing = ctx.replyWithChatAction?.('typing');
+  const snapshot = await getClaudeCommands(session.workingDirectory, executable);
+  await typing?.catch(() => { /* chat action is best-effort */ });
+
+  await replyMd(ctx, buildProjectCommandsMessage({
+    directory: path.basename(session.workingDirectory),
+    projectCommands,
+    snapshot,
+    botCommandNames: getBotCommandNames(),
+  }));
+}
+
+/**
+ * Render the `/projectcommands` listing. Pure so the MarkdownV2 escaping —
+ * which only fails at send time, as a Telegram 400 — is unit-testable.
+ *
+ * `snapshot` is undefined when Claude Code's own command list couldn't be
+ * read; the project commands still list, since those come off disk.
+ */
+export function buildProjectCommandsMessage(input: {
+  directory: string;
+  projectCommands: Array<{ name: string; description: string }>;
+  snapshot: AvailableCommands | undefined;
+  botCommandNames: ReadonlySet<string>;
+}): string {
+  const { directory, projectCommands, snapshot, botCommandNames } = input;
+  const lines: string[] = [`📜 *Commands available in* \`${escCode(directory)}\``, ''];
+
+  if (projectCommands.length > 0) {
+    lines.push('*Project* \\(`.claude/commands/`\\):', '');
+    for (const c of projectCommands) {
+      const desc = c.description ? ` — ${esc(c.description)}` : '';
+      lines.push(`• \`/${escCode(c.name)}\`${desc}`);
+    }
+    lines.push('');
   }
 
-  const lines: string[] = [
-    `📜 *Project commands* \\(${commands.length}\\) in \`${esc(path.basename(session.workingDirectory))}\``,
-    '',
-    ...commands.map((c) => {
-      const desc = c.description ? ` — ${esc(c.description)}` : '';
-      return `• \`/${esc(c.name)}\`${desc}`;
-    }),
-  ];
-  await replyMd(ctx, lines.join('\n'));
+  if (snapshot) {
+    const { skills, plugins, builtIns } = groupAvailableCommands(snapshot);
+    // A command TeleCoder registers never reaches Claude Code — grammY matches
+    // it first — so listing it as passthrough would be a lie. Name them
+    // separately instead, so nobody wonders why /loop isn't the skill.
+    const shadowed = snapshot.slashCommands.filter((n) => botCommandNames.has(n)).sort();
+    const passthrough = (names: string[]): string =>
+      names.filter((n) => !botCommandNames.has(n)).map((n) => `\`/${escCode(n)}\``).join(', ');
+
+    const groups: Array<[string, string]> = [
+      ['*Skills:*', passthrough(skills)],
+      ['*Plugin:*', passthrough(plugins)],
+      ['*Built\\-in:*', passthrough(builtIns)],
+    ];
+    for (const [title, list] of groups) {
+      if (list) lines.push(title, '', list, '');
+    }
+
+    if (shadowed.length > 0) {
+      lines.push(
+        "⚠️ *Shadowed by TeleCoder* — these run the bot's own command, not Claude Code's:",
+        '',
+        shadowed.map((n) => `\`/${escCode(n)}\``).join(', '),
+        '',
+      );
+    }
+  } else {
+    lines.push("_Claude Code's own command list is unavailable right now\\._", '');
+  }
+
+  if (projectCommands.length === 0) {
+    lines.push(
+      'Add markdown files under `.claude/commands/` to define project commands — '
+      + 'see [docs](https://docs.claude.com/en/docs/claude-code/slash-commands)\\.',
+    );
+  }
+
+  return joinWithinLimit(lines, 3900);
+}
+
+/**
+ * Join lines up to a byte budget, dropping whole lines rather than cutting
+ * mid-line. A byte-wise truncation would happily split a MarkdownV2 escape or
+ * leave a backtick unclosed, and Telegram rejects the whole message for it.
+ */
+function joinWithinLimit(lines: string[], maxBytes: number): string {
+  const notice = '\n_…list truncated\\._';
+  const budget = maxBytes - Buffer.byteLength(notice, 'utf8');
+  const kept: string[] = [];
+  let size = 0;
+  for (const line of lines) {
+    const cost = Buffer.byteLength(line, 'utf8') + 1;
+    if (size + cost > budget) {
+      return kept.join('\n').trimEnd() + notice;
+    }
+    kept.push(line);
+    size += cost;
+  }
+  return kept.join('\n').trimEnd();
 }
 
 export async function handleLoop(ctx: Context): Promise<void> {
