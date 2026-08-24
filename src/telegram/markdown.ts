@@ -253,6 +253,17 @@ export function escapeMarkdownV2(text: string): string {
 }
 
 /**
+ * Escape for use *inside* a MarkdownV2 code span or block, where the rules are
+ * narrower: only a backtick and a backslash carry meaning, and a backslash
+ * before anything else renders literally rather than escaping it. Running the
+ * general escaper over a code span is what puts a visible backslash in the
+ * middle of names like `/code-review`.
+ */
+export function escapeMarkdownV2Code(text: string): string {
+  return text.replace(/([\\`])/g, '\\$1');
+}
+
+/**
  * Smart message splitter that respects code blocks and markdown formatting
  */
 export function splitMessage(text: string, maxLength: number = MAX_MESSAGE_LENGTH): string[] {
