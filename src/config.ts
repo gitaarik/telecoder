@@ -96,6 +96,17 @@ const envSchema = z.object({
   // in ~/.claude.json rather than in settings.json: --setting-sources cannot
   // reach them either way.
   EXTRA_MCP_CONFIG: z.string().optional(),
+  // Marketplace plugins to enable inside the agent, as the `plugin@marketplace`
+  // ids `claude plugin list` prints, comma-separated. Neither transport reads
+  // ~/.claude/settings.json, which is where `enabledPlugins` normally lives, so
+  // this is the only way a plugin you enabled in the terminal reaches a
+  // Telegram session. See src/claude/enabled-plugins.ts for why they skip it.
+  CLAUDE_PLUGINS: z
+    .string()
+    .default('')
+    .transform((val) =>
+      val ? val.split(',').map((name) => name.trim()).filter(Boolean) : []
+    ),
   CLAUDE_REASONING_SUMMARY: z
     .string()
     .default('true')

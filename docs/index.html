@@ -1748,6 +1748,7 @@
   <symbol id="i-stream" viewBox="0 0 24 24"><path d="M3 8h9"/><path d="M3 12h6"/><path d="M3 16h9"/><path d="M15.5 7.5 20 12l-4.5 4.5"/></symbol>
   <symbol id="i-tools" viewBox="0 0 24 24"><path d="M17.6 2.8a5.5 5.5 0 0 0-6.4 7.1L3.5 17.6a2.1 2.1 0 0 0 3 3l7.7-7.7a5.5 5.5 0 0 0 7.1-6.4l-3.1 3.1-2.7-.7z"/></symbol>
   <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 2.8v4.4"/><path d="M15 2.8v4.4"/><path d="M6.5 7.2h11v3.3a5.5 5.5 0 0 1-11 0z"/><path d="M12 16v5.2"/></symbol>
+  <symbol id="i-plugins" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><path d="M17 13.8v6.4"/><path d="M13.8 17h6.4"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.5c0 4.3-3.1 7-7.5 7.8-4.4-.8-7.5-3.5-7.5-7.8V6z"/><circle cx="12" cy="10.8" r="1.6"/><path d="M12 12.4v2.4"/></symbol>
   <symbol id="i-vault" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="12" cy="12" r="3.6"/><path d="M12 6.2v2.2"/><path d="M12 15.6v2.2"/><path d="M17.6 12h-2.2"/><path d="M8.6 12H6.4"/></symbol>
   <symbol id="i-fence" viewBox="0 0 24 24"><path d="M4 20V8.5L6.5 6 9 8.5V20z"/><path d="M15 20V8.5L17.5 6 20 8.5V20z"/><path d="M4 11.5h16"/><path d="M4 15.5h16"/></symbol>
@@ -1990,6 +1991,13 @@
             <h3>Your own MCP servers</h3>
             <p>Point <code>EXTRA_MCP_CONFIG</code> at a JSON file and its servers spawn beside the
             bot's own, without dragging in every server the machine has ever registered.</p>
+          </div>
+          <div class="feature-card" data-category="agent">
+            <div class="feature-icon"><svg><use href="#i-plugins"/></svg></div>
+            <h3>Your Claude Code plugins</h3>
+            <p>Name them in <code>CLAUDE_PLUGINS</code> and their skills and commands are there in
+            Telegram too — enabling a plugin in the terminal writes to a settings file the bot
+            deliberately skips, so it would otherwise go missing with nothing to say why.</p>
           </div>
           <div class="feature-card" data-category="agent">
             <div class="feature-icon"><svg><use href="#i-levels"/></svg></div>
@@ -2441,6 +2449,11 @@ CCR_AUTOSTART=true</pre>
                   <td class="var-name">WORKSPACE_DIR</td>
                   <td>Default workspace path for projects</td>
                   <td class="required-no">No</td>
+                </tr>
+                <tr>
+                  <td class="var-name">CLAUDE_PLUGINS</td>
+                  <td>Marketplace plugins to enable in the agent, as plugin@marketplace ids, comma-separated</td>
+                  <td class="required-optional">Optional</td>
                 </tr>
                 <tr>
                   <td class="var-name">STREAMING_MODE</td>

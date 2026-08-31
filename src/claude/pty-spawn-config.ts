@@ -18,6 +18,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from '../config.js';
 import { DENY_MARKER_START, DENY_MARKER_END } from './permission-gate.js';
+import { enabledPluginsSetting } from './enabled-plugins.js';
 
 const PROVIDER_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const MCP_SERVER_JS = path.resolve(PROVIDER_DIR, '../bin/mcp-server.js');
@@ -29,6 +30,11 @@ export const MCP_SERVER_JS = path.resolve(PROVIDER_DIR, '../bin/mcp-server.js');
  *
  * Stop / SubagentStop are intentionally NOT registered here — Phase 2 will
  * use them as the end-of-turn signal. UserPromptSubmit is similarly deferred.
+ *
+ * CLAUDE_PLUGINS rides along in the same payload. The flag tier this lands in
+ * outranks project and local settings and merges with them, so naming a plugin
+ * here adds it to whatever the project already enables — see enabled-plugins.ts
+ * for why the user's own settings.json cannot carry it instead.
  */
 export function buildSettingsJson(ipcPort: number): string {
   const hookCommand = (eventName: string) =>
@@ -55,7 +61,10 @@ export function buildSettingsJson(ipcPort: number): string {
     `REASON=\${RESP##*${DENY_MARKER_START}}; REASON=\${REASON%%${DENY_MARKER_END}*}; ` +
     `printf '%s' "$REASON" >&2; exit 2 ;; esac; exit 0`;
 
+  const enabledPlugins = enabledPluginsSetting();
+
   return JSON.stringify({
+    ...(enabledPlugins ? { enabledPlugins } : {}),
     hooks: {
       PreToolUse: [{ hooks: [{ type: 'command', command: preToolUseCommand }] }],
       PostToolUse: [{ hooks: [{ type: 'command', command: hookCommand('postToolUse') }] }],

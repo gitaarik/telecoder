@@ -27,6 +27,7 @@ import { createTeleCoderMcpServer } from './mcp-tools.js';
 import { isSubagentTool } from './subagent-tools.js';
 import { isNativeCompactCommand } from './command-parser.js';
 import { recordAvailableCommands } from './available-commands.js';
+import { enabledPluginsSetting } from './enabled-plugins.js';
 import { getSessionTopic, getMsSinceTopicSet } from '../bot/handlers/command/topic-store.js';
 import {
   createAgentTimer,
@@ -548,6 +549,8 @@ export async function sendToAgent(
         ? resolveBundledClaudeBin()
         : config.CLAUDE_EXECUTABLE_PATH);
 
+    const enabledPlugins = enabledPluginsSetting();
+
     const queryOptions: Parameters<typeof query>[0]['options'] = {
       cwd,
       tools: toolsOption,
@@ -562,6 +565,11 @@ export async function sendToAgent(
       settingSources: (config.CLAUDE_SDK_LOAD_USER_SETTINGS
         ? ['project', 'user']
         : ['project']) as SettingSource[],
+      // The pty's --settings equivalent, and here for the same reason: the
+      // sources above skip ~/.claude/settings.json, so CLAUDE_PLUGINS is what
+      // carries a marketplace plugin into the session. Flag tier, so it merges
+      // with the project's own enabledPlugins rather than replacing them.
+      ...(enabledPlugins ? { settings: { enabledPlugins } } : {}),
       model: effectiveModel,
       ...(effectiveEffort ? { effort: effectiveEffort } : {}),
       resume: existingSessionId,

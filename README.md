@@ -487,6 +487,7 @@ See [Sharing a bot](#sharing-a-bot) for how the pieces fit together.
 | `ANTHROPIC_API_KEY` | — | API key (optional with Claude Max subscription) |
 | `WORKSPACE_DIR` | `$HOME` | Root directory for project picker |
 | `CLAUDE_EXECUTABLE_PATH` | `claude` | Path to Claude Code CLI |
+| `CLAUDE_PLUGINS` | — | Marketplace plugins to enable in the agent, as `plugin@marketplace` ids, comma-separated |
 | `BOT_NAME` | `TeleCoder` | Bot name in system prompt |
 | `STREAMING_MODE` | `streaming` | `streaming` or `wait` |
 | `DANGEROUS_MODE` | `false` | Auto-approve all tool permissions |
