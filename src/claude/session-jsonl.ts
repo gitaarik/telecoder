@@ -7,6 +7,15 @@ export interface RecapExchange {
   assistant: string;
 }
 
+/** One prompt the user actually typed, as reconstructed from the session log. */
+export interface UserPrompt {
+  text: string;
+  /** ISO timestamp Claude Code recorded for the prompt, when the log carried one. */
+  timestamp?: string;
+  /** True when no assistant turn follows: still being answered, or interrupted. */
+  pending: boolean;
+}
+
 interface ContentBlock {
   type?: string;
   text?: string;
@@ -443,26 +452,26 @@ export function readLastAiTitle(
   return lastTitle;
 }
 
+/** One side of a conversation turn, reconstructed from the session log. */
+interface Turn {
+  role: 'user' | 'assistant';
+  text: string;
+  /** ISO timestamp of the first record in the turn, when the log carried one. */
+  timestamp?: string;
+}
+
 /**
- * Read the JSONL log for a session and return the last `n` user/assistant
- * exchanges. Tool calls, tool results, and thinking blocks are skipped so the
- * recap reads like a conversation transcript.
+ * Rebuild the conversation as an alternating list of turns. Multiple
+ * consecutive records of the same role (e.g. assistant emits thinking + text in
+ * separate records) collapse into a single turn, so every user turn is followed
+ * by at most one assistant turn.
  */
-export function readRecentExchanges(
-  workingDirectory: string,
-  sessionId: string,
-  n: number,
-): RecapExchange[] {
+function readTurns(workingDirectory: string, sessionId: string): Turn[] {
   const filePath = sessionJsonlPath(workingDirectory, sessionId);
   if (!fs.existsSync(filePath)) return [];
 
   const raw = fs.readFileSync(filePath, 'utf-8');
   const lines = raw.split('\n');
-
-  // Build an alternating list of {role, text} turns. Multiple consecutive
-  // records of the same role (e.g. assistant emits thinking + text in
-  // separate records) collapse into a single turn.
-  type Turn = { role: 'user' | 'assistant'; text: string };
   const turns: Turn[] = [];
 
   for (const line of lines) {
@@ -489,9 +498,24 @@ export function readRecentExchanges(
     if (last && last.role === role) {
       last.text += '\n\n' + text;
     } else {
-      turns.push({ role, text });
+      turns.push({ role, text, timestamp: rec.timestamp });
     }
   }
+
+  return turns;
+}
+
+/**
+ * Read the JSONL log for a session and return the last `n` user/assistant
+ * exchanges. Tool calls, tool results, and thinking blocks are skipped so the
+ * recap reads like a conversation transcript.
+ */
+export function readRecentExchanges(
+  workingDirectory: string,
+  sessionId: string,
+  n: number,
+): RecapExchange[] {
+  const turns = readTurns(workingDirectory, sessionId);
 
   // Pair user → assistant exchanges. Skip an unpaired trailing user turn
   // (in-flight question with no response yet).
@@ -505,6 +529,34 @@ export function readRecentExchanges(
   }
 
   return exchanges.slice(-n);
+}
+
+/**
+ * The last `n` prompts the user typed, oldest first.
+ *
+ * Unlike readRecentExchanges this keeps a trailing prompt that has no reply yet
+ * and flags it `pending`. "What did I just ask?" while a long turn is still
+ * running is the case /prompts exists for, so dropping the unanswered tail
+ * would answer every question but that one.
+ */
+export function readRecentUserPrompts(
+  workingDirectory: string,
+  sessionId: string,
+  n: number,
+): UserPrompt[] {
+  const turns = readTurns(workingDirectory, sessionId);
+  const prompts: UserPrompt[] = [];
+
+  for (let i = 0; i < turns.length; i++) {
+    if (turns[i].role !== 'user') continue;
+    prompts.push({
+      text: turns[i].text,
+      timestamp: turns[i].timestamp,
+      pending: turns[i + 1]?.role !== 'assistant',
+    });
+  }
+
+  return prompts.slice(-n);
 }
 
 /**

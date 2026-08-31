@@ -11,7 +11,7 @@ vi.mock('os', async (importOriginal) => {
   return { ...actual, default: actual, homedir: () => process.env.TELECODER_TEST_HOME ?? actual.homedir() };
 });
 
-const { readLastAssistantTurnText, readRecentExchanges } = await import('../../src/claude/session-jsonl.js');
+const { readLastAssistantTurnText, readRecentExchanges, readRecentUserPrompts } = await import('../../src/claude/session-jsonl.js');
 
 const CWD = '/home/someone/dev/telecoder';
 const SESSION = 'aaaaaaaa-bbbb-cccc-dddd-ffffffffffff';
@@ -147,5 +147,45 @@ describe('readRecentExchanges', () => {
     expect(readRecentExchanges(CWD, SESSION, 3)).toEqual([
       { user: 'run the audit and summarise', assistant: 'first half\n\nsecond half' },
     ]);
+  });
+});
+
+describe('readRecentUserPrompts', () => {
+  it('keeps the trailing prompt that has no reply yet and flags it pending', () => {
+    writeLog([
+      userPrompt('u1', 'first question'),
+      assistant('a1', 'first answer'),
+      userPrompt('u2', 'still running'),
+    ]);
+    expect(readRecentUserPrompts(CWD, SESSION, 5)).toEqual([
+      { text: 'first question', timestamp: '2026-08-24T10:00:00.000Z', pending: false },
+      { text: 'still running', timestamp: '2026-08-24T10:00:00.000Z', pending: true },
+    ]);
+  });
+
+  it('ignores tool results and records Claude Code injected itself', () => {
+    writeLog([
+      userPrompt('u1', 'run the audit and summarise'),
+      assistant('a1', 'first half'),
+      toolResult('tr1'),
+      taskNotification('n1', 'Agent "Audit" completed'),
+      assistant('a2', 'second half'),
+    ]);
+    expect(readRecentUserPrompts(CWD, SESSION, 5)).toEqual([
+      { text: 'run the audit and summarise', timestamp: '2026-08-24T10:00:00.000Z', pending: false },
+    ]);
+  });
+
+  it('returns the newest n, oldest first', () => {
+    writeLog([
+      userPrompt('u1', 'one'), assistant('a1', 'r1'),
+      userPrompt('u2', 'two'), assistant('a2', 'r2'),
+      userPrompt('u3', 'three'), assistant('a3', 'r3'),
+    ]);
+    expect(readRecentUserPrompts(CWD, SESSION, 2).map((p) => p.text)).toEqual(['two', 'three']);
+  });
+
+  it('returns nothing when the session log is not on disk', () => {
+    expect(readRecentUserPrompts(CWD, 'no-such-session', 5)).toEqual([]);
   });
 });

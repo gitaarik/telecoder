@@ -47,6 +47,7 @@ import {
   handleResumeCallback,
   handleContinue,
   handleRecap,
+  handlePrompts,
   handleSync,
   handleHandoff,
   handlePermissions,
@@ -254,6 +255,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'accept', description: '📦 Accept a pending fork from another bot' },
     { command: 'decline', description: '🚫 Discard a pending fork' },
     { command: 'recap', description: '📋 Recap last messages of current session' },
+    { command: 'prompts', description: '💬 List just the prompts you sent, no replies' },
     { command: 'sync', description: '📨 Resend any missed reply from the session log' },
     { command: 'handoff', description: '📦 Export the session as a markdown handoff document' },
     { command: 'schedule', description: '🔔 Schedule a recurring prompt (e.g. every 1h, daily 9am)' },
@@ -411,6 +413,7 @@ export async function createBot(): Promise<Bot> {
   cmd('continue', handleContinue);
   cmd('sessions', handleSessions);
   cmd('recap', handleRecap);
+  cmd('prompts', handlePrompts);
 
   // Fork: /fork forks from current state; /accept and /decline are the
   // slash-command equivalents of the target-side inline buttons.

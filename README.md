@@ -319,6 +319,7 @@ Open your bot in Telegram → `/start`
 | `/resume` | Pick from recent sessions |
 | `/continue` | Resume most recent session |
 | `/recap [N]` | Re-read the last N exchanges of the current session (default 3) |
+| `/prompts [N]` | List just the last N prompts you sent, without the replies (default 5, max 20) |
 | `/sync` | Resend the latest assistant reply from the session log if Telegram missed any of it |
 | `/handoff` | Dump the conversation to markdown — Telegraph link plus downloadable file |
 | `/fork` | Fork the conversation — new branch on this bot, or hand off to a sibling bot |

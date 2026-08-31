@@ -2099,8 +2099,9 @@
           <div class="feature-card" data-category="sessions">
             <div class="feature-icon"><svg><use href="#i-back"/></svg></div>
             <h3>Pick up where you left off</h3>
-            <p>A one-tap button resumes the session you just cleared, and <code>/recap</code>
-            re-reads the last few exchanges so you can orient yourself in a restored one.</p>
+            <p>A one-tap button resumes the session you just cleared, <code>/recap</code>
+            re-reads the last few exchanges, and <code>/prompts</code> lists only what you
+            typed — usually the fastest way to remember what a conversation was about.</p>
           </div>
           <div class="feature-card" data-category="sessions">
             <div class="feature-icon"><svg><use href="#i-topic"/></svg></div>
@@ -2644,6 +2645,10 @@ CCR_AUTOSTART=true</pre>
             <div class="command-row">
               <code class="command-code">/recap [N]</code>
               <span class="command-desc">Re-read the last N exchanges of the current session (default 3)</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/prompts [N]</code>
+              <span class="command-desc">List just the last N prompts you sent, one line each, without the replies (default 5, max 20)</span>
             </div>
             <div class="command-row">
               <code class="command-code">/sync</code>

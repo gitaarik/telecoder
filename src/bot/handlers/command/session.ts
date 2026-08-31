@@ -1,6 +1,6 @@
 /**
- * Session lifecycle: /clear, /resume, /continue, /recap, /handoff, /sync,
- * /sessions and /teleport.
+ * Session lifecycle: /clear, /resume, /continue, /recap, /prompts, /handoff,
+ * /sync, /sessions and /teleport.
  *
  * All of these move a chat between conversations — starting a fresh one,
  * picking an older one back up, or summarising what a previous one did — so
@@ -18,8 +18,10 @@ import { messageSender } from '../../../telegram/message-sender.js';
 import { escapeMarkdownV2 as esc, processMessageForTelegram } from '../../../telegram/markdown.js';
 import {
   readRecentExchanges,
+  readRecentUserPrompts,
   readLastAssistantTurnText,
   type RecapExchange,
+  type UserPrompt,
 } from '../../../claude/session-jsonl.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../../../utils/session-key.js';
 import {
@@ -325,6 +327,84 @@ export async function handleRecap(ctx: Context): Promise<void> {
   }
 
   await sendRecap(ctx, exchanges);
+}
+
+// /prompts answers "what was this conversation about?" without paying for the
+// replies again — so it lists only what you typed, one line each, in a single
+// message. That's the whole difference from /recap, which re-sends every
+// assistant reply in full and buries the prompts you came back to read.
+const PROMPTS_MAX_CHARS = 300;
+const PROMPTS_DEFAULT_N = 5;
+const PROMPTS_MAX_N = 20;
+// Telegram's hard cap is 4096 chars per message. Budget below it: escaping is
+// applied before a line is measured, but the header and newlines are not.
+const PROMPTS_BUDGET_CHARS = 3800;
+
+/**
+ * Render the prompt list as one MarkdownV2 message, oldest first so it reads in
+ * the same order as the chat above it.
+ *
+ * The budget is spent newest-first and the list flipped afterwards: 20 pasted
+ * prompts can exceed one Telegram message, and when something has to go it
+ * should be the oldest, not the one you just sent.
+ */
+export function buildPromptsMessage(prompts: UserPrompt[]): string {
+  const lines: string[] = [];
+  let used = 0;
+
+  for (let i = prompts.length - 1; i >= 0; i--) {
+    const p = prompts[i];
+    const when = p.timestamp ? formatTimeAgo(new Date(p.timestamp)) : 'earlier';
+    // ⏳ marks a prompt with no reply yet: either in flight right now, or
+    // interrupted before Claude answered it.
+    const pending = p.pending ? ' ⏳' : '';
+    const line = `• _${esc(when)}_${pending} — ${esc(truncateUserPrompt(p.text, PROMPTS_MAX_CHARS))}`;
+    if (lines.length > 0 && used + line.length > PROMPTS_BUDGET_CHARS) break;
+    used += line.length + 1;
+    lines.push(line);
+  }
+  lines.reverse();
+
+  const dropped = prompts.length - lines.length;
+  const suffix = dropped > 0 ? ` \\(${dropped} older trimmed to fit\\)` : '';
+  return [`💬 *Prompts* — last ${lines.length}${suffix}`, '', ...lines].join('\n');
+}
+
+export async function handlePrompts(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { sessionKey } = keyInfo;
+
+  const text = ctx.message?.text || '';
+  const arg = text.split(' ').slice(1).join(' ').trim();
+
+  let n = PROMPTS_DEFAULT_N;
+  if (arg) {
+    const parsed = parseInt(arg, 10);
+    if (Number.isNaN(parsed) || parsed < 1) {
+      await replyMd(ctx, '⚠️ Usage: `/prompts [N]` where N is the number of prompts \\(default 5, max 20\\)\\.');
+      return;
+    }
+    n = Math.min(parsed, PROMPTS_MAX_N);
+  }
+
+  const session = sessionManager.getSession(sessionKey);
+  if (!session) {
+    await replyMd(ctx, '⚠️ No active session\\. Use `/continue` or `/resume` first\\.');
+    return;
+  }
+  if (!session.claudeSessionId) {
+    await replyMd(ctx, 'ℹ️ This session has no recorded messages yet\\.');
+    return;
+  }
+
+  const prompts = readRecentUserPrompts(session.workingDirectory, session.claudeSessionId, n);
+  if (prompts.length === 0) {
+    await replyMd(ctx, 'ℹ️ No prompts found in this session yet\\.');
+    return;
+  }
+
+  await replyMd(ctx, buildPromptsMessage(prompts));
 }
 
 /**
