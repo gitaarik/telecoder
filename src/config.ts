@@ -17,7 +17,7 @@ const envSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().min(1, 'Telegram bot token is required'),
   ALLOWED_USER_IDS: z
     .string()
-    .min(1, 'At least one allowed user ID is required')
+    .min(1, 'At least one allowed user ID is required (your own numeric Telegram id — get it from @userinfobot)')
     .transform((val) => val.split(',').map((id) => parseInt(id.trim(), 10))),
   ALLOWED_GROUP_IDS: z
     .string()
@@ -382,6 +382,32 @@ if (!parsed.success) {
   console.error('❌ Invalid environment configuration:');
   console.error(parsed.error.message);
   process.exit(1);
+}
+
+/**
+ * ADMIN_USER_IDS narrows who, among the people ALLOWED_USER_IDS lets in, may
+ * approve prompts and run lifecycle commands. It does not grant access itself.
+ *
+ * Reading it as a replacement rather than a subset is the natural mistake — the
+ * variable that mentions "admin" looks like the more powerful one — and the
+ * failure it produces is misleading: the bot dies on ALLOWED_USER_IDS being
+ * empty and never mentions the line you actually filled in. So the check names
+ * both, here, at the point of exit.
+ */
+if (parsed.data.ADMIN_USER_IDS.length > 0) {
+  const orphaned = parsed.data.ADMIN_USER_IDS.filter(
+    (id) => !parsed.data.ALLOWED_USER_IDS.includes(id)
+  );
+  if (orphaned.length > 0) {
+    console.error('❌ Invalid environment configuration:');
+    console.error(
+      `  ADMIN_USER_IDS lists ${orphaned.join(', ')}, which ALLOWED_USER_IDS does not.\n` +
+      '  ADMIN_USER_IDS picks the admins out of ALLOWED_USER_IDS; it does not grant access\n' +
+      '  on its own, so an id in one and not the other can never do anything.\n' +
+      `  Add ${orphaned.length === 1 ? 'it' : 'them'} to ALLOWED_USER_IDS too — the same id in both lines is normal.`
+    );
+    process.exit(1);
+  }
 }
 
 // /reddit is the one integration with a hard credential gate: without an OAuth

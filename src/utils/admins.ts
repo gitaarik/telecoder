@@ -30,33 +30,16 @@ import { config } from '../config.js';
  */
 export const GROUP_ANONYMOUS_BOT_ID = 1087968824;
 
-let warned = false;
-
-/**
- * Warn once about admin ids that can never actually act, because the auth
- * middleware turns them away before any admin check runs. Deliberately a
- * warning rather than an implicit widening of `ALLOWED_USER_IDS`: an id that
- * grants access should be visible in the variable that documents access.
- */
-function warnAboutUnreachableAdmins(): void {
-  if (warned) return;
-  warned = true;
-  const unreachable = config.ADMIN_USER_IDS.filter((id) => !config.ALLOWED_USER_IDS.includes(id));
-  if (unreachable.length > 0) {
-    console.warn(
-      `[admins] ADMIN_USER_IDS contains ${unreachable.join(', ')}, which ${unreachable.length === 1 ? 'is' : 'are'} ` +
-      'not in ALLOWED_USER_IDS — the auth middleware rejects them before any admin check runs. ' +
-      'Add them to ALLOWED_USER_IDS too.',
-    );
-  }
-}
-
 /**
  * The effective admin roster. Falls back to the full allow-list when
  * `ADMIN_USER_IDS` is unset, which is what keeps existing installs unchanged.
+ *
+ * An id here that `ALLOWED_USER_IDS` does not also carry can never act — the
+ * auth middleware turns it away before any admin check runs — so config.ts
+ * refuses to start on one rather than leaving it to surface later, as an
+ * approval prompt that silently went to the wrong person.
  */
 export function getAdminIds(): number[] {
-  warnAboutUnreachableAdmins();
   if (config.ADMIN_USER_IDS.length === 0) return [...config.ALLOWED_USER_IDS];
   return [...config.ADMIN_USER_IDS];
 }
@@ -85,9 +68,4 @@ export function hasGuestUsers(): boolean {
 export function getGuestIds(): number[] {
   const admins = getAdminIds();
   return config.ALLOWED_USER_IDS.filter((id) => !admins.includes(id));
-}
-
-/** Test seam — production never needs to re-arm the warning. */
-export function resetAdminWarnings(): void {
-  warned = false;
 }
