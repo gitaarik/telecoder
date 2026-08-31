@@ -1,0 +1,58 @@
+# Changelog
+
+Notable changes per release. Each entry links the commit that carries the full
+reasoning — the commit bodies are the long form, this is the index.
+
+## [1.1.0] — 2026-08-31
+
+The release that makes a bot shareable. Everything before this assumed one
+person on one machine; this batch adds the access model, the guardrails and the
+visibility that a bot with other people in it needs.
+
+### Sharing a bot
+
+- **Admins and guests** (`9470e1d`) — `ADMIN_USER_IDS` names the subset of
+  allowed users who may approve permission prompts and run lifecycle and
+  transport commands. Unset, every allowed user is an admin, so single-user
+  installs are unchanged. Includes a scope guard, a charter read before anything
+  runs, and prompt-hold so a guest's request waits for an admin.
+- **Its own Unix account** (`e72ee84`) — `scripts/setup-shared-bot-user.sh`
+  provisions the account that decides what is actually *reachable*: no sudo, no
+  docker, its own checkout, and a `--verify` that becomes the account and tries
+  to read the operator's secrets rather than reasoning about file modes.
+- **Resource ceilings** (`d8efbd9`) — MemoryHigh throttles before MemoryMax
+  kills, CPUQuota leaves cores for everything else, IOWeight yields disk. Disk
+  is reported rather than enforced, since only filesystem quotas would be honest.
+- **Per-bot model and effort** (`365d134`) — `/model` and `/effort` apply to the
+  bot you ran them in, with an opt-in fan-out to the rest.
+
+### Added
+
+- **`/prompts`** (`680c436`) — lists just the prompts you sent, one line each,
+  without the replies. The fastest way to remember what a conversation was about.
+- **`/cost`** (`562c205`) — usage limits on a subscription, dollar totals on API
+  billing, plus a running per-conversation total that Claude Code cannot keep
+  because its own counter dies with every turn.
+- **`CLAUDE_PLUGINS`** (`7cdbf09`) — brings marketplace plugins into the agent.
+  Enabling one in the terminal writes to a settings file neither transport
+  reads, so its skills and commands were silently missing in Telegram.
+- **Claude Code's own slash commands** (`86d9622`) — `/commands` reports which
+  of them work here.
+- **`EXTRA_MCP_CONFIG`** (`11dae19`) — load MCP servers you name yourself,
+  without dragging in every server the machine has ever registered.
+
+### Fixed
+
+- **Refuse to start on an unreachable admin** (`2f19ba1`) — an id in
+  `ADMIN_USER_IDS` but not `ALLOWED_USER_IDS` can never act. This replaces a
+  warning that went to a log nobody reads and surfaced days later as an approval
+  sent to the wrong person.
+- **Truncated replies after a background task** (`6628922`) — a task reporting
+  in mid-turn wrote a user-role record that the transcript reader treated as a
+  turn boundary, dropping everything above it.
+- **MarkdownV2 code spans** (`11ab6fc`) — added the escaper they need, which has
+  different rules from ordinary text.
+
+## 1.0.0
+
+Everything before this changelog existed. See the git history.
