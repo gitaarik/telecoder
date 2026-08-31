@@ -29,6 +29,7 @@ import {
   handleRestartCallback,
   handleStartupCallback,
   handleContext,
+  handleCost,
   handleUpdate,
   handleUpdateCallback,
   handlePing,
@@ -245,6 +246,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'restartbot', description: '🔁 Restart the bot' },
     { command: 'rebuildbot', description: '🔄 Rebuild and restart with session restore' },
     { command: 'context', description: '🧠 Show Claude context usage' },
+    { command: 'cost', description: '💰 Show usage limits and cost' },
     { command: 'compact', description: '🗜️ Compact the context window' },
     { command: 'update', description: '⬆️ Update the Claude Code CLI' },
     { command: 'plan', description: '📋 Start planning mode' },
@@ -327,6 +329,7 @@ export async function createBot(): Promise<Bot> {
   cmd('rebuildbot', adminOnly(handleRebuild));
   cmd('btw', handleBtw); // Side question — must bypass queue to work mid-task
   cmd('tasks', handleTasks); // Read-only; must bypass queue so it works mid-stream
+  cmd('cost', handleCost); // Read-only account probe; bypasses the queue so it answers mid-turn
   cmd('shells', handleShells); // Lists/kills OS-level bg processes; must bypass queue to rescue hung sessions
   // /sync exists for the "I think a reply went missing" scenario, which by
   // definition includes hung or sluggish turns — gating it on sequentialize

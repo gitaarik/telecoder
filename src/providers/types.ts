@@ -13,7 +13,20 @@ export interface AgentUsage {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  /**
+   * What the turn that just finished cost. This is the CLI's own figure, and
+   * it covers the process that answered — which in SDK mode is one turn.
+   */
   totalCostUsd: number;
+  /**
+   * What the conversation has cost across every turn TeleCoder has recorded,
+   * with the turn count that went into it. Claude Code cannot report this: its
+   * counter dies with each process and the session log stores no pricing, so
+   * the running total is kept here instead (see `claude/session-cost.ts`).
+   * Zero in PTY mode, which never receives a cost figure to add up.
+   */
+  sessionCostUsd: number;
+  sessionCostTurns: number;
   contextWindow: number;
   numTurns: number;
   model: string;

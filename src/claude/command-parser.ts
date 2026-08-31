@@ -141,6 +141,7 @@ export function getAvailableCommands(): string {
     commands: [
       '• `/tts` \\- Toggle voice replies',
       '• `/context` \\- Show Claude context usage',
+      '• `/cost` \\- Show usage limits and cost from Claude Code',
       '• `/compact` \\- Compact the context window \\(reports the token reduction\\)',
       '• `/botstatus` \\- Show bot process status',
       `• \`/restartbot\` \\- Restart the bot process${adminTag}`,

@@ -369,6 +369,7 @@ Open your bot in Telegram → `/start`
 |---------|-------------|
 | `/ping` | Health check |
 | `/context` | Show Claude context / token usage |
+| `/cost` | Show usage limits and cost as Claude Code reports them — session/weekly limits on a subscription, dollar totals on API billing — plus TeleCoder's own running tally for the conversation, which the CLI cannot keep (SDK mode only) |
 | `/compact` | Compact the context window (SDK and PTY), reporting the token reduction |
 | `/statusline` | Toggle per-turn status line (effort, model, context %, cost) |
 | `/botname` | Toggle dynamic bot name (shows the active project) |

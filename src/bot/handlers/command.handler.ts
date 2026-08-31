@@ -63,6 +63,7 @@ export {
   handleExtractCallback,
   executeExtract,
 } from './command/media.js';
+export { handleCost, parseCostOutput } from './command/cost.js';
 export { handleTasks, handleTasksCallback, handleShells, handleShellsCallback } from './command/tasks.js';
 export { handleBtw, btwLabel, formatSideAnswer } from './command/btw.js';
 import { listProjectFiles } from './command/project.js';
@@ -322,7 +323,12 @@ ${isDangerousMode() ? '⚠️' : '🛡️'} *Dangerous Mode:* ${esc(dangerousMod
         ? Math.round(((cached.inputTokens + cached.outputTokens) / cached.contextWindow) * 100)
         : 0;
       status += `\n📐 *Context:* ${esc(String(pct))}% \\(${esc(fmtTokens(cached.inputTokens + cached.outputTokens))}/${esc(fmtTokens(cached.contextWindow))}\\)`;
-      status += `\n💰 *Session Cost:* \\$${esc(cached.totalCostUsd.toFixed(4))}`;
+      // Only when something has actually been tallied: PTY mode never receives
+      // a cost figure, and a flat $0.0000 there reads as a free conversation
+      // rather than as an unanswerable question.
+      if (cached.sessionCostTurns > 0) {
+        status += `\n💰 *Session Cost:* \\$${esc(cached.sessionCostUsd.toFixed(4))} \\(${esc(String(cached.sessionCostTurns))} turns\\)`;
+      }
     }
 
     status += `\n🕰️ *Created:* ${esc(session.createdAt.toLocaleString())}`;
@@ -367,8 +373,11 @@ export async function handleContext(ctx: Context): Promise<void> {
       + `- **Cache write:** ${fmtTokens(cached.cacheWriteTokens)}\n`
       + `- **Context window:** ${fmtTokens(cached.contextWindow)}\n`
       + `- **Turns this session:** ${cached.numTurns}\n`
-      + `- **Cost this query:** $${cached.totalCostUsd.toFixed(4)}\n\n`
-      + `_Data from last query. Send a message then run /context for fresh data._`;
+      + `- **Cost this query:** $${cached.totalCostUsd.toFixed(4)}\n`
+      + (cached.sessionCostTurns > 0
+        ? `- **Cost this chat:** $${cached.sessionCostUsd.toFixed(4)} across ${cached.sessionCostTurns} turns\n`
+        : '')
+      + `\n_Data from last query. Send a message then run /context for fresh data._`;
 
     await messageSender.sendMessage(ctx, output);
     return;

@@ -2844,6 +2844,10 @@ CCR_AUTOSTART=true</pre>
               <span class="command-desc">Show current context window usage. When it has to ask the CLI directly it does so on a throwaway fork, so the live conversation's transcript is never written to.</span>
             </div>
             <div class="command-row">
+              <code class="command-code">/cost</code>
+              <span class="command-desc">Show what Claude Code's own <code>/cost</code> reports. On a subscription that is the limits view — how much of the session and weekly windows is spent and when each resets, the same text <code>/usage</code> prints. On API billing it is dollar totals and per-model token counts, which belong to the CLI process that spent them: the counter does not survive a turn ending and no session log preserves it, so those totals cover the lookup itself and are labelled as such, with TeleCoder's own per-turn figure filling the gap. Adds TeleCoder's own running tally for the conversation — dollars and turn count, summed from each turn's result — which is the one figure the CLI cannot produce, and which is absent in PTY mode because that transport never receives a cost figure to add up. Needs no session, so it answers before a project is even open, and bypasses the queue to answer mid-turn. Asks your own CLI install rather than the copy bundled with the SDK, which trails it by many releases and replies with a single sentence.</span>
+            </div>
+            <div class="command-row">
               <code class="command-code">/compact</code>
               <span class="command-desc">Compact the context window — runs native Claude Code compaction and replies with the token reduction. Works in both SDK and PTY mode; when the context is already small enough to skip, it says so instead.</span>
             </div>

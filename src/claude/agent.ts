@@ -39,6 +39,7 @@ import {
 import { userPreferences } from '../providers/user-preferences.js';
 import { hasForeignThinkingSignatures } from './session-jsonl.js';
 import { BoundedMap } from '../utils/bounded-map.js';
+import { recordTurnCost, clearSessionCost } from './session-cost.js';
 import { parseSessionKey } from '../utils/session-key.js';
 import { resolveBundledClaudeBin, resolveActiveClaudeExecutable } from '../utils/resolve-claude-bin.js';
 import { formatCompactionConfirmation } from '../utils/format.js';
@@ -1036,6 +1037,9 @@ export async function sendToAgent(
               cacheReadTokens: mu.cacheReadInputTokens,
               cacheWriteTokens: mu.cacheCreationInputTokens,
               totalCostUsd: resultMsg.total_cost_usd,
+              // Filled in below, once the turn is known to have completed.
+              sessionCostUsd: 0,
+              sessionCostTurns: 0,
               contextWindow: mu.contextWindow,
               numTurns: resultMsg.num_turns,
               model: modelKey,
@@ -1181,6 +1185,12 @@ export async function sendToAgent(
 
   // Cache usage for /context and /status commands
   if (resultUsage) {
+    // `total_cost_usd` is the answering process's total, and SDK mode runs one
+    // process per turn — so this is that turn's spend, and the conversation's
+    // total is only ever the sum kept here.
+    const running = recordTurnCost(sessionKey, resultUsage.totalCostUsd);
+    resultUsage.sessionCostUsd = running.usd;
+    resultUsage.sessionCostTurns = running.turns;
     chatUsageCache.set(sessionKey, resultUsage);
   }
 
@@ -1298,6 +1308,7 @@ export function clearConversation(sessionKey: string): void {
   conversationHistory.delete(sessionKey);
   chatSessionIds.delete(sessionKey);
   chatUsageCache.delete(sessionKey);
+  clearSessionCost(sessionKey);
   taskTracker.clear(sessionKey);
 }
 
