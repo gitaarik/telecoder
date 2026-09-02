@@ -91,6 +91,12 @@ import {
 import { handleMessage, handleCcrThrottleCallback } from './handlers/message.handler.js';
 import { handleSchedule, handleSchedules, handleUnschedule } from './handlers/schedule.handler.js';
 import { handleForkCallback, handleAcceptCommand, handleDeclineCommand, handleForkCommand } from './handlers/fork.handler.js';
+import {
+  handleAllow,
+  handleDeny,
+  handleUsers,
+  handleAccessCallback,
+} from './handlers/command/access.js';
 import { handleSuggestionTapCallback } from './handlers/suggestion.handler.js';
 import { handleVoice } from './handlers/voice.handler.js';
 import { handlePhoto, handleImageDocument, handleTextDocument } from './handlers/photo.handler.js';
@@ -265,6 +271,9 @@ export async function createBot(): Promise<Bot> {
     { command: 'unschedule', description: '🔕 Remove a scheduled task by id' },
     { command: 'projectcommands', description: '📜 List slash commands from .claude/commands/' },
     { command: 'permissions', description: '🔐 Show the permission-gate state and guarded patterns' },
+    { command: 'users', description: '👥 Show who can use this bot' },
+    { command: 'allow', description: '✅ Let someone in — reply to them, or /allow @user' },
+    { command: 'deny', description: '🚫 Remove someone admitted with /allow' },
     { command: 'teleport', description: '🚀 Move session to terminal' },
     ...(config.REDDIT_ENABLED ? [{ command: 'reddit', description: '📡 Fetch Reddit posts & subreddits' }] : []),
     ...(config.VREDDIT_ENABLED ? [{ command: 'vreddit', description: '🎬 Download Reddit video from post URL' }] : []),
@@ -327,6 +336,12 @@ export async function createBot(): Promise<Bot> {
   // (a PreToolUse hook, so PTY-only) is in the loop at all.
   cmd('restartbot', adminOnly(handleRestartBot));
   cmd('rebuildbot', adminOnly(handleRebuild));
+  // Access control is admin-only and bypasses sequentialize: a stranger
+  // typically turns up mid-turn, and an admin should be able to wave them in
+  // without waiting for whatever the group is already running to finish.
+  cmd('allow', adminOnly(handleAllow));
+  cmd('deny', adminOnly(handleDeny));
+  cmd('users', adminOnly(handleUsers));
   cmd('btw', handleBtw); // Side question — must bypass queue to work mid-task
   cmd('tasks', handleTasks); // Read-only; must bypass queue so it works mid-stream
   cmd('cost', handleCost); // Read-only account probe; bypasses the queue so it answers mid-turn
@@ -362,6 +377,9 @@ export async function createBot(): Promise<Bot> {
   // for the same reason their parent commands do: users tap these precisely
   // when the bot is hung, so the callback can't be queued behind the stuck
   // request.
+  // Access cards: same reasoning as the commands above — the card lands while
+  // a turn is running, and it is the fastest way to answer it.
+  bot.callbackQuery(/^access:/, adminOnly(handleAccessCallback));
   bot.callbackQuery(/^restartbot:/, adminOnly(handleRestartBotCallback));
   bot.callbackQuery(/^rebuild:/, adminOnly(handleRebuildCallback));
 
