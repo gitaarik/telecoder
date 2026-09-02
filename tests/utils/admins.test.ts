@@ -1,4 +1,27 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as realOs from 'os';
+
+// hasGuestUsers() now reads the runtime roster, which persists under
+// os.homedir()/.claudegram — point it at a scratch dir so these tests neither
+// read the developer's real roster nor leave one behind.
+vi.mock('os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('os')>();
+  return { ...actual, default: actual, homedir: () => process.env.TELECODER_TEST_HOME ?? actual.homedir() };
+});
+
+let testHome: string;
+
+beforeAll(() => {
+  testHome = fs.mkdtempSync(path.join(realOs.tmpdir(), 'telecoder-admins-'));
+  process.env.TELECODER_TEST_HOME = testHome;
+});
+
+afterAll(() => {
+  delete process.env.TELECODER_TEST_HOME;
+  fs.rmSync(testHome, { recursive: true, force: true });
+});
 
 // Test env (vitest.config.ts): ALLOWED_USER_IDS=1,2,3
 //
@@ -126,5 +149,60 @@ describe('orphaned admin ids', () => {
 
     await expect(loadConfig('')).resolves.toBeUndefined();
     expect(exit).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('supervision follows the runtime roster', () => {
+  // The property this guards: /allow admits a guest, and hasGuestUsers() is
+  // what switches on the permission gate, the scope guard and the charter
+  // judge. Reading only ALLOWED_USER_IDS here would leave a bot that had just
+  // gained its first guest running with every guardrail off.
+  async function load(adminIds: string) {
+    vi.resetModules();
+    vi.stubEnv('ADMIN_USER_IDS', adminIds);
+    const admins = await import('../../src/utils/admins.js');
+    const roster = await import('../../src/utils/user-roster.js');
+    roster.resetRosterCache();
+    return { ...admins, ...roster };
+  }
+
+  beforeEach(() => {
+    fs.rmSync(path.join(testHome, '.claudegram', 'user-roster.json'), { force: true });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it('turns supervision on when the first guest is admitted at runtime', async () => {
+    const { hasGuestUsers, admitUser } = await load('1,2,3');
+    // Every configured user is an admin, so a solo bot starts unsupervised.
+    expect(hasGuestUsers()).toBe(false);
+
+    admitUser({ id: 999, username: 'newcomer' }, 1);
+    expect(hasGuestUsers()).toBe(true);
+  });
+
+  it('counts an admitted guest in getGuestIds', async () => {
+    const { getGuestIds, admitUser } = await load('1,2,3');
+    admitUser({ id: 999 }, 1);
+    expect(getGuestIds()).toEqual([999]);
+  });
+
+  it('does not make an admitted user an admin', async () => {
+    const { isAdmin, admitUser } = await load('1');
+    admitUser({ id: 999 }, 1);
+    expect(isAdmin(999)).toBe(false);
+  });
+
+  it('turns supervision back off when the last guest is revoked', async () => {
+    const { hasGuestUsers, admitUser, revokeUser } = await load('1,2,3');
+    admitUser({ id: 999 }, 1);
+    expect(hasGuestUsers()).toBe(true);
+    revokeUser(999);
+    expect(hasGuestUsers()).toBe(false);
   });
 });

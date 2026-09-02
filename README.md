@@ -222,9 +222,44 @@ What that buys you:
 - **`/permissions` reports the truth.** Gate state, scope roots, which charter
   is in force, your role, the guarded patterns, and a warning if the current
   chat is on a transport where the gate can't fire.
+- **Letting someone in takes one tap.** A stranger who posts in the shared group
+  gets a refusal *and* an approve card naming them, mentioning the admins so it
+  notifies you in a muted group. Tap Allow and they're a guest immediately — no
+  `.env` edit, no restart. Someone added to the group is asked about the moment
+  they join, before they've said anything.
 
 Write the house rules in `CHARTER.md` at your workspace root — see
 [`docs/CHARTER.example.md`](docs/CHARTER.example.md) for a starting point.
+
+### Admitting people from chat
+
+`ALLOWED_USER_IDS` is read once at startup, so every new person there costs an
+edit and a restart. `/allow` is the runtime half of the same list:
+
+| Command | What it does |
+|---------|--------------|
+| `/users` | Who can use this bot: admins, `.env` guests, guests admitted from chat, and people seen in the group but not let in |
+| `/allow` | Admit someone as a **guest** — reply to their message, or `/allow @user` / `/allow 12345` |
+| `/deny` | Remove someone `/allow` admitted |
+
+All three are admin-only, and take effect immediately.
+
+**Reply to their message rather than typing a handle.** Telegram gives bots no
+way to resolve a `@username` — there is no such API call, `getChatAdministrators`
+covers only a group's admins, and nothing enumerates ordinary members. So the
+only handles this bot can match are the ones it has watched go by, and a reply
+is both exact and the one form that works for the many people who have no
+username at all. A handle it hasn't seen gets told so, rather than failing
+mysteriously.
+
+Ids are the identity throughout. A Telegram username can be dropped and claimed
+by someone else, so it's re-resolved on every use and never stored as the thing
+being allowed.
+
+Admitting someone makes them a guest, which switches on the permission gate, the
+scope guard and the charter judge if they weren't already on. `/deny` on an id
+that came from `ALLOWED_USER_IDS` reports where it actually lives instead of
+appearing to work until the next restart.
 
 > [!IMPORTANT]
 > All of the above is supervision, not isolation. Claude still runs as your Unix
@@ -377,6 +412,9 @@ Open your bot in Telegram → `/start`
 | `/tasks` | List active background tasks |
 | `/shells` | List and kill OS-level background shells from the PTY session |
 | `/permissions` | Show the permission-gate state, your role, and the patterns it enforces |
+| `/users` | Who can use this bot — admins, guests, and people seen but not let in — admin-only |
+| `/allow` | Let someone in as a guest — reply to their message, or `/allow @user` — admin-only |
+| `/deny` | Remove someone admitted with `/allow` — admin-only |
 | `/botstatus` | Bot process status |
 | `/restartbot` | Restart the bot — admin-only |
 | `/rebuildbot` | Rebuild code and restart — admin-only |

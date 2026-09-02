@@ -1,6 +1,32 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import type { Context, NextFunction } from 'grammy';
-import { authMiddleware } from '../../src/bot/middleware/auth.middleware.js';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as realOs from 'os';
+
+// The middleware now records who it has seen, which persists under
+// os.homedir()/.claudegram. Point that at a scratch dir so the suite never
+// reads or writes the developer's real roster.
+vi.mock('os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('os')>();
+  return { ...actual, default: actual, homedir: () => process.env.TELECODER_TEST_HOME ?? actual.homedir() };
+});
+
+let testHome: string;
+
+beforeAll(() => {
+  testHome = fs.mkdtempSync(path.join(realOs.tmpdir(), 'telecoder-auth-'));
+  process.env.TELECODER_TEST_HOME = testHome;
+});
+
+afterAll(() => {
+  delete process.env.TELECODER_TEST_HOME;
+  fs.rmSync(testHome, { recursive: true, force: true });
+});
+
+const { authMiddleware } = await import('../../src/bot/middleware/auth.middleware.js');
+const { admitUser, resetRosterCache, listPending } = await import('../../src/utils/user-roster.js');
+const { resetAccessCooldowns } = await import('../../src/telegram/access-request.js');
 
 // Test env (vitest.config.ts): ALLOWED_USER_IDS=1,2,3  ALLOWED_GROUP_IDS=-1009990001
 const ALLOWED_GROUP = -1009990001;
@@ -9,21 +35,32 @@ const GROUP_ANONYMOUS_BOT_ID = 1087968824;
 interface FakeCtxOptions {
   userId?: number;
   username?: string;
+  firstName?: string;
   chatId?: number;
   chatType?: string;
+  newMembers?: { id: number; is_bot?: boolean; first_name?: string; username?: string }[];
 }
 
 function makeCtx(opts: FakeCtxOptions) {
   const reply = vi.fn().mockResolvedValue(undefined);
+  const sendMessage = vi.fn().mockResolvedValue(undefined);
+  const getChatMember = vi
+    .fn()
+    .mockResolvedValue({ user: { id: 1, first_name: 'Admin', is_bot: false } });
   const ctx = {
-    from: opts.userId === undefined ? undefined : { id: opts.userId, username: opts.username },
+    from:
+      opts.userId === undefined
+        ? undefined
+        : { id: opts.userId, username: opts.username, first_name: opts.firstName },
     chat:
       opts.chatId === undefined && opts.chatType === undefined
         ? undefined
         : { id: opts.chatId ?? 1, type: opts.chatType ?? 'private' },
+    message: opts.newMembers ? { new_chat_members: opts.newMembers } : undefined,
+    api: { sendMessage, getChatMember },
     reply,
   } as unknown as Context;
-  return { ctx, reply };
+  return { ctx, reply, sendMessage };
 }
 
 describe('authMiddleware', () => {
@@ -138,5 +175,157 @@ describe('authMiddleware with RESTRICT_TO_GROUPS', () => {
     const { ctx } = makeCtx({ userId: 3, chatId: 3, chatType: 'private' });
     await guarded(ctx, next);
     expect(next).toHaveBeenCalledOnce();
+  });
+});
+
+describe('authMiddleware and the runtime roster', () => {
+  let next: NextFunction & ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    next = vi.fn().mockResolvedValue(undefined) as unknown as NextFunction & ReturnType<typeof vi.fn>;
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    fs.rmSync(path.join(testHome, '.claudegram', 'user-roster.json'), { force: true });
+    resetRosterCache();
+    resetAccessCooldowns();
+  });
+
+  it('lets in someone admitted at runtime, with no restart', async () => {
+    const denied = makeCtx({ userId: 999, chatType: 'private' });
+    await authMiddleware(denied.ctx, next);
+    expect(next).not.toHaveBeenCalled();
+
+    admitUser({ id: 999 }, 1);
+
+    const allowed = makeCtx({ userId: 999, chatType: 'private' });
+    await authMiddleware(allowed.ctx, next);
+    expect(next).toHaveBeenCalledOnce();
+    expect(allowed.reply).not.toHaveBeenCalled();
+  });
+
+  it('posts an access card for a stranger in the shared group', async () => {
+    const { ctx, reply, sendMessage } = makeCtx({
+      userId: 999,
+      username: 'newcomer',
+      firstName: 'New',
+      chatId: ALLOWED_GROUP,
+      chatType: 'supergroup',
+    });
+    await authMiddleware(ctx, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sendMessage).toHaveBeenCalledOnce();
+    const [chatId, text, opts] = sendMessage.mock.calls[0];
+    expect(chatId).toBe(ALLOWED_GROUP);
+    expect(text).toContain('Access requested');
+    expect(text).toContain('999');
+    expect(opts.reply_markup.inline_keyboard[0]).toHaveLength(2);
+    // The refusal tells them it is being handled rather than just saying no.
+    expect(reply.mock.calls[0][0]).toMatch(/admin has been asked/i);
+  });
+
+  it('records the stranger so /allow @them can resolve later', async () => {
+    const { ctx } = makeCtx({
+      userId: 999,
+      username: 'newcomer',
+      chatId: ALLOWED_GROUP,
+      chatType: 'supergroup',
+    });
+    await authMiddleware(ctx, next);
+    expect(listPending().map((u) => u.id)).toContain(999);
+  });
+
+  it('posts no card for a stranger in a private chat — only its subject would see it', async () => {
+    const { ctx, reply, sendMessage } = makeCtx({ userId: 999, chatId: 999, chatType: 'private' });
+    await authMiddleware(ctx, next);
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(reply.mock.calls[0][0]).toMatch(/not authorized/i);
+    expect(reply.mock.calls[0][0]).not.toMatch(/admin has been asked/i);
+    // …and they are not recorded, so a stranger cannot flush the seen list.
+    expect(listPending().map((u) => u.id)).not.toContain(999);
+  });
+
+  it('posts one card for a burst of messages from the same stranger', async () => {
+    const first = makeCtx({ userId: 999, chatId: ALLOWED_GROUP, chatType: 'supergroup' });
+    await authMiddleware(first.ctx, next);
+    const second = makeCtx({ userId: 999, chatId: ALLOWED_GROUP, chatType: 'supergroup' });
+    await authMiddleware(second.ctx, next);
+
+    expect(first.sendMessage).toHaveBeenCalledOnce();
+    expect(second.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('asks about someone the moment they join, before they have spoken', async () => {
+    const { ctx, reply, sendMessage } = makeCtx({
+      userId: 1, // an admin added them
+      chatId: ALLOWED_GROUP,
+      chatType: 'supergroup',
+      newMembers: [{ id: 999, first_name: 'New', username: 'newcomer' }],
+    });
+    await authMiddleware(ctx, next);
+
+    expect(sendMessage).toHaveBeenCalledOnce();
+    expect(listPending().map((u) => u.id)).toContain(999);
+    // A join is not a prompt: it must not fall through to the agent, and must
+    // not be answered with a denial either.
+    expect(next).not.toHaveBeenCalled();
+    expect(reply).not.toHaveBeenCalled();
+  });
+
+  it('ignores bots joining', async () => {
+    const { ctx, sendMessage } = makeCtx({
+      userId: 1,
+      chatId: ALLOWED_GROUP,
+      chatType: 'supergroup',
+      newMembers: [{ id: 555, is_bot: true, first_name: 'SomeBot' }],
+    });
+    await authMiddleware(ctx, next);
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('does not ask about a joiner who is already allowed', async () => {
+    const { ctx, sendMessage } = makeCtx({
+      userId: 1,
+      chatId: ALLOWED_GROUP,
+      chatType: 'supergroup',
+      newMembers: [{ id: 2, first_name: 'Known' }],
+    });
+    await authMiddleware(ctx, next);
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('ignores joins in a group that is not allow-listed', async () => {
+    const { ctx, sendMessage } = makeCtx({
+      userId: 1,
+      chatId: -42,
+      chatType: 'supergroup',
+      newMembers: [{ id: 999, first_name: 'New' }],
+    });
+    await authMiddleware(ctx, next);
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('a stranger who keeps talking', () => {
+  let next: NextFunction & ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    next = vi.fn().mockResolvedValue(undefined) as unknown as NextFunction & ReturnType<typeof vi.fn>;
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    fs.rmSync(path.join(testHome, '.claudegram', 'user-roster.json'), { force: true });
+    resetRosterCache();
+    resetAccessCooldowns();
+  });
+
+  it('keeps being told the request is pending, not that it vanished', async () => {
+    const first = makeCtx({ userId: 999, chatId: ALLOWED_GROUP, chatType: 'supergroup' });
+    await authMiddleware(first.ctx, next);
+    const second = makeCtx({ userId: 999, chatId: ALLOWED_GROUP, chatType: 'supergroup' });
+    await authMiddleware(second.ctx, next);
+
+    // One card, but the same answer both times.
+    expect(second.sendMessage).not.toHaveBeenCalled();
+    expect(first.reply.mock.calls[0][0]).toMatch(/admin has been asked/i);
+    expect(second.reply.mock.calls[0][0]).toMatch(/admin has been asked/i);
   });
 });

@@ -3,6 +3,21 @@
 Notable changes per release. Each entry links the commit that carries the full
 reasoning — the commit bodies are the long form, this is the index.
 
+## Unreleased
+
+### Sharing a bot
+
+- **Admitting people from chat** — `/allow`, `/deny` and `/users`. A stranger who
+  posts in the shared group gets an approve card naming them, and someone added
+  to the group is asked about the moment they join; one tap makes them a guest,
+  with no `.env` edit and no restart. Telegram has no API that resolves a
+  `@username`, so the bot matches only handles it has seen go by and `/allow` as
+  a reply is the exact form. Ids admitted this way persist in
+  `~/.claudegram/user-roster.json`; ids from `ALLOWED_USER_IDS` stay the
+  operator's, and `/deny` says so rather than appearing to remove one.
+  `hasGuestUsers()` now reads the effective list, so admitting the first guest
+  switches on the permission gate, the scope guard and the charter judge.
+
 ## [1.1.0] — 2026-08-31
 
 The release that makes a bot shareable. Everything before this assumed one

@@ -18,6 +18,7 @@ import { config, BOT_ID } from './config.js';
 import { preventSleep, allowSleep } from './utils/caffeinate.js';
 import { stopCleanup } from './telegram/deduplication.js';
 import { sessionHistory } from './claude/session-history.js';
+import { listAdmitted } from './utils/user-roster.js';
 import { startScheduledRunner } from './claude/scheduled-runner.js';
 import { setMonitorRelayBot } from './claude/monitor-relay.js';
 import { setUpdateBannerRelayBot } from './claude/update-banner-relay.js';
@@ -69,6 +70,13 @@ const SHUTDOWN_TIMEOUT_MS = 5_000;
 async function main() {
   console.log('🤖 Starting TeleCoder...');
   console.log(`📋 Allowed users: ${config.ALLOWED_USER_IDS.join(', ')}`);
+  // The roster is the other half of the allow-list, and the half that changed
+  // while nobody was reading the log — worth naming at startup so "who can use
+  // this bot" is answerable from the boot output alone.
+  const admittedIds = listAdmitted().map((user) => user.id);
+  if (admittedIds.length > 0) {
+    console.log(`📋 Admitted from chat: ${admittedIds.join(', ')}`);
+  }
   console.log(`📝 Mode: ${config.STREAMING_MODE}`);
 
   // Scope session history to this bot instance so multi-bot setups don't cross-restore

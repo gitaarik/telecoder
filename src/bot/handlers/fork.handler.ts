@@ -40,6 +40,7 @@ import { sessionJsonlPath } from '../../claude/session-jsonl.js';
 import { sessionManager } from '../../claude/session-manager.js';
 import { clearConversation } from '../../providers/provider-router.js';
 import { sessionHistory } from '../../claude/session-history.js';
+import { isAllowedUser } from '../../utils/user-roster.js';
 import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
 import { restoreTopicAndRefreshBotName } from './command.handler.js';
 import { getSessionTopic } from './command.handler.js';
@@ -517,7 +518,7 @@ async function loadFork(ctx: Context, sessionKey: string, fork: PendingFork): Pr
  *
  * Implementation: poll the mtime of pending-forks-<botId>.json every few
  * seconds. On change (and once at startup), scan for entries where
- * `offered` is unset and the userId is in ALLOWED_USER_IDS. For each, try
+ * `offered` is unset and the userId is allowed (`.env` or the roster). For each, try
  * bot.api.sendMessage(userId, …) — in a Telegram DM, chat_id == user_id,
  * so this hits the user's existing conversation with this bot. On success,
  * stamp `offered: true` so we don't re-send on the next file change.
@@ -563,7 +564,7 @@ async function scanAndOffer(bot: Bot): Promise<void> {
     if (fork.offered) continue;
     const userId = Number.parseInt(userIdStr, 10);
     if (!Number.isFinite(userId)) continue;
-    if (!config.ALLOWED_USER_IDS.includes(userId)) continue;
+    if (!isAllowedUser(userId)) continue;
 
     const offer = buildForkOffer(fork, 'proactive');
     try {
