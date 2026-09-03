@@ -2,10 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Context, NextFunction } from 'grammy';
 import type { MessageEntity } from 'grammy/types';
 import { groupMentionMiddleware, isAddressedToBot } from '../../src/bot/middleware/group-mention.middleware.js';
+import { rememberForceReplyPrompt, clearForceReplyPrompts } from '../../src/telegram/force-reply-tracker.js';
+import { config } from '../../src/config.js';
 
 const BOT_ID = 8833142947;
 const BOT_USERNAME = 'code_share1_bot';
 const GROUP = -1009990001;
+const PROMPT_MSG_ID = 4242;
 
 /**
  * Build the entities Telegram would attach: a bot_command at offset 0 and a
@@ -28,6 +31,7 @@ interface FakeCtxOptions {
   caption?: string;
   chatType?: string;
   replyFromId?: number;
+  replyToId?: number;
   entities?: MessageEntity[];
   noMessage?: boolean;
 }
@@ -41,7 +45,9 @@ function makeCtx(opts: FakeCtxOptions) {
         ...(opts.caption === undefined
           ? { entities: opts.entities ?? entitiesFor(body) }
           : { caption_entities: opts.entities ?? entitiesFor(body) }),
-        ...(opts.replyFromId === undefined ? {} : { reply_to_message: { from: { id: opts.replyFromId } } }),
+        ...(opts.replyFromId === undefined
+          ? {}
+          : { reply_to_message: { from: { id: opts.replyFromId }, message_id: opts.replyToId ?? PROMPT_MSG_ID } }),
       };
   const ctx = {
     chat: { id: GROUP, type: opts.chatType ?? 'group' },
@@ -52,6 +58,8 @@ function makeCtx(opts: FakeCtxOptions) {
 }
 
 describe('isAddressedToBot', () => {
+  beforeEach(() => clearForceReplyPrompts());
+
   it('lets everything through in a private chat', () => {
     expect(isAddressedToBot(makeCtx({ text: 'no mention here', chatType: 'private' }))).toBe(true);
   });
@@ -72,8 +80,41 @@ describe('isAddressedToBot', () => {
     expect(isAddressedToBot(makeCtx({ text: '@some_other_bot are you there?' }))).toBe(false);
   });
 
-  it('accepts a reply to something the bot said', () => {
-    expect(isAddressedToBot(makeCtx({ text: 'yes, do that', replyFromId: BOT_ID }))).toBe(true);
+  it('ignores a plain reply to the bot — quoting is not addressing', () => {
+    expect(isAddressedToBot(makeCtx({ text: 'yes, do that', replyFromId: BOT_ID }))).toBe(false);
+  });
+
+  it('accepts a reply to the bot that also mentions it', () => {
+    expect(isAddressedToBot(makeCtx({ text: `@${BOT_USERNAME} yes, do that`, replyFromId: BOT_ID }))).toBe(true);
+  });
+
+  it('accepts an answer to a ForceReply prompt, which has nowhere for a mention', () => {
+    rememberForceReplyPrompt(GROUP, PROMPT_MSG_ID);
+    expect(isAddressedToBot(makeCtx({ text: '/home/me/projects/api', replyFromId: BOT_ID }))).toBe(true);
+  });
+
+  it('still ignores a reply to a bot message that was not a ForceReply prompt', () => {
+    rememberForceReplyPrompt(GROUP, PROMPT_MSG_ID + 1);
+    expect(isAddressedToBot(makeCtx({ text: 'nice one', replyFromId: BOT_ID }))).toBe(false);
+  });
+
+  it('does not mistake a pasted absolute path for a command', () => {
+    expect(isAddressedToBot(makeCtx({ text: '/home/me/projects/api is where it lives' }))).toBe(false);
+  });
+
+  it('scopes remembered prompts to their chat', () => {
+    rememberForceReplyPrompt(-1009990002, PROMPT_MSG_ID);
+    expect(isAddressedToBot(makeCtx({ text: '/home/me/projects/api', replyFromId: BOT_ID }))).toBe(false);
+  });
+
+  it('accepts any reply when GROUP_REPLY_IS_MENTION is on', () => {
+    const previous = config.GROUP_REPLY_IS_MENTION;
+    (config as { GROUP_REPLY_IS_MENTION: boolean }).GROUP_REPLY_IS_MENTION = true;
+    try {
+      expect(isAddressedToBot(makeCtx({ text: 'yes, do that', replyFromId: BOT_ID }))).toBe(true);
+    } finally {
+      (config as { GROUP_REPLY_IS_MENTION: boolean }).GROUP_REPLY_IS_MENTION = previous;
+    }
   });
 
   it('ignores a reply to another person', () => {
@@ -104,8 +145,9 @@ describe('isAddressedToBot', () => {
     expect(isAddressedToBot(makeCtx({ noMessage: true }))).toBe(true);
   });
 
-  it('ignores a reply to the bot when the message opts out with //', () => {
-    expect(isAddressedToBot(makeCtx({ text: '// look what it said about the schema', replyFromId: BOT_ID }))).toBe(false);
+  it('ignores an opted-out answer to a ForceReply prompt', () => {
+    rememberForceReplyPrompt(GROUP, PROMPT_MSG_ID);
+    expect(isAddressedToBot(makeCtx({ text: '// not answering that yet', replyFromId: BOT_ID }))).toBe(false);
   });
 
   it('ignores an opted-out message even when it mentions the bot', () => {
@@ -113,11 +155,11 @@ describe('isAddressedToBot', () => {
   });
 
   it('ignores an opted-out message with leading whitespace', () => {
-    expect(isAddressedToBot(makeCtx({ text: '  // not for the bot', replyFromId: BOT_ID }))).toBe(false);
+    expect(isAddressedToBot(makeCtx({ text: `  // not for @${BOT_USERNAME}` }))).toBe(false);
   });
 
-  it('ignores an opted-out caption on a photo replying to the bot', () => {
-    expect(isAddressedToBot(makeCtx({ caption: '// this is the diagram it drew', replyFromId: BOT_ID }))).toBe(false);
+  it('ignores an opted-out caption that mentions the bot', () => {
+    expect(isAddressedToBot(makeCtx({ caption: `// the diagram @${BOT_USERNAME} drew` }))).toBe(false);
   });
 
   it('does not mistake a lone slash command for an opt-out', () => {
@@ -171,8 +213,8 @@ describe('groupMentionMiddleware', () => {
     expect(ctx.message?.text).toBe(`@${BOT_USERNAME}`);
   });
 
-  it('drops an opted-out reply without calling next', async () => {
-    await groupMentionMiddleware(makeCtx({ text: '// quoting this for you', replyFromId: BOT_ID }), next);
+  it('drops a plain reply to the bot without calling next', async () => {
+    await groupMentionMiddleware(makeCtx({ text: 'quoting this for you', replyFromId: BOT_ID }), next);
     expect(next).not.toHaveBeenCalled();
   });
 

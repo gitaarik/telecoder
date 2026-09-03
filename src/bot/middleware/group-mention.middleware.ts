@@ -9,9 +9,14 @@
  *
  * Addressed means one of:
  *   - an @mention of this bot's username
- *   - a reply to something this bot sent (how ForceReply prompts like
- *     /project and /plan get answered — those replies carry no mention)
  *   - a slash command meant for this bot (`/status` or `/status@this_bot`)
+ *   - an answer to one of the bot's ForceReply prompts (/project, /plan, …),
+ *     where Telegram attaches the reply itself and leaves nowhere to put a
+ *     mention
+ *
+ * A plain reply is deliberately not enough: replying is how you quote someone
+ * in Telegram, so people reply to the bot to talk *about* what it said as
+ * often as to answer it. GROUP_REPLY_IS_MENTION brings the old behaviour back.
  *
  * ...unless the message opens with GROUP_IGNORE_PREFIX, which opts it out
  * whatever else it looks like.
@@ -22,6 +27,7 @@
 import { type Context, type MiddlewareFn } from 'grammy';
 import type { MessageEntity, UserFromGetMe } from 'grammy/types';
 import { config } from '../../config.js';
+import { isForceReplyPrompt } from '../../telegram/force-reply-tracker.js';
 
 type TextAndEntities = { text: string; entities: MessageEntity[] };
 
@@ -46,10 +52,17 @@ function mentionsBot({ text, entities }: TextAndEntities, me: UserFromGetMe): bo
  *
  * `/status@other_bot` in a group with several bots is not ours; a bare
  * `/status` is, and grammy's command handlers decide from there.
+ *
+ * Telegram also tags the first segment of an absolute path as a command —
+ * `/home/me/projects` arrives with a bot_command entity on `/home` — so the
+ * token has to be followed by whitespace or nothing to count. Otherwise
+ * anyone pasting a path into the group would be talking to the bot.
  */
 function isCommandForBot({ text, entities }: TextAndEntities, me: UserFromGetMe): boolean {
   const cmd = entities.find((e) => e.type === 'bot_command' && e.offset === 0);
   if (!cmd) return false;
+  const after = text[cmd.offset + cmd.length];
+  if (after !== undefined && !/\s/.test(after)) return false;
   const token = text.slice(cmd.offset, cmd.offset + cmd.length);
   const at = token.indexOf('@');
   return at === -1 || token.slice(at + 1).toLowerCase() === me.username.toLowerCase();
@@ -84,7 +97,13 @@ export function isAddressedToBot(ctx: Context): boolean {
   const content = textAndEntities(msg);
   if (isOptedOut(content.text)) return false;
 
-  if (msg.reply_to_message?.from?.id === ctx.me.id) return true;
+  const repliedTo = msg.reply_to_message;
+  if (repliedTo?.from?.id === ctx.me.id) {
+    if (config.GROUP_REPLY_IS_MENTION) return true;
+    // An answer to a ForceReply prompt is addressed by construction: the user
+    // typed into a composer the bot opened, and could not have mentioned it.
+    if (isForceReplyPrompt(ctx.chat!.id, repliedTo.message_id)) return true;
+  }
 
   return isCommandForBot(content, ctx.me) || mentionsBot(content, ctx.me);
 }

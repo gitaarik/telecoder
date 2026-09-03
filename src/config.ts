@@ -32,6 +32,11 @@ const envSchema = z.object({
   // replies to the bot or mentions it — for quoting the bot at each other
   // without setting it off. Empty string disables the escape hatch.
   GROUP_IGNORE_PREFIX: z.string().default('//'),
+  // Treat any reply to one of the bot's messages as addressing it, the way it
+  // worked before mentions were required. Off by default: replying is also how
+  // you quote a message, so a reply is a poor signal of intent. Answers to the
+  // bot's own ForceReply prompts are always addressed regardless.
+  GROUP_REPLY_IS_MENTION: z.string().default('false').transform(toBool),
   ANTHROPIC_API_KEY: z.string().optional(), // Optional - uses Claude Max subscription if not set
   // OpenAI (TTS)
   OPENAI_API_KEY: z.string().optional(),

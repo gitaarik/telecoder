@@ -96,6 +96,7 @@ import {
 } from './handlers/media-fallback.js';
 import { createBatchMiddleware } from './middleware/message-batcher.js';
 import { groupMentionMiddleware } from './middleware/group-mention.middleware.js';
+import { trackForceReplyPrompts } from '../telegram/force-reply-tracker.js';
 import { resolvePendingQuestion, appendAnsweredFooter, buildAnswerConfirmation } from '../claude/ask-user.js';
 import { resolvePendingPoll } from '../claude/poll-user.js';
 
@@ -205,6 +206,10 @@ export async function createBot(): Promise<Bot> {
       baseFetchConfig,
     },
   });
+
+  // Note which messages are ForceReply prompts, so a reply answering one still
+  // reaches the handlers in a group that otherwise requires an @mention.
+  trackForceReplyPrompts(bot);
 
   // Auto-retry on transient network errors (ECONNRESET, socket hang up, etc.)
   // Also handles 429 rate limits by respecting Telegram's retry_after
