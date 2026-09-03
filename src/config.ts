@@ -28,15 +28,18 @@ const envSchema = z.object({
   // message in an allow-listed group is a prompt, which drowns out any human
   // conversation happening in the same group.
   GROUP_REQUIRE_MENTION: z.string().default('true').transform(toBool),
-  // Prefix that opts a group message out of being a prompt, even when it
-  // replies to the bot or mentions it — for quoting the bot at each other
-  // without setting it off. Empty string disables the escape hatch.
-  GROUP_IGNORE_PREFIX: z.string().default('//'),
   // Treat any reply to one of the bot's messages as addressing it, the way it
   // worked before mentions were required. Off by default: replying is also how
   // you quote a message, so a reply is a poor signal of intent. Answers to the
   // bot's own ForceReply prompts are always addressed regardless.
   GROUP_REPLY_IS_MENTION: z.string().default('false').transform(toBool),
+  // What membership of an allow-listed group grants. 'contributor' is the
+  // original behaviour: Telegram membership is the whole gate, so everyone in
+  // the group can drive the agent. 'spectator' makes membership grant presence
+  // only — people talk in the group and watch the bot work, but only users an
+  // owner has /allow'd can send it prompts. Owners (ALLOWED_USER_IDS) are
+  // unaffected either way.
+  GROUP_MEMBERS_DEFAULT: z.enum(['contributor', 'spectator']).default('contributor'),
   ANTHROPIC_API_KEY: z.string().optional(), // Optional - uses Claude Max subscription if not set
   // OpenAI (TTS)
   OPENAI_API_KEY: z.string().optional(),

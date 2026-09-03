@@ -18,9 +18,6 @@
  * in Telegram, so people reply to the bot to talk *about* what it said as
  * often as to answer it. GROUP_REPLY_IS_MENTION brings the old behaviour back.
  *
- * ...unless the message opens with GROUP_IGNORE_PREFIX, which opts it out
- * whatever else it looks like.
- *
  * Private chats are never gated: a DM is addressed to the bot by definition.
  */
 
@@ -69,20 +66,6 @@ function isCommandForBot({ text, entities }: TextAndEntities, me: UserFromGetMe)
 }
 
 /**
- * The opt-out: a message opening with GROUP_IGNORE_PREFIX is never a prompt,
- * even when it replies to the bot or mentions it.
- *
- * Replying is how you quote a message in Telegram, so people need a way to
- * point at something the bot said while talking to each other about it. The
- * prefix stays visible in the chat, which makes "the bot is sitting this one
- * out" obvious to everyone reading.
- */
-function isOptedOut(text: string): boolean {
-  const prefix = config.GROUP_IGNORE_PREFIX;
-  return prefix !== '' && text.trimStart().startsWith(prefix);
-}
-
-/**
  * Whether an update should reach the handlers. Non-message updates (callback
  * queries from inline keyboards, edits, service messages) pass untouched —
  * a button tap is already an explicit interaction with the bot.
@@ -95,7 +78,6 @@ export function isAddressedToBot(ctx: Context): boolean {
   if (!msg) return true;
 
   const content = textAndEntities(msg);
-  if (isOptedOut(content.text)) return false;
 
   const repliedTo = msg.reply_to_message;
   if (repliedTo?.from?.id === ctx.me.id) {

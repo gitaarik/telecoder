@@ -145,25 +145,8 @@ describe('isAddressedToBot', () => {
     expect(isAddressedToBot(makeCtx({ noMessage: true }))).toBe(true);
   });
 
-  it('ignores an opted-out answer to a ForceReply prompt', () => {
-    rememberForceReplyPrompt(GROUP, PROMPT_MSG_ID);
-    expect(isAddressedToBot(makeCtx({ text: '// not answering that yet', replyFromId: BOT_ID }))).toBe(false);
-  });
-
-  it('ignores an opted-out message even when it mentions the bot', () => {
-    expect(isAddressedToBot(makeCtx({ text: `// ask @${BOT_USERNAME} about this later` }))).toBe(false);
-  });
-
-  it('ignores an opted-out message with leading whitespace', () => {
-    expect(isAddressedToBot(makeCtx({ text: `  // not for @${BOT_USERNAME}` }))).toBe(false);
-  });
-
-  it('ignores an opted-out caption that mentions the bot', () => {
-    expect(isAddressedToBot(makeCtx({ caption: `// the diagram @${BOT_USERNAME} drew` }))).toBe(false);
-  });
-
-  it('does not mistake a lone slash command for an opt-out', () => {
-    expect(isAddressedToBot(makeCtx({ text: '/status' }))).toBe(true);
+  it('answers a mention that opens with a code comment', () => {
+    expect(isAddressedToBot(makeCtx({ text: `// TODO: fix this @${BOT_USERNAME}` }))).toBe(true);
   });
 
   it('accepts a text_mention of the bot (entity without a handle in the text)', () => {
