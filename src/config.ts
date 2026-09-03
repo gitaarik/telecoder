@@ -19,6 +19,15 @@ const envSchema = z.object({
     .string()
     .min(1, 'At least one allowed user ID is required')
     .transform((val) => val.split(',').map((id) => parseInt(id.trim(), 10))),
+  // The subset of ALLOWED_USER_IDS that owns the bot rather than merely using
+  // it: the only ones who may restart or rebuild it, repoint it at another
+  // project, or hand out group access. Empty means every allow-listed user is
+  // an owner, which is the right answer for the single-user setup this bot
+  // starts life as.
+  ADMIN_USER_IDS: z
+    .string()
+    .default('')
+    .transform((val) => (val ? val.split(',').map((id) => parseInt(id.trim(), 10)) : [])),
   ALLOWED_GROUP_IDS: z
     .string()
     .default('')
@@ -348,6 +357,9 @@ const redditConfigured = Boolean(
 export const config = {
   ...parsed.data,
   REDDIT_ENABLED: isEnvSet('REDDIT_ENABLED') ? parsed.data.REDDIT_ENABLED : redditConfigured,
+  /** Who owns this bot. Falls back to the full allow-list when unset. */
+  OWNER_USER_IDS:
+    parsed.data.ADMIN_USER_IDS.length > 0 ? parsed.data.ADMIN_USER_IDS : parsed.data.ALLOWED_USER_IDS,
 };
 
 export type Config = typeof config;

@@ -68,6 +68,15 @@ const SHUTDOWN_TIMEOUT_MS = 5_000;
 async function main() {
   console.log('🤖 Starting TeleCoder...');
   console.log(`📋 Allowed users: ${config.ALLOWED_USER_IDS.join(', ')}`);
+  if (config.ADMIN_USER_IDS.length > 0) {
+    console.log(`📋 Owners: ${config.ADMIN_USER_IDS.join(', ')}`);
+  }
+  if (config.ALLOWED_GROUP_IDS.length > 0) {
+    console.log(
+      `📋 Allowed groups: ${config.ALLOWED_GROUP_IDS.join(', ')} ` +
+      `(members default to ${config.GROUP_MEMBERS_DEFAULT})`
+    );
+  }
   console.log(`📝 Mode: ${config.STREAMING_MODE}`);
 
   // Scope session history to this bot instance so multi-bot setups don't cross-restore

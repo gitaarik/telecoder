@@ -17,6 +17,7 @@ import { getWorkspaceRoot, isPathWithinRoot } from '../../utils/workspace-guard.
 import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
 import { replyMd, getEffortLabel, buildBackToPreviousButton } from './command/shared.js';
 import { getSessionTopic } from './command/topic.js';
+import { describeRole } from './command/access.js';
 import { requireActiveSession } from './session-guard.js';
 import { progressCallbacks, withStreamingTurn } from '../../telegram/streaming-turn.js';
 
@@ -41,6 +42,7 @@ export {
   handleBotNameCallback,
 } from './command/topic.js';
 export { getStreamingMode } from './command/streaming-mode.js';
+export { handleAllow, handleDeny, handleMembers } from './command/access.js';
 export {
   executeRedditFetch,
   executeMediumFetch,
@@ -318,6 +320,14 @@ ${isDangerousMode() ? '⚠️' : '🛡️'} *Dangerous Mode:* ${esc(dangerousMod
         : 0;
       status += `\n📐 *Context:* ${esc(String(pct))}% \\(${esc(fmtTokens(cached.inputTokens + cached.outputTokens))}/${esc(fmtTokens(cached.contextWindow))}\\)`;
       status += `\n💰 *Session Cost:* \\$${esc(cached.totalCostUsd.toFixed(4))}`;
+    }
+
+    // Only in a group, and only for a non-owner — it is the line that explains
+    // why /restartbot just refused. Spectators never see it: they can't reach
+    // /status in the first place.
+    const role = describeRole(ctx);
+    if (role && role !== 'owner') {
+      status += `\n👤 *Your role here:* ${esc(role)}`;
     }
 
     status += `\n🕰️ *Created:* ${esc(session.createdAt.toLocaleString())}`;

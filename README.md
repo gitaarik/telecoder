@@ -279,6 +279,16 @@ Open your bot in Telegram → `/start`
 | `/cancel` | Cancel current request (alias: `/stop`) |
 | `/commands` | Show all commands |
 
+### Group Access
+| Command | Description |
+|---------|-------------|
+| `/members` | Who may prompt the agent in this group, and the default for everyone else |
+| `/allow` | Let someone here prompt the agent — owner only |
+| `/deny` | Make someone here a spectator — owner only |
+
+Name a person by replying to one of their messages with the command; `@handle`
+works once the bot has seen them post, and a numeric user id always works.
+
 ---
 
 ## Optional Integrations
@@ -360,6 +370,7 @@ All config lives in `.env`. See [`.env.example`](.env.example) for the full anno
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `ADMIN_USER_IDS` | all allowed users | Subset of `ALLOWED_USER_IDS` that owns the bot (restart, rebuild, project, access) |
 | `ANTHROPIC_API_KEY` | — | API key (optional with Claude Max subscription) |
 | `WORKSPACE_DIR` | `$HOME` | Root directory for project picker |
 | `CLAUDE_EXECUTABLE_PATH` | `claude` | Path to Claude Code CLI |
@@ -368,6 +379,34 @@ All config lives in `.env`. See [`.env.example`](.env.example) for the full anno
 | `DANGEROUS_MODE` | `false` | Auto-approve all tool permissions |
 | `CANCEL_ON_NEW_MESSAGE` | `false` | Auto-cancel running query on new message |
 | `CLAUDE_SDK_LOG_LEVEL` | `off` | SDK log level: off, basic, verbose, trace |
+
+### Group chats
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ALLOWED_GROUP_IDS` | — | Group/supergroup IDs the bot may be used in |
+| `GROUP_MEMBERS_DEFAULT` | `contributor` | What membership alone grants: `contributor` or `spectator` |
+| `GROUP_REQUIRE_MENTION` | `true` | Only treat messages that address the bot as prompts |
+| `GROUP_REPLY_IS_MENTION` | `false` | Treat any reply to the bot as addressing it |
+
+Access in a group has three tiers. **Owners** (`ADMIN_USER_IDS`, or everyone in
+`ALLOWED_USER_IDS` when that is unset) have full access everywhere and are the
+only ones who can hand out the rest.
+**Contributors** can prompt the agent in that group. **Spectators** are in the
+chat and ignored by the bot — they read along and talk to everyone, and the bot
+only answers them with a (rate-limited) note if they address it directly.
+
+`GROUP_MEMBERS_DEFAULT` picks which of the last two an ungranted member lands
+in. `contributor` is the historical behaviour, where Telegram membership is the
+whole gate. `spectator` is the one to pick if the group has an audience in it:
+nobody can prompt the agent until an owner runs `/allow`, so adding someone to
+the chat is no longer the same as handing them a shell.
+
+Owner-only commands stay owner-only for contributors too — `/restartbot`,
+`/rebuildbot`, `/update`, `/permissions`, `/teleport`, `/project`, `/newproject`,
+`/allow` and `/deny`, along with the inline buttons those open. A contributor
+drives the conversation; only an owner repoints or restarts the bot. `/members`
+is readable by anyone who can prompt.
 
 ### Providers
 
@@ -434,6 +473,7 @@ src/
 │   │   └── photo.handler.ts       # Image save + agent notification
 │   └── middleware/
 │       ├── auth.middleware.ts      # User whitelist + group chat auth
+│       ├── group-role.middleware.ts # Contributor/spectator gate + owner-only commands
 │       └── stale-filter.ts        # Ignore stale messages on restart
 ├── claude/
 │   ├── agent.ts                   # Claude Agent SDK, session resume, system prompt
@@ -516,6 +556,7 @@ Then `/continue` or `/resume` in Telegram to restore your session.
 ## Security
 
 - **User whitelist** — only approved Telegram IDs can interact
+- **Group roles** — in a group, owners / contributors / spectators, so being in the chat need not mean being able to prompt the agent
 - **Project sandbox** — Claude operates within the configured working directory
 - **Permission mode** — uses `acceptEdits` by default
 - **Dangerous mode** — opt-in auto-approve for all tool permissions

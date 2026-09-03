@@ -32,10 +32,14 @@ export async function authMiddleware(
     return;
   }
 
-  // In an allow-listed group, Telegram membership is the access gate: anyone
-  // the group owner has invited can use the bot, and kicking them from the
-  // group revokes access on their next message. Keep the group private
+  // In an allow-listed group, Telegram membership decides who gets *in*:
+  // anyone the group owner has invited passes here, and kicking them from the
+  // group revokes that on their next message. Keep the group private
   // (invite-only) — a leaked invite link becomes an open door.
+  //
+  // What membership is then worth is a separate question, answered downstream
+  // by group-role.middleware: under GROUP_MEMBERS_DEFAULT=spectator, passing
+  // this gate only buys the right to read along.
   const isAllowedGroup =
     (chatType === 'group' || chatType === 'supergroup') &&
     chatId !== undefined &&

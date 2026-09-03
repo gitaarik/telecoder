@@ -150,6 +150,15 @@ export function getAvailableCommands(): string {
     ],
   });
 
+  sections.push({
+    title: 'Group Access',
+    commands: [
+      '• `/members` \\- Show who may prompt the agent in this group',
+      '• `/allow` \\- Let someone prompt the agent here \\(reply to them, or pass @handle / id\\)',
+      '• `/deny` \\- Make someone a spectator here \\(owner only\\)',
+    ],
+  });
+
   const lines: string[] = [];
   for (const section of sections) {
     lines.push(`*${section.title}:*`, '', ...section.commands, '');

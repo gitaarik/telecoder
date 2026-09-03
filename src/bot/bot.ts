@@ -83,6 +83,9 @@ import {
   handleVerbosityCallback,
   handleMethodCommand,
   handleMethodCallback,
+  handleAllow,
+  handleDeny,
+  handleMembers,
 } from './handlers/command.handler.js';
 import { handleMessage, handleCcrThrottleCallback } from './handlers/message.handler.js';
 import { handleSchedule, handleSchedules, handleUnschedule } from './handlers/schedule.handler.js';
@@ -96,6 +99,7 @@ import {
 } from './handlers/media-fallback.js';
 import { createBatchMiddleware } from './middleware/message-batcher.js';
 import { groupMentionMiddleware } from './middleware/group-mention.middleware.js';
+import { groupRoleMiddleware, learnHandlesMiddleware } from './middleware/group-role.middleware.js';
 import { trackForceReplyPrompts } from '../telegram/force-reply-tracker.js';
 import { resolvePendingQuestion, appendAnsweredFooter, buildAnswerConfirmation } from '../claude/ask-user.js';
 import { resolvePendingPoll } from '../claude/poll-user.js';
@@ -250,6 +254,9 @@ export async function createBot(): Promise<Bot> {
     { command: 'unschedule', description: '🔕 Remove a scheduled task by id' },
     { command: 'projectcommands', description: '📜 List slash commands from .claude/commands/' },
     { command: 'permissions', description: '🔐 Show the permission-gate state and guarded patterns' },
+    { command: 'members', description: '👥 Show who may prompt the agent in this group' },
+    { command: 'allow', description: '✅ Let someone in this group prompt the agent (owner only)' },
+    { command: 'deny', description: '🚫 Make someone in this group a spectator (owner only)' },
     { command: 'teleport', description: '🚀 Move session to terminal' },
     ...(config.REDDIT_ENABLED ? [{ command: 'reddit', description: '📡 Fetch Reddit posts & subreddits' }] : []),
     ...(config.VREDDIT_ENABLED ? [{ command: 'vreddit', description: '🎬 Download Reddit video from post URL' }] : []),
@@ -287,11 +294,22 @@ export async function createBot(): Promise<Bot> {
   // Apply auth middleware to all updates
   bot.use(authMiddleware);
 
+  // Learn who's who before the mention gate drops the human-to-human traffic,
+  // so `/allow @someone` works for people who have only ever talked to the
+  // others in the group.
+  bot.use(learnHandlesMiddleware);
+
   // In groups, ignore messages that aren't addressed to the bot, so people can
   // talk to each other without triggering a turn. Runs before the command
   // handlers below because they'd otherwise answer a `/status@other_bot`
   // aimed at a different bot in the same group.
   bot.use(groupMentionMiddleware);
+
+  // Of the people an allow-listed group lets in, which ones may actually drive
+  // the agent. Runs after the mention gate so a spectator talking to the humans
+  // is never answered, and before every command handler so the owner-only ones
+  // are covered wherever they are registered below.
+  bot.use(groupRoleMiddleware);
 
   // These commands fire BEFORE sequentialize so they bypass per-chat ordering.
   // This lets them interrupt, inspect, or restart even when a query is hung.
@@ -304,6 +322,11 @@ export async function createBot(): Promise<Bot> {
   bot.command('btw', handleBtw); // Side question — must bypass queue to work mid-task
   bot.command('tasks', handleTasks); // Read-only; must bypass queue so it works mid-stream
   bot.command('shells', handleShells); // Lists/kills OS-level bg processes; must bypass queue to rescue hung sessions
+  // Access management bypasses the queue too: revoking someone shouldn't have
+  // to wait in line behind the turn they just started.
+  bot.command('allow', handleAllow);
+  bot.command('deny', handleDeny);
+  bot.command('members', handleMembers);
   // /sync exists for the "I think a reply went missing" scenario, which by
   // definition includes hung or sluggish turns — gating it on sequentialize
   // would queue it behind the very turn the user wants to inspect.
