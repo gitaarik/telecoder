@@ -95,6 +95,7 @@ import {
   handleUnsupportedMediaDocument,
 } from './handlers/media-fallback.js';
 import { createBatchMiddleware } from './middleware/message-batcher.js';
+import { groupMentionMiddleware } from './middleware/group-mention.middleware.js';
 import { resolvePendingQuestion, appendAnsweredFooter, buildAnswerConfirmation } from '../claude/ask-user.js';
 import { resolvePendingPoll } from '../claude/poll-user.js';
 
@@ -280,6 +281,12 @@ export async function createBot(): Promise<Bot> {
 
   // Apply auth middleware to all updates
   bot.use(authMiddleware);
+
+  // In groups, ignore messages that aren't addressed to the bot, so people can
+  // talk to each other without triggering a turn. Runs before the command
+  // handlers below because they'd otherwise answer a `/status@other_bot`
+  // aimed at a different bot in the same group.
+  bot.use(groupMentionMiddleware);
 
   // These commands fire BEFORE sequentialize so they bypass per-chat ordering.
   // This lets them interrupt, inspect, or restart even when a query is hung.

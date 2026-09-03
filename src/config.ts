@@ -23,6 +23,11 @@ const envSchema = z.object({
     .string()
     .default('')
     .transform((val) => val ? val.split(',').map((id) => parseInt(id.trim(), 10)) : []),
+  // In a group, only act on messages that address the bot — an @mention, a
+  // reply to something the bot sent, or a slash command. Off means every
+  // message in an allow-listed group is a prompt, which drowns out any human
+  // conversation happening in the same group.
+  GROUP_REQUIRE_MENTION: z.string().default('true').transform(toBool),
   ANTHROPIC_API_KEY: z.string().optional(), // Optional - uses Claude Max subscription if not set
   // OpenAI (TTS)
   OPENAI_API_KEY: z.string().optional(),
