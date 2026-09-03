@@ -18,9 +18,6 @@ function logAuthAttempt(
   console.log(`[auth] ${timestamp} ${status} ${userInfo} ${usernameInfo} chat:${chatType || 'unknown'}`);
 }
 
-// Telegram's GroupAnonymousBot ID — used when admins post anonymously in groups/forums
-const GROUP_ANONYMOUS_BOT_ID = 1087968824;
-
 export async function authMiddleware(
   ctx: Context,
   next: NextFunction
@@ -35,19 +32,21 @@ export async function authMiddleware(
     return;
   }
 
-  // Allow anonymous admins in explicitly allowed groups (forum topics)
-  if (userId === GROUP_ANONYMOUS_BOT_ID && chatId && config.ALLOWED_GROUP_IDS.includes(chatId)) {
+  // In an allow-listed group, Telegram membership is the access gate: anyone
+  // the group owner has invited can use the bot, and kicking them from the
+  // group revokes access on their next message. Keep the group private
+  // (invite-only) — a leaked invite link becomes an open door.
+  const isAllowedGroup =
+    (chatType === 'group' || chatType === 'supergroup') &&
+    chatId !== undefined &&
+    config.ALLOWED_GROUP_IDS.includes(chatId);
+
+  if (isAllowedGroup || config.ALLOWED_USER_IDS.includes(userId)) {
     logAuthAttempt(true, userId, username, chatType);
     await next();
     return;
   }
 
-  if (!config.ALLOWED_USER_IDS.includes(userId)) {
-    logAuthAttempt(false, userId, username, chatType);
-    await ctx.reply('⛔ You are not authorized to use this bot.');
-    return;
-  }
-
-  logAuthAttempt(true, userId, username, chatType);
-  await next();
+  logAuthAttempt(false, userId, username, chatType);
+  await ctx.reply('⛔ You are not authorized to use this bot.');
 }
