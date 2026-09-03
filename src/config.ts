@@ -9,7 +9,39 @@ const defaultEnvPath = path.resolve(__dirname, '..', '.env');
 // Read from the real process env, not the .env file — this is the var that
 // says *which* .env to load, so it can't come from inside one.
 const envPath = legacyEnv('ENV_PATH') || defaultEnvPath;
-loadEnv({ path: envPath });
+const loadedEnv = loadEnv({ path: envPath });
+
+/**
+ * Which values in the .env file are being ignored because the process was
+ * started with them already in its environment.
+ *
+ * dotenv never overwrites what is already there, which is the right default —
+ * it is how a launcher hands each worker its own instance config. The trap is
+ * that a restart inherits the environment it was started from, so a value
+ * exported into the shell that first launched the bot outranks the file
+ * forever, and no amount of editing .env or restarting from chat can dislodge
+ * it. Naming the shadowed keys at startup turns a silent mystery into a line
+ * in the log.
+ */
+export function findShadowedEnvKeys(
+  fromFile: Record<string, string> | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  if (!fromFile) return [];
+  // A launcher worker is handed its config through the environment on purpose.
+  if (env.TELECODER_INSTANCE_NAME) return [];
+  return Object.keys(fromFile).filter((key) => env[key] !== fromFile[key]);
+}
+
+const shadowed = findShadowedEnvKeys(loadedEnv.parsed);
+if (shadowed.length > 0) {
+  // Names only — one of these is the bot token.
+  console.warn(
+    `[env] Ignoring ${shadowed.length} value(s) from ${envPath}: this process was started with ` +
+    `them already set in its environment, and that wins over the file — ${shadowed.join(', ')}. ` +
+    'Restart from a shell that does not export them if you meant the file to apply.'
+  );
+}
 
 const toBool = (val: string) => val.toLowerCase() === 'true';
 
