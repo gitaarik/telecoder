@@ -143,6 +143,11 @@ function wait_for_start() {
   return 1
 }
 
+# A pid on the list can be gone by the time we signal it — `npm start` is three
+# processes (npm -> sh -> node) and the wrappers exit the moment their child
+# takes the TERM, so the -KILL sweep a second later often has nothing to hit.
+# kill then fails, xargs exits 123, and under `set -e` the whole script dies —
+# which is how a /rebuildbot could stop the bot and never reach start().
 function stop() {
   if ! pids=$(list_pids 2>/dev/null); then
     echo "No TeleCoder (${MODE}) process found."
@@ -150,13 +155,13 @@ function stop() {
   fi
 
   echo "Stopping TeleCoder (${MODE})..."
-  echo "${pids}" | xargs -r kill -TERM
+  echo "${pids}" | xargs -r kill -TERM || true
   sleep 1
 
   if pids_after=$(list_pids 2>/dev/null); then
     echo "Force killing remaining PIDs:"
     echo "${pids_after}" | sed 's/^/  PID: /'
-    echo "${pids_after}" | xargs -r kill -KILL
+    echo "${pids_after}" | xargs -r kill -KILL || true
   fi
 
   if ! wait_for_stop 10; then
@@ -171,13 +176,13 @@ function stop_all() {
   fi
 
   echo "Stopping all TeleCoder processes..."
-  echo "${pids}" | xargs -r kill -TERM
+  echo "${pids}" | xargs -r kill -TERM || true
   sleep 1
 
   if pids_after=$(list_pids_all 2>/dev/null); then
     echo "Force killing remaining PIDs:"
     echo "${pids_after}" | sed 's/^/  PID: /'
-    echo "${pids_after}" | xargs -r kill -KILL
+    echo "${pids_after}" | xargs -r kill -KILL || true
   fi
 
   if ! wait_for_stop_all 10; then
