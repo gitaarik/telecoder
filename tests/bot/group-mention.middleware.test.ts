@@ -104,6 +104,26 @@ describe('isAddressedToBot', () => {
     expect(isAddressedToBot(makeCtx({ noMessage: true }))).toBe(true);
   });
 
+  it('ignores a reply to the bot when the message opts out with //', () => {
+    expect(isAddressedToBot(makeCtx({ text: '// look what it said about the schema', replyFromId: BOT_ID }))).toBe(false);
+  });
+
+  it('ignores an opted-out message even when it mentions the bot', () => {
+    expect(isAddressedToBot(makeCtx({ text: `// ask @${BOT_USERNAME} about this later` }))).toBe(false);
+  });
+
+  it('ignores an opted-out message with leading whitespace', () => {
+    expect(isAddressedToBot(makeCtx({ text: '  // not for the bot', replyFromId: BOT_ID }))).toBe(false);
+  });
+
+  it('ignores an opted-out caption on a photo replying to the bot', () => {
+    expect(isAddressedToBot(makeCtx({ caption: '// this is the diagram it drew', replyFromId: BOT_ID }))).toBe(false);
+  });
+
+  it('does not mistake a lone slash command for an opt-out', () => {
+    expect(isAddressedToBot(makeCtx({ text: '/status' }))).toBe(true);
+  });
+
   it('accepts a text_mention of the bot (entity without a handle in the text)', () => {
     const ctx = makeCtx({
       text: 'TeleCoder Shared have a look',
@@ -149,6 +169,11 @@ describe('groupMentionMiddleware', () => {
     await groupMentionMiddleware(ctx, next);
     expect(next).toHaveBeenCalledOnce();
     expect(ctx.message?.text).toBe(`@${BOT_USERNAME}`);
+  });
+
+  it('drops an opted-out reply without calling next', async () => {
+    await groupMentionMiddleware(makeCtx({ text: '// quoting this for you', replyFromId: BOT_ID }), next);
+    expect(next).not.toHaveBeenCalled();
   });
 
   it('leaves a command untouched for the command handlers', async () => {

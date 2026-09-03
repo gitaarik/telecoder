@@ -13,6 +13,9 @@
  *     /project and /plan get answered — those replies carry no mention)
  *   - a slash command meant for this bot (`/status` or `/status@this_bot`)
  *
+ * ...unless the message opens with GROUP_IGNORE_PREFIX, which opts it out
+ * whatever else it looks like.
+ *
  * Private chats are never gated: a DM is addressed to the bot by definition.
  */
 
@@ -53,6 +56,20 @@ function isCommandForBot({ text, entities }: TextAndEntities, me: UserFromGetMe)
 }
 
 /**
+ * The opt-out: a message opening with GROUP_IGNORE_PREFIX is never a prompt,
+ * even when it replies to the bot or mentions it.
+ *
+ * Replying is how you quote a message in Telegram, so people need a way to
+ * point at something the bot said while talking to each other about it. The
+ * prefix stays visible in the chat, which makes "the bot is sitting this one
+ * out" obvious to everyone reading.
+ */
+function isOptedOut(text: string): boolean {
+  const prefix = config.GROUP_IGNORE_PREFIX;
+  return prefix !== '' && text.trimStart().startsWith(prefix);
+}
+
+/**
  * Whether an update should reach the handlers. Non-message updates (callback
  * queries from inline keyboards, edits, service messages) pass untouched —
  * a button tap is already an explicit interaction with the bot.
@@ -64,9 +81,11 @@ export function isAddressedToBot(ctx: Context): boolean {
   const msg = ctx.message;
   if (!msg) return true;
 
+  const content = textAndEntities(msg);
+  if (isOptedOut(content.text)) return false;
+
   if (msg.reply_to_message?.from?.id === ctx.me.id) return true;
 
-  const content = textAndEntities(msg);
   return isCommandForBot(content, ctx.me) || mentionsBot(content, ctx.me);
 }
 

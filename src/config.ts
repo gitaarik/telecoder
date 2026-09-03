@@ -28,6 +28,10 @@ const envSchema = z.object({
   // message in an allow-listed group is a prompt, which drowns out any human
   // conversation happening in the same group.
   GROUP_REQUIRE_MENTION: z.string().default('true').transform(toBool),
+  // Prefix that opts a group message out of being a prompt, even when it
+  // replies to the bot or mentions it — for quoting the bot at each other
+  // without setting it off. Empty string disables the escape hatch.
+  GROUP_IGNORE_PREFIX: z.string().default('//'),
   ANTHROPIC_API_KEY: z.string().optional(), // Optional - uses Claude Max subscription if not set
   // OpenAI (TTS)
   OPENAI_API_KEY: z.string().optional(),
