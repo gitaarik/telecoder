@@ -46,7 +46,7 @@ import {
   type ModePty,
 } from './permission-mode.js';
 import { parseModal } from './tui-modal.js';
-import { dialogResumeState } from './turn-resume.js';
+import { dialogResumeState, turnHold } from './turn-end.js';
 import { isSuggestionsEnabled } from '../telegram/suggestions-settings.js';
 import { resolveBin } from '../utils/resolve-bin.js';
 import type { Context } from 'grammy';
@@ -1024,16 +1024,6 @@ export class PtyProvider implements Provider {
       return;
     }
 
-    // A tool is still pending (e.g. claudegram_ask_user long-polling for a
-    // user button tap, or claude's own AskUserQuestion dialog waiting on the
-    // TUI). The pty is silent by design — don't mistake that for end-of-turn.
-    // Stop only fires *after* all tools complete, so even the post-Stop path
-    // is safe to gate on this.
-    if (session.inflightTools > 0) {
-      session.idleTimer = setTimeout(() => this._checkEndOfTurn(session), idleMs);
-      return;
-    }
-
     // Stop hook fired → Stop itself is the authoritative end-of-turn signal,
     // we just wait for a brief settle. Otherwise fall back to the idle path:
     // pty quiet for IDLE_MS, the input prompt is back on screen, AND claude
@@ -1072,12 +1062,27 @@ export class PtyProvider implements Provider {
     session.dialogAnsweredAt = resume.answeredAt;
     const resumingAfterDialog = resume.resuming;
 
-    const canResolve = session.stopReceived
-      ? isIdle
-      : isIdle && this._hasInputBox(session) && !stillGenerating && claudeProducedSomething
-        && !resumingAfterDialog;
+    const hold = turnHold({
+      stopReceived: session.stopReceived,
+      inflightTools: session.inflightTools,
+      isIdle,
+      hasInputBox: this._hasInputBox(session),
+      stillGenerating,
+      claudeProducedSomething,
+      resumingAfterDialog,
+    });
 
-    if (canResolve) {
+    // A count that outlived its Stop is a lost hook, not a live tool. Say so:
+    // silence here is what made a two-hour hang look like a long turn.
+    if (session.stopReceived && session.inflightTools > 0) {
+      console.warn(
+        `[PtyProvider] ${session.claudeSessionId}: Stop fired with ${session.inflightTools} tool(s) `
+        + 'still counted as open — a PostToolUse hook was lost; trusting Stop',
+      );
+      session.inflightTools = 0;
+    }
+
+    if (hold === null) {
       const resolved = session.endOfTurnResolver;
       session.endOfTurnResolver = null;
       session.endOfTurnRejector = null;
@@ -1094,9 +1099,11 @@ export class PtyProvider implements Provider {
       // Waiting on claude to resume is its own cadence: the pty is quiet by
       // definition here, so idleRemaining has already collapsed to its floor
       // and would otherwise spin this check every 50ms for the whole window.
-      const wait = resumingAfterDialog
+      const wait = hold === 'resuming'
         ? DIALOG_RESUME_POLL_MS
-        : Math.min(idleRemaining, fallbackRemaining);
+        : hold === 'tools'
+          ? idleMs
+          : Math.min(idleRemaining, fallbackRemaining);
       session.idleTimer = setTimeout(() => this._checkEndOfTurn(session), wait);
     }
   }

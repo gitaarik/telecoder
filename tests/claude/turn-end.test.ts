@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dialogResumeState } from '../../src/claude/turn-resume.js';
+import { dialogResumeState, turnHold, type EndOfTurnSignals } from '../../src/claude/turn-end.js';
 
 const GRACE = 15_000;
 const ANSWERED = 1_000_000;
@@ -83,5 +83,75 @@ describe('dialogResumeState', () => {
 
   it('does not treat the answering instant itself as already expired', () => {
     expect(dialogResumeState(ANSWERED, silent({ now: ANSWERED })).resuming).toBe(true);
+  });
+});
+
+/** A finished turn: everything says done, nothing is holding it. */
+function done(overrides: Partial<EndOfTurnSignals> = {}): EndOfTurnSignals {
+  return {
+    stopReceived: false,
+    inflightTools: 0,
+    isIdle: true,
+    hasInputBox: true,
+    stillGenerating: false,
+    claudeProducedSomething: true,
+    resumingAfterDialog: false,
+    ...overrides,
+  };
+}
+
+describe('turnHold', () => {
+  it('lets a finished turn end', () => {
+    expect(turnHold(done())).toBeNull();
+  });
+
+  it('holds while a tool is open', () => {
+    // The case the count is for: ask_user long-polls and the pty goes silent,
+    // which is otherwise indistinguishable from a finished turn.
+    expect(turnHold(done({ inflightTools: 1 }))).toBe('tools');
+  });
+
+  it('lets Stop overrule a tool count that never came back down', () => {
+    // The bug. A lost PostToolUse leaves the count high forever, and checking
+    // it before Stop let one dropped curl outrank the only authoritative
+    // end-of-turn signal there is — a turn hung to the two-hour ceiling with
+    // claude idle and its answer already written.
+    expect(turnHold(done({ stopReceived: true, inflightTools: 2 }))).toBeNull();
+  });
+
+  it('still waits for the screen to settle after Stop', () => {
+    expect(turnHold(done({ stopReceived: true, isIdle: false }))).toBe('working');
+  });
+
+  it('ignores the screen entirely once Stop has fired', () => {
+    // Stop is emitted at the real end of the turn, so the heuristics that
+    // stand in for it in its absence have nothing left to add.
+    expect(turnHold(done({
+      stopReceived: true,
+      hasInputBox: false,
+      stillGenerating: true,
+      claudeProducedSomething: false,
+      resumingAfterDialog: true,
+      inflightTools: 5,
+    }))).toBeNull();
+  });
+
+  it('holds a turn whose dialog was just answered', () => {
+    expect(turnHold(done({ resumingAfterDialog: true }))).toBe('resuming');
+  });
+
+  it('reports tools ahead of the dialog gap when both apply', () => {
+    // Ordering matters only for the reason reported, but the reason drives
+    // how soon the next check runs.
+    expect(turnHold(done({ inflightTools: 1, resumingAfterDialog: true }))).toBe('tools');
+  });
+
+  it.each([
+    ['the pty is not idle', { isIdle: false }],
+    ['the input box is gone', { hasInputBox: false }],
+    ['a spinner is up', { stillGenerating: true }],
+    ['claude has written nothing yet', { claudeProducedSomething: false }],
+  ])('holds while %s', (_label, signal) => {
+    expect(turnHold(done(signal))).toBe('working');
   });
 });

@@ -63,6 +63,24 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **A lost hook could outrank the Stop signal and hang a finished turn** — the
+  end-of-turn check refuses to finish while the hooks say a tool is still open,
+  which is right: `claudegram_ask_user` long-polls for a button tap and the pty
+  is silent for as long as it waits. But that count was checked *before* the
+  Stop hook, on the reasoning that Stop only fires once every tool is done.
+
+  It does — which is exactly why a count that survives Stop cannot be a live
+  tool. The hooks are `curl` calls into a loopback server, fired and forgotten
+  (`>/dev/null 2>&1; exit 0`); a POST that fails takes its decrement with it,
+  nothing retries, and nothing else ever brings the count down. One dropped
+  request then outranked the only authoritative end-of-turn signal there is,
+  and the turn ran to the two-hour ceiling with claude sitting idle at its
+  prompt and its finished answer already written to the session log. A chat
+  waited an hour and seven minutes past "Done" for a reply that never came.
+
+  Stop now wins, the stale count is logged and cleared rather than silently
+  believed, and the count keeps guarding the path where it earns its keep.
+
 - **Answering a dialog could end the turn and strand the session** — the
   end-of-turn check infers "claude is finished" from a quiet pty, the input box
   being back, no spinner, and the session log having moved. Every one of those
