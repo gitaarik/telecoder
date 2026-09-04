@@ -165,6 +165,22 @@ async function pressOption(
   return { kind: 'answered', label };
 }
 
+/**
+ * The dialog standing between claude and the end of a turn, or null.
+ *
+ * Both halves matter. Claude draws its input box for the whole of a working
+ * turn, so the box being *gone* is what separates a dialog from ordinary
+ * progress; and an ordinary footer (`⏵⏵ bypass permissions on · ← for agents`)
+ * parses as no dialog, so a half-drawn frame can't be mistaken for one.
+ *
+ * Split out from the caller because this is the judgement that decides whether
+ * a turn gets interrupted, and it is worth being able to point real screens at.
+ */
+export function blockingModal(screenText: string): TuiModal | null {
+  if (hasInputBox(screenText)) return null;
+  return parseModal(screenText);
+}
+
 /** True once the dialog is gone and claude is back at its input box. */
 export async function waitForDialogToClear(pty: ModalPty, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;

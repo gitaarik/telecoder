@@ -38,7 +38,7 @@ import { getModelsForBinary } from './model-catalog.js';
 import { scrapePromptSuggestion } from './prompt-suggestion-scraper.js';
 import { scrapeTip } from './tip-scraper.js';
 import { hasInputBox, isGenerating, screenSignature } from './tui-state.js';
-import { relayModal, waitForDialogToClear, type ModalPty } from './modal-relay.js';
+import { blockingModal, relayModal, waitForDialogToClear, type ModalPty } from './modal-relay.js';
 import {
   ensurePermissionMode,
   permissionModeInfo,
@@ -307,6 +307,24 @@ interface PtySession {
    * this state) or after any spawn-triggering event.
    */
   updateBannerChecked: boolean;
+  /**
+   * Who to ask when a dialog opens *during* the turn, set for as long as one
+   * is in flight.
+   *
+   * A dialog before the prompt is submitted has the caller's arguments right
+   * there; one that opens two tool calls later does not, and the end-of-turn
+   * check that notices it runs off a timer with nothing but the session. Any
+   * mode that asks — auto, manual, accept-edits meeting a Bash command —
+   * produces those, so this is what makes those modes usable at all rather
+   * than a way to hang a turn until the hard ceiling.
+   */
+  turnRelay: { sessionKey: string; options: AgentOptions | undefined } | null;
+  /**
+   * True while a mid-turn dialog is out for an answer. The end-of-turn timer
+   * keeps ticking underneath, and without this it would relay the same dialog
+   * again on every pass.
+   */
+  relayingModal: boolean;
 }
 
 function transcriptSavingDisabled(screenText: string): boolean {
@@ -719,8 +737,12 @@ export class PtyProvider implements Provider {
       session.term.write('\r');
       await this._confirmSubmitted(session, sessionKey, prompt, abortSignal);
 
+      // From here until the turn ends, a dialog can open with nobody holding
+      // these arguments — the end-of-turn timer is all that's watching.
+      session.turnRelay = { sessionKey, options };
       return await this._awaitEndOfTurn(session);
     } finally {
+      session.turnRelay = null;
       if (abortKillTimer) clearTimeout(abortKillTimer);
       abortSignal?.removeEventListener('abort', abortHandler);
       unregisterActiveTurn(session.claudeSessionId);
@@ -877,6 +899,8 @@ export class PtyProvider implements Provider {
       submittedSlashCommand: false,
       awaitingResumeReplay: resuming,
       updateBannerChecked: false,
+      turnRelay: null,
+      relayingModal: false,
     };
 
     term.onData((chunk: string) => this._onData(session, chunk));
@@ -940,6 +964,15 @@ export class PtyProvider implements Provider {
     const idleMs = session.stopReceived ? POST_STOP_SETTLE_MS : IDLE_MS;
     const sinceLast = Date.now() - session.lastChunkAt;
     const isIdle = sinceLast >= idleMs;
+
+    // Ahead of the in-flight guard below, deliberately: claude asks for
+    // permission *inside* a tool call, so inflightTools is >0 for exactly the
+    // dialogs this catches, and checking after it would never see one.
+    if (isIdle && !session.relayingModal && blockingModal(this._getScreenText(session))) {
+      this._relayMidTurn(session);
+      session.idleTimer = setTimeout(() => this._checkEndOfTurn(session), idleMs);
+      return;
+    }
 
     // A tool is still pending (e.g. claudegram_ask_user long-polling for a
     // user button tap, or claude's own AskUserQuestion dialog waiting on the
@@ -1271,6 +1304,38 @@ export class PtyProvider implements Provider {
    * so beats a silent retry. Nothing is pressed on a timeout — see
    * modal-relay.ts for why an unanswered dialog is left exactly as it is.
    */
+  /**
+   * Ask the chat about a dialog that opened mid-turn, without blocking the
+   * timer that found it.
+   *
+   * Every outcome other than "a key was pressed and the dialog cleared" ends
+   * the turn with the reason, rather than letting it ride to the hard ceiling
+   * — two silent hours was the old behaviour and the whole point of this. The
+   * dialog is left exactly as it is when nobody answers, so the next message
+   * meets it in `_awaitReady` and gets offered the same buttons again.
+   */
+  private _relayMidTurn(session: PtySession): void {
+    const relay = session.turnRelay;
+    if (!relay) return;
+
+    session.relayingModal = true;
+    void this._relayModal(session, relay.sessionKey, relay.options)
+      .catch((error: unknown) => {
+        this._failTurn(session, error instanceof Error ? error : new Error(String(error)));
+      })
+      .finally(() => { session.relayingModal = false; });
+  }
+
+  /** End the in-flight turn with `error`, if one is still waiting. */
+  private _failTurn(session: PtySession, error: Error): void {
+    const reject = session.endOfTurnRejector;
+    if (!reject) return;
+    session.endOfTurnResolver = null;
+    session.endOfTurnRejector = null;
+    if (session.hardTimer) clearTimeout(session.hardTimer);
+    reject(error);
+  }
+
   private async _relayModal(
     session: PtySession, sessionKey: string, options: AgentOptions | undefined,
   ): Promise<void> {

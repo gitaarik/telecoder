@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Context } from 'grammy';
-import { buildChoices, relayModal, type ModalPty } from '../../src/claude/modal-relay.js';
+import { blockingModal, buildChoices, relayModal, type ModalPty } from '../../src/claude/modal-relay.js';
 import { parseModal } from '../../src/claude/tui-modal.js';
 import { resolvePendingQuestion } from '../../src/claude/ask-user.js';
 
@@ -67,6 +67,91 @@ function fakeCtx(): { ctx: Context; sent: { text: string; keyboard?: string[][] 
 function questionId(sent: { keyboard?: string[][] }[]): string {
   return sent[0].keyboard![0][0].split(':')[1];
 }
+
+/**
+ * Claude's own permission prompt, copied verbatim off a live pty running in
+ * manual mode. This is the dialog that made the mid-turn relay necessary: it
+ * opens two tool calls into a turn, with nobody holding the arguments that
+ * would say where to ask about it, and until the end-of-turn check learned to
+ * look for it the turn simply sat here until the hard ceiling — two hours, by
+ * default.
+ *
+ * Note where the rows stop. `Do you want to proceed?` is indented one column
+ * and the rows three, so the walk out from the cursor fences on it; the tip
+ * and the command preview above are never reached.
+ */
+const permissionPrompt = [
+  '❯ Use the Bash tool to run: touch probe.txt',
+  "● I'll run that command.",
+  '● Bash(touch probe.txt)',
+  '  ⎿  Waiting…',
+  SEP,
+  ' Bash command',
+  ' Tip: auto mode handles these prompts for you — choose "switch to auto mode" below',
+  '   touch probe.txt',
+  '   Create an empty probe.txt file',
+  ' Do you want to proceed?',
+  ' ❯ 1. Yes',
+  '   2. Yes, and always allow access to /tmp/tc-perm-tIf6Th from this project',
+  '   3. Yes, and switch to auto mode · auto mode handles these prompts for you',
+  '   4. No',
+  ' Esc to cancel · Tab to amend',
+].join('\n');
+
+/**
+ * An ordinary turn in progress. Claude draws its input box for the whole of
+ * one — measured at 300 samples across a live multi-tool turn, it was present
+ * on every single one — which is what makes the box's absence a safe signal
+ * that something is blocking. A false positive here interrupts healthy work.
+ */
+const working = [
+  '● Bash(touch probe.txt)',
+  '  ⎿  Done',
+  '✶ Percolating… (29s)',
+  SEP,
+  '❯ ',
+  SEP,
+  '  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt · ← for agents     ● high · /effort',
+].join('\n');
+
+describe('blockingModal', () => {
+  it('sees claude\'s permission prompt, which opens mid-turn', () => {
+    const modal = blockingModal(permissionPrompt);
+    expect(modal?.title).toBe('Bash command');
+    expect(modal?.options.map((o) => o.label)).toEqual([
+      'Yes',
+      'Yes, and always allow access to /tmp/tc-perm-tI…',
+      'Yes, and switch to auto mode · auto mode handle…',
+      'No',
+    ]);
+    expect(modal?.highlighted).toBe(0);
+  });
+
+  it('offers every row plus the keys the footer names', () => {
+    expect(buildChoices(blockingModal(permissionPrompt)!).map((c) => c.label)).toEqual([
+      '1. Yes',
+      '2. Yes, and always allow access to /tmp/tc-perm-tI…',
+      '3. Yes, and switch to auto mode · auto mode handle…',
+      '4. No',
+      'Esc — cancel',
+      'Tab — amend',
+    ]);
+  });
+
+  it('is null while a turn is merely working, where the box is still drawn', () => {
+    // The expensive mistake in the other direction: relaying this would
+    // interrupt a turn that was going perfectly well.
+    expect(blockingModal(working)).toBeNull();
+  });
+
+  it('is null on an idle input box', () => {
+    expect(blockingModal(inputBox)).toBeNull();
+  });
+
+  it('is null on a half-drawn screen it cannot read as a dialog', () => {
+    expect(blockingModal('● Loading conversation…')).toBeNull();
+  });
+});
 
 describe('buildChoices', () => {
   it('offers the numbered rows plus the footer keys that answer', () => {
