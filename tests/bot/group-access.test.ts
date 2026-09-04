@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, beforeAll, afterAll } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
+import * as realOs from 'os';
 import * as path from 'path';
 import { config } from '../../src/config.js';
 import {
@@ -11,6 +12,28 @@ import {
   revokeAccess,
 } from '../../src/bot/access/group-access.js';
 import { isAdmin } from '../../src/utils/admins.js';
+
+vi.mock('os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('os')>();
+  return { ...actual, default: actual, homedir: () => process.env.TELECODER_TEST_HOME ?? actual.homedir() };
+});
+
+// The roster and the group store both resolve their state dir from
+// os.homedir(). Without a fake home they write into the developer's real
+// ~/.claudegram — this suite creates group access and access-request state, so
+// that is not hypothetical.
+let testHome: string;
+
+beforeAll(() => {
+  testHome = fs.mkdtempSync(path.join(realOs.tmpdir(), 'telecoder-home-'));
+  process.env.TELECODER_TEST_HOME = testHome;
+});
+
+afterAll(() => {
+  delete process.env.TELECODER_TEST_HOME;
+  fs.rmSync(testHome, { recursive: true, force: true });
+});
+
 
 // Test env (vitest.config.ts): ALLOWED_USER_IDS=1,2,3
 const ADMIN = 2;
