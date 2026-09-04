@@ -274,8 +274,15 @@ After=network-online.target
 Type=simple
 WorkingDirectory=$BOT_REPO
 ExecStart=$(command -v node) $BOT_REPO/dist/index.js
-Restart=on-failure
+# always, not on-failure: /restartbot works by exiting for systemd to bring the
+# bot back, and an intentional `systemctl stop` is still a stop either way.
+Restart=always
 RestartSec=5
+# 75 (EX_TEMPFAIL) is the code /restartbot exits with. Naming it here keeps an
+# intentional restart out of the journal as "Failed with result 'exit-code'",
+# which is worth the line the next time someone reads these logs to find out
+# why the bot went away. Restart=always still restarts on it.
+SuccessExitStatus=75
 # Defence in depth behind the Unix account, chosen not to break dev work:
 # the service cannot see the operator's home at all (not merely be refused by
 # permissions), /usr and /etc are read-only, /tmp is its own. Deliberately NOT

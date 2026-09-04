@@ -21,6 +21,15 @@ import { replyMd, botctlExists, PROJECT_ROOT, BOTCTL_PATH } from './shared.js';
 import { handleResume, handleContinue } from './session.js';
 import { sessionHistory } from '../../../claude/session-history.js';
 import { requestRestart, requestRestartAll, requestSiblingRestart, launcherIsStale } from '../../../worker-restart.js';
+import {
+  isSystemdService,
+  getSystemdUnit,
+  getRestartBehaviour,
+  willRestartOnRequestedExit,
+  manualRestartCommand,
+  RESTART_EXIT_CODE,
+  type SystemdUnit,
+} from '../../../utils/systemd.js';
 import { launcherRestartHint } from '../../../utils/stale-launcher.js';
 
 /** Write the reload marker so autoResumeAfterReload picks up sessions on restart. */
@@ -199,6 +208,93 @@ export async function handleBotStatus(ctx: Context): Promise<void> {
   await replyMd(ctx, msg);
 }
 
+/**
+ * How this process gets replaced when it stops: by systemd, or by the botctl
+ * script starting a successor.
+ */
+type RestartPlan =
+  | { kind: 'systemd'; unit: SystemdUnit }
+  | { kind: 'botctl' };
+
+/**
+ * Work out how to restart, without doing anything yet.
+ *
+ * Separate from executing it so a restart is never *announced* before it is
+ * known to be possible. Announcing one that then fails is how the bot ends up
+ * silently dead with a "restarting..." message as its last word.
+ *
+ * Returns an error string (MarkdownV2, pre-escaped) when there is no way to
+ * come back, in which case the bot keeps running.
+ */
+async function planRestart(): Promise<{ plan: RestartPlan } | { error: string }> {
+  if (isSystemdService()) {
+    // botctl is not an option here: it would be reaped with us (see
+    // utils/systemd.ts). Exiting and letting systemd restart us is, but only
+    // if the unit is set up to.
+    const unit = getSystemdUnit();
+    if (!unit) {
+      return {
+        error:
+          'Running under systemd, but the unit name could not be read from `/proc/self/cgroup`\\.\n\n' +
+          'Restart it by hand: `systemctl \\-\\-user restart telecoder`',
+      };
+    }
+
+    const behaviour = await getRestartBehaviour(unit);
+    if (behaviour === null) {
+      return {
+        error:
+          `Running as *${esc(unit.name)}*, but \`systemctl show\` did not answer, ` +
+          'so there is no way to confirm the bot would come back\\.\n\n' +
+          `Restart it by hand: \`${esc(manualRestartCommand(unit))}\``,
+      };
+    }
+    if (!willRestartOnRequestedExit(behaviour)) {
+      return {
+        error:
+          `*${esc(unit.name)}* has \`Restart=${esc(behaviour.policy)}\`, so systemd would not start the bot again\\.\n\n` +
+          `Set \`Restart=always\` in the unit, or restart by hand: \`${esc(manualRestartCommand(unit))}\``,
+      };
+    }
+
+    return { plan: { kind: 'systemd', unit } };
+  }
+
+  if (!botctlExists()) {
+    return {
+      error: 'Bot control script not found\\.\n\nExpected at `scripts/telecoder\\-botctl\\.sh`\\.',
+    };
+  }
+  return { plan: { kind: 'botctl' } };
+}
+
+/**
+ * Act on a plan from `planRestart`. The systemd path does not come back — the
+ * process is on its way out by the time this returns.
+ */
+function executeRestart(plan: RestartPlan): void {
+  if (plan.kind === 'systemd') {
+    // The exit *is* the restart. Non-zero so both Restart=always and
+    // Restart=on-failure act on it; SIGTERM rather than process.exit so the
+    // normal graceful shutdown still runs.
+    console.log(`[Restart] Exiting for systemd to restart ${plan.unit.name}`);
+    process.exitCode = RESTART_EXIT_CODE;
+    process.kill(process.pid, 'SIGTERM');
+    return;
+  }
+
+  try {
+    const child = spawn(
+      BOTCTL_PATH,
+      ['recover'],
+      { cwd: PROJECT_ROOT, detached: true, stdio: 'ignore', env: { ...process.env, MODE: config.BOT_MODE } }
+    );
+    child.unref();
+  } catch (error) {
+    console.error('[BotCtl] Failed to restart:', sanitizeError(error));
+  }
+}
+
 type RestartScope = 'one' | 'all';
 
 async function performRestart(ctx: Context, scope: RestartScope): Promise<void> {
@@ -234,9 +330,10 @@ async function performRestart(ctx: Context, scope: RestartScope): Promise<void> 
     return;
   }
 
-  // Single-instance mode — use shell script to restart the whole process
-  if (!botctlExists()) {
-    await replyMd(ctx, '❌ Bot control script not found\\.\n\nExpected at `scripts/telecoder-botctl.sh`\\.');
+  // Single-instance mode — systemd restarts us, or botctl starts a successor
+  const planned = await planRestart();
+  if ('error' in planned) {
+    await replyMd(ctx, `❌ Cannot restart\\.\n\n${planned.error}`);
     return;
   }
 
@@ -248,16 +345,7 @@ async function performRestart(ctx: Context, scope: RestartScope): Promise<void> 
     await sendRestoreButtons(ctx);
   }
 
-  try {
-    const child = spawn(
-      BOTCTL_PATH,
-      ['recover'],
-      { cwd: PROJECT_ROOT, detached: true, stdio: 'ignore', env: { ...process.env, MODE: config.BOT_MODE } }
-    );
-    child.unref();
-  } catch (error) {
-    console.error('[BotCtl] Failed to restart:', sanitizeError(error));
-  }
+  executeRestart(planned.plan);
 }
 
 export async function handleRestartBot(ctx: Context): Promise<void> {
@@ -415,27 +503,21 @@ async function performRebuild(ctx: Context, scope: RebuildScope): Promise<void> 
     return;
   }
 
-  if (config.AUTO_RESTORE_SESSION) writeReloadMarker();
-
-  // Single-instance mode (scope is moot — only one process)
-  await ctx.reply('✅ Build succeeded. Restarting...');
-  if (!config.AUTO_RESTORE_SESSION) await sendRestoreButtons(ctx);
-
-  if (!botctlExists()) {
-    await replyMd(ctx, 'Build OK but cannot restart: `scripts/telecoder\\-botctl\\.sh` not found\\.');
+  // Single-instance mode (scope is moot — only one process). Planned before
+  // the build is reported, so a bot that cannot restart says so while it is
+  // still alive to say it.
+  const planned = await planRestart();
+  if ('error' in planned) {
+    await replyMd(ctx, `✅ Build succeeded, but the bot cannot restart itself\\.\n\n${planned.error}`);
     return;
   }
 
-  try {
-    const child = spawn(
-      BOTCTL_PATH,
-      ['recover'],
-      { cwd: PROJECT_ROOT, detached: true, stdio: 'ignore', env: { ...process.env, MODE: config.BOT_MODE } }
-    );
-    child.unref();
-  } catch (error) {
-    console.error('[Reload] Failed to restart via botctl:', sanitizeError(error));
-  }
+  if (config.AUTO_RESTORE_SESSION) writeReloadMarker();
+
+  await ctx.reply('✅ Build succeeded. Restarting...');
+  if (!config.AUTO_RESTORE_SESSION) await sendRestoreButtons(ctx);
+
+  executeRestart(planned.plan);
 }
 
 export async function handleRebuild(ctx: Context): Promise<void> {
