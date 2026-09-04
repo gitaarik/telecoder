@@ -28,6 +28,7 @@
  */
 
 import * as path from 'path';
+import type { User } from 'grammy/types';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { ensureStateDir, getStateDir, readJsonFile, writeJsonFile } from './json-store.js';
@@ -105,6 +106,22 @@ function normaliseUsername(value: string): string {
 }
 
 /** A human label for a user, preferring the display name over the handle. */
+/**
+ * The fields the roster keeps, taken off a Telegram user.
+ *
+ * Lives here rather than in the middleware that first needed it because two
+ * gates now build identities — the door and the group role check — and a
+ * second copy would be one drift away from two different ideas of a name.
+ */
+export function identifyUser(user: User): UserIdentity {
+  const name = [user.first_name, user.last_name].filter(Boolean).join(' ');
+  return {
+    id: user.id,
+    ...(user.username ? { username: user.username } : {}),
+    ...(name ? { name } : {}),
+  };
+}
+
 export function describeUser(user: UserIdentity): string {
   if (user.name && user.username) return `${user.name} (@${user.username})`;
   if (user.name) return user.name;

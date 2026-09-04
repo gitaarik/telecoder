@@ -424,6 +424,16 @@ Open your bot in Telegram → `/start`
 | `/cancel` | Cancel current request (alias: `/stop`) |
 | `/commands` | Show all commands |
 
+### Group Access
+| Command | Description |
+|---------|-------------|
+| `/members` | Who may prompt the agent in this group, and the default for everyone else |
+| `/allow` | In a group, let someone prompt the agent here; in a DM, admit them everywhere — admin only |
+| `/deny` | In a group, make someone a spectator here; in a DM, remove them entirely — admin only |
+
+Name a person by replying to one of their messages with the command; `@handle`
+works once the bot has seen them post, and a numeric user id always works.
+
 ---
 
 ## Optional Integrations
@@ -525,6 +535,7 @@ See [Sharing a bot](#sharing-a-bot) for how the pieces fit together.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `ADMIN_USER_IDS` | all allowed users | Subset of `ALLOWED_USER_IDS` that owns the bot (restart, rebuild, project, access) |
 | `ANTHROPIC_API_KEY` | — | API key (optional with Claude Max subscription) |
 | `WORKSPACE_DIR` | `$HOME` | Root directory for project picker |
 | `CLAUDE_EXECUTABLE_PATH` | `claude` | Path to Claude Code CLI |
@@ -534,6 +545,40 @@ See [Sharing a bot](#sharing-a-bot) for how the pieces fit together.
 | `DANGEROUS_MODE` | `false` | Auto-approve all tool permissions |
 | `CANCEL_ON_NEW_MESSAGE` | `false` | Auto-cancel running query on new message |
 | `CLAUDE_SDK_LOG_LEVEL` | `off` | SDK log level: off, basic, verbose, trace |
+
+### Group chats
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ALLOWED_GROUP_IDS` | — | Group/supergroup IDs the bot may be used in |
+| `GROUP_MEMBERS_DEFAULT` | `spectator` | What membership alone grants: `spectator` or `contributor` |
+| `GROUP_REQUIRE_MENTION` | `true` | Only treat messages that address the bot as prompts |
+| `GROUP_REPLY_IS_MENTION` | `false` | Treat any reply to the bot as addressing it |
+
+Access in a group has three tiers. **Admins** (`ADMIN_USER_IDS`, or everyone in
+`ALLOWED_USER_IDS` when that is unset) have full access everywhere and are the
+only ones who can hand out the rest. **Contributors** can prompt the agent in
+that group. **Spectators** are in the chat and ignored by the bot — they read
+along and talk to everyone, and the bot only answers them with a (rate-limited)
+note if they address it directly, alongside a card an admin can tap to let them
+in.
+
+This layers on the global roster rather than replacing it: anyone in
+`ALLOWED_USER_IDS`, or admitted with `/allow` in a DM, is a contributor in every
+group without a per-group grant. `/users` reads back that global list;
+`/members` reads back one group.
+
+`GROUP_MEMBERS_DEFAULT` picks which of the last two an ungranted member lands
+in. `spectator` is the default: nobody can prompt the agent until an admin runs
+`/allow`, so adding someone to the chat is not the same as handing them a shell.
+`contributor` makes Telegram membership the whole gate — right for a group of
+peers who all own the box.
+
+Commands that reconfigure the bot rather than drive the conversation stay with
+admins — `/restartbot`, `/rebuildbot`, `/update`, `/permissions`, `/teleport`,
+`/project`, `/newproject`, `/allow` and `/deny`, along with the inline buttons
+those open. A contributor drives the conversation; only an admin repoints or
+restarts the bot. `/members` is readable by anyone who can prompt.
 
 ### Providers
 
@@ -600,6 +645,7 @@ src/
 │   │   └── photo.handler.ts       # Image save + agent notification
 │   └── middleware/
 │       ├── auth.middleware.ts      # User whitelist + group chat auth
+│       ├── group-role.middleware.ts # Contributor/spectator gate
 │       └── stale-filter.ts        # Ignore stale messages on restart
 ├── claude/
 │   ├── agent.ts                   # Claude Agent SDK, session resume, system prompt
@@ -685,6 +731,10 @@ Then `/continue` or `/resume` in Telegram to restore your session.
 - **Admins & guests** — a shared bot can reserve approvals, lifecycle and
   transport for `ADMIN_USER_IDS`; see [Sharing a bot](#sharing-a-bot)
 - **Group confinement** — `RESTRICT_TO_GROUPS` keeps guests out of private chats
+- **Group roles** — inside a group, admins / contributors / spectators, so being
+  in the chat need not mean being able to prompt the agent (`GROUP_MEMBERS_DEFAULT`)
+- **Addressed-only** — `GROUP_REQUIRE_MENTION` keeps human conversation in a
+  shared group from becoming prompts
 - **Permission gate** — dangerous Bash patterns pause for an admin's approval
 - **Scope guard** — tool calls reaching outside the shared projects, or at any
   credential path, pause too

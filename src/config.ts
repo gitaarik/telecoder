@@ -9,7 +9,39 @@ const defaultEnvPath = path.resolve(__dirname, '..', '.env');
 // Read from the real process env, not the .env file — this is the var that
 // says *which* .env to load, so it can't come from inside one.
 const envPath = legacyEnv('ENV_PATH') || defaultEnvPath;
-loadEnv({ path: envPath });
+const loadedEnv = loadEnv({ path: envPath });
+
+/**
+ * Which values in the .env file are being ignored because the process was
+ * started with them already in its environment.
+ *
+ * dotenv never overwrites what is already there, which is the right default —
+ * it is how a launcher hands each worker its own instance config. The trap is
+ * that a restart inherits the environment it was started from, so a value
+ * exported into the shell that first launched the bot outranks the file
+ * forever, and no amount of editing .env or restarting from chat can dislodge
+ * it. Naming the shadowed keys at startup turns a silent mystery into a line
+ * in the log.
+ */
+export function findShadowedEnvKeys(
+  fromFile: Record<string, string> | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  if (!fromFile) return [];
+  // A launcher worker is handed its config through the environment on purpose.
+  if (env.TELECODER_INSTANCE_NAME) return [];
+  return Object.keys(fromFile).filter((key) => env[key] !== fromFile[key]);
+}
+
+const shadowed = findShadowedEnvKeys(loadedEnv.parsed);
+if (shadowed.length > 0) {
+  // Names only — one of these is the bot token.
+  console.warn(
+    `[env] Ignoring ${shadowed.length} value(s) from ${envPath}: this process was started with ` +
+    `them already set in its environment, and that wins over the file — ${shadowed.join(', ')}. ` +
+    'Restart from a shell that does not export them if you meant the file to apply.'
+  );
+}
 
 const toBool = (val: string) => val.toLowerCase() === 'true';
 
@@ -65,6 +97,27 @@ const envSchema = z.object({
     .string()
     .default('10')
     .transform((val) => parseInt(val, 10)),
+  // In a group, only act on messages that address the bot — an @mention, a
+  // reply to something the bot sent, or a slash command. Off means every
+  // message in an allow-listed group is a prompt, which drowns out any human
+  // conversation happening in the same group.
+  GROUP_REQUIRE_MENTION: z.string().default('true').transform(toBool),
+  // Treat any reply to one of the bot's messages as addressing it, the way it
+  // worked before mentions were required. Off by default: replying is also how
+  // you quote a message, so a reply is a poor signal of intent. Answers to the
+  // bot's own ForceReply prompts are always addressed regardless.
+  GROUP_REPLY_IS_MENTION: z.string().default('false').transform(toBool),
+  // What membership of an allow-listed group grants. 'spectator' makes it
+  // presence only — people talk in the group and watch the bot work, but only
+  // someone an admin has /allow'd can send it prompts. 'contributor' makes
+  // Telegram membership the whole gate, so everyone in the room can drive the
+  // agent; that is the right answer for a group of peers and the wrong one for
+  // a group with an audience in it.
+  //
+  // Defaults to spectator, which is the safe direction and matches what the
+  // roster gate already enforced before this setting existed: someone who is
+  // in the group but not admitted could never prompt the bot.
+  GROUP_MEMBERS_DEFAULT: z.enum(['contributor', 'spectator']).default('spectator'),
   ANTHROPIC_API_KEY: z.string().optional(), // Optional - uses Claude Max subscription if not set
   // OpenAI (TTS)
   OPENAI_API_KEY: z.string().optional(),

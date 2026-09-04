@@ -2,7 +2,7 @@ import { Context, NextFunction } from 'grammy';
 import type { User } from 'grammy/types';
 import { config } from '../../config.js';
 import { GROUP_ANONYMOUS_BOT_ID, isAdmin } from '../../utils/admins.js';
-import { isAllowedUser, noteSeenUser, type UserIdentity } from '../../utils/user-roster.js';
+import { isAllowedUser, noteSeenUser, identifyUser as identify } from '../../utils/user-roster.js';
 import { requestAccess } from '../../telegram/access-request.js';
 
 /**
@@ -20,16 +20,6 @@ function logAuthAttempt(
   const usernameInfo = username ? `@${username}` : '';
   const status = success ? 'ALLOWED' : 'DENIED';
   console.log(`[auth] ${timestamp} ${status} ${userInfo} ${usernameInfo} chat:${chatType || 'unknown'}`);
-}
-
-/** The fields the roster keeps, taken off a Telegram user. */
-function identify(user: User): UserIdentity {
-  const name = [user.first_name, user.last_name].filter(Boolean).join(' ');
-  return {
-    id: user.id,
-    ...(user.username ? { username: user.username } : {}),
-    ...(name ? { name } : {}),
-  };
 }
 
 /**
@@ -86,12 +76,28 @@ export async function authMiddleware(
     return;
   }
 
-  // The allow-list is `.env` plus whoever an admin has admitted with /allow,
-  // so a newly admitted guest works immediately rather than at the next restart.
-  if (!isAllowedUser(userId)) {
+  // Membership of an allow-listed group is the coarse gate: an invite-only
+  // group is a vetted room, and being in it is enough to reach the bot at all.
+  // What that membership is *worth* is the finer question, and it is answered
+  // downstream by group-role.middleware — under GROUP_MEMBERS_DEFAULT, which
+  // ships as `spectator`, being in the room only buys the right to read along.
+  //
+  // Fails closed on a missing chat id: an update we can't place is not one we
+  // can say is inside the group.
+  const inAllowedGroup = chatId !== undefined && config.ALLOWED_GROUP_IDS.includes(chatId);
+
+  // Record everyone the shared group sees, on the roster or not. `/allow
+  // @handle` can only resolve against handles the bot has watched go by, and
+  // the person an admin is about to name is precisely the one not admitted
+  // yet; /users lists them as pending on the strength of this.
+  if (inAllowedGroup && ctx.from) noteSeenUser(identify(ctx.from), chatId);
+
+  // Outside the shared group the roster is the whole answer. Inside it, a
+  // stranger is not refused here — they fall through to the role gate, which
+  // turns them away only if they actually address the bot, so the group stays
+  // quiet while people talk to each other.
+  if (!isAllowedUser(userId) && !inAllowedGroup) {
     logAuthAttempt(false, userId, username, chatType);
-    // In the shared group, turn the refusal into something an admin can act on
-    // with one tap. Everywhere else it stays a flat "no" — see access-request.ts.
     const outcome = ctx.from ? await requestAccess(ctx, identify(ctx.from)) : 'not-asked';
     await ctx.reply(
       outcome === 'pending'
@@ -101,25 +107,19 @@ export async function authMiddleware(
     return;
   }
 
-  // Remember allowed users too: this is how `/allow @them` and `/deny @them`
-  // resolve a handle to an id, and it keeps display names current for /users.
-  if (ctx.from) noteSeenUser(identify(ctx.from), chatId);
+  // Keep display names current for /users. In the group this already ran.
+  if (!inAllowedGroup && ctx.from) noteSeenUser(identify(ctx.from), chatId);
 
   // Confine non-admins to the allow-listed groups. A bot shared in a group is
   // shared on the understanding that the owner can see what is asked of it, and
   // a private chat with the same bot is the one place they cannot. Admins are
   // exempt — being able to DM your own bot is the normal way to use it.
-  //
-  // Fails closed on a missing chat id: an update we can't place is not an
-  // update we can say is inside the group.
-  if (config.RESTRICT_TO_GROUPS && !isAdmin(userId)) {
-    if (chatId === undefined || !config.ALLOWED_GROUP_IDS.includes(chatId)) {
-      logAuthAttempt(false, userId, username, chatType);
-      await ctx.reply(
-        '⛔ This bot only works in its shared group chat, not in private messages.'
-      );
-      return;
-    }
+  if (config.RESTRICT_TO_GROUPS && !isAdmin(userId) && !inAllowedGroup) {
+    logAuthAttempt(false, userId, username, chatType);
+    await ctx.reply(
+      '⛔ This bot only works in its shared group chat, not in private messages.'
+    );
+    return;
   }
 
   logAuthAttempt(true, userId, username, chatType);

@@ -93,7 +93,18 @@ describe('authMiddleware', () => {
     expect(reply).not.toHaveBeenCalled();
   });
 
-  it('allows the anonymous-admin bot only in an allow-listed group', async () => {
+  it('allows any user in an allow-listed group (membership is the gate)', async () => {
+    const { ctx, reply } = makeCtx({
+      userId: 999, // not in ALLOWED_USER_IDS
+      chatId: ALLOWED_GROUP,
+      chatType: 'supergroup',
+    });
+    await authMiddleware(ctx, next);
+    expect(next).toHaveBeenCalledOnce();
+    expect(reply).not.toHaveBeenCalled();
+  });
+
+  it('allows anonymous admin posts in an allow-listed group', async () => {
     const { ctx, reply } = makeCtx({
       userId: GROUP_ANONYMOUS_BOT_ID,
       chatId: ALLOWED_GROUP,
@@ -104,12 +115,20 @@ describe('authMiddleware', () => {
     expect(reply).not.toHaveBeenCalled();
   });
 
-  it('rejects the anonymous-admin bot in a non-allow-listed group', async () => {
+  it('rejects an unknown user in a non-allow-listed group', async () => {
     const { ctx, reply } = makeCtx({
-      userId: GROUP_ANONYMOUS_BOT_ID,
+      userId: 999,
       chatId: -42, // not in ALLOWED_GROUP_IDS
       chatType: 'supergroup',
     });
+    await authMiddleware(ctx, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(reply).toHaveBeenCalledOnce();
+  });
+
+  it('rejects an unknown user in DM even if the same user could speak in an allow-listed group', async () => {
+    // Prevents the "kicked from group but keeps DM access" escape hatch.
+    const { ctx, reply } = makeCtx({ userId: 999, chatType: 'private' });
     await authMiddleware(ctx, next);
     expect(next).not.toHaveBeenCalled();
     expect(reply).toHaveBeenCalledOnce();
@@ -202,7 +221,10 @@ describe('authMiddleware and the runtime roster', () => {
     expect(allowed.reply).not.toHaveBeenCalled();
   });
 
-  it('posts an access card for a stranger in the shared group', async () => {
+  it('passes a stranger in the shared group down to the role gate', async () => {
+    // The door is Telegram membership of an allow-listed group; what that is
+    // worth is group-role.middleware's question. Refusing here instead would
+    // answer every human-to-human message in the room with a denial.
     const { ctx, reply, sendMessage } = makeCtx({
       userId: 999,
       username: 'newcomer',
@@ -212,15 +234,9 @@ describe('authMiddleware and the runtime roster', () => {
     });
     await authMiddleware(ctx, next);
 
-    expect(next).not.toHaveBeenCalled();
-    expect(sendMessage).toHaveBeenCalledOnce();
-    const [chatId, text, opts] = sendMessage.mock.calls[0];
-    expect(chatId).toBe(ALLOWED_GROUP);
-    expect(text).toContain('Access requested');
-    expect(text).toContain('999');
-    expect(opts.reply_markup.inline_keyboard[0]).toHaveLength(2);
-    // The refusal tells them it is being handled rather than just saying no.
-    expect(reply.mock.calls[0][0]).toMatch(/admin has been asked/i);
+    expect(next).toHaveBeenCalledOnce();
+    expect(reply).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it('records the stranger so /allow @them can resolve later', async () => {
@@ -245,15 +261,6 @@ describe('authMiddleware and the runtime roster', () => {
     expect(listPending().map((u) => u.id)).not.toContain(999);
   });
 
-  it('posts one card for a burst of messages from the same stranger', async () => {
-    const first = makeCtx({ userId: 999, chatId: ALLOWED_GROUP, chatType: 'supergroup' });
-    await authMiddleware(first.ctx, next);
-    const second = makeCtx({ userId: 999, chatId: ALLOWED_GROUP, chatType: 'supergroup' });
-    await authMiddleware(second.ctx, next);
-
-    expect(first.sendMessage).toHaveBeenCalledOnce();
-    expect(second.sendMessage).not.toHaveBeenCalled();
-  });
 
   it('asks about someone the moment they join, before they have spoken', async () => {
     const { ctx, reply, sendMessage } = makeCtx({
@@ -318,14 +325,15 @@ describe('a stranger who keeps talking', () => {
   });
 
   it('keeps being told the request is pending, not that it vanished', async () => {
-    const first = makeCtx({ userId: 999, chatId: ALLOWED_GROUP, chatType: 'supergroup' });
+    // Outside an allow-listed group the roster is still the whole answer, so
+    // this is where the door's own card and cooldown are exercised.
+    const first = makeCtx({ userId: 999, chatId: 999, chatType: 'private' });
     await authMiddleware(first.ctx, next);
-    const second = makeCtx({ userId: 999, chatId: ALLOWED_GROUP, chatType: 'supergroup' });
+    const second = makeCtx({ userId: 999, chatId: 999, chatType: 'private' });
     await authMiddleware(second.ctx, next);
 
-    // One card, but the same answer both times.
-    expect(second.sendMessage).not.toHaveBeenCalled();
-    expect(first.reply.mock.calls[0][0]).toMatch(/admin has been asked/i);
-    expect(second.reply.mock.calls[0][0]).toMatch(/admin has been asked/i);
+    expect(next).not.toHaveBeenCalled();
+    expect(first.reply.mock.calls[0][0]).toMatch(/not authorized/i);
+    expect(second.reply.mock.calls[0][0]).toMatch(/not authorized/i);
   });
 });

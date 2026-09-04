@@ -1772,6 +1772,7 @@
   <symbol id="i-sidechat" viewBox="0 0 24 24"><path d="M3.5 8a3 3 0 0 1 3-3h7a3 3 0 0 1 3 3v3.5a3 3 0 0 1-3 3H8.5L5 17.4v-2.9a3 3 0 0 1-1.5-2.6z"/><path d="M18.5 9.6A2.5 2.5 0 0 1 21 12.1v3.2a2.5 2.5 0 0 1-2.5 2.5H18v2.3l-2.7-2.3h-1.6"/></symbol>
   <symbol id="i-topic" viewBox="0 0 24 24"><path d="M4.5 9h15"/><path d="M4.5 15h15"/><path d="M10.2 3.5 8.4 20.5"/><path d="M15.8 3.5 14 20.5"/></symbol>
   <symbol id="i-done" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.2 12.2 2.6 2.6 5-5.4"/></symbol>
+  <symbol id="i-people" viewBox="0 0 24 24"><circle cx="9" cy="8.2" r="3.4"/><path d="M3.2 19.4a5.8 5.8 0 0 1 11.6 0"/><path d="M16.4 5.2a3.4 3.4 0 0 1 0 6"/><path d="M18.2 14.4a5.8 5.8 0 0 1 2.6 5"/></symbol>
   <symbol id="i-levels" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h10"/><path d="M4 17h5"/></symbol>
   <symbol id="i-back" viewBox="0 0 24 24"><path d="M4 9.5h11a5.5 5.5 0 0 1 0 11H9"/><path d="M7.6 5.9 4 9.5l3.6 3.6"/></symbol>
   <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M3.5 8.2A2.5 2.5 0 0 1 6 5.7h8.4"/><path d="M3.5 8.2v9.1a2.5 2.5 0 0 0 2.5 2.5h12a2.5 2.5 0 0 0 2.5-2.5v-6.2"/><path d="m3.7 8 8.3 5.6 3.6-2.4"/><circle cx="19" cy="6" r="2.6"/></symbol>
@@ -2155,6 +2156,31 @@
             <h3>A session per forum topic</h3>
             <p>Each topic in a Telegram group runs as its own independent session, so several
             projects can run in parallel in one place.</p>
+          </div>
+          <div class="feature-card" data-category="sessions">
+            <div class="feature-icon"><svg><use href="#i-shield"/></svg></div>
+            <h3>Share a bot with a group</h3>
+            <p>Allow-list a group in <code>ALLOWED_GROUP_IDS</code> and the bot works there.
+            Telegram membership is the outer gate, so removing someone revokes their access on the
+            next message — keep the group invite-only.</p>
+          </div>
+          <div class="feature-card" data-category="sessions">
+            <div class="feature-icon"><svg><use href="#i-people"/></svg></div>
+            <h3>Contributors and spectators</h3>
+            <p>Prompting the agent is shell access, but reading along isn't. By default joining
+            the group buys a seat, not a shell: people talk to each other and watch the work, and
+            only those an admin has <code>/allow</code>ed can send prompts. Set
+            <code>GROUP_MEMBERS_DEFAULT=contributor</code> for a group of peers who all own the
+            box. Commands that reconfigure the bot — <code>/restartbot</code>,
+            <code>/project</code>, <code>/permissions</code> — stay with admins either way.</p>
+          </div>
+          <div class="feature-card" data-category="sessions">
+            <div class="feature-icon"><svg><use href="#i-sidechat"/></svg></div>
+            <h3>Speaks only when spoken to</h3>
+            <p>In a group the bot answers an @mention or a slash command and ignores everything
+            else — including plain replies, so you can quote what it said and talk it over with
+            the others. Answers to its own <code>/project</code>-style prompts still land, since
+            Telegram leaves nowhere to put a mention in those.</p>
           </div>
           <div class="feature-card" data-category="sessions">
             <div class="feature-icon"><svg><use href="#i-star"/></svg></div>
@@ -2928,15 +2954,28 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/allow [@user|id]</code>
-              <span class="command-desc">Let someone in as a guest, effective immediately with no restart. Reply to their message for an exact match — Telegram gives bots no way to resolve a <code>@username</code>, so a typed handle only matches people the bot has already seen. <strong>Admin-only</strong>.</span>
+              <span class="command-desc">Let someone in, effective immediately with no restart. In a group it makes them a <strong>contributor there</strong>; in a DM it admits them to the bot everywhere. Reply to their message for an exact match — Telegram gives bots no way to resolve a <code>@username</code>, so a typed handle only matches people the bot has already seen. <strong>Admin-only</strong>.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/deny [@user|id]</code>
-              <span class="command-desc">Remove someone admitted with <code>/allow</code>. Ids that come from <code>ALLOWED_USER_IDS</code> are reported rather than silently ignored — those live in the <code>.env</code>. <strong>Admin-only</strong>.</span>
+              <span class="command-desc">The mirror of <code>/allow</code>: in a group it makes someone a spectator there, in a DM it removes them from the bot. Ids that come from <code>ALLOWED_USER_IDS</code> are reported rather than silently ignored — those live in the <code>.env</code>. <strong>Admin-only</strong>.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/update</code>
               <span class="command-desc">Update the Claude Code CLI — confirms with current version, then runs claude update. <strong>Admin-only</strong> when the bot has non-admin users.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="command-category">
+          <h3 class="command-category-title">
+            <span class="command-category-icon">👥</span>
+            Group Access
+          </h3>
+          <div class="commands-grid">
+            <div class="command-row">
+              <code class="command-code">/members</code>
+              <span class="command-desc">Who may prompt the agent in <em>this group</em> — admins, contributors, explicit spectators, and the default everyone else falls into. The per-group half of <code>/users</code>.</span>
             </div>
           </div>
         </div>
