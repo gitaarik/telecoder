@@ -63,6 +63,26 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **Answering a dialog could end the turn and strand the session** — the
+  end-of-turn check infers "claude is finished" from a quiet pty, the input box
+  being back, no spinner, and the session log having moved. Every one of those
+  is true in the moment after a relayed dialog is answered, and none of them
+  mean what they usually do: the box is back because the dialog went away, and
+  the spinner is missing because claude has not resumed yet.
+
+  A turn resolved in that gap does not just finish early, it takes the session
+  down with it. The bot hands back an answer and forgets the turn, while claude
+  carries on working with nobody listening — hooks arriving with no active turn
+  to attach to and being dropped, output going nowhere, and every later message
+  held against a screen that now does say "generating" until the ceiling
+  rejects it. One live session spent 37 minutes unreachable that way, and
+  `/stop` only reaches it while a message happens to be in flight.
+
+  The turn now waits for claude to show itself after a dialog is answered — a
+  spinner, or a tool opening through the hooks — bounded at 15s so a dialog
+  whose answer genuinely did end the turn still resolves. The Stop hook stays
+  authoritative and is never waited past.
+
 - **The PTY could not find the `claude` binary under systemd** — `CLAUDE_BIN`
   fell back to the bare name `claude`, which node-pty execs directly against
   the *service's* PATH. A systemd user unit gets the bare default, without

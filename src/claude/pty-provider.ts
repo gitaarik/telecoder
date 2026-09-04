@@ -46,6 +46,7 @@ import {
   type ModePty,
 } from './permission-mode.js';
 import { parseModal } from './tui-modal.js';
+import { dialogResumeState } from './turn-resume.js';
 import { isSuggestionsEnabled } from '../telegram/suggestions-settings.js';
 import { resolveBin } from '../utils/resolve-bin.js';
 import type { Context } from 'grammy';
@@ -150,6 +151,24 @@ const DIALOG_CLEAR_MS = 20_000;
  * runs. Any new output re-arms the timer anyway, so this only paces the wait.
  */
 const GENERATING_RECHECK_MS = 500;
+
+/**
+ * How long a turn waits for claude to pick itself back up after a dialog was
+ * answered, before the ordinary end-of-turn rules apply again.
+ *
+ * Generous on purpose. Claude draws its spinner within a moment of resuming,
+ * so the honest cases clear this in well under a second; the window only has
+ * to outlast a pause long enough to look idle. Getting it wrong in this
+ * direction costs a few seconds on a turn that really did end with the
+ * dialog. Getting it wrong the other way is what this exists to prevent, and
+ * costs the whole session: a turn resolved while claude was still working
+ * leaves its hooks arriving with no active turn to attach to, its output
+ * going nowhere, and every later message held against a screen that says it
+ * is generating.
+ */
+const DIALOG_RESUME_GRACE_MS = 15_000;
+/** How often to look for claude resuming, while inside that grace window. */
+const DIALOG_RESUME_POLL_MS = 250;
 
 /**
  * What the chat is told when a prompt can't be delivered because the session
@@ -343,6 +362,18 @@ interface PtySession {
    * again on every pass.
    */
   relayingModal: boolean;
+  /**
+   * When the relay last answered a dialog and saw it clear, or null once
+   * claude has visibly picked the turn back up.
+   *
+   * Answering a dialog is the middle of a turn, never the end of one, and for
+   * a moment afterwards the screen cannot tell the difference: the dialog is
+   * gone, the input box is back, the spinner is not drawn yet, and the JSONL
+   * was written before the dialog ever opened. That is every condition the
+   * idle end-of-turn path asks for, so a turn resolved in the gap — and left
+   * claude working with nobody listening.
+   */
+  dialogAnsweredAt: number | null;
 }
 
 function transcriptSavingDisabled(screenText: string): boolean {
@@ -919,6 +950,7 @@ export class PtyProvider implements Provider {
       updateBannerChecked: false,
       turnRelay: null,
       relayingModal: false,
+      dialogAnsweredAt: null,
     };
 
     term.onData((chunk: string) => this._onData(session, chunk));
@@ -1025,9 +1057,25 @@ export class PtyProvider implements Provider {
     // stays authoritative — it fires at the real end of the turn — and
     // MAX_TURN_MS remains the backstop for a turn neither path resolves.
     const stillGenerating = isGenerating(this._getScreenText(session));
+
+    // A dialog we just answered is claude resuming, not claude finishing, and
+    // for a moment the two are indistinguishable on screen. Hold the idle path
+    // off until claude proves which it is, bounded so a dialog whose answer
+    // genuinely did end the turn still resolves. Stop stays authoritative: it
+    // fires at the real end of a turn, so it is never worth waiting past.
+    const resume = dialogResumeState(session.dialogAnsweredAt, {
+      generating: stillGenerating,
+      inflightTools: session.inflightTools,
+      now: Date.now(),
+      graceMs: DIALOG_RESUME_GRACE_MS,
+    });
+    session.dialogAnsweredAt = resume.answeredAt;
+    const resumingAfterDialog = resume.resuming;
+
     const canResolve = session.stopReceived
       ? isIdle
-      : isIdle && this._hasInputBox(session) && !stillGenerating && claudeProducedSomething;
+      : isIdle && this._hasInputBox(session) && !stillGenerating && claudeProducedSomething
+        && !resumingAfterDialog;
 
     if (canResolve) {
       const resolved = session.endOfTurnResolver;
@@ -1043,7 +1091,12 @@ export class PtyProvider implements Provider {
       const fallbackRemaining = claudeProducedSomething
         ? Infinity
         : Math.max(50, NO_JSONL_FALLBACK_MS - sinceSubmit);
-      const wait = Math.min(idleRemaining, fallbackRemaining);
+      // Waiting on claude to resume is its own cadence: the pty is quiet by
+      // definition here, so idleRemaining has already collapsed to its floor
+      // and would otherwise spin this check every 50ms for the whole window.
+      const wait = resumingAfterDialog
+        ? DIALOG_RESUME_POLL_MS
+        : Math.min(idleRemaining, fallbackRemaining);
       session.idleTimer = setTimeout(() => this._checkEndOfTurn(session), wait);
     }
   }
@@ -1081,6 +1134,9 @@ export class PtyProvider implements Provider {
       // killed mid-tool).
       session.stopReceived = false;
       session.inflightTools = 0;
+      // Per-turn, like stopReceived: a dialog answered in the previous turn
+      // must not hold this one's first idle check off.
+      session.dialogAnsweredAt = null;
       // Each turn gets a fresh Telegram status message (StreamState.tip starts
       // null), so clear lastTip to force a re-push of the current tip.
       session.lastTip = null;
@@ -1404,6 +1460,10 @@ export class PtyProvider implements Provider {
             + "so your message wasn't delivered. Send it again in a moment.",
           );
         }
+        // Marked only now, with the dialog gone: from here the screen looks
+        // like a finished turn until claude resumes, and _checkEndOfTurn needs
+        // to know not to believe it.
+        session.dialogAnsweredAt = Date.now();
         return;
       case 'timeout':
         throw new Error(
