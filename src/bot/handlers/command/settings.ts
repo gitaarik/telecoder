@@ -34,6 +34,13 @@ import {
 } from '../../../utils/verbosity.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 import {
+  PERMISSION_MODES,
+  isPermissionModeId,
+  parsePermissionModeArg,
+  permissionModeInfo,
+  type PermissionModeId,
+} from '../../../claude/permission-mode.js';
+import {
   replyMd,
   parseCallback,
   getEffortLabel,
@@ -946,4 +953,112 @@ export async function handleSuggestionsCallback(ctx: Context): Promise<void> {
       console.error('[Suggestions] Failed to update menu:', error);
     }
   }
+}
+
+/**
+ * `/mode` — how much claude asks before acting, per chat.
+ *
+ * The callback prefix is `permmode:` rather than the obvious `mode:`, which
+ * still belongs to the streaming toggle this command took its name from. A
+ * keyboard from that older menu can be sitting in someone's chat right now,
+ * and its buttons carry `mode:streaming`.
+ */
+function buildPermissionModeMenu(chatId: number): {
+  text: string;
+  keyboard: { text: string; callback_data: string }[][];
+} {
+  const current = userPreferences.getPermissionMode(chatId);
+
+  const keyboard = PERMISSION_MODES.map((info) => [{
+    text: info.id === current ? `✓ ${info.label}` : info.label,
+    callback_data: `permmode:${info.id}`,
+  }]);
+  keyboard.push([{
+    text: current ? 'Default' : '✓ Default',
+    callback_data: 'permmode:default',
+  }]);
+
+  const descriptions = PERMISSION_MODES
+    .map((info) => `• *${esc(info.label)}* \\- ${esc(info.description)}`)
+    .join('\n');
+
+  const currentLabel = current
+    ? esc(permissionModeInfo(current).label)
+    : 'Default _\\(what this bot has always used\\)_';
+
+  return {
+    text:
+      `🔐 *Permission mode*\n\nCurrent: *${currentLabel}*\n\n`
+      + `${descriptions}\n• *Default* \\- leave it to the transport\n\n`
+      + '_Takes effect on your next message\\. Modes that ask will put Claude '
+      + "Code's own prompts in the chat as buttons\\._",
+    keyboard,
+  };
+}
+
+/** Confirmation text shared by the command and its buttons. */
+function permissionModeSetText(id: PermissionModeId): string {
+  const info = permissionModeInfo(id);
+  return `✅ Permission mode set to *${esc(info.label)}*\n\n_${esc(info.description)}_`;
+}
+
+export async function handlePermissionMode(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { chatId } = keyInfo;
+
+  const arg = (ctx.message?.text || '').split(' ').slice(1).join(' ').trim();
+
+  if (!arg) {
+    const { text, keyboard } = buildPermissionModeMenu(chatId);
+    await ctx.reply(text, {
+      parse_mode: 'MarkdownV2',
+      reply_markup: { inline_keyboard: keyboard },
+    });
+    return;
+  }
+
+  const lower = arg.toLowerCase();
+  if (lower === 'default' || lower === 'reset') {
+    userPreferences.clearPermissionMode(chatId);
+    await replyMd(ctx, '✅ Permission mode reset to the transport default\\.');
+    return;
+  }
+
+  const parsed = parsePermissionModeArg(arg);
+  if (!parsed) {
+    await replyMd(
+      ctx,
+      `❌ Unknown mode "${esc(arg)}"\\.\n\nValid: `
+      + `${PERMISSION_MODES.map((m) => `\`${esc(m.id)}\``).join(', ')}, \`default\``,
+    );
+    return;
+  }
+
+  userPreferences.setPermissionMode(chatId, parsed);
+  await replyMd(ctx, permissionModeSetText(parsed));
+}
+
+export async function handlePermissionModeCallback(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { chatId } = keyInfo;
+
+  const data = ctx.callbackQuery?.data;
+  if (!data || !data.startsWith('permmode:')) return;
+  const choice = data.replace('permmode:', '');
+
+  if (choice === 'default') {
+    userPreferences.clearPermissionMode(chatId);
+    await ctx.answerCallbackQuery({ text: 'Permission mode reset to default' });
+    await ctx.editMessageText('✅ Permission mode reset to the transport default\\.', {
+      parse_mode: 'MarkdownV2',
+    });
+    return;
+  }
+
+  if (!isPermissionModeId(choice)) return;
+  userPreferences.setPermissionMode(chatId, choice);
+  await ctx.answerCallbackQuery({ text: `Mode: ${permissionModeInfo(choice).label}` });
+  await ctx.editMessageText(permissionModeSetText(choice), { parse_mode: 'MarkdownV2' });
 }

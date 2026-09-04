@@ -38,7 +38,7 @@ const LIVE_SPINNER = /[✶✳✻✽✢·]\s+\S+…\s*\(\d+\s*s/u;
 /** Claude's own output bullet, so a quoted hint isn't read as chrome. */
 const ASSISTANT_BULLET = /^\s*●/u;
 
-function tailLines(screenText: string, rows: number): string[] {
+export function tailLines(screenText: string, rows: number): string[] {
   return screenText.split('\n').filter((line) => line.trim()).slice(-rows);
 }
 

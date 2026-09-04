@@ -374,6 +374,7 @@ Open your bot in Telegram → `/start`
 | `/model` | Switch Sonnet / Opus / Haiku — this bot, or add `all` for every instance |
 | `/effort` | Set reasoning effort (low / medium / high / xhigh / max / auto); `all` works here too |
 | `/btw` | Ask a side question without interrupting the running task |
+| `/mode` | How much Claude asks before acting (manual / accept edits / plan / auto / bypass) — admin-only |
 | `/streaming` | Toggle streaming / wait replies |
 | `/method` | Switch Claude transport (SDK / PTY) — admin-only |
 | `/provider` | Switch backend — Claude / CCR (shown when `CCR_ENABLED`) — admin-only |

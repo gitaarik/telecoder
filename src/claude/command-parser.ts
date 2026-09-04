@@ -148,6 +148,7 @@ export function getAvailableCommands(): string {
       `• \`/rebuildbot\` \\- Rebuild and restart with auto\\-resume${adminTag}`,
       '• `/ping` \\- Check if bot is responsive',
       '• `/cancel` \\- Cancel current request',
+      '• `/mode` \\- How much Claude asks before acting',
       '• `/streaming` \\- Toggle streaming / wait replies',
       '• `/verbosity` \\- Pick verbosity tier \\(quiet / normal / verbose / debug\\)',
       '• `/terminalui` \\- Toggle terminal\\-style display',

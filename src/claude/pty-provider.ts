@@ -39,6 +39,11 @@ import { scrapePromptSuggestion } from './prompt-suggestion-scraper.js';
 import { scrapeTip } from './tip-scraper.js';
 import { hasInputBox, isGenerating, screenSignature } from './tui-state.js';
 import { relayModal, waitForDialogToClear, type ModalPty } from './modal-relay.js';
+import {
+  ensurePermissionMode,
+  permissionModeInfo,
+  type ModePty,
+} from './permission-mode.js';
 import { parseModal } from './tui-modal.js';
 import { isSuggestionsEnabled } from '../telegram/suggestions-settings.js';
 import type { Context } from 'grammy';
@@ -641,6 +646,7 @@ export class PtyProvider implements Provider {
         return this._getScreenText(session);
       }
       this._maybeRelayUpdateBanner(session, sessionKey);
+      await this._applyPermissionMode(session, sessionKey);
 
       // Snapshot the screen before submitting so the progress diff and the
       // end-of-turn extraction only see content produced by this turn — the
@@ -1206,6 +1212,54 @@ export class PtyProvider implements Provider {
       throw new Error(resuming
         ? "Claude Code is still replaying this session's transcript and hasn't opened its input box, so your message wasn't delivered. That normally means the machine is under heavy load — please send it again in a minute."
         : "Claude Code's input box never appeared, so your message wasn't delivered. Please send it again.");
+    }
+  }
+
+  /**
+   * Put the session in the mode this chat chose, before anything is submitted.
+   *
+   * A no-op for a chat that has never picked one, which is every chat that
+   * existed before /mode: no preference means no parse, no keystroke and the
+   * pty's launch mode stands, exactly as it always did.
+   *
+   * When a mode *was* chosen and cannot be established, the turn is refused
+   * rather than run. Every mode other than bypass is a request for claude to
+   * ask more often, so quietly proceeding in whatever mode the session happens
+   * to be in would hand it more freedom than the chat allowed — the one
+   * direction where carrying on regardless is worse than failing.
+   */
+  private async _applyPermissionMode(session: PtySession, sessionKey: string): Promise<void> {
+    const { chatId } = parseSessionKey(sessionKey);
+    const target = userPreferences.getPermissionMode(chatId);
+    if (!target) return;
+
+    const pty: ModePty = {
+      write: (data) => session.term.write(data),
+      screen: () => this._getScreenText(session),
+    };
+    const outcome = await ensurePermissionMode(pty, target);
+    const label = permissionModeInfo(target).label;
+
+    switch (outcome.kind) {
+      case 'already':
+        return;
+      case 'switched':
+        console.log(
+          `[PtyProvider] ${sessionKey}: permission mode ${outcome.from} → ${outcome.to}`,
+        );
+        return;
+      case 'unreadable':
+        throw new Error(
+          `I couldn't read which permission mode Claude Code is in, so I didn't send your `
+          + `message — running it outside "${label}" mode isn't mine to decide. `
+          + 'Try again in a moment.',
+        );
+      default:
+        throw new Error(
+          `I couldn't switch Claude Code into "${label}" mode — it stopped at `
+          + `${outcome.last ?? 'something unreadable'}, so your message wasn't sent. `
+          + 'Check the session, or pick a different mode with /mode.',
+        );
     }
   }
 

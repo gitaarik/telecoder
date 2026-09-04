@@ -100,6 +100,8 @@ import { buildTelegraphMenu } from './command/settings.js';
 export {
   handleStreaming,
   handleModeCallback,
+  handlePermissionMode,
+  handlePermissionModeCallback,
   handleTerminalUI,
   handleTerminalUICallback,
   handleTTS,
