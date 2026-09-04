@@ -6,21 +6,24 @@ import {
   createPendingQuestion,
   resolvePendingQuestion,
   getQuestionResponders,
+  getQuestionOptionLabel,
   hasPendingQuestionForSession,
+  buildAskUserKeyboard,
+  optionLetter,
 } from '../../src/claude/ask-user.js';
 
 describe('buildAskUserMessageText', () => {
-  it('renders just the question when there is no context and no option descriptions', () => {
-    const text = buildAskUserMessageText('Pick one', [{ label: 'A' }, { label: 'B' }]);
-    expect(text).toBe('❓ Pick one');
+  it('lists every option under the question, keyed by letter', () => {
+    const text = buildAskUserMessageText('Pick one', [{ label: 'Left' }, { label: 'Right' }]);
+    expect(text).toBe('❓ Pick one\n\nA. Left\nB. Right');
   });
 
-  it('renders per-option descriptions as bullet lines below the question', () => {
+  it('appends a description to the option that carries one', () => {
     const text = buildAskUserMessageText('Pick one', [
-      { label: 'A', description: 'first' },
-      { label: 'B', description: 'second' },
+      { label: 'Left', description: 'first' },
+      { label: 'Right', description: 'second' },
     ]);
-    expect(text).toBe('❓ Pick one\n\n• A — first\n• B — second');
+    expect(text).toBe('❓ Pick one\n\nA. Left — first\nB. Right — second');
   });
 
   it('inserts the context block between the question and the options', () => {
@@ -32,27 +35,79 @@ describe('buildAskUserMessageText', () => {
     expect(text).toBe(
       '❓ Which model?\n\n' +
         'Current: Scout — $X, 128k ctx.\nClosest: GPT-OSS 120B.\n\n' +
-        '• GPT-OSS 120B — $0.15/$0.60',
+        'A. GPT-OSS 120B — $0.15/$0.60\n' +
+        'B. Qwen3 32B',
     );
   });
 
-  it('renders context even when no option carries a description', () => {
-    const text = buildAskUserMessageText('Proceed?', [{ label: 'Yes' }, { label: 'No' }], 'This deletes 3 files.');
-    expect(text).toBe('❓ Proceed?\n\nThis deletes 3 files.');
+  it('carries a long label the button cannot show', () => {
+    const long = 'Rewrite the pty readiness check to poll the cursor row instead of the box glyph';
+    const text = buildAskUserMessageText('How?', [{ label: long }, { label: 'Leave it' }]);
+    expect(text).toContain(`A. ${long}`);
   });
 
   it('ignores blank/whitespace-only context', () => {
-    const text = buildAskUserMessageText('Pick', [{ label: 'A' }, { label: 'B' }], '   \n  ');
-    expect(text).toBe('❓ Pick');
+    const text = buildAskUserMessageText('Pick', [{ label: 'Yes' }, { label: 'No' }], '   \n  ');
+    expect(text).toBe('❓ Pick\n\nA. Yes\nB. No');
   });
 
   it('clips over-long context to keep the message under Telegram limits', () => {
     const long = 'x'.repeat(5000);
-    const text = buildAskUserMessageText('Pick', [{ label: 'A' }, { label: 'B' }], long);
-    // Question line + blank + clipped context; clipped body ends with an ellipsis.
+    const text = buildAskUserMessageText('Pick', [{ label: 'Yes' }, { label: 'No' }], long);
+    // Question, clipped context (ellipsised), then the option list.
     expect(text.length).toBeLessThan(4000);
-    expect(text.endsWith('…')).toBe(true);
+    expect(text).toContain('…\n\nA. Yes\nB. No');
     expect(text.startsWith('❓ Pick\n\nxxx')).toBe(true);
+  });
+});
+
+describe('optionLetter', () => {
+  it('keys the first options A, B, C', () => {
+    expect([0, 1, 2].map(optionLetter)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('falls back to a 1-based number past Z', () => {
+    expect(optionLetter(26)).toBe('27');
+  });
+});
+
+describe('buildAskUserKeyboard', () => {
+  it('keeps short labels on their own buttons, one per row', () => {
+    const keyboard = buildAskUserKeyboard('abcd', [{ label: 'Yes' }, { label: 'No' }]);
+    expect(keyboard).toEqual([
+      [{ text: 'A · Yes', callback_data: 'q:abcd:0' }],
+      [{ text: 'B · No', callback_data: 'q:abcd:1' }],
+    ]);
+  });
+
+  it('drops the whole keyboard to bare letters when any label is too wide', () => {
+    const keyboard = buildAskUserKeyboard('abcd', [
+      { label: 'Yes' },
+      { label: 'Rewrite the readiness check to poll the cursor row' },
+    ]);
+    expect(keyboard).toEqual([
+      [
+        { text: 'A', callback_data: 'q:abcd:0' },
+        { text: 'B', callback_data: 'q:abcd:1' },
+      ],
+    ]);
+  });
+
+  it('packs letter buttons four to a row', () => {
+    const options = Array.from({ length: 6 }, (_, i) => ({ label: `Option ${i} with a label far too wide for a button` }));
+    const keyboard = buildAskUserKeyboard('ff', options);
+    expect(keyboard.map((row) => row.map((b) => b.text))).toEqual([
+      ['A', 'B', 'C', 'D'],
+      ['E', 'F'],
+    ]);
+    expect(keyboard[1][1].callback_data).toBe('q:ff:5');
+  });
+
+  it('keeps a label that lands exactly on the width budget', () => {
+    // 'A · ' + 26 chars = 30, the maximum a button is allowed to render.
+    const label = 'x'.repeat(26);
+    expect(buildAskUserKeyboard('id', [{ label }, { label: 'No' }])[0][0].text).toBe(`A · ${label}`);
+    expect(buildAskUserKeyboard('id', [{ label: label + 'x' }, { label: 'No' }])[0][0].text).toBe('A');
   });
 });
 
@@ -140,6 +195,23 @@ describe('hasPendingQuestionForSession', () => {
     expect(resolvePendingQuestion(id, 9)).toBe('resolved');
     await expect(promise).resolves.toBeNull();
     expect(hasPendingQuestionForSession('chat-4')).toBe(false);
+  });
+});
+
+describe('getQuestionOptionLabel', () => {
+  it('returns the model-written label, which a bare-letter button no longer carries', () => {
+    const long = 'Rewrite the readiness check to poll the cursor row';
+    const { id } = createPendingQuestion(['Yes', long]);
+    expect(buildAskUserKeyboard(id, [{ label: 'Yes' }, { label: long }])[0][1].text).toBe('B');
+    expect(getQuestionOptionLabel(id, 1)).toBe(long);
+    resolvePendingQuestion(id, 1);
+  });
+
+  it('is undefined once the question is resolved, and for an index it never had', () => {
+    const { id } = createPendingQuestion(['Yes', 'No']);
+    expect(getQuestionOptionLabel(id, 5)).toBeUndefined();
+    resolvePendingQuestion(id, 0);
+    expect(getQuestionOptionLabel(id, 0)).toBeUndefined();
   });
 });
 

@@ -42,6 +42,32 @@ const MAX_CONTEXT_LEN = 3500;
 const MAX_MESSAGE_LEN = 4096;
 
 /**
+ * How wide a button's text may render before Telegram clips it. An inline
+ * button is a single line the client ellipsises with no way to expand it, so
+ * text past roughly this many characters is simply lost to the reader. That is
+ * why every option is also written into the message body, keyed by letter, and
+ * why a keyboard whose labels don't fit drops to bare letters instead of
+ * showing a column of half-sentences.
+ */
+const MAX_BUTTON_TEXT_LEN = 30;
+
+/** Separator between an option's letter and its label on a button. */
+const BUTTON_SEP = ' · ';
+
+/** Bare-letter buttons per row, once a keyboard has gone compact. */
+const LETTERS_PER_ROW = 4;
+
+/**
+ * The key an option is known by: `A`, `B`, `C`, … It prefixes the option both
+ * in the message body and on its button, so a letter-only button still points
+ * at the full text above it. Past `Z` it falls back to the 1-based index;
+ * callers cap at 8 options, so that is defensive only.
+ */
+export function optionLetter(index: number): string {
+  return index < 26 ? String.fromCharCode(65 + index) : String(index + 1);
+}
+
+/**
  * Build the plain-text body for an ask_user Telegram message, shared by SDK
  * mode (mcp-tools.ts) and PTY/IPC mode (mcp-bridge.ts) so both render
  * identically.
@@ -51,7 +77,7 @@ const MAX_MESSAGE_LEN = 4096;
  *
  *   <context>              ← only when provided; the model's decision rationale
  *
- *   • Label — description  ← only options that carry a per-option description
+ *   A. Label — description  ← every option, keyed by {@link optionLetter}
  *
  * The `context` block is the fix for the "user is asked to choose before the
  * explanation is shown" bug: prose the model emits *before* calling ask_user
@@ -72,15 +98,51 @@ export function buildAskUserMessageText(
     lines.push(clipped);
   }
 
-  const annotated = options.filter((o) => o.description);
-  if (annotated.length > 0) {
-    lines.push('');
-    for (const o of options) {
-      if (o.description) lines.push(`• ${o.label} — ${o.description}`);
-    }
-  }
+  // Every option, always — not just the ones that came with a description.
+  // A button is not a reliable place to read a label from: Telegram clips a
+  // long one and offers no way to see the rest, so the body is where an
+  // option's full text lives and the letter is how its button points back at
+  // it.
+  lines.push('');
+  options.forEach((o, idx) => {
+    const desc = o.description?.trim();
+    lines.push(`${optionLetter(idx)}. ${o.label}${desc ? ` — ${desc}` : ''}`);
+  });
 
   return lines.join('\n');
+}
+
+/**
+ * The inline keyboard for a question, shared by SDK mode (mcp-tools.ts) and
+ * PTY/IPC mode (mcp-bridge.ts) so both render identically.
+ *
+ * A label rides on its own button while it fits — `A · Patch the regex` reads
+ * fine and saves a glance at the body. The moment one option is too wide,
+ * every button in that keyboard falls back to its bare letter and they pack
+ * four to a row: a keyboard that is half labels and half mystery letters is
+ * harder to read than one that is uniformly keyed, and the body above it
+ * already spells out what each letter stands for.
+ */
+export function buildAskUserKeyboard(
+  id: string,
+  options: AskUserOption[],
+): { text: string; callback_data: string }[][] {
+  const labelled = options.map((o, idx) => `${optionLetter(idx)}${BUTTON_SEP}${o.label}`);
+
+  if (labelled.every((text) => text.length <= MAX_BUTTON_TEXT_LEN)) {
+    return labelled.map((text, idx) => [{ text, callback_data: `q:${id}:${idx}` }]);
+  }
+
+  const rows: { text: string; callback_data: string }[][] = [];
+  for (let i = 0; i < options.length; i += LETTERS_PER_ROW) {
+    rows.push(
+      options.slice(i, i + LETTERS_PER_ROW).map((_, j) => ({
+        text: optionLetter(i + j),
+        callback_data: `q:${id}:${i + j}`,
+      })),
+    );
+  }
+  return rows;
 }
 
 /**
@@ -231,6 +293,17 @@ export function resolvePendingQuestion(
   }
   entry.resolve({ label, index: optionIndex });
   return 'resolved';
+}
+
+/**
+ * The full label of one option on a pending question — what the model wrote,
+ * not what its button shows. The two part company as soon as a keyboard goes
+ * compact and the button is a bare `A`, and it is the model's text that
+ * belongs in the answered footer and the confirmation message. Read it before
+ * resolving; resolving drops the entry.
+ */
+export function getQuestionOptionLabel(id: string, index: number): string | undefined {
+  return pending.get(id)?.optionLabels[index];
 }
 
 /**

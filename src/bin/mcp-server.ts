@@ -220,7 +220,7 @@ if (process.env.TELECODER_MEDIUM_ENABLED === 'true') {
 // ── claudegram_ask_user (IPC: long-poll on Telegram button tap) ──────
 server.tool(
   'claudegram_ask_user',
-  'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or 10 minutes pass. Keep the question short and the options crisp — labels must be ≤ 60 chars. Prefer this over the built-in AskUserQuestion when interacting through TeleCoder. IMPORTANT: `context` is required and carries everything the user needs to decide (the comparison, trade-offs, findings, rationale) — it renders in the SAME message as the buttons. Do NOT write that explanation as prose before calling this tool: text you emit before an ask_user call is not delivered to the user until after they answer, so they would be choosing blind.',
+  'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or 10 minutes pass. Keep the question short and the options crisp — a label of ≤ 25 chars stays on its button; anything longer makes the whole keyboard fall back to lettered buttons (A/B/C) with the full labels listed in the message body. Prefer this over the built-in AskUserQuestion when interacting through TeleCoder. IMPORTANT: `context` is required and carries everything the user needs to decide (the comparison, trade-offs, findings, rationale) — it renders in the SAME message as the buttons. Do NOT write that explanation as prose before calling this tool: text you emit before an ask_user call is not delivered to the user until after they answer, so they would be choosing blind.',
   {
     question: z.string().describe('The question to display to the user. Keep concise (1-2 sentences).'),
     context: z
@@ -230,7 +230,7 @@ server.tool(
     options: z
       .array(
         z.object({
-          label: z.string().describe('Short button label shown in Telegram. Must be ≤ 60 chars.'),
+          label: z.string().describe('Button label. ≤ 25 chars keeps the label on its own button; longer labels are still shown in full in the message body, keyed A/B/C. Keep it to one line either way.'),
           description: z.string().optional().describe('Optional one-line context shown in the question body.'),
         })
       )

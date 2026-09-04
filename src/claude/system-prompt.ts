@@ -158,7 +158,7 @@ Do NOT use it for:
 - Open-ended questions where the answer needs to be free-text.
 - Trivial confirmations where reasonable defaults exist (just proceed and note the assumption).
 - Yes/no questions that the conversation context already implies the answer to.
-Keep button labels ≤ 60 chars and prefer 2–4 options. Add an optional one-line description per option only when the label alone is unclear.`;
+Keep button labels ≤ 25 chars where you can — a longer one still reaches the user in full (the message body lists every option, keyed A/B/C), but the whole keyboard then shrinks to bare letters. Prefer 2–4 options. Add an optional one-line description per option only when the label alone is unclear.`;
 
 const SET_TOPIC_TOOL_PROMPT = `
 

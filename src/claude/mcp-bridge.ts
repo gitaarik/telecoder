@@ -22,7 +22,7 @@ import { InputFile, type Context } from 'grammy';
 import { registerIpcHandler } from './ipc-server.js';
 import { sessionManager } from './session-manager.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../utils/workspace-guard.js';
-import { createPendingQuestion, buildAskUserMessageText } from './ask-user.js';
+import { createPendingQuestion, buildAskUserMessageText, buildAskUserKeyboard } from './ask-user.js';
 import { createPendingPoll } from './poll-user.js';
 import { scheduler } from './scheduler.js';
 import { readLastAssistantTurnText } from './session-jsonl.js';
@@ -134,17 +134,14 @@ registerIpcHandler('/mcp/ask_user', async (turn, body) => {
 
   const messageText = buildAskUserMessageText(question, options, context);
 
-  const keyboard = options.map((o, idx) => [{
-    text: o.label.length > 60 ? o.label.slice(0, 57) + '…' : o.label,
-    callback_data: `q:${id}:${idx}`,
-  }]);
+  const keyboard = buildAskUserKeyboard(id, options);
 
   // Plain text (no parse_mode): model-supplied question/context/label/
   // description text can contain stray underscores, asterisks, or backticks
   // (e.g. URL params like `f_WT=2`) that break legacy Markdown parsing —
   // Telegram returns 400, grammy throws, the IPC server returns 500, and the
   // model just sees the tool fail. The bold on labels was a nice-to-have; the
-  // button itself shows the label clearly.
+  // body lists every option in full, keyed by the letter on its button.
   // From the session key, not `ctx.message` — a turn started by a tapped
   // button carries a callback-query context with no `message`, which would
   // silently drop the thread and post the question into General.

@@ -111,6 +111,7 @@ import { createBatchMiddleware } from './middleware/message-batcher.js';
 import {
   resolvePendingQuestion,
   getQuestionResponders,
+  getQuestionOptionLabel,
   appendAnsweredFooter,
   buildAnswerConfirmation,
 } from '../claude/ask-user.js';
@@ -132,6 +133,12 @@ async function handleAskUserCallback(ctx: Context): Promise<void> {
   const idx = parseInt(idxStr, 10);
   if (Number.isNaN(idx)) return;
 
+  // Read the label before resolving — resolving drops the entry. It comes from
+  // the registry rather than off the tapped button because the button may be a
+  // bare letter: a keyboard whose labels are too wide for Telegram renders as
+  // `A` `B` `C` with the full text in the message body, and "✅ Answered: A"
+  // is not an answer anyone can read back later.
+  const optionLabel = getQuestionOptionLabel(id, idx);
   const outcome = resolvePendingQuestion(id, idx, ctx.from?.id);
   if (outcome === 'expired') {
     await ctx.answerCallbackQuery({ text: 'This question already expired.' });
@@ -149,22 +156,18 @@ async function handleAskUserCallback(ctx: Context): Promise<void> {
   await ctx.answerCallbackQuery();
 
   const message = ctx.callbackQuery?.message as
-    | {
-        text?: string;
-        message_id?: number;
-        reply_markup?: { inline_keyboard?: Array<Array<{ text?: string }>> };
-      }
+    | { text?: string; message_id?: number }
     | undefined;
-  const buttonText = message?.reply_markup?.inline_keyboard?.[idx]?.[0]?.text ?? `option ${idx + 1}`;
+  const answerText = optionLabel ?? `option ${idx + 1}`;
 
   // Strip the keyboard so the user can't tap again, and mark the chosen option
   // in place so the question doesn't read as unanswered.
   //
-  // Plain text: buttonText is model-supplied and may contain unbalanced
+  // Plain text: the label is model-supplied and may contain unbalanced
   // Markdown punctuation (underscores in URL params, stray asterisks, …)
   // which would 400 the edit.
   try {
-    const answered = appendAnsweredFooter(message?.text ?? '', buttonText);
+    const answered = appendAnsweredFooter(message?.text ?? '', answerText);
     if (answered !== null) await ctx.editMessageText(answered);
     else await ctx.editMessageReplyMarkup();
   } catch {
@@ -184,7 +187,7 @@ async function handleAskUserCallback(ctx: Context): Promise<void> {
   // question keeps the two linked even when several questions are open at once.
   try {
     await ctx.reply(
-      buildAnswerConfirmation(buttonText, {
+      buildAnswerConfirmation(answerText, {
         isPrivate: ctx.chat?.type === 'private',
         who: ctx.from?.first_name,
       }),
