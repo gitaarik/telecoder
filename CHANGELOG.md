@@ -61,6 +61,29 @@ reasoning — the commit bodies are the long form, this is the index.
   than announcing a restart it cannot come back from. The shipped unit moves to
   `Restart=always`.
 
+### Reliability
+
+- **A dialog with a status bar under it is still a dialog** — `parseModal` took
+  the last non-empty line and required it to parse as key hints, so anything
+  claude drew beneath the footer (its `⏵⏵ bypass permissions on` status bar, a
+  transcript warning, a welcome notice) made the parser answer null. The
+  readiness loop reads null as "a screen we cannot drive" and falls through to
+  the timeout, so the dialog that should have arrived in the chat as two
+  buttons instead spent its whole ceiling being silent and came back as
+  "Claude Code's input box never appeared".
+
+  This is how @code_share1_bot went quiet after a CLI update began asking about
+  a folder it had been working in for weeks: the trust prompt was on screen,
+  recognisable, and never relayed. The footer is now located as the lowest
+  hint-bearing line rather than assumed to be last, bounded to three lines of
+  chrome so a stale footer scrolled up in the transcript cannot pose as this
+  screen's.
+
+- **A stuck TUI now says what it is stuck on** — the warning named the symptom
+  ("input box absent") and nothing else, so diagnosing the above meant spawning
+  ptys by hand outside the bot to see a screen the bot had already read. It now
+  logs the last dozen screen lines alongside the verdict.
+
 ## [1.1.0] — 2026-08-31
 
 The release that makes a bot shareable. Everything before this assumed one

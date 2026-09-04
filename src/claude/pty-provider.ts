@@ -58,6 +58,11 @@ const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 
 // dist/claude/pty-provider.js → sibling dist/bin/mcp-server.js
 
+/**
+ * How many lines of a stuck TUI to log. Enough for a dialog's title, its rows
+ * and its footer — the shape that says why the input box never came back.
+ */
+const STUCK_SCREEN_LINES = 12;
 const COLS = 120;
 const ROWS = 40;
 const IDLE_MS = 1200;
@@ -1189,6 +1194,16 @@ export class PtyProvider implements Provider {
             `[PtyProvider] ${sessionKey}: TUI not ready after ${Math.round(waited / 1000)}s `
             + `(quiet ${Math.round(quiet / 1000)}s, still ${Math.round((Date.now() - stillSince) / 1000)}s, `
             + `input box ${hasInputBox(screenText) ? 'open' : 'absent'}) — refusing to submit into it`,
+          );
+          // What it was stuck *on*, not merely that it was stuck. Without this
+          // the log says "input box absent" and nothing else, and working out
+          // that claude was sitting on a folder-trust prompt meant spawning
+          // ptys by hand outside the bot to see the screen it had already
+          // read. The tail is where a dialog's rows and footer live.
+          console.warn(
+            `[PtyProvider] ${sessionKey}: last screen lines:\n`
+            + screenText.split('\n').map((l) => l.trimEnd()).filter((l) => l.trim())
+              .slice(-STUCK_SCREEN_LINES).map((l) => `  | ${l}`).join('\n'),
           );
           return 'unready';
         }

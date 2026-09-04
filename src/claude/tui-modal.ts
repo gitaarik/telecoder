@@ -82,6 +82,20 @@ const KEY_HINT = /^(Enter(?:\/[^\s]+)?|Esc|Tab|Space|[a-z]|↑\/↓|←\/→|\/)
 /** How far up from the footer a dialog's body can reach. */
 const MAX_BODY_ROWS = 30;
 /**
+ * How many lines of chrome may sit *below* the footer.
+ *
+ * The footer is not reliably the last thing on screen. Claude draws its status
+ * bar under a dialog — `⏵⏵ bypass permissions on (shift+tab to cycle)` — and
+ * adds notices there too, and every one of those pushed the hints off the last
+ * line and made this parser answer null. The caller reads null as "a screen we
+ * cannot drive", so a trust dialog with a status bar under it timed out after
+ * 180 seconds instead of being offered as two buttons.
+ *
+ * Bounded rather than open-ended: the footer has to still be near the bottom,
+ * or a hint line from the transcript scrolled above could pose as one.
+ */
+const MAX_FOOTER_CHROME = 3;
+/**
  * Longest option label we keep. Telegram caps a button at 64 bytes and the
  * ask-user contract at 60 chars; claude pads its rows out to the full 120
  * columns with a trailing description, so most need clipping.
@@ -104,6 +118,20 @@ function clip(text: string, max: number): string {
  * than chrome, which is what keeps a dialog we cannot drive from being offered
  * buttons that do nothing.
  */
+/**
+ * Find the footer: the lowest line that reads as key hints, allowing for the
+ * status chrome claude draws beneath a dialog. Returns null when the bottom of
+ * the screen holds no hints at all.
+ */
+function findFooter(lines: string[]): { index: number; hints: ModalKeyHint[] } | null {
+  const floor = Math.max(0, lines.length - 1 - MAX_FOOTER_CHROME);
+  for (let i = lines.length - 1; i >= floor; i--) {
+    const hints = parseKeyHints(lines[i]);
+    if (hints.length > 0) return { index: i, hints };
+  }
+  return null;
+}
+
 export function parseKeyHints(footer: string): ModalKeyHint[] {
   const hints: ModalKeyHint[] = [];
   for (const part of footer.split('·')) {
@@ -126,13 +154,14 @@ export function parseModal(screenText: string): TuiModal | null {
   const lines = bodyLines(screenText);
   if (lines.length === 0) return null;
 
-  const hints = parseKeyHints(lines[lines.length - 1]);
-  if (hints.length === 0) return null;
+  const footer = findFooter(lines);
+  if (!footer) return null;
+  const { hints, index: footerIndex } = footer;
 
   // Body starts below the seam rule when there is one; a dialog that redrew
   // the whole screen has no seam, and everything we kept is its body.
-  let seam = lastRuleBefore(lines, lines.length);
-  let body = lines.slice(seam + 1, -1);
+  let seam = lastRuleBefore(lines, footerIndex);
+  let body = lines.slice(seam + 1, footerIndex);
 
   // A rule can also sit *inside* a dialog. Auto mode draws one between its
   // numbered choices and a trailing "Chat about this", which left a body of a
@@ -149,7 +178,7 @@ export function parseModal(screenText: string): TuiModal | null {
     && !body.some((line) => CURSOR_ROW.test(line))
     && body.every((line) => ROW_NUMBER.test(line.trimStart()))) {
     const outer = lastRuleBefore(lines, seam);
-    const extended = lines.slice(outer + 1, -1);
+    const extended = lines.slice(outer + 1, footerIndex);
     if (extended.some((line) => CURSOR_ROW.test(line))) {
       seam = outer;
       body = extended;

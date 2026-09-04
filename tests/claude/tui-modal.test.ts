@@ -191,6 +191,51 @@ describe('parseModal', () => {
   });
 });
 
+describe('parseModal with chrome below the footer', () => {
+  // The footer is not reliably the last line on screen. Claude draws its
+  // status bar under a dialog, and every one of these made the parser answer
+  // null — which the readiness loop reads as "a screen we cannot drive", so a
+  // trust dialog timed out after 180s instead of arriving as two buttons.
+  // @code_share1_bot went silent this way after a CLI update started asking
+  // about a folder it had been running in for weeks.
+  const below = [
+    ['a status bar', '  ⏵⏵ bypass permissions on (shift+tab to cycle)'],
+    ['a transcript warning', '  ⚠ Transcript saving is off — inherited marker'],
+    ['a welcome notice', '  ✻ Welcome back! · /status'],
+  ] as const;
+
+  for (const [what, line] of below) {
+    it(`still reads the dialog under ${what}`, () => {
+      const modal = parseModal(`${trustDialog}\n${line}`);
+      expect(modal, what).not.toBeNull();
+      expect(modal!.options.map((o) => o.label)).toEqual(['No, exit', 'Yes, I trust this folder']);
+      expect(modal!.hints.map((h) => h.key)).toEqual(['Enter', 'Esc']);
+    });
+  }
+
+  it('reads it under several lines of chrome at once', () => {
+    const modal = parseModal([trustDialog, ...below.map(([, l]) => l)].join('\n'));
+    expect(modal).not.toBeNull();
+    expect(modal!.options).toHaveLength(2);
+  });
+
+  it('does not reach past the bottom for a footer in the transcript', () => {
+    // A hint line scrolled well above is chrome from an earlier dialog, not
+    // this screen's footer. Treating it as one would parse the transcript
+    // between them as selectable rows and offer buttons that press the wrong
+    // thing — the failure mode the bounded search exists to prevent.
+    const stale = [
+      ' Enter to confirm · Esc to cancel',
+      ...Array.from({ length: 6 }, (_, i) => `  some later output line ${i}`),
+    ].join('\n');
+    expect(parseModal(stale)).toBeNull();
+  });
+
+  it('is unbothered by trailing blank lines', () => {
+    expect(parseModal(`${trustDialog}\n\n\n`)).not.toBeNull();
+  });
+});
+
 describe('parseKeyHints', () => {
   it('splits a footer into its affordances', () => {
     expect(parseKeyHints('Enter to set as default · s to use this session only · Esc to cancel'))
