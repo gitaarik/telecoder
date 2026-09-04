@@ -20,6 +20,7 @@ import { groupAvailableCommands, type AvailableCommands } from '../../claude/ava
 import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
 import { replyMd, getEffortLabel, buildBackToPreviousButton } from './command/shared.js';
 import { getSessionTopic } from './command/topic.js';
+import { describeRole } from './command/access.js';
 import { requireActiveSession } from './session-guard.js';
 import { progressCallbacks, withStreamingTurn } from '../../telegram/streaming-turn.js';
 
@@ -44,6 +45,7 @@ export {
   handleBotNameCallback,
 } from './command/topic.js';
 export { getStreamingMode } from './command/streaming-mode.js';
+export { handleAllow, handleDeny, handleMembers } from './command/access.js';
 export {
   executeRedditFetch,
   executeMediumFetch,
@@ -331,6 +333,14 @@ ${isDangerousMode() ? '⚠️' : '🛡️'} *Dangerous Mode:* ${esc(dangerousMod
       if (cached.sessionCostTurns > 0) {
         status += `\n💰 *Session Cost:* \\$${esc(cached.sessionCostUsd.toFixed(4))} \\(${esc(String(cached.sessionCostTurns))} turns\\)`;
       }
+    }
+
+    // Only in a group, and only for a non-admin — it is the line that explains
+    // why /restartbot just refused. Spectators never see it: they can't reach
+    // /status in the first place.
+    const role = describeRole(ctx);
+    if (role && role !== 'admin') {
+      status += `\n👤 *Your role here:* ${esc(role)}`;
     }
 
     status += `\n🕰️ *Created:* ${esc(session.createdAt.toLocaleString())}`;

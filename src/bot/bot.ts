@@ -97,6 +97,7 @@ import {
   handleAllow,
   handleDeny,
   handleUsers,
+  handleMembers,
   handleAccessCallback,
 } from './handlers/command/access.js';
 import { handleSuggestionTapCallback } from './handlers/suggestion.handler.js';
@@ -114,6 +115,9 @@ import {
   buildAnswerConfirmation,
 } from '../claude/ask-user.js';
 import { describeResponderRefusal } from '../telegram/admin-mention.js';
+import { groupMentionMiddleware } from './middleware/group-mention.middleware.js';
+import { groupRoleMiddleware } from './middleware/group-role.middleware.js';
+import { trackForceReplyPrompts } from '../telegram/force-reply-tracker.js';
 import { resolvePendingPoll } from '../claude/poll-user.js';
 import { registerBotCommandName } from '../claude/command-parser.js';
 
@@ -232,6 +236,10 @@ export async function createBot(): Promise<Bot> {
     },
   });
 
+  // Note which messages are ForceReply prompts, so a reply answering one still
+  // reaches the handlers in a group that otherwise requires an @mention.
+  trackForceReplyPrompts(bot);
+
   // Auto-retry on transient network errors (ECONNRESET, socket hang up, etc.)
   // Also handles 429 rate limits by respecting Telegram's retry_after
   bot.api.config.use(autoRetry({
@@ -276,6 +284,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'users', description: '👥 Show who can use this bot' },
     { command: 'allow', description: '✅ Let someone in — reply to them, or /allow @user' },
     { command: 'deny', description: '🚫 Remove someone admitted with /allow' },
+    { command: 'members', description: '👥 Show who may prompt the agent in this group' },
     { command: 'teleport', description: '🚀 Move session to terminal' },
     ...(config.REDDIT_ENABLED ? [{ command: 'reddit', description: '📡 Fetch Reddit posts & subreddits' }] : []),
     ...(config.VREDDIT_ENABLED ? [{ command: 'vreddit', description: '🎬 Download Reddit video from post URL' }] : []),
@@ -314,6 +323,21 @@ export async function createBot(): Promise<Bot> {
   // Apply auth middleware to all updates
   bot.use(authMiddleware);
 
+  // In groups, ignore messages that aren't addressed to the bot, so people can
+  // talk to each other without triggering a turn. Runs before the command
+  // handlers below because they'd otherwise answer a `/status@other_bot`
+  // aimed at a different bot in the same group.
+  bot.use(groupMentionMiddleware);
+
+  // Of the people an allow-listed group lets in, which ones may actually drive
+  // the agent. Runs after the mention gate so a spectator talking to the humans
+  // is never answered, and before every command handler below.
+  //
+  // Handles are learned upstream in authMiddleware, which records everyone the
+  // group sees — spectators included — so `/allow @someone` resolves for people
+  // who have only ever talked to the other humans.
+  bot.use(groupRoleMiddleware);
+
   // Register through `cmd` rather than `bot.command` directly so the set of
   // names TeleCoder claims stays discoverable at runtime. Registration order
   // and placement relative to sequentialize are unchanged — `cmd` calls
@@ -349,6 +373,7 @@ export async function createBot(): Promise<Bot> {
   cmd('tasks', handleTasks); // Read-only; must bypass queue so it works mid-stream
   cmd('cost', handleCost); // Read-only account probe; bypasses the queue so it answers mid-turn
   cmd('shells', handleShells); // Lists/kills OS-level bg processes; must bypass queue to rescue hung sessions
+  cmd('members', handleMembers);
   // /sync exists for the "I think a reply went missing" scenario, which by
   // definition includes hung or sluggish turns — gating it on sequentialize
   // would queue it behind the very turn the user wants to inspect.
@@ -399,8 +424,11 @@ export async function createBot(): Promise<Bot> {
   // Bot command handlers (sequentialized per chat)
   cmd('start', handleStart);
   cmd('clear', handleClear);
-  cmd('project', handleProject);
-  cmd('newproject', handleNewProject);
+  // Admin-only now that a group can hold contributors: repointing the bot
+  // moves everyone's session, and /teleport and /permissions reach the
+  // guardrails rather than the conversation.
+  cmd('project', adminOnly(handleProject));
+  cmd('newproject', adminOnly(handleNewProject));
   cmd('streaming', handleStreaming);
   // /mode was the streaming toggle's name until this landed, and was kept as
   // an alias for exactly as long as nothing better wanted it. Permission mode
@@ -452,10 +480,10 @@ export async function createBot(): Promise<Bot> {
   // Loop mode
   cmd('loop', handleLoop);
   cmd('projectcommands', handleProjectCommands);
-  cmd('permissions', handlePermissions);
+  cmd('permissions', adminOnly(handlePermissions));
 
   // Teleport to terminal
-  cmd('teleport', handleTeleport);
+  cmd('teleport', adminOnly(handleTeleport));
 
   // File commands
   cmd('file', handleFile);
@@ -516,7 +544,7 @@ export async function createBot(): Promise<Bot> {
     } else if (data.startsWith('clear:')) {
       await handleClearCallback(ctx);
     } else if (data.startsWith('project:')) {
-      await handleProjectCallback(ctx);
+      await adminOnly(handleProjectCallback)(ctx);
     } else if (data.startsWith('medium:')) {
       await handleMediumCallback(ctx);
     } else if (data.startsWith('extract:')) {

@@ -32,20 +32,34 @@ const { isAllowedUser, admitUser, noteSeenUser, resetRosterCache } = await impor
 const { buildAccessRequestMessage, accessKeyboard } = await import(
   '../../src/telegram/access-request.js'
 );
+const { resolveRole, configureGroupAccessStore } = await import(
+  '../../src/bot/access/group-access.js'
+);
 
 const ADMIN = 1;
 
+const GROUP = -1009990001;
+
+/**
+ * `chat` decides which half of `/allow` is under test: in a DM it admits to the
+ * global roster, in the allow-listed group it grants contributor there. The
+ * default is a DM, because that is the layer these first blocks are about.
+ */
 function makeCtx(opts: {
   text?: string;
   replyTo?: { id: number; first_name?: string; username?: string; is_bot?: boolean };
   from?: number;
+  chat?: 'private' | 'group';
 }) {
   const reply = vi.fn().mockResolvedValue(undefined);
   const answerCallbackQuery = vi.fn().mockResolvedValue(undefined);
   const editMessageText = vi.fn().mockResolvedValue(undefined);
   const ctx = {
     from: { id: opts.from ?? ADMIN },
-    chat: { id: -1009990001, type: 'supergroup' },
+    chat:
+      opts.chat === 'group'
+        ? { id: GROUP, type: 'supergroup' }
+        : { id: opts.from ?? ADMIN, type: 'private' },
     message: {
       text: opts.text,
       ...(opts.replyTo ? { reply_to_message: { from: opts.replyTo } } : {}),
@@ -74,7 +88,9 @@ const said = (reply: ReturnType<typeof vi.fn>): string => reply.mock.calls[0][0]
 
 beforeEach(() => {
   fs.rmSync(path.join(testHome, '.claudegram', 'user-roster.json'), { force: true });
+  fs.rmSync(path.join(testHome, '.claudegram'), { recursive: true, force: true });
   resetRosterCache();
+  configureGroupAccessStore(fs.mkdtempSync(path.join(realOs.tmpdir(), 'telecoder-ga-')));
   vi.spyOn(console, 'log').mockImplementation(() => {});
 });
 
@@ -270,5 +286,79 @@ describe('the card buttons', () => {
     const { ctx, answerCallbackQuery } = makeCallbackCtx('rebuild:1');
     await handleAccessCallback(ctx);
     expect(answerCallbackQuery).not.toHaveBeenCalled();
+  });
+});
+
+describe('/allow and /deny inside the shared group', () => {
+  // The reconciled model: the same command means the nearer layer. Typed in a
+  // group it grants a role *there*; the global roster is left alone, so waving
+  // someone into one room never quietly hands them a private channel with the
+  // bot as well.
+  it('makes someone a contributor here without admitting them everywhere', async () => {
+    const { ctx, reply } = makeCtx({
+      chat: 'group',
+      text: '/allow',
+      replyTo: { id: 999, first_name: 'New', username: 'newcomer' },
+    });
+    await handleAllow(ctx);
+
+    expect(resolveRole(GROUP, 999)).toBe('contributor');
+    expect(isAllowedUser(999)).toBe(false);
+    expect(said(reply)).toMatch(/this chat/i);
+  });
+
+  it('warns that a contributor is being handed the machine', async () => {
+    const { ctx, reply } = makeCtx({
+      chat: 'group',
+      text: '/allow',
+      replyTo: { id: 999, first_name: 'New' },
+    });
+    await handleAllow(ctx);
+    expect(said(reply)).toMatch(/running commands on this machine/i);
+  });
+
+  it('makes someone a spectator here without touching the global roster', async () => {
+    admitUser({ id: 999, username: 'guest' }, ADMIN);
+    expect(resolveRole(GROUP, 999)).toBe('contributor');
+
+    const { ctx, reply } = makeCtx({
+      chat: 'group',
+      text: '/deny',
+      replyTo: { id: 999, first_name: 'Guest', username: 'guest' },
+    });
+    await handleDeny(ctx);
+
+    expect(resolveRole(GROUP, 999)).toBe('spectator');
+    // Still on the roster — /deny in the group is about this room only, and
+    // the reply has to say so or it reads as a full revocation.
+    expect(isAllowedUser(999)).toBe(true);
+    expect(said(reply)).toMatch(/spectator/i);
+    expect(said(reply)).toMatch(/DM/i);
+  });
+
+  it('refuses to demote an admin', async () => {
+    const { ctx, reply } = makeCtx({
+      chat: 'group',
+      text: '/deny',
+      replyTo: { id: 2, first_name: 'Admin' },
+    });
+    await handleDeny(ctx);
+    expect(resolveRole(GROUP, 2)).toBe('admin');
+    expect(said(reply)).toMatch(/admin/i);
+  });
+
+  it('grants in the group when the access card is tapped', async () => {
+    const groupCallback = {
+      from: { id: ADMIN },
+      chat: { id: GROUP, type: 'supergroup' },
+      callbackQuery: { data: 'access:999:y' },
+      answerCallbackQuery: vi.fn().mockResolvedValue(undefined),
+      editMessageText: vi.fn().mockResolvedValue(undefined),
+    } as unknown as Context;
+
+    await handleAccessCallback(groupCallback);
+
+    expect(resolveRole(GROUP, 999)).toBe('contributor');
+    expect(isAllowedUser(999)).toBe(false);
   });
 });

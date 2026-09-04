@@ -18,6 +18,36 @@ reasoning — the commit bodies are the long form, this is the index.
   `hasGuestUsers()` now reads the effective list, so admitting the first guest
   switches on the permission gate, the scope guard and the charter judge.
 
+### Sharing a bot (continued)
+
+- **Contributors and spectators in a group** — a group can now hold people who
+  read along without being able to prompt the agent, which is the difference
+  between a seat in the room and a shell on the host. `GROUP_MEMBERS_DEFAULT`
+  decides what membership alone is worth, `/allow` and `/deny` move individuals,
+  and `/members` reads back one group the way `/users` reads back the bot.
+  `GROUP_REQUIRE_MENTION` keeps human conversation in the group from becoming
+  prompts.
+
+  This landed as a merge of two access models that had been built in parallel,
+  and the reconciliation is the substance of it. The roster stayed the door —
+  who may use the bot at all — and the group roles became a second gate behind
+  it, so admitting someone in a DM makes them a contributor everywhere while a
+  grant in a group stays in that group. `/allow` therefore means the nearer
+  layer: the room when typed in the room, the bot when typed in a DM.
+
+  Three things were dropped rather than merged. The branch's `OWNER_USER_IDS`
+  computed exactly what `isAdmin()` already did, so it went and `owner` became
+  `admin` throughout. Its owner-only command list duplicated the `adminOnly`
+  wrapper the handlers already carry — but its judgement was better than main's
+  coverage, so `/project`, `/newproject`, `/permissions` and `/teleport` are now
+  wrapped too. And its username→id cache was a second answer to a question the
+  roster already answers, free to drift from the first.
+
+  `GROUP_MEMBERS_DEFAULT` ships as `spectator`, not the `contributor` the branch
+  defaulted to. That default was right when Telegram membership was the whole
+  gate; layered on top of the roster it would have widened who can prompt the
+  agent, so the merged default matches what the roster already enforced.
+
 ### Reliability
 
 - **`/restartbot` no longer kills a systemd-managed bot for good** — the restart
