@@ -114,11 +114,6 @@ function clip(text: string, max: number): string {
 }
 
 /**
- * Split the footer into its hints. Returns [] for a line that is prose rather
- * than chrome, which is what keeps a dialog we cannot drive from being offered
- * buttons that do nothing.
- */
-/**
  * Find the footer: the lowest line that reads as key hints, allowing for the
  * status chrome claude draws beneath a dialog. Returns null when the bottom of
  * the screen holds no hints at all.
@@ -132,6 +127,11 @@ function findFooter(lines: string[]): { index: number; hints: ModalKeyHint[] } |
   return null;
 }
 
+/**
+ * Split the footer into its hints. Returns [] for a line that is prose rather
+ * than chrome, which is what keeps a dialog we cannot drive from being offered
+ * buttons that do nothing.
+ */
 export function parseKeyHints(footer: string): ModalKeyHint[] {
   const hints: ModalKeyHint[] = [];
   for (const part of footer.split('·')) {
