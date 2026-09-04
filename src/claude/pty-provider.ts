@@ -37,7 +37,9 @@ import {
 import { getModelsForBinary } from './model-catalog.js';
 import { scrapePromptSuggestion } from './prompt-suggestion-scraper.js';
 import { scrapeTip } from './tip-scraper.js';
-import { isGenerating, isPromptVisible, screenSignature } from './tui-state.js';
+import { hasInputBox, isGenerating, screenSignature } from './tui-state.js';
+import { relayModal, waitForDialogToClear, type ModalPty } from './modal-relay.js';
+import { parseModal } from './tui-modal.js';
 import { isSuggestionsEnabled } from '../telegram/suggestions-settings.js';
 import type { Context } from 'grammy';
 import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions, type EditDiffEvent, type ToolResultEvent, type ImageAttachment } from '../providers/types.js';
@@ -110,6 +112,13 @@ const RESUME_READY_CEILING_MS = 600_000;
 const BUSY_READY_CEILING_MS = 30 * 60_000;
 /** Poll interval for the readiness wait. */
 const READY_POLL_MS = 50;
+/**
+ * How long a dialog gets to tear itself down after we answer it. Generous
+ * because the key that answers one can start work — a trust dialog releases
+ * a session that then loads its project — and the alternative to waiting is
+ * telling the chat the message failed when it is about to succeed.
+ */
+const DIALOG_CLEAR_MS = 20_000;
 /**
  * How often the end-of-turn check re-reads the screen while claude is plainly
  * still generating. The default re-arm is a 50ms tick meant to catch a turn
@@ -628,34 +637,8 @@ export class PtyProvider implements Provider {
     abortSignal?.addEventListener('abort', abortHandler);
 
     try {
-      // A pty spawned with --resume is still replaying the transcript; give it
-      // the patience that needs rather than pasting into a busy editor.
-      if (session.awaitingResumeReplay) {
-        const verdict = await this._waitForReady(
-          session, sessionKey, RESUME_SETTLE_IDLE_MS, RESUME_STARTUP_MAX_MS, RESUME_READY_CEILING_MS,
-          abortSignal,
-        );
-        // Leave awaitingResumeReplay set on failure: the replay is still the
-        // thing we're waiting out, so the retry deserves the same patience.
-        if (verdict === 'aborted') return this._getScreenText(session);
-        if (verdict === 'busy') throw new Error(stillWorkingError());
-        if (verdict !== 'ready') {
-          throw new Error(
-            "Claude Code is still replaying this session's transcript and hasn't opened its input box, so your message wasn't delivered. That normally means the machine is under heavy load — please send it again in a minute.",
-          );
-        }
-        session.awaitingResumeReplay = false;
-      } else {
-        const verdict = await this._waitForReady(
-          session, sessionKey, IDLE_MS, STARTUP_MAX_MS, STARTUP_READY_CEILING_MS, abortSignal,
-        );
-        if (verdict === 'aborted') return this._getScreenText(session);
-        if (verdict === 'busy') throw new Error(stillWorkingError());
-        if (verdict !== 'ready') {
-          throw new Error(
-            "Claude Code's input box never appeared, so your message wasn't delivered. Please send it again.",
-          );
-        }
+      if (await this._awaitReady(session, sessionKey, options, abortSignal) === 'aborted') {
+        return this._getScreenText(session);
       }
       this._maybeRelayUpdateBanner(session, sessionKey);
 
@@ -714,6 +697,18 @@ export class PtyProvider implements Provider {
         session.term.write(`\x1b[200~${prompt}\x1b[201~`);
         echoed = await this._waitForPromptEcho(session, prompt, ECHO_CAP_MS);
         if (echoed) break;
+      }
+      // Enter only once the text is provably in the editor. Writing it anyway
+      // was how a swallowed paste turned into a keypress: whatever had focus
+      // took the \r, and when that was a dialog it answered it — measured
+      // against a live pty, a prompt pasted at `/model` and followed by \r
+      // selected the highlighted row and saved it. A prompt that did not land
+      // is a prompt to report, not one to punctuate.
+      if (!echoed) {
+        throw new Error(
+          "Claude Code's input box didn't take your message, so nothing was sent. "
+          + 'Please send it again.',
+        );
       }
       session.term.write('\r');
       await this._confirmSubmitted(session, sessionKey, prompt, abortSignal);
@@ -975,7 +970,7 @@ export class PtyProvider implements Provider {
     const stillGenerating = isGenerating(this._getScreenText(session));
     const canResolve = session.stopReceived
       ? isIdle
-      : isIdle && this._isPromptVisible(session) && !stillGenerating && claudeProducedSomething;
+      : isIdle && this._hasInputBox(session) && !stillGenerating && claudeProducedSomething;
 
     if (canResolve) {
       const resolved = session.endOfTurnResolver;
@@ -1014,8 +1009,8 @@ export class PtyProvider implements Provider {
     return sessionJsonlMtimeMs(session.cwd, session.claudeSessionId);
   }
 
-  private _isPromptVisible(session: PtySession): boolean {
-    return isPromptVisible(this._getScreenText(session));
+  private _hasInputBox(session: PtySession): boolean {
+    return hasInputBox(this._getScreenText(session));
   }
 
   private _awaitEndOfTurn(session: PtySession): Promise<string> {
@@ -1064,6 +1059,9 @@ export class PtyProvider implements Provider {
    *  - `busy`: claude is mid-turn and stayed there past BUSY_READY_CEILING_MS.
    *    The prompt was never the problem and a retry will behave the same until
    *    the turn ends.
+   *  - `modal`: claude is asking something — a dialog is covering the input
+   *    box. It will not clear on its own, so the caller relays it to the chat
+   *    rather than waiting out a ceiling that cannot help.
    *  - `unready`: the input box never appeared. `capMs` bounds *silence* here
    *    and `ceilingMs` the wait as a whole, measured from when the TUI last
    *    stopped working — a session that spent twenty minutes on a turn hasn't
@@ -1078,7 +1076,7 @@ export class PtyProvider implements Provider {
   private async _waitForReady(
     session: PtySession, sessionKey: string, idleMs: number, capMs: number, ceilingMs: number,
     abortSignal?: AbortSignal,
-  ): Promise<'ready' | 'busy' | 'unready' | 'aborted'> {
+  ): Promise<'ready' | 'busy' | 'unready' | 'modal' | 'aborted'> {
     let waitingSince = Date.now();
     let generatingSince: number | null = null;
     let sawGenerating = false;
@@ -1135,7 +1133,13 @@ export class PtyProvider implements Provider {
           waitingSince = Date.now();
           stillSince = session.lastChunkAt;
         }
-        if (Date.now() - stillSince >= idleMs && isPromptVisible(screenText)) return 'ready';
+        if (Date.now() - stillSince >= idleMs) {
+          if (hasInputBox(screenText)) return 'ready';
+          // Settled on something that isn't the input box. A dialog is the
+          // one case worth reporting separately: it will never clear on its
+          // own, so waiting out the ceiling only delays telling someone.
+          if (parseModal(screenText)) return 'modal';
+        }
 
         const waited = Date.now() - waitingSince;
         const quiet = Date.now() - session.lastChunkAt;
@@ -1144,12 +1148,115 @@ export class PtyProvider implements Provider {
           console.warn(
             `[PtyProvider] ${sessionKey}: TUI not ready after ${Math.round(waited / 1000)}s `
             + `(quiet ${Math.round(quiet / 1000)}s, still ${Math.round((Date.now() - stillSince) / 1000)}s, `
-            + `input prompt ${isPromptVisible(screenText) ? 'visible' : 'absent'}) — refusing to submit into it`,
+            + `input box ${hasInputBox(screenText) ? 'open' : 'absent'}) — refusing to submit into it`,
           );
           return 'unready';
         }
       }
       await new Promise((r) => setTimeout(r, READY_POLL_MS));
+    }
+  }
+
+  /**
+   * Wait for the input box, relaying a dialog to the chat if one is in the way.
+   *
+   * Wraps {@link _waitForReady} with the two things a caller always wants: the
+   * right patience for a resuming pty, and an answer to `modal`. Throws with a
+   * chat-ready message on every outcome that isn't a delivered prompt.
+   */
+  private async _awaitReady(
+    session: PtySession, sessionKey: string, options: AgentOptions | undefined,
+    abortSignal?: AbortSignal,
+  ): Promise<'ready' | 'aborted'> {
+    // A pty spawned with --resume is still replaying the transcript; give it
+    // the patience that needs rather than pasting into a busy editor.
+    const resuming = session.awaitingResumeReplay;
+    const [idleMs, capMs, ceilingMs] = resuming
+      ? [RESUME_SETTLE_IDLE_MS, RESUME_STARTUP_MAX_MS, RESUME_READY_CEILING_MS]
+      : [IDLE_MS, STARTUP_MAX_MS, STARTUP_READY_CEILING_MS];
+
+    // One relay per prompt. Answering a dialog can reveal another behind it,
+    // and a session that keeps producing them wants a person at a terminal,
+    // not a bot working through a stack of them on someone's behalf.
+    let relayed = false;
+    for (;;) {
+      const verdict = await this._waitForReady(session, sessionKey, idleMs, capMs, ceilingMs, abortSignal);
+      if (verdict === 'ready') {
+        session.awaitingResumeReplay = false;
+        return 'ready';
+      }
+      if (verdict === 'aborted') return 'aborted';
+      if (verdict === 'busy') throw new Error(stillWorkingError());
+      if (verdict === 'modal' && !relayed) {
+        relayed = true;
+        // Throws unless a key was actually pressed, in which case we go round
+        // and wait for the input box the dialog was covering.
+        await this._relayModal(session, sessionKey, options);
+        continue;
+      }
+      if (verdict === 'modal') {
+        throw new Error(
+          "Claude Code opened another dialog straight after the last one, so your message "
+          + "wasn't delivered. That usually wants a person at the terminal — check the "
+          + 'session before sending it again.',
+        );
+      }
+      // Leave awaitingResumeReplay set on failure: the replay is still the
+      // thing we're waiting out, so the retry deserves the same patience.
+      throw new Error(resuming
+        ? "Claude Code is still replaying this session's transcript and hasn't opened its input box, so your message wasn't delivered. That normally means the machine is under heavy load — please send it again in a minute."
+        : "Claude Code's input box never appeared, so your message wasn't delivered. Please send it again.");
+    }
+  }
+
+  /**
+   * Put claude's dialog in the chat and press what comes back.
+   *
+   * Returns only when a key was written and the dialog cleared; every other
+   * outcome throws, because the prompt genuinely was not delivered and saying
+   * so beats a silent retry. Nothing is pressed on a timeout — see
+   * modal-relay.ts for why an unanswered dialog is left exactly as it is.
+   */
+  private async _relayModal(
+    session: PtySession, sessionKey: string, options: AgentOptions | undefined,
+  ): Promise<void> {
+    const modal = parseModal(this._getScreenText(session));
+    const ctx = (options as { telegramCtx?: Context } | undefined)?.telegramCtx;
+    if (!ctx?.chat?.id) {
+      // No chat to ask in — a scheduled run, or a turn started without a ctx.
+      // The dialog still rides out in the error so it isn't lost entirely.
+      throw new Error(
+        'Claude Code is waiting on a dialog and there\'s no chat here to answer it in:\n\n'
+        + `${modal?.body ?? '(unreadable)'}`,
+      );
+    }
+
+    const pty: ModalPty = {
+      write: (data) => session.term.write(data),
+      screen: () => this._getScreenText(session),
+    };
+    const outcome = await relayModal(pty, sessionKey, ctx, session.cwd);
+    console.warn(`[PtyProvider] ${sessionKey}: claude opened a dialog — relay ${outcome.kind}`);
+
+    switch (outcome.kind) {
+      case 'answered':
+        if (!await waitForDialogToClear(pty, DIALOG_CLEAR_MS)) {
+          throw new Error(
+            `I pressed "${outcome.label}", but Claude Code hasn't returned to its input box, `
+            + "so your message wasn't delivered. Send it again in a moment.",
+          );
+        }
+        return;
+      case 'timeout':
+        throw new Error(
+          "Nobody answered Claude Code's dialog, so I left it alone and your message wasn't "
+          + 'delivered. Answer the buttons above, then send it again.',
+        );
+      default:
+        throw new Error(
+          `Your message wasn't delivered — ${outcome.why}. `
+          + 'Claude Code is still waiting on that dialog.',
+        );
     }
   }
 
@@ -1182,7 +1289,7 @@ export class PtyProvider implements Provider {
     const session = this.sessions.get(sessionKey);
     if (!session) return { ok: false, reason: 'no-session' };
     if (session.endOfTurnResolver) return { ok: false, reason: 'turn-active' };
-    if (!this._isPromptVisible(session)) return { ok: false, reason: 'not-ready' };
+    if (!this._hasInputBox(session)) return { ok: false, reason: 'not-ready' };
 
     try {
       // Same submission path as a prompt: bracketed paste so the TUI takes the

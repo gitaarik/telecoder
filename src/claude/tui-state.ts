@@ -56,17 +56,6 @@ export function isGenerating(screenText: string): boolean {
 }
 
 /**
- * `❯` appears in claude's input box. We use includes() rather than
- * startsWith() because the box-drawing chrome wraps the line as
- * `│ ❯ <typed text> │`, which trims to a string that doesn't *start* with ❯.
- * claude's own assistant output uses ● for bullets, not ❯, so false positives
- * are unlikely.
- */
-export function isPromptVisible(screenText: string): boolean {
-  return screenText.includes('❯');
-}
-
-/**
  * The screen reduced to what changing actually means something.
  *
  * A TUI still coming up rewrites whole rows; one sitting at the prompt rewrites
@@ -81,4 +70,52 @@ export function screenSignature(screenText: string): string {
     .filter((line) => !LIVE_SPINNER.test(line))
     .map((line) => line.trimEnd())
     .join('\n');
+}
+
+/**
+ * A full-width horizontal rule: the input box's top and bottom border.
+ * Ten is well below the 120-column render but far above anything that shows
+ * up inside prose, so a model quoting `──` in a reply can't forge a border.
+ */
+const RULE = /^\s*─{10,}\s*$/u;
+/**
+ * The input box's own row. The glyph may sit inside side borders on terminals
+ * that draw them (`│ ❯ typed text │`), which is a shape only the input box
+ * has — no overlay draws vertical borders — so it stands on its own below.
+ */
+const INPUT_ROW = /^\s*(?:│\s*)?❯/u;
+const SIDE_BORDERED_INPUT = /│\s*❯/u;
+/** Rows from the bottom that can hold the input box and its footer. */
+const INPUT_BOX_ROWS = 10;
+
+/**
+ * Is claude's input box open, as opposed to an overlay covering it?
+ *
+ * The distinction a bare search for `❯` cannot draw, which is what this
+ * replaced. Claude's select lists mark the highlighted option with the same
+ * glyph the input box uses:
+ *
+ *     Select model
+ *     ❯ 1. Default (recommended) ✔  Opus 5 with 1M context
+ *       2. Opus (1M context)        …
+ *     Enter to set as default · s to use this session only · Esc to cancel
+ *
+ * so a bare `includes('❯')` reads a modal as a prompt. That screen is also
+ * perfectly still and draws no interrupt hint, which means every other
+ * readiness signal agrees — and the prompt then gets pasted into a list that
+ * ignores it, with the Enter after it landing on whichever option happens to
+ * be highlighted. Measured against a live pty, that is enough to change a
+ * setting: pasting into `/model` and pressing Enter answered the dialog.
+ *
+ * What separates them is structure, not the glyph. The input box is a `❯` row
+ * fenced by two rules; an overlay draws at most one rule, as the seam between
+ * the transcript above it and its own body. Both are read from the bottom of
+ * the buffer, where the box lives — an option list long enough to scroll would
+ * otherwise offer its own `❯` row somewhere in the middle of the screen.
+ */
+export function hasInputBox(screenText: string): boolean {
+  const lines = tailLines(screenText, INPUT_BOX_ROWS);
+  return lines.some((line, i) =>
+    SIDE_BORDERED_INPUT.test(line)
+    || (INPUT_ROW.test(line) && RULE.test(lines[i - 1] ?? '') && RULE.test(lines[i + 1] ?? '')));
 }
