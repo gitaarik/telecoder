@@ -47,6 +47,7 @@ import {
 } from './permission-mode.js';
 import { parseModal } from './tui-modal.js';
 import { isSuggestionsEnabled } from '../telegram/suggestions-settings.js';
+import { resolveBin } from '../utils/resolve-bin.js';
 import type { Context } from 'grammy';
 import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions, type EditDiffEvent, type ToolResultEvent, type ImageAttachment } from '../providers/types.js';
 
@@ -54,7 +55,18 @@ const { Terminal } = headless;
 
 // ---- Config from prototype --------------------------------------------------
 
-const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
+/**
+ * Resolved, not left bare. node-pty execs this name directly, so a bare
+ * `claude` is looked up in the *service's* PATH — and a systemd user unit gets
+ * the bare default, without ~/.local/bin, which is where the native installer
+ * puts the CLI. The failure is silent in the worst way: execvp writes "No such
+ * file or directory" into the pty and exits, so the bot sees a session that
+ * produced nothing and reports that the input box never appeared.
+ *
+ * resolveBin exists for this and searches ~/.local/bin first on Linux; it just
+ * was never wired up here. CLAUDE_BIN still wins for a CLI kept elsewhere.
+ */
+const CLAUDE_BIN = process.env.CLAUDE_BIN || resolveBin('claude');
 
 // dist/claude/pty-provider.js → sibling dist/bin/mcp-server.js
 

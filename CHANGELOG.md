@@ -63,6 +63,19 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **The PTY could not find the `claude` binary under systemd** — `CLAUDE_BIN`
+  fell back to the bare name `claude`, which node-pty execs directly against
+  the *service's* PATH. A systemd user unit gets the bare default, without
+  `~/.local/bin`, which is where the native installer puts the CLI. execvp
+  wrote "No such file or directory" into the pty and exited, so the bot saw a
+  session that produced nothing and reported that the input box never appeared.
+
+  `resolveBin()` has searched `~/.local/bin` first on Linux since it was
+  written, for this exact reason — the pty provider just never called it.
+  @code_share1_bot had not completed a single turn since the day it moved to a
+  systemd unit; it went unnoticed because the failure names a symptom two
+  layers above the cause.
+
 - **A dialog with a status bar under it is still a dialog** — `parseModal` took
   the last non-empty line and required it to parse as key hints, so anything
   claude drew beneath the footer (its `⏵⏵ bypass permissions on` status bar, a
