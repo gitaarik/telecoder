@@ -976,7 +976,7 @@ export async function handleSuggestionsCallback(ctx: Context): Promise<void> {
 function describeTransportDefault(chatId: number): { label: string; why: string } {
   const method = getActiveMethod(chatId);
   const label = permissionModeInfo(transportDefaultMode(method, config.DANGEROUS_MODE)).label;
-  if (method === 'pty') return { label, why: 'PTY always launches bypassed' };
+  if (method === 'pty') return { label, why: "Claude Code's own default" };
   return { label, why: config.DANGEROUS_MODE ? 'SDK, DANGEROUS_MODE=true' : 'the SDK default' };
 }
 

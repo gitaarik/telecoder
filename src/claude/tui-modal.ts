@@ -131,11 +131,30 @@ export function parseModal(screenText: string): TuiModal | null {
 
   // Body starts below the seam rule when there is one; a dialog that redrew
   // the whole screen has no seam, and everything we kept is its body.
-  let seam = -1;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (RULE.test(lines[i])) { seam = i; break; }
+  let seam = lastRuleBefore(lines, lines.length);
+  let body = lines.slice(seam + 1, -1);
+
+  // A rule can also sit *inside* a dialog. Auto mode draws one between its
+  // numbered choices and a trailing "Chat about this", which left a body of a
+  // single line with no cursor in it — five options parsed as none, and the
+  // only button on offer was a bare `Enter to select` committing the row
+  // nobody had been shown. Reach back past a rule like that.
+  //
+  // Only when what's left below it is numbered, though. The transcript above
+  // a dialog carries the echoed command wearing this same glyph (`❯ /tasks`),
+  // and reaching past the real seam would swallow it as an option. Claude
+  // numbers a list exactly when its rows are selectable, so that is the line
+  // between a continued list and a dialog that simply has no rows.
+  if (seam > 0 && body.length > 0
+    && !body.some((line) => CURSOR_ROW.test(line))
+    && body.every((line) => ROW_NUMBER.test(line.trimStart()))) {
+    const outer = lastRuleBefore(lines, seam);
+    const extended = lines.slice(outer + 1, -1);
+    if (extended.some((line) => CURSOR_ROW.test(line))) {
+      seam = outer;
+      body = extended;
+    }
   }
-  const body = lines.slice(seam + 1, -1);
   if (body.length === 0) return null;
 
   const { options, highlighted, rows } = extractOptions(body);
@@ -159,9 +178,31 @@ export function parseModal(screenText: string): TuiModal | null {
   };
 }
 
-/** True when `line`'s text begins exactly at `col`, with only blanks before. */
-function startsAt(line: string, col: number): boolean {
-  return line.length > col && line[col] !== ' ' && line.slice(0, col).trim() === '';
+/** Index of the last rule strictly above `before`, or -1 when there is none. */
+function lastRuleBefore(lines: string[], before: number): number {
+  for (let i = before - 1; i >= 0; i--) {
+    if (RULE.test(lines[i])) return i;
+  }
+  return -1;
+}
+
+/**
+ * What `line` is, to a list whose rows begin at `col`.
+ *
+ * The three answers are the shape of every list claude draws. A row starts
+ * exactly at the column its siblings do. Anything starting *deeper* hangs off
+ * the row above — auto mode gives each choice a sentence of explanation
+ * underneath, and a walk that stopped at the first of those found one option
+ * where there were five. A rule can sit inside a list too, so it is stepped
+ * over rather than treated as the end. Anything starting *shallower* is the
+ * title, the blurb or prose, and that really is the end of the list.
+ */
+function rowRole(line: string, col: number): 'row' | 'skip' | 'end' {
+  if (RULE.test(line)) return 'skip';
+  const at = line.search(/\S/);
+  if (at < 0) return 'skip';
+  if (at === col) return 'row';
+  return at > col ? 'skip' : 'end';
 }
 
 /**
@@ -185,14 +226,26 @@ function extractOptions(
   const match = CURSOR_ROW.exec(body[cursor])!;
   const labelCol = match[1].length + 1 + match[2].length;
 
-  let first = cursor;
-  while (first > 0 && startsAt(body[first - 1], labelCol)) first--;
-  let last = cursor;
-  while (last < body.length - 1 && startsAt(body[last + 1], labelCol)) last++;
+  const indexes: number[] = [];
+  for (let i = cursor - 1; i >= 0; i--) {
+    const role = rowRole(body[i], labelCol);
+    if (role === 'end') break;
+    if (role === 'row') indexes.unshift(i);
+  }
+  // However many rows sit above it is where the cursor is — the arrow walk
+  // counts rows, not screen lines, and the two differ wherever a description
+  // or a rule sits between them.
+  const highlighted = indexes.length;
+  indexes.push(cursor);
+  for (let i = cursor + 1; i < body.length; i++) {
+    const role = rowRole(body[i], labelCol);
+    if (role === 'end') break;
+    if (role === 'row') indexes.push(i);
+  }
 
   const options: ModalOption[] = [];
   const rows = new Set<number>();
-  for (let i = first; i <= last; i++) {
+  for (const i of indexes) {
     rows.add(i);
     const text = i === cursor ? match[3] : body[i].slice(labelCol);
     const numbered = ROW_NUMBER.exec(text);
@@ -202,7 +255,7 @@ function extractOptions(
       index: options.length,
     });
   }
-  return { options, highlighted: cursor - first, rows };
+  return { options, highlighted, rows };
 }
 
 /**

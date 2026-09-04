@@ -54,6 +54,41 @@ const trustDialog = [
   ' Enter to confirm · Esc to cancel',
 ].join('\n');
 
+/**
+ * An auto-mode dialog, copied verbatim off a live pty after asking claude to
+ * `rm -rf` a file. Auto draws a richer dialog than the manual permission
+ * prompt and it broke this parser in two places at once:
+ *
+ *   - a sentence of explanation hangs under each choice, indented past the
+ *     rows, and a walk that stopped at the first of those found one option
+ *     where there are five;
+ *   - a rule sits between the numbered choices and the trailing one, and
+ *     taking the *last* rule as the seam left a one-line body with no cursor.
+ *
+ * Between them the dialog parsed as zero options, which meant the only button
+ * offered was the footer's bare `Enter to select` — and Enter here commits
+ * "Back up, then delete", a row nobody was shown. Measured, not imagined: the
+ * first live run of the new default pressed it.
+ */
+const autoDialog = [
+  '● Bash(ls -la)',
+  '     … +6 lines (ctrl+o to expand)',
+  SEP,
+  ' ☐ Delete file',
+  '│ `keep.txt` is named "keep" and contains the text `important`. There\'s no git repo here, so deleting it is',
+  '│ unrecoverable. Proceed?',
+  '❯ 1. Back up, then delete',
+  '     Copy keep.txt to the session scratchpad first, then run rm -rf keep.txt. Recoverable for this session.',
+  '  2. Delete it',
+  '     Run rm -rf keep.txt as-is. The file and its contents are gone permanently.',
+  '  3. Cancel',
+  '     Leave keep.txt untouched.',
+  '  4. Type something.',
+  SEP,
+  '  5. Chat about this',
+  'Enter to select · ↑/↓ to navigate · Esc to cancel',
+].join('\n');
+
 const inputBox = [
   SEP,
   '❯ ',
@@ -87,6 +122,38 @@ describe('parseModal', () => {
     const modal = parseModal(trustDialog);
     expect(modal?.options).toHaveLength(2);
     expect(modal?.options.map((o) => o.label)).not.toContain('Security guide');
+  });
+
+  it('reads every row of an auto-mode dialog, descriptions and all', () => {
+    const modal = parseModal(autoDialog);
+    expect(modal?.title).toBe('☐ Delete file');
+    expect(modal?.options.map((o) => o.number)).toEqual([1, 2, 3, 4, 5]);
+    expect(modal?.options.map((o) => o.label)).toEqual([
+      'Back up, then delete',
+      'Delete it',
+      'Cancel',
+      'Type something.',
+      'Chat about this',
+    ]);
+  });
+
+  it('reaches past the rule auto draws inside its own list', () => {
+    // "5. Chat about this" lives below that rule. Losing it is the mild
+    // failure; losing the other four and offering a bare Enter is the bad one.
+    expect(parseModal(autoDialog)?.options).toHaveLength(5);
+  });
+
+  it('puts auto\'s cursor on the first row, so the walk has a known start', () => {
+    expect(parseModal(autoDialog)?.highlighted).toBe(0);
+  });
+
+  it('does not mistake an echoed command above the seam for a row', () => {
+    // /tasks has no rows of its own and `❯ /tasks` sits above its seam wearing
+    // the cursor glyph. Reaching past a seam is gated on the body being
+    // numbered precisely so this one is left alone.
+    const modal = parseModal(tasksDialog);
+    expect(modal?.options).toEqual([]);
+    expect(modal?.title).toBe('Background');
   });
 
   it('refuses a dialog with a cursor it could not resolve into rows', () => {

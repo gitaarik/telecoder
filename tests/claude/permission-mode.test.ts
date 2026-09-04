@@ -156,14 +156,25 @@ describe('mode names', () => {
 });
 
 describe('transportDefaultMode', () => {
-  it('is bypass on the pty, which has no un-bypassed launch', () => {
-    expect(transportDefaultMode('pty', false)).toBe('bypassPermissions');
+  it('is auto on the pty, now that its dialogs can be answered', () => {
+    // It ran bypassed only for as long as a prompt there was a dead end.
+    expect(transportDefaultMode('pty', false)).toBe('auto');
   });
 
   it('ignores DANGEROUS_MODE on the pty, where it never applied', () => {
-    // The flag is on every spawn either way. A menu that credited the env var
-    // here would be naming a cause that isn't one.
-    expect(transportDefaultMode('pty', true)).toBe('bypassPermissions');
+    // The var predates all of this and describes an SDK-side auto-approve.
+    // Letting it re-loosen the default the transport just tightened would be
+    // exactly the silent surprise this function exists to prevent.
+    expect(transportDefaultMode('pty', true)).toBe('auto');
+  });
+
+  it('keeps bypass reachable as a choice, not a default', () => {
+    // The pty is still spawned with --dangerously-skip-permissions: measured
+    // live, the shift+tab cycle has five stops with the flag and four without,
+    // and the missing one is bypass. Launching without it would strand anyone
+    // who wants it.
+    expect(parsePermissionModeArg('bypass')).toBe('bypassPermissions');
+    expect(PERMISSION_MODES.some((m) => m.id === 'bypassPermissions')).toBe(true);
   });
 
   it('is accept-edits on the sdk, the mode that transport always ran in', () => {

@@ -2013,9 +2013,10 @@
             <div class="feature-icon"><svg><use href="#i-gauge"/></svg></div>
             <h3>Choose how much Claude asks</h3>
             <p>Per chat, pick the permission mode the desktop cycles with shift+tab — manual,
-            accept edits, plan or auto. The bot puts the session in it before your message goes
-            in, and refuses the turn rather than run it in a looser mode than you chose. Leave it
-            on Default and the menu names the mode you actually get, and why.</p>
+            accept edits, plan or auto. PTY sessions default to auto, so Claude checks in before
+            the riskier steps instead of never asking; <code>/mode bypass</code> is one tap back.
+            The bot puts the session in the mode before your message goes in, and refuses the turn
+            rather than run it in a looser mode than you chose.</p>
           </div>
           <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-dialog"/></svg></div>
@@ -2783,7 +2784,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/mode &lt;manual|acceptEdits|plan|auto|bypass&gt;</code>
-              <span class="command-desc">How much Claude asks before acting, per chat. Same modes the desktop cycles with shift+tab; buttons if you pass no argument. Default follows the transport, and the menu spells out what that resolves to — Bypass on PTY, accept edits on the SDK unless <code>DANGEROUS_MODE</code> promotes it. Admin-only.</span>
+              <span class="command-desc">How much Claude asks before acting, per chat. Same modes the desktop cycles with shift+tab; buttons if you pass no argument. Default follows the transport, and the menu spells out what that resolves to — auto on PTY, accept edits on the SDK unless <code>DANGEROUS_MODE</code> promotes it. Admin-only.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/streaming</code>

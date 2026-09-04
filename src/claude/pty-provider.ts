@@ -42,6 +42,7 @@ import { blockingModal, relayModal, waitForDialogToClear, type ModalPty } from '
 import {
   ensurePermissionMode,
   permissionModeInfo,
+  transportDefaultMode,
   type ModePty,
 } from './permission-mode.js';
 import { parseModal } from './tui-modal.js';
@@ -1249,22 +1250,28 @@ export class PtyProvider implements Provider {
   }
 
   /**
-   * Put the session in the mode this chat chose, before anything is submitted.
+   * Put the session in this chat's mode, before anything is submitted.
    *
-   * A no-op for a chat that has never picked one, which is every chat that
-   * existed before /mode: no preference means no parse, no keystroke and the
-   * pty's launch mode stands, exactly as it always did.
+   * The pty is spawned with `--dangerously-skip-permissions` and cycled from
+   * there, rather than launched in the mode we want. That looks backwards and
+   * isn't: measured against a live pty, the shift+tab cycle has five stops
+   * when the flag is present and four when it isn't, and the missing one is
+   * bypass. Launching without it would make `/mode bypass` unreachable for
+   * good, so the flag buys the full cycle and the first turn spends one
+   * keypress leaving it.
    *
-   * When a mode *was* chosen and cannot be established, the turn is refused
-   * rather than run. Every mode other than bypass is a request for claude to
-   * ask more often, so quietly proceeding in whatever mode the session happens
-   * to be in would hand it more freedom than the chat allowed — the one
-   * direction where carrying on regardless is worse than failing.
+   * A chosen mode and the default fail differently, which is the whole reason
+   * the two are tracked separately here. A choice is a constraint: every mode
+   * other than bypass asks claude to check in more often, so running the turn
+   * in whatever the session happens to be in would hand it more freedom than
+   * the chat allowed, and refusing is the safer failure. The default is a
+   * preference — falling back to the launch mode is exactly what every turn
+   * did before this existed, so it is worth a log line and nothing more.
    */
   private async _applyPermissionMode(session: PtySession, sessionKey: string): Promise<void> {
     const { chatId } = parseSessionKey(sessionKey);
-    const target = userPreferences.getPermissionMode(chatId);
-    if (!target) return;
+    const chosen = userPreferences.getPermissionMode(chatId);
+    const target = chosen ?? transportDefaultMode('pty', config.DANGEROUS_MODE);
 
     const pty: ModePty = {
       write: (data) => session.term.write(data),
@@ -1273,27 +1280,32 @@ export class PtyProvider implements Provider {
     const outcome = await ensurePermissionMode(pty, target);
     const label = permissionModeInfo(target).label;
 
-    switch (outcome.kind) {
-      case 'already':
-        return;
-      case 'switched':
-        console.log(
-          `[PtyProvider] ${sessionKey}: permission mode ${outcome.from} → ${outcome.to}`,
-        );
-        return;
-      case 'unreadable':
-        throw new Error(
-          `I couldn't read which permission mode Claude Code is in, so I didn't send your `
-          + `message — running it outside "${label}" mode isn't mine to decide. `
-          + 'Try again in a moment.',
-        );
-      default:
-        throw new Error(
-          `I couldn't switch Claude Code into "${label}" mode — it stopped at `
-          + `${outcome.last ?? 'something unreadable'}, so your message wasn't sent. `
-          + 'Check the session, or pick a different mode with /mode.',
-        );
+    if (outcome.kind === 'already') return;
+    if (outcome.kind === 'switched') {
+      console.log(`[PtyProvider] ${sessionKey}: permission mode ${outcome.from} → ${outcome.to}`);
+      return;
     }
+
+    if (!chosen) {
+      console.warn(
+        `[PtyProvider] ${sessionKey}: couldn't reach the default "${label}" mode `
+        + `(${outcome.kind}) — running in the mode the pty launched in`,
+      );
+      return;
+    }
+
+    if (outcome.kind === 'unreadable') {
+      throw new Error(
+        `I couldn't read which permission mode Claude Code is in, so I didn't send your `
+        + `message — running it outside "${label}" mode isn't mine to decide. `
+        + 'Try again in a moment.',
+      );
+    }
+    throw new Error(
+      `I couldn't switch Claude Code into "${label}" mode — it stopped at `
+      + `${outcome.last ?? 'something unreadable'}, so your message wasn't sent. `
+      + 'Check the session, or pick a different mode with /mode.',
+    );
   }
 
   /**

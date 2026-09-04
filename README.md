@@ -263,9 +263,10 @@ appearing to work until the next restart.
 
 > [!IMPORTANT]
 > All of the above is supervision, not isolation. Claude still runs as your Unix
-> user with permissions bypassed, so a guest's session can reach anything that
-> user can. `WORKSPACE_DIR` scopes the project picker, not the filesystem. For a
-> real boundary, run the shared instance as its own Unix account — below.
+> user, so a guest's session can reach anything that user can — auto mode asks
+> before the riskier steps, but it is Claude's judgement, not a boundary.
+> `WORKSPACE_DIR` scopes the project picker, not the filesystem. For a real
+> boundary, run the shared instance as its own Unix account — below.
 
 ### A real boundary: its own Unix account
 

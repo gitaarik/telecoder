@@ -77,7 +77,7 @@ export const PERMISSION_MODES: readonly PermissionModeInfo[] = [
   {
     id: 'bypassPermissions',
     label: 'Bypass',
-    description: 'never ask — what this bot has always run in',
+    description: 'never ask — what the pty ran in before auto',
     cli: 'bypassPermissions',
     sdk: 'bypassPermissions',
     tuiPhrase: 'bypass permissions',
@@ -97,22 +97,27 @@ export function isPermissionModeId(value: string): value is PermissionModeId {
 /**
  * The mode a chat runs in when it has chosen none.
  *
- * "Default" means "leave it to the transport", and the transports disagree:
- * the pty puts `--dangerously-skip-permissions` on every spawn and only cycles
- * away from it for a chat that asked, while the SDK passes `acceptEdits`
- * unless DANGEROUS_MODE promotes it. Neither is readable from the menu, so a
- * person picking Default was picking a mode nobody had told them the name of.
+ * "Default" means "leave it to the transport", and the transports disagree, so
+ * this is where the disagreement is written down — beside the table, rather
+ * than in either transport, so the answer /mode prints and the answer a turn
+ * runs in cannot drift apart.
  *
- * It lives here, beside the table, rather than in either transport, so the
- * answer the menu prints and the answer a turn actually runs in cannot drift
- * apart — the failure that would make this worse than saying nothing.
+ * The pty answers `auto`, which is also what claude itself launches in when
+ * nobody passes a flag. It ran bypassed for as long as it had no way to answer
+ * a permission prompt; now that dialogs reach the chat mid-turn, the mode that
+ * never asks is a choice rather than the only thing that worked. `/mode bypass`
+ * is still one tap away for a chat that wants it back.
+ *
+ * DANGEROUS_MODE has no say here, exactly as it never had one on the pty: it
+ * predates all of this, describes itself as an SDK-side auto-approve, and a
+ * config flag quietly re-loosening a default the transport just tightened is
+ * the kind of surprise this whole function exists to prevent.
  */
 export function transportDefaultMode(
   method: 'sdk' | 'pty',
   dangerousMode: boolean,
 ): PermissionModeId {
-  // The pty has no un-bypassed launch to fall back to.
-  if (method === 'pty') return 'bypassPermissions';
+  if (method === 'pty') return 'auto';
   return dangerousMode ? 'bypassPermissions' : 'acceptEdits';
 }
 
