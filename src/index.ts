@@ -243,6 +243,10 @@ async function main() {
 
   // Graceful shutdown (guarded against duplicate signals)
   let shuttingDown = false;
+  // Normally 0 — a shutdown is a shutdown. /restartbot under systemd sets
+  // process.exitCode first, because there the exit *is* the restart and the
+  // code is what tells systemd to bring us back rather than stand down.
+  const exitCode = () => (typeof process.exitCode === 'number' ? process.exitCode : 0);
   const shutdown = async () => {
     if (shuttingDown) return;
     shuttingDown = true;
@@ -254,11 +258,11 @@ async function main() {
     // settles) hold the exit open — the launcher is waiting on it to restart us.
     const exitWatchdog = setTimeout(() => {
       console.warn(`[Shutdown] Runner did not stop within ${Math.round(SHUTDOWN_TIMEOUT_MS / 1000)}s — exiting anyway`);
-      process.exit(0);
+      process.exit(exitCode());
     }, SHUTDOWN_TIMEOUT_MS);
     exitWatchdog.unref();
     await runner.stop();
-    process.exit(0);
+    process.exit(exitCode());
   };
 
   process.on('SIGINT', () => { shutdown(); });

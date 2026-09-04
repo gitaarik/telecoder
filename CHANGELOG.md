@@ -18,6 +18,19 @@ reasoning — the commit bodies are the long form, this is the index.
   `hasGuestUsers()` now reads the effective list, so admitting the first guest
   switches on the permission gate, the scope guard and the charter judge.
 
+### Reliability
+
+- **`/restartbot` no longer kills a systemd-managed bot for good** — the restart
+  ran `botctl recover` as a detached child, but `detached: true` escapes the
+  process group and not the cgroup. Under systemd the helper was reaped along
+  with the bot the moment it exited, before it reached the start half of its
+  job, and the clean exit told `Restart=on-failure` there was nothing to fix.
+  The bot now recognises that systemd is holding it up and exits `75` for
+  systemd to bring it back, instead of trying to start its own successor. It
+  checks the unit's `Restart=` first and refuses — while still running — rather
+  than announcing a restart it cannot come back from. The shipped unit moves to
+  `Restart=always`.
+
 ## [1.1.0] — 2026-08-31
 
 The release that makes a bot shareable. Everything before this assumed one
