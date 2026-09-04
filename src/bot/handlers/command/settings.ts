@@ -1,5 +1,5 @@
 /**
- * Per-chat settings menus: /mode, /terminalui, /tts, /telegraph,
+ * Per-chat settings menus: /streaming, /terminalui, /tts, /telegraph,
  * /suggestions, /effort, /verbosity, /method and the status line.
  *
  * They share one shape — render an inline keyboard reflecting current state,
@@ -19,7 +19,7 @@ import {
   type AgentUsage,
 } from '../../../providers/provider-router.js';
 import { userPreferences } from '../../../providers/user-preferences.js';
-import { getPtyProvider } from '../../../providers/claude-provider.js';
+import { getActiveMethod, getPtyProvider } from '../../../providers/claude-provider.js';
 import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
 import { taskTracker } from '../../../telegram/task-tracker.js';
 import { getTTSSettings, setTTSEnabled, setTTSVoice, setTTSAutoplay } from '../../../tts/tts-settings.js';
@@ -33,6 +33,14 @@ import {
   type VerbosityLevel,
 } from '../../../utils/verbosity.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
+import {
+  PERMISSION_MODES,
+  isPermissionModeId,
+  parsePermissionModeArg,
+  permissionModeInfo,
+  transportDefaultMode,
+  type PermissionModeId,
+} from '../../../claude/permission-mode.js';
 import {
   replyMd,
   parseCallback,
@@ -190,7 +198,7 @@ export function buildTelegraphMenu(sessionKey: string) {
   };
 }
 
-export async function handleMode(ctx: Context): Promise<void> {
+export async function handleStreaming(ctx: Context): Promise<void> {
   const keyboard = [
     [
       {
@@ -946,4 +954,137 @@ export async function handleSuggestionsCallback(ctx: Context): Promise<void> {
       console.error('[Suggestions] Failed to update menu:', error);
     }
   }
+}
+
+/**
+ * `/mode` — how much claude asks before acting, per chat.
+ *
+ * The callback prefix is `permmode:` rather than the obvious `mode:`, which
+ * still belongs to the streaming toggle this command took its name from. A
+ * keyboard from that older menu can be sitting in someone's chat right now,
+ * and its buttons carry `mode:streaming`.
+ */
+/**
+ * What "Default" actually resolves to for this chat, and why.
+ *
+ * The menu used to call it "what this bot has always used" — true, and no help
+ * at all to someone deciding whether to leave it there. Which mode that is
+ * depends on the chat's transport, and on DANGEROUS_MODE when the transport is
+ * the SDK, so the row names the mode and the reason rather than making a
+ * person read two files to find out what they already picked.
+ */
+function describeTransportDefault(chatId: number): { label: string; why: string } {
+  const method = getActiveMethod(chatId);
+  const label = permissionModeInfo(transportDefaultMode(method, config.DANGEROUS_MODE)).label;
+  if (method === 'pty') return { label, why: "Claude Code's own default" };
+  return { label, why: config.DANGEROUS_MODE ? 'SDK, DANGEROUS_MODE=true' : 'the SDK default' };
+}
+
+function buildPermissionModeMenu(chatId: number): {
+  text: string;
+  keyboard: { text: string; callback_data: string }[][];
+} {
+  const current = userPreferences.getPermissionMode(chatId);
+  const fallback = describeTransportDefault(chatId);
+
+  const keyboard = PERMISSION_MODES.map((info) => [{
+    text: info.id === current ? `✓ ${info.label}` : info.label,
+    callback_data: `permmode:${info.id}`,
+  }]);
+  keyboard.push([{
+    text: `${current ? '' : '✓ '}Default — ${fallback.label}`,
+    callback_data: 'permmode:default',
+  }]);
+
+  const descriptions = PERMISSION_MODES
+    .map((info) => `• *${esc(info.label)}* \\- ${esc(info.description)}`)
+    .join('\n');
+
+  // Named the same way whether or not it was chosen: the mode a turn runs in
+  // is the useful fact, and "Default" alone never told anyone what that was.
+  const currentLine = current
+    ? `*${esc(permissionModeInfo(current).label)}*`
+    : `*${esc(fallback.label)}* _\\(default — ${esc(fallback.why)}\\)_`;
+
+  return {
+    text:
+      `🔐 *Permission mode*\n\nCurrent: ${currentLine}\n\n`
+      + `${descriptions}\n• *Default* \\- follow the transport, which here means `
+      + `*${esc(fallback.label)}*\n\n`
+      + '_Takes effect on your next message\\. Modes that ask will put Claude '
+      + "Code's own prompts in the chat as buttons\\._",
+    keyboard,
+  };
+}
+
+/** Confirmation text shared by the command and its buttons. */
+function permissionModeSetText(id: PermissionModeId): string {
+  const info = permissionModeInfo(id);
+  return `✅ Permission mode set to *${esc(info.label)}*\n\n_${esc(info.description)}_`;
+}
+
+/** Same, for the reset — which names the mode it reset *to*, not just "default". */
+function permissionModeResetText(chatId: number): string {
+  const { label, why } = describeTransportDefault(chatId);
+  return `✅ Permission mode reset to the transport default: *${esc(label)}*\n\n_${esc(why)}_`;
+}
+
+export async function handlePermissionMode(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { chatId } = keyInfo;
+
+  const arg = (ctx.message?.text || '').split(' ').slice(1).join(' ').trim();
+
+  if (!arg) {
+    const { text, keyboard } = buildPermissionModeMenu(chatId);
+    await ctx.reply(text, {
+      parse_mode: 'MarkdownV2',
+      reply_markup: { inline_keyboard: keyboard },
+    });
+    return;
+  }
+
+  const lower = arg.toLowerCase();
+  if (lower === 'default' || lower === 'reset') {
+    userPreferences.clearPermissionMode(chatId);
+    await replyMd(ctx, permissionModeResetText(chatId));
+    return;
+  }
+
+  const parsed = parsePermissionModeArg(arg);
+  if (!parsed) {
+    await replyMd(
+      ctx,
+      `❌ Unknown mode "${esc(arg)}"\\.\n\nValid: `
+      + `${PERMISSION_MODES.map((m) => `\`${esc(m.id)}\``).join(', ')}, \`default\``,
+    );
+    return;
+  }
+
+  userPreferences.setPermissionMode(chatId, parsed);
+  await replyMd(ctx, permissionModeSetText(parsed));
+}
+
+export async function handlePermissionModeCallback(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { chatId } = keyInfo;
+
+  const data = ctx.callbackQuery?.data;
+  if (!data || !data.startsWith('permmode:')) return;
+  const choice = data.replace('permmode:', '');
+
+  if (choice === 'default') {
+    userPreferences.clearPermissionMode(chatId);
+    const { label } = describeTransportDefault(chatId);
+    await ctx.answerCallbackQuery({ text: `Default: ${label}` });
+    await ctx.editMessageText(permissionModeResetText(chatId), { parse_mode: 'MarkdownV2' });
+    return;
+  }
+
+  if (!isPermissionModeId(choice)) return;
+  userPreferences.setPermissionMode(chatId, choice);
+  await ctx.answerCallbackQuery({ text: `Mode: ${permissionModeInfo(choice).label}` });
+  await ctx.editMessageText(permissionModeSetText(choice), { parse_mode: 'MarkdownV2' });
 }

@@ -28,6 +28,12 @@ const userPreferencesSchema = z.object({
   model: z.string().optional(),
   effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
   verbosity: z.enum(['quiet', 'normal', 'verbose', 'debug']).optional(),
+  // `.catch` for the same reason as provider: a mode this build no longer
+  // knows about should drop, not take every other saved setting with it.
+  permissionMode: z
+    .enum(['manual', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'])
+    .optional()
+    .catch(undefined),
   showStatusLine: z.boolean().optional(),
   showTopicInStatusLine: z.boolean().optional(),
   showSessionInStatusLine: z.boolean().optional(),
@@ -141,6 +147,18 @@ class UserPreferencesManager {
 
   clearEffort(chatId: number): void {
     this.unset(chatId, 'effort');
+  }
+
+  getPermissionMode(chatId: number): UserPreferences['permissionMode'] {
+    return this.data[chatId]?.permissionMode;
+  }
+
+  setPermissionMode(chatId: number, mode: NonNullable<UserPreferences['permissionMode']>): void {
+    this.patch(chatId, { permissionMode: mode });
+  }
+
+  clearPermissionMode(chatId: number): void {
+    this.unset(chatId, 'permissionMode');
   }
 
   getVerbosity(chatId: number): 'quiet' | 'normal' | 'verbose' | 'debug' | undefined {

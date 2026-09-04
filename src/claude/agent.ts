@@ -27,6 +27,7 @@ import { createTeleCoderMcpServer } from './mcp-tools.js';
 import { isSubagentTool } from './subagent-tools.js';
 import { isNativeCompactCommand } from './command-parser.js';
 import { recordAvailableCommands } from './available-commands.js';
+import { permissionModeInfo, transportDefaultMode } from './permission-mode.js';
 import { enabledPluginsSetting } from './enabled-plugins.js';
 import { getSessionTopic, getMsSinceTopicSet } from '../bot/handlers/command/topic-store.js';
 import {
@@ -156,18 +157,26 @@ function logAt(level: LogLevel, message: string, data?: unknown): void {
   }
 }
 
-function getPermissionMode(command?: string): PermissionMode {
-  // If DANGEROUS_MODE is enabled, bypass all permissions
-  if (config.DANGEROUS_MODE) {
-    return 'bypassPermissions';
-  }
-
-  // Otherwise, use command-specific modes
+/**
+ * Which mode this turn runs in, most specific wins.
+ *
+ * `/plan` is a single-turn instruction and beats everything. A mode the chat
+ * chose beats DANGEROUS_MODE next, because every choice other than bypass is
+ * the stricter of the two and an explicit choice that a config flag could
+ * silently override would not be a choice. Having chosen nothing lands on
+ * `transportDefaultMode`, which is also what /mode reads to name the default
+ * in the chat — one rule, so the menu cannot describe a mode this returns.
+ */
+function getPermissionMode(command?: string, chatId?: number): PermissionMode {
   if (command === 'plan') {
     return 'plan';
   }
 
-  return 'acceptEdits';
+  const chosen = chatId !== undefined ? userPreferences.getPermissionMode(chatId) : undefined;
+  // The SDK and the CLI spell the ask-every-time mode differently; the table
+  // holds both, and this transport needs `sdk`.
+  const mode = chosen ?? transportDefaultMode('sdk', config.DANGEROUS_MODE);
+  return permissionModeInfo(mode).sdk as PermissionMode;
 }
 
 /**
@@ -350,8 +359,10 @@ export async function sendToAgent(
   }
   const previewFlushTimer = setInterval(flushPreview, 5_000);
 
+  const { chatId: parsedChatId } = parseSessionKey(sessionKey);
+
   // Determine permission mode
-  const permissionMode = getPermissionMode(command);
+  const permissionMode = getPermissionMode(command, parsedChatId);
 
   // Log in dangerous mode for security auditing
   logDangerousModeOperation(sessionKey, 'query', `prompt_length:${message.length} cwd:${session.workingDirectory}`);
@@ -360,7 +371,6 @@ export async function sendToAgent(
   const effectiveModel = model || chatModels.get(sessionKey) || 'opus';
 
   // Determine effort level (undefined = SDK default)
-  const { chatId: parsedChatId } = parseSessionKey(sessionKey);
   const effectiveEffort = getEffort(parsedChatId);
 
   // Initialize timer for tracking query duration (watchdog created inside try with controller)

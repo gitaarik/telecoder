@@ -15,8 +15,10 @@ import {
   handleNewProject,
   handleProjectCallback,
   handleStatus,
-  handleMode,
+  handleStreaming,
   handleModeCallback,
+  handlePermissionMode,
+  handlePermissionModeCallback,
   handleTTS,
   handleTTSCallback,
   handleTelegraph,
@@ -292,7 +294,8 @@ export async function createBot(): Promise<Bot> {
     { command: 'shells', description: '🔍 List & kill background shells (PTY mode)' },
     ...(config.CCR_ENABLED ? [{ command: 'provider', description: '🔌 Switch AI provider' }] : []),
     ...(config.CCR_ENABLED ? [{ command: 'ccr', description: '🔌 Toggle CCR routing (alt providers)' }] : []),
-    { command: 'mode', description: '⚙️ Toggle streaming mode' },
+    { command: 'mode', description: '🔐 How much Claude asks before acting' },
+    { command: 'streaming', description: '⚙️ Toggle streaming / wait replies' },
     { command: 'terminalui', description: '🖥️ Toggle terminal-style display' },
     { command: 'statusline', description: '📍 Toggle per-turn status line' },
     { command: 'botname', description: '✏️ Toggle dynamic bot name' },
@@ -398,7 +401,11 @@ export async function createBot(): Promise<Bot> {
   cmd('clear', handleClear);
   cmd('project', handleProject);
   cmd('newproject', handleNewProject);
-  cmd('mode', handleMode);
+  cmd('streaming', handleStreaming);
+  // /mode was the streaming toggle's name until this landed, and was kept as
+  // an alias for exactly as long as nothing better wanted it. Permission mode
+  // is what people were always going to mean by it.
+  cmd('mode', adminOnly(handlePermissionMode));
   cmd('terminalui', handleTerminalUI);
   cmd('statusline', handleStatusLine);
   cmd('botname', handleBotName);
@@ -490,6 +497,8 @@ export async function createBot(): Promise<Bot> {
       await handlePrefsAllCallback(ctx);
     } else if (data.startsWith('model:')) {
       await handleModelCallback(ctx);
+    } else if (data.startsWith('permmode:')) {
+      await adminOnly(handlePermissionModeCallback)(ctx);
     } else if (data.startsWith('mode:')) {
       await handleModeCallback(ctx);
     } else if (data.startsWith('terminalui:')) {

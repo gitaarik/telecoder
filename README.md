@@ -263,9 +263,10 @@ appearing to work until the next restart.
 
 > [!IMPORTANT]
 > All of the above is supervision, not isolation. Claude still runs as your Unix
-> user with permissions bypassed, so a guest's session can reach anything that
-> user can. `WORKSPACE_DIR` scopes the project picker, not the filesystem. For a
-> real boundary, run the shared instance as its own Unix account — below.
+> user, so a guest's session can reach anything that user can — auto mode asks
+> before the riskier steps, but it is Claude's judgement, not a boundary.
+> `WORKSPACE_DIR` scopes the project picker, not the filesystem. For a real
+> boundary, run the shared instance as its own Unix account — below.
 
 ### A real boundary: its own Unix account
 
@@ -374,7 +375,8 @@ Open your bot in Telegram → `/start`
 | `/model` | Switch Sonnet / Opus / Haiku — this bot, or add `all` for every instance |
 | `/effort` | Set reasoning effort (low / medium / high / xhigh / max / auto); `all` works here too |
 | `/btw` | Ask a side question without interrupting the running task |
-| `/mode` | Toggle streaming / wait |
+| `/mode` | How much Claude asks before acting (manual / accept edits / plan / auto / bypass) — admin-only |
+| `/streaming` | Toggle streaming / wait replies |
 | `/method` | Switch Claude transport (SDK / PTY) — admin-only |
 | `/provider` | Switch backend — Claude / CCR (shown when `CCR_ENABLED`) — admin-only |
 | `/ccr` | Sticky toggle between Claude and CCR routing (shown when `CCR_ENABLED`) — admin-only |
