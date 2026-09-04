@@ -1,5 +1,5 @@
 /**
- * Per-chat settings menus: /mode, /terminalui, /tts, /telegraph,
+ * Per-chat settings menus: /streaming, /terminalui, /tts, /telegraph,
  * /suggestions, /effort, /verbosity, /method and the status line.
  *
  * They share one shape — render an inline keyboard reflecting current state,
@@ -190,7 +190,7 @@ export function buildTelegraphMenu(sessionKey: string) {
   };
 }
 
-export async function handleMode(ctx: Context): Promise<void> {
+export async function handleStreaming(ctx: Context): Promise<void> {
   const keyboard = [
     [
       {

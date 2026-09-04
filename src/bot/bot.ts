@@ -15,7 +15,7 @@ import {
   handleNewProject,
   handleProjectCallback,
   handleStatus,
-  handleMode,
+  handleStreaming,
   handleModeCallback,
   handleTTS,
   handleTTSCallback,
@@ -292,7 +292,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'shells', description: '🔍 List & kill background shells (PTY mode)' },
     ...(config.CCR_ENABLED ? [{ command: 'provider', description: '🔌 Switch AI provider' }] : []),
     ...(config.CCR_ENABLED ? [{ command: 'ccr', description: '🔌 Toggle CCR routing (alt providers)' }] : []),
-    { command: 'mode', description: '⚙️ Toggle streaming mode' },
+    { command: 'streaming', description: '⚙️ Toggle streaming / wait replies' },
     { command: 'terminalui', description: '🖥️ Toggle terminal-style display' },
     { command: 'statusline', description: '📍 Toggle per-turn status line' },
     { command: 'botname', description: '✏️ Toggle dynamic bot name' },
@@ -398,7 +398,11 @@ export async function createBot(): Promise<Bot> {
   cmd('clear', handleClear);
   cmd('project', handleProject);
   cmd('newproject', handleNewProject);
-  cmd('mode', handleMode);
+  cmd('streaming', handleStreaming);
+  // Kept unlisted: /mode is what this was called before, and a name people
+  // have in their fingers should not start failing silently. Off the command
+  // menu so autocomplete only ever teaches /streaming.
+  cmd('mode', handleStreaming);
   cmd('terminalui', handleTerminalUI);
   cmd('statusline', handleStatusLine);
   cmd('botname', handleBotName);

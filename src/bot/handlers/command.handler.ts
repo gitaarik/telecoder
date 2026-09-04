@@ -98,7 +98,7 @@ export {
 } from './command/session.js';
 import { buildTelegraphMenu } from './command/settings.js';
 export {
-  handleMode,
+  handleStreaming,
   handleModeCallback,
   handleTerminalUI,
   handleTerminalUICallback,
@@ -254,7 +254,7 @@ I bridge your messages to Claude Code running on your local machine\\.
 • \`/status\` \\- Show current session info
 • \`/commands\` \\- Show all available commands
 
-Current mode: ${config.STREAMING_MODE}
+Replies: ${config.STREAMING_MODE}
 Effort: ${esc(effortLabel)}${dangerousWarning}`;
 
   const currentConv = keyInfo
