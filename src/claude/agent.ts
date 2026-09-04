@@ -27,7 +27,7 @@ import { createTeleCoderMcpServer } from './mcp-tools.js';
 import { isSubagentTool } from './subagent-tools.js';
 import { isNativeCompactCommand } from './command-parser.js';
 import { recordAvailableCommands } from './available-commands.js';
-import { permissionModeInfo } from './permission-mode.js';
+import { permissionModeInfo, transportDefaultMode } from './permission-mode.js';
 import { enabledPluginsSetting } from './enabled-plugins.js';
 import { getSessionTopic, getMsSinceTopicSet } from '../bot/handlers/command/topic-store.js';
 import {
@@ -163,9 +163,9 @@ function logAt(level: LogLevel, message: string, data?: unknown): void {
  * `/plan` is a single-turn instruction and beats everything. A mode the chat
  * chose beats DANGEROUS_MODE next, because every choice other than bypass is
  * the stricter of the two and an explicit choice that a config flag could
- * silently override would not be a choice. `acceptEdits` is the mode this
- * transport has always run in, kept as the default so a chat that has never
- * touched /mode behaves exactly as before.
+ * silently override would not be a choice. Having chosen nothing lands on
+ * `transportDefaultMode`, which is also what /mode reads to name the default
+ * in the chat — one rule, so the menu cannot describe a mode this returns.
  */
 function getPermissionMode(command?: string, chatId?: number): PermissionMode {
   if (command === 'plan') {
@@ -173,17 +173,10 @@ function getPermissionMode(command?: string, chatId?: number): PermissionMode {
   }
 
   const chosen = chatId !== undefined ? userPreferences.getPermissionMode(chatId) : undefined;
-  if (chosen) {
-    // The SDK and the CLI spell the ask-every-time mode differently; the table
-    // holds both, and this transport needs `sdk`.
-    return permissionModeInfo(chosen).sdk as PermissionMode;
-  }
-
-  if (config.DANGEROUS_MODE) {
-    return 'bypassPermissions';
-  }
-
-  return 'acceptEdits';
+  // The SDK and the CLI spell the ask-every-time mode differently; the table
+  // holds both, and this transport needs `sdk`.
+  const mode = chosen ?? transportDefaultMode('sdk', config.DANGEROUS_MODE);
+  return permissionModeInfo(mode).sdk as PermissionMode;
 }
 
 /**

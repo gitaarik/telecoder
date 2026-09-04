@@ -19,7 +19,7 @@ import {
   type AgentUsage,
 } from '../../../providers/provider-router.js';
 import { userPreferences } from '../../../providers/user-preferences.js';
-import { getPtyProvider } from '../../../providers/claude-provider.js';
+import { getActiveMethod, getPtyProvider } from '../../../providers/claude-provider.js';
 import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
 import { taskTracker } from '../../../telegram/task-tracker.js';
 import { getTTSSettings, setTTSEnabled, setTTSVoice, setTTSAutoplay } from '../../../tts/tts-settings.js';
@@ -38,6 +38,7 @@ import {
   isPermissionModeId,
   parsePermissionModeArg,
   permissionModeInfo,
+  transportDefaultMode,
   type PermissionModeId,
 } from '../../../claude/permission-mode.js';
 import {
@@ -963,18 +964,35 @@ export async function handleSuggestionsCallback(ctx: Context): Promise<void> {
  * keyboard from that older menu can be sitting in someone's chat right now,
  * and its buttons carry `mode:streaming`.
  */
+/**
+ * What "Default" actually resolves to for this chat, and why.
+ *
+ * The menu used to call it "what this bot has always used" — true, and no help
+ * at all to someone deciding whether to leave it there. Which mode that is
+ * depends on the chat's transport, and on DANGEROUS_MODE when the transport is
+ * the SDK, so the row names the mode and the reason rather than making a
+ * person read two files to find out what they already picked.
+ */
+function describeTransportDefault(chatId: number): { label: string; why: string } {
+  const method = getActiveMethod(chatId);
+  const label = permissionModeInfo(transportDefaultMode(method, config.DANGEROUS_MODE)).label;
+  if (method === 'pty') return { label, why: 'PTY always launches bypassed' };
+  return { label, why: config.DANGEROUS_MODE ? 'SDK, DANGEROUS_MODE=true' : 'the SDK default' };
+}
+
 function buildPermissionModeMenu(chatId: number): {
   text: string;
   keyboard: { text: string; callback_data: string }[][];
 } {
   const current = userPreferences.getPermissionMode(chatId);
+  const fallback = describeTransportDefault(chatId);
 
   const keyboard = PERMISSION_MODES.map((info) => [{
     text: info.id === current ? `✓ ${info.label}` : info.label,
     callback_data: `permmode:${info.id}`,
   }]);
   keyboard.push([{
-    text: current ? 'Default' : '✓ Default',
+    text: `${current ? '' : '✓ '}Default — ${fallback.label}`,
     callback_data: 'permmode:default',
   }]);
 
@@ -982,14 +1000,17 @@ function buildPermissionModeMenu(chatId: number): {
     .map((info) => `• *${esc(info.label)}* \\- ${esc(info.description)}`)
     .join('\n');
 
-  const currentLabel = current
-    ? esc(permissionModeInfo(current).label)
-    : 'Default _\\(what this bot has always used\\)_';
+  // Named the same way whether or not it was chosen: the mode a turn runs in
+  // is the useful fact, and "Default" alone never told anyone what that was.
+  const currentLine = current
+    ? `*${esc(permissionModeInfo(current).label)}*`
+    : `*${esc(fallback.label)}* _\\(default — ${esc(fallback.why)}\\)_`;
 
   return {
     text:
-      `🔐 *Permission mode*\n\nCurrent: *${currentLabel}*\n\n`
-      + `${descriptions}\n• *Default* \\- leave it to the transport\n\n`
+      `🔐 *Permission mode*\n\nCurrent: ${currentLine}\n\n`
+      + `${descriptions}\n• *Default* \\- follow the transport, which here means `
+      + `*${esc(fallback.label)}*\n\n`
       + '_Takes effect on your next message\\. Modes that ask will put Claude '
       + "Code's own prompts in the chat as buttons\\._",
     keyboard,
@@ -1000,6 +1021,12 @@ function buildPermissionModeMenu(chatId: number): {
 function permissionModeSetText(id: PermissionModeId): string {
   const info = permissionModeInfo(id);
   return `✅ Permission mode set to *${esc(info.label)}*\n\n_${esc(info.description)}_`;
+}
+
+/** Same, for the reset — which names the mode it reset *to*, not just "default". */
+function permissionModeResetText(chatId: number): string {
+  const { label, why } = describeTransportDefault(chatId);
+  return `✅ Permission mode reset to the transport default: *${esc(label)}*\n\n_${esc(why)}_`;
 }
 
 export async function handlePermissionMode(ctx: Context): Promise<void> {
@@ -1021,7 +1048,7 @@ export async function handlePermissionMode(ctx: Context): Promise<void> {
   const lower = arg.toLowerCase();
   if (lower === 'default' || lower === 'reset') {
     userPreferences.clearPermissionMode(chatId);
-    await replyMd(ctx, '✅ Permission mode reset to the transport default\\.');
+    await replyMd(ctx, permissionModeResetText(chatId));
     return;
   }
 
@@ -1050,10 +1077,9 @@ export async function handlePermissionModeCallback(ctx: Context): Promise<void> 
 
   if (choice === 'default') {
     userPreferences.clearPermissionMode(chatId);
-    await ctx.answerCallbackQuery({ text: 'Permission mode reset to default' });
-    await ctx.editMessageText('✅ Permission mode reset to the transport default\\.', {
-      parse_mode: 'MarkdownV2',
-    });
+    const { label } = describeTransportDefault(chatId);
+    await ctx.answerCallbackQuery({ text: `Default: ${label}` });
+    await ctx.editMessageText(permissionModeResetText(chatId), { parse_mode: 'MarkdownV2' });
     return;
   }
 

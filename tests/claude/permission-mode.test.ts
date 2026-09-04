@@ -5,6 +5,7 @@ import {
   parsePermissionMode,
   parsePermissionModeArg,
   permissionModeInfo,
+  transportDefaultMode,
   type ModePty,
   type PermissionModeId,
 } from '../../src/claude/permission-mode.js';
@@ -151,5 +152,34 @@ describe('mode names', () => {
     expect(parsePermissionModeArg('default')).toBe('manual');
     expect(parsePermissionModeArg('bypass')).toBe('bypassPermissions');
     expect(parsePermissionModeArg('nonsense')).toBeNull();
+  });
+});
+
+describe('transportDefaultMode', () => {
+  it('is bypass on the pty, which has no un-bypassed launch', () => {
+    expect(transportDefaultMode('pty', false)).toBe('bypassPermissions');
+  });
+
+  it('ignores DANGEROUS_MODE on the pty, where it never applied', () => {
+    // The flag is on every spawn either way. A menu that credited the env var
+    // here would be naming a cause that isn't one.
+    expect(transportDefaultMode('pty', true)).toBe('bypassPermissions');
+  });
+
+  it('is accept-edits on the sdk, the mode that transport always ran in', () => {
+    expect(transportDefaultMode('sdk', false)).toBe('acceptEdits');
+  });
+
+  it('lets DANGEROUS_MODE promote the sdk default to bypass', () => {
+    expect(transportDefaultMode('sdk', true)).toBe('bypassPermissions');
+  });
+
+  it('only ever names a mode the table knows', () => {
+    // /mode prints this through permissionModeInfo, which throws on a stranger.
+    for (const method of ['sdk', 'pty'] as const) {
+      for (const dangerous of [true, false]) {
+        expect(() => permissionModeInfo(transportDefaultMode(method, dangerous))).not.toThrow();
+      }
+    }
   });
 });

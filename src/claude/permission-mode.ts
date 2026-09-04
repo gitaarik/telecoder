@@ -95,6 +95,28 @@ export function isPermissionModeId(value: string): value is PermissionModeId {
 }
 
 /**
+ * The mode a chat runs in when it has chosen none.
+ *
+ * "Default" means "leave it to the transport", and the transports disagree:
+ * the pty puts `--dangerously-skip-permissions` on every spawn and only cycles
+ * away from it for a chat that asked, while the SDK passes `acceptEdits`
+ * unless DANGEROUS_MODE promotes it. Neither is readable from the menu, so a
+ * person picking Default was picking a mode nobody had told them the name of.
+ *
+ * It lives here, beside the table, rather than in either transport, so the
+ * answer the menu prints and the answer a turn actually runs in cannot drift
+ * apart — the failure that would make this worse than saying nothing.
+ */
+export function transportDefaultMode(
+  method: 'sdk' | 'pty',
+  dangerousMode: boolean,
+): PermissionModeId {
+  // The pty has no un-bypassed launch to fall back to.
+  if (method === 'pty') return 'bypassPermissions';
+  return dangerousMode ? 'bypassPermissions' : 'acceptEdits';
+}
+
+/**
  * Resolve what someone typed into a mode id, so `/mode plan` works alongside
  * the buttons. Accepts the id, the label, and the CLI spelling — `manual` and
  * `default` both land on manual, since which word is right depends on which
