@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCostOutput } from '../../src/bot/handlers/command/cost.js';
+import { parseCostOutput, explainMissingTotals } from '../../src/bot/handlers/command/cost.js';
 import type { CostSession } from '../../src/claude/cost-overlay-scraper.js';
 
 /** Real `claude -p /cost` output on a subscription account (2.1.251). */
@@ -168,5 +168,21 @@ describe('parseCostOutput', () => {
     expect(out).not.toContain('\n\n\n');
     expect(parseCostOutput(BILLING_OUTPUT, undefined, LIVE_SESSION)).not.toContain('\n\n\n');
     expect(parseCostOutput(SUBSCRIPTION_OUTPUT, undefined, LIVE_SESSION)).not.toContain('\n\n\n');
+  });
+});
+
+describe('explainMissingTotals', () => {
+  it('names each transient cause so a gap does not read as a broken feature', () => {
+    expect(explainMissingTotals('turn-active', 'pty')).toMatch(/mid-turn/);
+    expect(explainMissingTotals('not-ready', 'pty')).toMatch(/dialog may be waiting/);
+    expect(explainMissingTotals('no-session', 'pty')).toMatch(/send a message first/);
+    expect(explainMissingTotals('unreadable', 'pty')).toMatch(/changed its `\/cost` panel/);
+  });
+
+  it('stays quiet about a missing TUI in SDK mode, where there never is one', () => {
+    // Permanent and expected for that transport — saying it on every /cost is
+    // noise, not news. Every other cause still speaks up.
+    expect(explainMissingTotals('no-session', 'sdk')).toBeNull();
+    expect(explainMissingTotals('unreadable', 'sdk')).not.toBeNull();
   });
 });

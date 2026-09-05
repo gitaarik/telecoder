@@ -42,7 +42,7 @@ import { sessionManager } from '../../../claude/session-manager.js';
 import { config } from '../../../config.js';
 import { getSessionCost, type SessionCost } from '../../../claude/session-cost.js';
 import { scrapeCostSession, type CostSession } from '../../../claude/cost-overlay-scraper.js';
-import { getPtyProvider } from '../../../providers/claude-provider.js';
+import { getActiveMethod, getPtyProvider } from '../../../providers/claude-provider.js';
 import { messageSender } from '../../../telegram/message-sender.js';
 import { getProgressBar } from '../../../utils/format.js';
 import { resolveActiveClaudeExecutable } from '../../../utils/resolve-claude-bin.js';
@@ -336,32 +336,69 @@ function resolveSpawnCwd(sessionCwd: string | undefined): string {
 }
 
 /**
+ * Why the live totals aren't in this report, in the chat's own terms.
+ *
+ * Every one of these means the report still goes out, carrying the limits view
+ * it has always carried. But saying nothing was worse than the missing
+ * numbers: a blank where a Session block should be looks like the feature is
+ * broken, when three of the four causes clear by themselves.
+ *
+ * `no-session` under SDK mode is the exception, and the only silent one — that
+ * transport has no TUI to read and never will, so there is no news in saying
+ * so on every `/cost`.
+ */
+export function explainMissingTotals(
+  reason: 'no-session' | 'turn-active' | 'not-ready' | 'unreadable',
+  method: 'sdk' | 'pty',
+): string | null {
+  switch (reason) {
+    case 'turn-active':
+      return "This session's totals need the TUI, which is mid-turn — ask again when it finishes.";
+    case 'not-ready':
+      return "This session's totals need the TUI, which isn't at its prompt — a dialog may be waiting. Ask again in a moment.";
+    case 'no-session':
+      return method === 'pty'
+        ? "This chat has no live session yet, so there are no totals to read — send a message first."
+        : null;
+    case 'unreadable':
+      // The panel is a Claude Code implementation detail and can move between
+      // releases. Say that plainly rather than leave a silent gap.
+      return "Couldn't read this session's totals — Claude Code may have changed its `/cost` panel.";
+  }
+}
+
+/**
  * The chat's own totals, read off the live TUI's `/cost` panel.
  *
- * PTY-only, and best-effort in every failure it can meet: no live session (SDK
- * mode, or a chat that has not started one), a turn holding the keyboard, a
- * panel whose layout has moved on. Each of those means the report goes out
- * with the limits view alone, which is what it has always carried — so none of
- * them is worth failing the command over, and the reason travels back only so
- * a mid-turn miss can say so.
+ * PTY-only, and best-effort in every failure it can meet: no live session, a
+ * turn holding the keyboard, a panel whose layout has moved on. None is worth
+ * failing the command over — but each is worth naming, in the log for us and
+ * in the report for whoever is looking at the gap.
  */
 async function readLiveSessionTotals(
   sessionKey: string,
-): Promise<{ session: CostSession | null; turnActive: boolean }> {
+  method: 'sdk' | 'pty',
+): Promise<{ session: CostSession | null; note: string | null }> {
+  const miss = (reason: 'no-session' | 'turn-active' | 'not-ready' | 'unreadable') => {
+    console.warn(`[Cost] no live session totals for ${sessionKey}: ${reason} (method=${method})`);
+    return { session: null, note: explainMissingTotals(reason, method) };
+  };
+
   try {
     const result = await getPtyProvider().runOverlayCommand(sessionKey, '/cost');
-    if (!result.ok) return { session: null, turnActive: result.reason === 'turn-active' };
-    return { session: scrapeCostSession(result.screen), turnActive: false };
+    if (!result.ok) return miss(result.reason);
+    const session = scrapeCostSession(result.screen);
+    return session ? { session, note: null } : miss('unreadable');
   } catch (error) {
     console.warn('[Cost] Could not read the live /cost panel:', sanitizeError(error));
-    return { session: null, turnActive: false };
+    return { session: null, note: explainMissingTotals('unreadable', method) };
   }
 }
 
 export async function handleCost(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
+  const { chatId, sessionKey } = keyInfo;
 
   // Deliberately no session guard: limits are account-wide, so the answer is
   // the same — and just as useful — in a chat that has never opened a project.
@@ -374,15 +411,11 @@ export async function handleCost(ctx: Context): Promise<void> {
     // into a process already running, and neither waits on the other.
     const [raw, live] = await Promise.all([
       runClaudeCost(costExecutables(), cwd),
-      readLiveSessionTotals(sessionKey),
+      readLiveSessionTotals(sessionKey, getActiveMethod(chatId)),
     ]);
     await typing?.catch(() => { /* chat action is best-effort */ });
     let report = parseCostOutput(raw, getSessionCost(sessionKey), live.session);
-    if (live.turnActive) {
-      // The one miss worth explaining: the numbers are there, the TUI keyboard
-      // is just busy, and asking again after the turn gets them.
-      report += "\n\n_This session's totals need the TUI, which is mid-turn — ask again when it finishes._";
-    }
+    if (live.note) report += `\n\n_${live.note}_`;
     await messageSender.sendMessage(ctx, report);
   } catch (error) {
     console.error('[Cost] Failed to run /cost:', sanitizeError(error));
