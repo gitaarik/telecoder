@@ -309,7 +309,7 @@ your secrets, which is the only form of that answer worth trusting.
 
 | Requirement | Notes |
 |-------------|-------|
-| **Node.js 18+** | with npm |
+| **Node.js 20+** | with npm |
 | **Claude Code CLI** | installed and authenticated — `claude` in your PATH |
 | **Telegram bot token** | from [@BotFather](https://t.me/botfather) |
 | **Your Telegram user ID** | from [@userinfobot](https://t.me/userinfobot) |
