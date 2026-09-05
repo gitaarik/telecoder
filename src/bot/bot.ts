@@ -374,7 +374,7 @@ export async function createBot(): Promise<Bot> {
   cmd('users', adminOnly(handleUsers));
   cmd('btw', handleBtw); // Side question — must bypass queue to work mid-task
   cmd('tasks', handleTasks); // Read-only; must bypass queue so it works mid-stream
-  cmd('cost', handleCost); // Read-only account probe; bypasses the queue so it answers mid-turn
+  cmd('cost', handleCost); // Read-only probe + a peek at the live TUI panel; bypasses the queue so it answers mid-turn
   cmd('shells', handleShells); // Lists/kills OS-level bg processes; must bypass queue to rescue hung sessions
   cmd('members', handleMembers);
   // /sync exists for the "I think a reply went missing" scenario, which by

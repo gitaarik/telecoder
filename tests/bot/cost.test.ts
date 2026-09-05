@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseCostOutput } from '../../src/bot/handlers/command/cost.js';
+import type { CostSession } from '../../src/claude/cost-overlay-scraper.js';
 
 /** Real `claude -p /cost` output on a subscription account (2.1.251). */
 const SUBSCRIPTION_OUTPUT = `You are currently using your subscription to power your Claude Code usage
@@ -25,6 +26,19 @@ Total duration (wall): 5m 12.3s
 Total code changes:    42 lines added, 7 lines removed
 Usage by model:
     claude-opus-5:  15.0k input, 2.1k output, 1.5m cache read`;
+
+/** What the live TUI's `/cost` panel yields — PTY mode only. */
+const LIVE_SESSION: CostSession = {
+  rows: [
+    { label: 'Total cost', value: '$52.30', nested: false },
+    { label: 'Total duration (API)', value: '51m 15s', nested: false },
+    { label: 'Total duration (wall)', value: '1d 13h 23m', nested: false },
+    { label: 'Total code changes', value: '0 lines added, 0 lines removed', nested: false },
+    { label: 'Usage by model', value: '', nested: false },
+    { label: 'claude-opus-5', value: '2.8k input, 228.7k output, 71.1m cache read ($52.30)', nested: true },
+    { label: 'Prompt cache (main)', value: '272 requests · 98% of input tokens from cache', nested: false },
+  ],
+};
 
 describe('parseCostOutput', () => {
   it('reports a warning for empty output', () => {
@@ -110,9 +124,49 @@ describe('parseCostOutput', () => {
     expect(parseCostOutput(SUBSCRIPTION_OUTPUT)).not.toContain('This chat:');
   });
 
+  it("leads with the live session's totals when the TUI could be asked", () => {
+    const out = parseCostOutput(SUBSCRIPTION_OUTPUT, undefined, LIVE_SESSION);
+    expect(out).toContain('**This session**');
+    expect(out).toContain('- **Total cost:** $52.30');
+    expect(out).toContain('- **Total duration (wall):** 1d 13h 23m');
+    expect(out).toContain('- **Prompt cache (main):** 272 requests · 98% of input tokens from cache');
+    // Above the limits view, which is the account-wide half of the report.
+    expect(out.indexOf('**This session**')).toBeLessThan(out.indexOf('session — resets Aug 31'));
+  });
+
+  it('nests the per-model rows under their heading', () => {
+    const out = parseCostOutput(SUBSCRIPTION_OUTPUT, undefined, LIVE_SESSION);
+    expect(out).toContain('- **Usage by model:**\n  - `claude-opus-5`: 2.8k input');
+  });
+
+  it("drops the probe's own totals once the live ones are in hand", () => {
+    // Both shapes carry `Total cost:`; only one of them spent anything.
+    const out = parseCostOutput(BILLING_OUTPUT, undefined, LIVE_SESSION);
+    expect(out).toContain('- **Total cost:** $52.30');
+    expect(out).not.toContain('$0.1234');
+    expect(out).not.toContain('42 lines added');
+    expect(out).not.toContain('Totals cover this lookup only');
+    // Including the per-model rows underneath that heading.
+    expect(out).not.toContain('15.0k input');
+  });
+
+  it('still bullets the contributor rows, which are indented the same way', () => {
+    const out = parseCostOutput(SUBSCRIPTION_OUTPUT, undefined, LIVE_SESSION);
+    expect(out).toContain('- 70% of your usage was at >150k context');
+    expect(out).toContain('- Top skills: /frontend-design:frontend-design 1%');
+  });
+
+  it('shows the live totals alone when the probe came back empty', () => {
+    const out = parseCostOutput('   ', undefined, LIVE_SESSION);
+    expect(out).toContain('- **Total cost:** $52.30');
+    expect(out).not.toContain('No cost output received');
+  });
+
   it('never opens with a blank line or doubles one up', () => {
     const out = parseCostOutput(SUBSCRIPTION_OUTPUT);
     expect(out.split('\n')[2]).not.toBe('');
     expect(out).not.toContain('\n\n\n');
+    expect(parseCostOutput(BILLING_OUTPUT, undefined, LIVE_SESSION)).not.toContain('\n\n\n');
+    expect(parseCostOutput(SUBSCRIPTION_OUTPUT, undefined, LIVE_SESSION)).not.toContain('\n\n\n');
   });
 });

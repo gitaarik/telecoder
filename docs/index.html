@@ -2067,8 +2067,9 @@
             <div class="feature-icon"><svg><use href="#i-spend"/></svg></div>
             <h3>Know where your limits stand</h3>
             <p><code>/cost</code> shows how much of your session and weekly windows is spent and
-            when each resets, plus a running total for the conversation — the one figure Claude
-            Code cannot keep, because its own counter dies with every turn.</p>
+            when each resets, and — by reading the panel your own live session draws — what this
+            conversation has actually cost: dollars, durations, per-model tokens, cache hit rate.
+            The same report you get in the terminal.</p>
           </div>
           <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-save"/></svg></div>
@@ -2941,7 +2942,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/cost</code>
-              <span class="command-desc">Show what Claude Code's own <code>/cost</code> reports. On a subscription that is the limits view — how much of the session and weekly windows is spent and when each resets, the same text <code>/usage</code> prints. On API billing it is dollar totals and per-model token counts, which belong to the CLI process that spent them: the counter does not survive a turn ending and no session log preserves it, so those totals cover the lookup itself and are labelled as such, with TeleCoder's own per-turn figure filling the gap. Adds TeleCoder's own running tally for the conversation — dollars and turn count, summed from each turn's result — which is the one figure the CLI cannot produce, and which is absent in PTY mode because that transport never receives a cost figure to add up. Needs no session, so it answers before a project is even open, and bypasses the queue to answer mid-turn. Asks your own CLI install rather than the copy bundled with the SDK, which trails it by many releases and replies with a single sentence.</span>
+              <span class="command-desc">Show what Claude Code's own <code>/cost</code> reports, from two sources at once. A spawned probe gives the account-wide limits view — how much of the session and weekly windows is spent and when each resets, the same text <code>/usage</code> prints — which it can answer in any mode, with no session, before a project is even open. In PTY mode your chat's live session is asked too, and the Session block is read off the panel it draws: total cost, API and wall durations, code changes, per-model token counts and the prompt-cache line. Those are the numbers a probe can never have — the cost counter belongs to the process that spent it and no session log preserves it — so when they arrive the probe's own totals are dropped rather than printed beside them. In SDK mode, where there is no panel to read, TeleCoder's per-turn tally stands in. Bypasses the queue to answer mid-turn; the Session block is the one part that waits, since reading it needs the TUI keyboard. Asks your own CLI install rather than the copy bundled with the SDK, which trails it by many releases and replies with a single sentence.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/compact</code>

@@ -11,17 +11,28 @@
  *   - API billing: the session's own totals — dollars, durations, per-model
  *     token counts.
  *
- * That second shape is session-scoped, and no amount of care here recovers it.
- * The cost counter lives in the CLI process that spent it: resume the session
- * in a fresh process and it reads zero, because the session log carries no
- * cost field to rebuild it from. So the totals a spawned probe reports are its
- * own, not the conversation's, and `parseCostOutput` says so rather than
- * letting a $0.00 read as this chat having been free. The per-turn figure
- * TeleCoder caches from its own result messages fills that gap.
+ * That second shape is session-scoped, and no probe recovers it. The cost
+ * counter lives in the CLI process that spent it: resume the session in a
+ * fresh process and it reads zero, because the session log carries no cost
+ * field to rebuild it from. So the totals a spawned probe reports are its own,
+ * not the conversation's, and `parseCostOutput` says so rather than letting a
+ * $0.00 read as this chat having been free.
  *
  * Since the probe is a fresh process either way, it needs no session and no
  * `--resume` — nothing here can append a stray turn to a live conversation,
  * and the command answers before a project is even open.
+ *
+ * What the probe can't have, the chat's own claude still holds. In PTY mode
+ * there is a live TUI a `/cost` away from drawing exactly those totals, so we
+ * ask it too and scrape the Session block off the overlay — the same trick
+ * /tasks uses. That is where "Total cost", the durations, the per-model
+ * breakdown and the prompt-cache line come from, and it is why the report is
+ * fuller in PTY mode than in SDK mode, where the totals stay unanswerable and
+ * TeleCoder's own per-turn tally stands in.
+ *
+ * Two sources, one report, no overlap: the panel's own limits view is left
+ * unscraped (it scrolls off the first screenful anyway) and read from the
+ * probe, which prints the same numbers in any mode.
  */
 
 import { Context } from 'grammy';
@@ -30,6 +41,8 @@ import * as fs from 'fs';
 import { sessionManager } from '../../../claude/session-manager.js';
 import { config } from '../../../config.js';
 import { getSessionCost, type SessionCost } from '../../../claude/session-cost.js';
+import { scrapeCostSession, type CostSession } from '../../../claude/cost-overlay-scraper.js';
+import { getPtyProvider } from '../../../providers/claude-provider.js';
 import { messageSender } from '../../../telegram/message-sender.js';
 import { getProgressBar } from '../../../utils/format.js';
 import { resolveActiveClaudeExecutable } from '../../../utils/resolve-claude-bin.js';
@@ -53,20 +66,64 @@ const TOTALS_RE = /^(Total\s+[^:]+):\s*(.+)$/i;
 const PERIOD_RE = /^(Last\s+\S+)(\s*[·•].*)$/i;
 
 /**
+ * Turn the Session block scraped off the live TUI into report lines.
+ *
+ * Kept close to the panel's own layout — same labels, same order, the
+ * per-model rows still nested under `Usage by model` — because this is the
+ * half of the report people already know from typing `/cost` in a terminal.
+ */
+function renderSessionBlock(session: CostSession): string[] {
+  const lines = ['**This session**'];
+  for (const row of session.rows) {
+    if (row.nested) {
+      // A model's own line. Two spaces is the least indentation Telegram will
+      // render as a nested bullet rather than flatten into its parent.
+      lines.push(`  - \`${row.label}\`: ${row.value}`);
+    } else if (row.value) {
+      lines.push(`- **${row.label}:** ${row.value}`);
+    } else {
+      // `Usage by model:` and friends — a label whose value is the rows below.
+      lines.push(`- **${row.label}:**`);
+    }
+  }
+  return lines;
+}
+
+/**
  * Render `claude -p /cost` output as Telegram markdown.
  *
- * `chatCost` is TeleCoder's own running tally for this conversation — the one
- * figure here the CLI cannot produce, since its counter dies with each turn's
- * process. Omitted when no turn has been tallied, which is every PTY-mode
- * chat: that mode never receives a cost figure to add up.
+ * `chatCost` is TeleCoder's own running tally for this conversation, used in
+ * SDK mode where nothing else can answer what the chat has spent.
+ *
+ * `session` is the Session block off the live TUI's `/cost` panel — the real
+ * totals for this conversation, present only in PTY mode. When we have it, the
+ * probe's own `Total ...` rows are dropped rather than printed alongside: they
+ * belong to the process that ran the lookup, and two contradicting sets of
+ * totals in one message is worse than the one true set.
  */
-export function parseCostOutput(raw: string, chatCost?: SessionCost): string {
+export function parseCostOutput(
+  raw: string,
+  chatCost?: SessionCost,
+  session?: CostSession | null,
+): string {
   const trimmed = raw.trim();
-  if (!trimmed) return '⚠️ No cost output received.';
+  if (!trimmed) {
+    // The probe failing doesn't make the live totals worthless — they are the
+    // part people came for, so show them alone rather than only an error.
+    if (session) return ['## 💰 Cost & Usage', '', ...renderSessionBlock(session)].join('\n');
+    return '⚠️ No cost output received.';
+  }
 
   const body: string[] = [];
   let recognised = 0;
   let sawTotals = false;
+  /**
+   * Inside the probe's own `Usage by model:` section, which the live block
+   * supersedes. Its rows are indented, and so are the per-period detail rows
+   * further down that we do want, so dropping them takes knowing which
+   * heading we are under.
+   */
+  let underSupersededModels = false;
 
   /** Collapse runs of blank lines, and never open a section with one. */
   const pushBlank = (): void => {
@@ -75,6 +132,8 @@ export function parseCostOutput(raw: string, chatCost?: SessionCost): string {
 
   for (const rawLine of trimmed.split('\n')) {
     const line = rawLine.trim();
+    // Any unindented line — or a blank one — closes whatever section we were in.
+    if (!line || !/^\s/.test(rawLine)) underSupersededModels = false;
     if (!line) {
       pushBlank();
       continue;
@@ -93,8 +152,11 @@ export function parseCostOutput(raw: string, chatCost?: SessionCost): string {
 
     const totals = line.match(TOTALS_RE);
     if (totals) {
-      body.push(`- **${totals[1]}:** ${totals[2].trim()}`);
-      sawTotals = true;
+      // Recognised either way — the line is understood, it is just superseded.
+      if (!session) {
+        body.push(`- **${totals[1]}:** ${totals[2].trim()}`);
+        sawTotals = true;
+      }
       recognised++;
       continue;
     }
@@ -108,8 +170,12 @@ export function parseCostOutput(raw: string, chatCost?: SessionCost): string {
     }
 
     if (/^usage by model:?$/i.test(line)) {
-      pushBlank();
-      body.push('**Usage by model**');
+      if (session) {
+        underSupersededModels = true;
+      } else {
+        pushBlank();
+        body.push('**Usage by model**');
+      }
       recognised++;
       continue;
     }
@@ -125,7 +191,7 @@ export function parseCostOutput(raw: string, chatCost?: SessionCost): string {
     // survive Telegram's whitespace collapsing, which would otherwise flatten
     // them into the heading above.
     if (/^\s+\S/.test(rawLine)) {
-      body.push(`- ${line}`);
+      if (!underSupersededModels) body.push(`- ${line}`);
       continue;
     }
 
@@ -136,6 +202,9 @@ export function parseCostOutput(raw: string, chatCost?: SessionCost): string {
   }
 
   const lines = ['## 💰 Cost & Usage', ''];
+  if (session) {
+    lines.push(...renderSessionBlock(session), '');
+  }
   if (recognised === 0) {
     // A CLI whose wording we don't know. Show what came back rather than
     // dressing up output we failed to understand — as a sentence when that is
@@ -266,6 +335,29 @@ function resolveSpawnCwd(sessionCwd: string | undefined): string {
   return process.cwd();
 }
 
+/**
+ * The chat's own totals, read off the live TUI's `/cost` panel.
+ *
+ * PTY-only, and best-effort in every failure it can meet: no live session (SDK
+ * mode, or a chat that has not started one), a turn holding the keyboard, a
+ * panel whose layout has moved on. Each of those means the report goes out
+ * with the limits view alone, which is what it has always carried — so none of
+ * them is worth failing the command over, and the reason travels back only so
+ * a mid-turn miss can say so.
+ */
+async function readLiveSessionTotals(
+  sessionKey: string,
+): Promise<{ session: CostSession | null; turnActive: boolean }> {
+  try {
+    const result = await getPtyProvider().runOverlayCommand(sessionKey, '/cost');
+    if (!result.ok) return { session: null, turnActive: result.reason === 'turn-active' };
+    return { session: scrapeCostSession(result.screen), turnActive: false };
+  } catch (error) {
+    console.warn('[Cost] Could not read the live /cost panel:', sanitizeError(error));
+    return { session: null, turnActive: false };
+  }
+}
+
 export async function handleCost(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
@@ -278,9 +370,20 @@ export async function handleCost(ctx: Context): Promise<void> {
   const typing = ctx.replyWithChatAction?.('typing');
 
   try {
-    const raw = await runClaudeCost(costExecutables(), cwd);
+    // Concurrently: the probe is a process launch, the panel is a keystroke
+    // into a process already running, and neither waits on the other.
+    const [raw, live] = await Promise.all([
+      runClaudeCost(costExecutables(), cwd),
+      readLiveSessionTotals(sessionKey),
+    ]);
     await typing?.catch(() => { /* chat action is best-effort */ });
-    await messageSender.sendMessage(ctx, parseCostOutput(raw, getSessionCost(sessionKey)));
+    let report = parseCostOutput(raw, getSessionCost(sessionKey), live.session);
+    if (live.turnActive) {
+      // The one miss worth explaining: the numbers are there, the TUI keyboard
+      // is just busy, and asking again after the turn gets them.
+      report += "\n\n_This session's totals need the TUI, which is mid-turn — ask again when it finishes._";
+    }
+    await messageSender.sendMessage(ctx, report);
   } catch (error) {
     console.error('[Cost] Failed to run /cost:', sanitizeError(error));
     const message = error instanceof Error ? error.message : 'Unknown error';
