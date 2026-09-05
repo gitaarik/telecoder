@@ -1947,12 +1947,12 @@
         </div>
 
         <div class="feature-tabs">
-          <button type="button" class="feature-tab active" data-category="all">All</button>
-          <button type="button" class="feature-tab" data-category="agent">Agent</button>
-          <button type="button" class="feature-tab" data-category="reliability">Reliability</button>
-          <button type="button" class="feature-tab" data-category="sessions">Sessions</button>
-          <button type="button" class="feature-tab" data-category="background">Background</button>
-          <button type="button" class="feature-tab" data-category="media">Media</button>
+          <button type="button" class="feature-tab active" data-category="all" aria-pressed="true">All</button>
+          <button type="button" class="feature-tab" data-category="agent" aria-pressed="false">Agent</button>
+          <button type="button" class="feature-tab" data-category="reliability" aria-pressed="false">Reliability</button>
+          <button type="button" class="feature-tab" data-category="sessions" aria-pressed="false">Sessions</button>
+          <button type="button" class="feature-tab" data-category="background" aria-pressed="false">Background</button>
+          <button type="button" class="feature-tab" data-category="media" aria-pressed="false">Media</button>
         </div>
 
         <div class="features-grid">
@@ -3394,8 +3394,12 @@ CCR_AUTOSTART=true</pre>
         const category = tab.dataset.category;
 
         // Update active tab
-        featureTabs.forEach(t => t.classList.remove('active'));
+        featureTabs.forEach(t => {
+          t.classList.remove('active');
+          t.setAttribute('aria-pressed', 'false');
+        });
         tab.classList.add('active');
+        tab.setAttribute('aria-pressed', 'true');
 
         // Filter cards
         featureCards.forEach(card => {
