@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { hasInputBox, isGenerating, screenSignature } from '../../src/claude/tui-state.js';
+import {
+  hasInputBox,
+  inputBoxPastePlaceholders,
+  isGenerating,
+  newPastePlaceholder,
+  pastePlaceholderIds,
+  pastePlaceholders,
+  screenSignature,
+} from '../../src/claude/tui-state.js';
 
 const SEP = '─'.repeat(120);
 
@@ -207,5 +215,144 @@ describe('hasInputBox', () => {
       '●   ──────────────────────',
       '  Enter to confirm · Esc to cancel',
     ].join('\n'))).toBe(false);
+  });
+});
+
+/**
+ * The renders below are copied from a live 120x40 pty. Claude's editor drops a
+ * pasted block that runs past 800 characters or two newlines and draws a
+ * placeholder for it, so a photo-upload prompt — eleven lines of note plus the
+ * staged image path — is never on screen as the text we wrote.
+ */
+describe('pastePlaceholders', () => {
+  it('reads the id and line count of a collapsed paste', () => {
+    expect(pastePlaceholders([
+      SEP,
+      '❯ [Pasted text #2 +10 lines]',
+      SEP,
+    ].join('\n'))).toEqual([{ id: 2, lines: 10 }]);
+  });
+
+  it('counts a paste with no newlines as zero lines', () => {
+    // Over 800 characters but on one line: claude drops the "+N lines" half.
+    expect(pastePlaceholders('❯ [Pasted text #1]')).toEqual([{ id: 1, lines: 0 }]);
+  });
+
+  it('finds stale frames in the scrollback as well as the live box', () => {
+    // Submitting expands a placeholder back to its text, so the two above are
+    // frames of the box that scrolled off rather than transcript entries —
+    // which is exactly why a caller has to compare ids rather than trust a hit.
+    expect(pastePlaceholders([
+      '❯ [Pasted text #1 +10 lines]',
+      '❯ [Pasted text #2 +5 lines]',
+      '● Done.',
+      SEP,
+      '❯ [Pasted text #3 +10 lines]',
+      SEP,
+    ].join('\n'))).toEqual([
+      { id: 1, lines: 10 },
+      { id: 2, lines: 5 },
+      { id: 3, lines: 10 },
+    ]);
+  });
+
+  it('finds nothing on a screen with no pastes', () => {
+    expect(pastePlaceholders(settled)).toEqual([]);
+  });
+});
+
+describe('inputBoxPastePlaceholders', () => {
+  it('takes the paste waiting in the box, not the ones already sent', () => {
+    expect(inputBoxPastePlaceholders([
+      '❯ [Pasted text #1 +10 lines]',
+      '● Sure — that image is a screenshot of a stack trace.',
+      SEP,
+      '❯ [Pasted text #2 +10 lines]',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents',
+    ].join('\n'))).toEqual([{ id: 2, lines: 10 }]);
+  });
+
+  it('is empty once the prompt has left the box', () => {
+    // #1 is the frame the box scrolled off, not a prompt waiting to be sent.
+    expect(inputBoxPastePlaceholders([
+      '❯ [Pasted text #1 +10 lines]',
+      '● Sure — that image is a screenshot of a stack trace.',
+      SEP,
+      '❯ ',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents',
+    ].join('\n'))).toEqual([]);
+  });
+
+  it('does not read a scrolled-off frame above a short transcript as unsent', () => {
+    // The whole screen fits in any window counted from the bottom, so only the
+    // ❯ row itself separates the editor from what has already gone out.
+    expect(inputBoxPastePlaceholders([
+      '❯ [Pasted text #1 +10 lines]',
+      '● Sure — that image is a screenshot of a stack trace.',
+      SEP,
+      '❯ ',
+      SEP,
+    ].join('\n'))).toEqual([]);
+  });
+
+  it('keeps a wrapped input that spills below the ❯ row', () => {
+    expect(inputBoxPastePlaceholders([
+      SEP,
+      '❯ have a look at [Pasted text #4 +10 lines] and also at',
+      '  [Pasted text #5 +12 lines] before you answer',
+      SEP,
+    ].join('\n'))).toEqual([{ id: 4, lines: 10 }, { id: 5, lines: 12 }]);
+  });
+
+  it('finds nothing while an overlay has replaced the box', () => {
+    // The list marks its highlighted option with the box's own glyph, so the
+    // rows that have to be rejected here are `❯` rows — an overlay carrying no
+    // glyph at all would pass without proving anything. What separates them is
+    // the rule above the box, which neither an option row nor the command that
+    // opened the overlay has.
+    expect(inputBoxPastePlaceholders([
+      '  [Pasted text #1 +10 lines]',
+      '❯ /model',
+      SEP,
+      '  Select model',
+      '  ❯ 1. Default (recommended) ✔  Opus 5',
+      '    2. Opus (1M context)',
+      '  Enter to set as default · Esc to cancel',
+    ].join('\n'))).toEqual([]);
+  });
+});
+
+describe('newPastePlaceholder', () => {
+  // The screen TeleCoder 4 logged when a photo upload gave up. The staged
+  // prompt went in with 10 newlines; claude pulled the /tmp image path out
+  // into a chip and drew what was left as "+7 lines".
+  const failureScreen = [
+    '─────────────────────────────────────────',
+    '❯  [Image #7] [Image #8][Pasted text #9 +7 lines]',
+    '─────────────────────────────────────────',
+    '  paste again to expand      Ctrl+Y to paste deleted text',
+  ].join('\n');
+
+  it('claims a placeholder whose line count does not match what was written', () => {
+    const before = pastePlaceholderIds('❯  [Image #7] [Image #8]');
+    expect(newPastePlaceholder(before, failureScreen)).toEqual({ id: 9, lines: 7 });
+  });
+
+  it('ignores a placeholder that was already on screen', () => {
+    const before = pastePlaceholderIds(failureScreen);
+    expect(newPastePlaceholder(before, failureScreen)).toBeUndefined();
+  });
+
+  it('picks the new placeholder when an old one is still drawn', () => {
+    const before = pastePlaceholderIds('❯  [Pasted text #3 +4 lines]');
+    const after = '❯  [Pasted text #3 +4 lines] [Pasted text #4 +9 lines]';
+    expect(newPastePlaceholder(before, after)).toEqual({ id: 4, lines: 9 });
+  });
+
+  it('treats an empty screen as having nothing known', () => {
+    expect(pastePlaceholderIds('').size).toBe(0);
+    expect(newPastePlaceholder(new Set(), failureScreen)).toEqual({ id: 9, lines: 7 });
   });
 });

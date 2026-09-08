@@ -37,7 +37,18 @@ import {
 import { getModelsForBinary } from './model-catalog.js';
 import { scrapePromptSuggestion } from './prompt-suggestion-scraper.js';
 import { scrapeTip } from './tip-scraper.js';
-import { hasInputBox, isGenerating, screenSignature } from './tui-state.js';
+import {
+  hasInputBox,
+  inputBoxPastePlaceholders,
+  inputBoxText,
+  isGenerating,
+  newPastePlaceholder,
+  pastePlaceholderIds,
+  pastePlaceholders,
+  screenSignature,
+  tailLines,
+} from './tui-state.js';
+import { stageImagesForPty } from './stage-images.js';
 import { blockingModal, relayModal, waitForDialogToClear, type ModalPty } from './modal-relay.js';
 import {
   ensurePermissionMode,
@@ -50,7 +61,7 @@ import { dialogResumeState, turnHold } from './turn-end.js';
 import { isSuggestionsEnabled } from '../telegram/suggestions-settings.js';
 import { resolveBin } from '../utils/resolve-bin.js';
 import type { Context } from 'grammy';
-import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions, type EditDiffEvent, type ToolResultEvent, type ImageAttachment } from '../providers/types.js';
+import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions, type EditDiffEvent, type ToolResultEvent } from '../providers/types.js';
 
 const { Terminal } = headless;
 
@@ -222,6 +233,23 @@ function promptNeedle(prompt: string): string | undefined {
   const needle = firstLine.slice(0, 24);
   return needle.length < 4 ? undefined : needle;
 }
+
+/**
+ * Newlines in `prompt` the way claude's editor counts them: it folds CRLF and
+ * bare CR to LF before counting, and the result is roughly the `+N lines` it
+ * writes into a collapsed paste's placeholder.
+ *
+ * Roughly, and for the log only. This once identified our own placeholder among
+ * the ones on screen, which it cannot do: claude rewrites a paste before
+ * drawing it — an image path becomes an `[Image #N]` chip — so what it reports
+ * is short of what we sent, and a prompt written with 10 newlines comes back
+ * `+7 lines`. Every photo upload failed on that. Identity is the id;
+ * newPastePlaceholder says so too.
+ */
+function pasteLineCount(prompt: string): number {
+  return (prompt.replace(/\r\n|\r/g, '\n').match(/\n/g) ?? []).length;
+}
+
 /**
  * Idle + prompt-visible safety net for prompts that produce no JSONL activity.
  * Most prompts (model turns, /compact, /clear, /handoff, …) write at least one
@@ -330,6 +358,14 @@ interface PtySession {
    */
   submittedSlashCommand: boolean;
   /**
+   * Id of the collapsed paste carrying the current turn's prompt, when claude
+   * swallowed it into a `[Pasted text #N]` placeholder rather than drawing the
+   * text. Undefined when the prompt is on screen literally. _screenHasPromptText
+   * needs it to tell an unsubmitted prompt from a submitted one: with the text
+   * itself never rendered, the placeholder's id is the only handle on it.
+   */
+  submittedPasteId: number | undefined;
+  /**
    * True between spawning this pty with `--resume` and its first submitted
    * prompt. While set, readiness uses RESUME_SETTLE_IDLE_MS/RESUME_STARTUP_MAX_MS
    * so we wait out the transcript replay instead of pasting into it.
@@ -430,9 +466,10 @@ export class PtyProvider implements Provider {
       }
       throw err;
     } finally {
-      // Best-effort cleanup of staged image temp files. Claude has presumably
-      // already read them via the Read tool; leaving them around would just
-      // accumulate cruft in /tmp.
+      // Best-effort cleanup of staged image temp files. Claude has already
+      // attached them by the time the turn ends; leaving them around would
+      // just accumulate cruft in /tmp. Usually empty — an upload the caller
+      // saved itself is never staged.
       for (const p of tempPaths) {
         try { fs.unlinkSync(p); } catch { /* already gone */ }
       }
@@ -748,27 +785,41 @@ export class PtyProvider implements Provider {
       //      Claude's editor parses them and strips them, so the model sees
       //      the same payload as before, but the END marker unambiguously
       //      closes the paste — the next byte (\r) is then a real keystroke.
-      //   2. Echo-verify: poll the screen until the first chars of our
-      //      prompt actually appear in the input box. Confirms claude's
-      //      input loop is actually consuming our bytes.
+      //   2. Echo-verify: poll the screen until the prompt provably reaches
+      //      the editor — either its opening words appear in the input box,
+      //      or claude collapses it into a `[Pasted text #N]` placeholder.
+      //      Both prove claude's input loop consumed our bytes; the second is
+      //      what a prompt of four or more lines always looks like.
       //   3. Retry loop: if echo-verify misses (claude's input loop wasn't
       //      receptive yet — happens on first-launch of a fresh PTY when
-      //      ❯ is drawn before the editor is wired up), wait a beat and
-      //      write again. The needle match is content-based so a duplicate
-      //      write still resolves on the first burst's bytes if they finally
-      //      arrive late; otherwise the second write gets a fresh chance.
-      //      The welcome-banner guard in sendToAgent is the final safety net.
+      //      ❯ is drawn before the editor is wired up), clear whatever the
+      //      last attempt may have left in the box, wait a beat and write
+      //      again. The welcome-banner guard in sendToAgent is the final
+      //      safety net.
       const ECHO_CAP_MS = 2_000;
       const MAX_ATTEMPTS = 3;
       const RETRY_BACKOFF_MS = 750;
+      const CLEAR_SETTLE_MS = 150;
       let echoed = false;
+      let pasteId: number | undefined;
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
         if (attempt > 0) {
           console.warn(`[PtyProvider] echo-verify miss on attempt ${attempt}/${MAX_ATTEMPTS}, retrying write`);
           await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
+          // Empty the box first. A paste that landed too late to be seen is
+          // still in the editor, and pasting on top of it would submit the
+          // prompt twice over.
+          session.term.write('\x15');
+          await new Promise((r) => setTimeout(r, CLEAR_SETTLE_MS));
         }
+        // Snapshot after the clear: echo-verify proves the prompt landed by
+        // what this write *added* to the screen, and the clear is the last
+        // thing to change it beforehand.
+        const screenBefore = this._getScreenText(session);
         session.term.write(`\x1b[200~${prompt}\x1b[201~`);
-        echoed = await this._waitForPromptEcho(session, prompt, ECHO_CAP_MS);
+        ({ echoed, pasteId } = await this._waitForPromptEcho(
+          session, prompt, ECHO_CAP_MS, screenBefore,
+        ));
         if (echoed) break;
       }
       // Enter only once the text is provably in the editor. Writing it anyway
@@ -778,11 +829,37 @@ export class PtyProvider implements Provider {
       // selected the highlighted row and saved it. A prompt that did not land
       // is a prompt to report, not one to punctuate.
       if (!echoed) {
+        // Say what the screen actually looked like. Every attempt reports the
+        // same sentence to the user, and on its own it names nothing that
+        // would tell one cause from another — a prompt claude collapsed and
+        // we failed to recognise, a dialog that ate the paste, an editor not
+        // yet wired up. Three days of this failing daily produced logs that
+        // could not distinguish them, so the screen goes in the log before
+        // the box is cleared.
+        const screenAtFailure = this._getScreenText(session);
+        const seen = pastePlaceholders(screenAtFailure)
+          .map((pl) => `#${pl.id}+${pl.lines}`).join(' ') || 'none';
+        console.warn(
+          `[PtyProvider] echo-verify gave up: wanted needle ${JSON.stringify(promptNeedle(prompt))}`
+          + ` in the input box, or a paste placeholder with an id new since the write`
+          + ` (we sent ${pasteLineCount(prompt)} lines);`
+          + ` box held ${JSON.stringify(inputBoxText(screenAtFailure) ?? null)};`
+          + ` placeholders on screen: ${seen}`,
+        );
+        console.warn(
+          `[PtyProvider] screen at failure:\n${
+            tailLines(screenAtFailure, 16).join('\n')}`,
+        );
+        // Leave the editor as we found it. Anything the failed attempts did
+        // land would otherwise sit in the box and ride along with whatever
+        // the user sends next.
+        session.term.write('\x15');
         throw new Error(
           "Claude Code's input box didn't take your message, so nothing was sent. "
           + 'Please send it again.',
         );
       }
+      session.submittedPasteId = pasteId;
       session.term.write('\r');
       await this._confirmSubmitted(session, sessionKey, prompt, abortSignal);
 
@@ -946,6 +1023,7 @@ export class PtyProvider implements Provider {
       jsonlMtimeAtSubmit: 0,
       promptMarkerAtSubmit: undefined,
       submittedSlashCommand: false,
+      submittedPasteId: undefined,
       awaitingResumeReplay: resuming,
       updateBannerChecked: false,
       turnRelay: null,
@@ -1592,41 +1670,98 @@ export class PtyProvider implements Provider {
     return false;
   }
 
-  /** True if the prompt's distinctive opening is still on the rendered screen. */
+  /** True if the prompt is still sitting unsent in the input box. */
   private _screenHasPromptText(session: PtySession, prompt: string): boolean {
+    const screenText = this._getScreenText(session);
+    // A collapsed paste never renders its own text, so the placeholder's id is
+    // the only handle on it — and only the box counts, because the frames the
+    // box scrolls off keep showing the placeholder it held at the time, which
+    // a whole-screen scan would go on finding long after Enter took it.
+    const pasteId = session.submittedPasteId;
+    if (pasteId !== undefined) {
+      return inputBoxPastePlaceholders(screenText).some((p) => p.id === pasteId);
+    }
     const needle = promptNeedle(prompt);
     // Too short to match reliably — assume it's still pending and let the
     // caller re-send; a stray Enter on an empty input box is a no-op.
     if (!needle) return true;
-    return this._getScreenText(session).includes(needle);
+    // Same reasoning as the placeholder branch, and the same trap: a submitted
+    // prompt is drawn into the transcript and stays there, so a whole-screen
+    // search reports "still unsent" forever and re-fires Enter into a session
+    // that took the prompt long ago. No box at all reads as "don't" — an
+    // overlay is up, and Enter is the keypress that answers one.
+    return inputBoxText(screenText)?.includes(needle) ?? false;
   }
 
   /**
-   * Poll the xterm buffer until the first chars of `prompt` appear on screen —
-   * proves claude's editor actually consumed our paste before we send \r.
-   * Returns true on echo confirmed, false on cap-hit. Caller retries the
-   * write on false; the welcome-banner guard in sendToAgent is the final
-   * safety net if every retry misses.
+   * Poll the xterm buffer until `prompt` provably reaches claude's editor,
+   * before we send \r. Returns `echoed` plus, when claude swallowed the
+   * prompt into a `[Pasted text #N]` placeholder, the id it minted for it.
+   * Caller retries the write on a miss; the welcome-banner guard in
+   * sendToAgent is the final safety net if every retry misses.
    *
-   * Needle is the leading non-whitespace slice of the first line — short
-   * enough to survive line wrapping in the 120-col input box, long enough
-   * to be distinctive. Returns true immediately when the needle would be
-   * too short to be a meaningful match (very short prompts can race the
-   * \r submit, but they also rarely fall victim to the paste heuristic so
-   * the retry loop isn't load-bearing for them).
+   * Two ways the prompt can prove it landed, because claude draws it two ways:
+   *
+   *   - Literally, in the input box, for a short prompt. The needle is the
+   *     leading non-whitespace slice of the first line — short enough to
+   *     survive line wrapping in the 120-col box, long enough to be
+   *     distinctive. Only the box is searched, never the whole screen: the box
+   *     is the one region that holds unsent text and nothing else, so a hit
+   *     there is proof on its own and needs no before/after comparison.
+   *   - As a placeholder, once the paste runs past 800 characters or two
+   *     newlines. The text is then never on screen at all, so the needle can
+   *     never match: every prompt built from a template — an upload note, a
+   *     staged image list — is only ever provable this way.
+   *
+   * A placeholder counts on an id `screenBefore` had not seen, and never on
+   * the `+N lines` it reports. Both halves of that are scars. Claude rewrites a
+   * paste before it renders one, lifting any image path out of the text into an
+   * `[Image #N]` chip, so a staged-image prompt written with 10 newlines comes
+   * back as `+7 lines` — matching that count against what we sent was a check
+   * that could only fail, and it failed on every photo upload. And ids outlive
+   * the turn that minted them, because the frames the box scrolls off keep
+   * showing the placeholder they held, so an id alone proves nothing without
+   * the baseline.
+   *
+   * The needle wanted no such baseline and was given one anyway — `screenBefore`
+   * was scanned for it too, and a hit only counted if the whole-screen tally
+   * went *up*. On a saturated buffer that tally cannot go up: `_getScreenText`
+   * reads all 1000 scrollback rows plus the 40 live ones, and once they are
+   * full every row the TUI draws evicts one off the top, so a needle the
+   * transcript already uses loses an occurrence up there for each one the box
+   * gains. Measured on a headless xterm with these exact settings: 149
+   * occurrences before the write, 149 after the box drew the prompt, 148 after
+   * the redraw that followed — with the prompt plainly on screen the whole
+   * time. Every retry made it worse, each redraw pushing another copy of the
+   * box into the scrollback to inflate the baseline further, so all three
+   * attempts missed and the user was told nothing was sent when it had been.
+   *
+   * Returns echoed immediately when the needle would be too short to be a
+   * meaningful match (very short prompts can race the \r submit, but they also
+   * rarely fall victim to the paste heuristic so the retry loop isn't
+   * load-bearing for them).
    */
-  private async _waitForPromptEcho(session: PtySession, prompt: string, capMs: number): Promise<boolean> {
+  private async _waitForPromptEcho(
+    session: PtySession,
+    prompt: string,
+    capMs: number,
+    screenBefore: string,
+  ): Promise<{ echoed: boolean; pasteId?: number }> {
     const needle = promptNeedle(prompt);
     if (!needle) {
       await new Promise((r) => setTimeout(r, 100));
-      return true;
+      return { echoed: true };
     }
+    const knownPasteIds = pastePlaceholderIds(screenBefore);
     const deadline = Date.now() + capMs;
     while (Date.now() < deadline) {
-      if (this._getScreenText(session).includes(needle)) return true;
+      const screenText = this._getScreenText(session);
+      if (inputBoxText(screenText)?.includes(needle)) return { echoed: true };
+      const mine = newPastePlaceholder(knownPasteIds, screenText);
+      if (mine) return { echoed: true, pasteId: mine.id };
       await new Promise((r) => setTimeout(r, 25));
     }
-    return false;
+    return { echoed: false };
   }
 
   /**
@@ -1835,49 +1970,6 @@ export class PtyProvider implements Provider {
 // HTTP POST returns, so we ack fast and let the bot's Telegram calls run on
 // their own microtasks. Errors are logged, never rethrown into claude.
 
-/**
- * Map an ImageAttachment mediaType to a sensible file extension. Falls back
- * to `.bin` for unknowns — claude code's Read tool sniffs content anyway, the
- * extension is mostly cosmetic.
- */
-function imageExtension(mediaType: string): string {
-  if (mediaType === 'image/jpeg') return 'jpg';
-  if (mediaType === 'image/png') return 'png';
-  if (mediaType === 'image/gif') return 'gif';
-  if (mediaType === 'image/webp') return 'webp';
-  return 'bin';
-}
-
-/**
- * Write the user's image attachments to /tmp and inject their paths into the
- * prompt. Claude's Read tool natively supports image files and surfaces them
- * to the model as image content blocks, so this gets us SDK-mode equivalent
- * image semantics without needing to deal with pty paste protocols.
- *
- * Returns the augmented prompt plus the list of temp paths the caller is
- * responsible for deleting after the turn ends.
- */
-function stageImagesForPty(prompt: string, images?: ImageAttachment[]): { prompt: string; tempPaths: string[] } {
-  if (!images || images.length === 0) return { prompt, tempPaths: [] };
-
-  const tempPaths: string[] = [];
-  for (const img of images) {
-    const ext = imageExtension(img.mediaType);
-    const filePath = path.join('/tmp', `telecoder-img-${randomUUID()}.${ext}`);
-    fs.writeFileSync(filePath, Buffer.from(img.data, 'base64'));
-    tempPaths.push(filePath);
-  }
-
-  const imageList = tempPaths.map((p, i) => `  ${i + 1}. ${p}`).join('\n');
-  const augmented = `${prompt}
-
-The user attached ${tempPaths.length === 1 ? 'an image' : `${tempPaths.length} images`} at:
-${imageList}
-
-Read ${tempPaths.length === 1 ? 'it' : 'them'} with the Read tool to see ${tempPaths.length === 1 ? 'its' : 'their'} contents.`;
-
-  return { prompt: augmented, tempPaths };
-}
 
 /**
  * Apply per-command prompt wrapping so /plan and /explore behave the same in

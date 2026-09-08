@@ -119,3 +119,114 @@ export function hasInputBox(screenText: string): boolean {
     SIDE_BORDERED_INPUT.test(line)
     || (INPUT_ROW.test(line) && RULE.test(lines[i - 1] ?? '') && RULE.test(lines[i + 1] ?? '')));
 }
+
+/**
+ * Claude Code's collapsed-paste placeholder.
+ *
+ * Its editor does not draw a pasted block that runs past 800 characters or two
+ * newlines. It mints an id for the block, keeps the text off-screen, and
+ * renders `[Pasted text #3 +10 lines]` in its place — `[Pasted text #3]` when
+ * the block has no newlines at all. The full text is restored on submit, so
+ * this costs delivery nothing, but it means anything checking the screen for a
+ * prompt's own words has to recognise the placeholder instead: every prompt we
+ * build from a template (an upload note, a staged image list) clears both
+ * thresholds and is therefore never on screen literally.
+ */
+const PASTE_PLACEHOLDER = /\[Pasted text #(\d+)(?: \+(\d+) lines)?\]/g;
+
+export interface PastePlaceholder {
+  /** The paste's id. Claude mints these in increasing order within a session. */
+  id: number;
+  /** Newlines in the pasted block, as claude counted them; 0 when it drew none. */
+  lines: number;
+}
+
+/**
+ * Every collapsed paste anywhere on the rendered screen, scrollback included.
+ *
+ * Submitting expands a placeholder back to the text it stood for, so a live
+ * one marks a paste still held in the editor. Stale ones linger all the same:
+ * the box redraws in place, and the frames it scrolls off the top keep
+ * whatever they were showing at the time. Ids are minted in increasing order
+ * within a session, which is what lets a caller tell a paste its own write
+ * just made from one an earlier turn left behind.
+ */
+export function pastePlaceholders(screenText: string): PastePlaceholder[] {
+  return [...screenText.matchAll(PASTE_PLACEHOLDER)].map((match) => ({
+    id: Number(match[1]),
+    lines: Number(match[2] ?? 0),
+  }));
+}
+
+/**
+ * The ids of every paste placeholder already drawn — the "before" half of the
+ * only reliable proof that a write landed.
+ */
+export function pastePlaceholderIds(screenText: string): Set<number> {
+  return new Set(pastePlaceholders(screenText).map((p) => p.id));
+}
+
+/**
+ * The first placeholder on screen that `known` has not seen. Identity is the
+ * id and nothing else: claude rewrites a paste before drawing it — an image
+ * path becomes an `[Image #N]` chip and leaves the text shorter — so the
+ * `+N lines` it reports is not the line count of what we wrote and must never
+ * be matched against it.
+ */
+export function newPastePlaceholder(
+  known: Set<number>,
+  screenText: string,
+): PastePlaceholder | undefined {
+  return pastePlaceholders(screenText).find((p) => !known.has(p.id));
+}
+
+/**
+ * The live input box's text: everything from its `❯` row down.
+ *
+ * The only part of the screen where a prompt of ours can still be waiting, and
+ * so the only part worth searching for one. Everything above it is transcript,
+ * which holds our own prompts too — claude redraws a prompt into the transcript
+ * once it submits, and the frames the box scrolls off keep whatever they were
+ * showing at the time — so a whole-screen search answers a different question
+ * than the one the callers here are asking.
+ *
+ * Anchored on the box's own `❯` row rather than a count of rows from the
+ * bottom, and on the last such row rather than the first: claude draws a
+ * submitted prompt on a `❯` row too, so the transcript offers rows of the same
+ * shape above the real one. Everything from that row down is in scope, because
+ * an input long enough to wrap spills onto the rows beneath it.
+ *
+ * The glyph alone does not make a row the box's, for the reason hasInputBox
+ * gives above: a select list marks its highlighted option with the same `❯`,
+ * and reading one as an editor is how a prompt ends up pasted into `/model`
+ * with an Enter behind it. So the row has to carry the box's structure too —
+ * the top rule right above it, or the side borders terminals that draw them
+ * use. Only the opening rule is required, not the closing one, because a
+ * wrapped input pushes that several rows down.
+ *
+ * Undefined when no box is drawn at all — an overlay has replaced it, or the
+ * TUI is still starting. That is not the same answer as an empty box, and a
+ * caller about to send a keystroke needs to tell them apart.
+ */
+export function inputBoxText(screenText: string): string | undefined {
+  const lines = tailLines(screenText, INPUT_BOX_ROWS);
+  let inputRow = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (SIDE_BORDERED_INPUT.test(line)
+      || (INPUT_ROW.test(line) && RULE.test(lines[i - 1] ?? ''))) inputRow = i;
+  }
+  if (inputRow === -1) return undefined;
+  return lines.slice(inputRow).join('\n');
+}
+
+/**
+ * Collapsed pastes sitting in the input box right now, as opposed to anywhere
+ * on the screen. This is the reader for "did Enter take?", where the whole-
+ * screen one gets the answer wrong: the box's earlier frames survive in the
+ * scrollback, so a prompt that submitted cleanly still has its old placeholder
+ * up there, and scanning for it never stops finding one.
+ */
+export function inputBoxPastePlaceholders(screenText: string): PastePlaceholder[] {
+  return pastePlaceholders(inputBoxText(screenText) ?? '');
+}

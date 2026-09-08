@@ -96,7 +96,10 @@ async function handleSavedImage(
   // Read image as base64 for multimodal vision input
   const imageBase64 = fs.readFileSync(savedPath).toString('base64');
   const mediaType = getMediaType(savedPath);
-  const images = [{ data: imageBase64, mediaType }];
+  // savedPath is what the note above names in "Saved at:", and naming it is
+  // what makes claude attach it in pty mode — so hand the provider that same
+  // path rather than letting it stage a duplicate copy of the same picture.
+  const images = [{ data: imageBase64, mediaType, path: savedPath }];
 
   if (isProcessing(sessionKey)) {
     const position = getQueuePosition(sessionKey) + 1;

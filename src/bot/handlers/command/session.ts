@@ -242,8 +242,57 @@ const RECAP_USER_MAX_CHARS = 500;
 const RECAP_DEFAULT_N = 3;
 const RECAP_MAX_N = 10;
 
+// An upload never reaches claude as the caption you typed. photo.handler wraps
+// it in a note saying where the file landed and what to do with it, and that
+// whole scaffold is what the transcript records — so replaying it verbatim
+// buries the one line you actually wrote under six you didn't. Claude then
+// makes it worse on the way in: it lifts every file path out of the note into
+// an `[Image #N]` chip, leaving `Saved at:` and `  1.` pointing at nothing.
+//
+// Collapse those notes back to what the upload was: kind, name, caption.
+const UPLOAD_CHIPS = /^(?:\[(?:Image|Pasted text) #\d+(?: \+\d+ lines)?\]\s*)+/;
+const IMAGE_NOTE = 'User uploaded an image to the project.';
+const FILE_NOTE = /^User uploaded a file: (.+)$/;
+// The line each handler puts directly after the caption — the caption itself
+// is a user-supplied string that may run over several lines.
+const AFTER_CAPTION = /^(?:The image is attached as a vision input|Use the Read tool to read its contents)/;
+
+function uploadCaption(lines: string[]): string | undefined {
+  const start = lines.findIndex((l) => l.startsWith('Caption: '));
+  if (start === -1) return undefined;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (AFTER_CAPTION.test(lines[i]!)) { end = i; break; }
+  }
+  const raw = lines.slice(start, end).join('\n').slice('Caption: '.length).trim();
+  if (raw === '(none)') return undefined;
+  return raw.replace(/^"/, '').replace(/"$/, '').trim() || undefined;
+}
+
+/**
+ * Render an upload note as the upload it stands for, or return `text` unchanged
+ * when it isn't one. Matching is anchored on the note's own first line, so a
+ * prompt that merely quotes one is left alone.
+ */
+export function summarizeUserPrompt(text: string): string {
+  const lines = text.replace(UPLOAD_CHIPS, '').split('\n');
+  const first = lines[0]?.trim() ?? '';
+
+  let label: string | undefined;
+  if (first === IMAGE_NOTE) {
+    label = '📷 Image';
+  } else {
+    const named = FILE_NOTE.exec(first);
+    if (named) label = `📎 ${named[1]!.trim()}`;
+  }
+  if (!label) return text;
+
+  const caption = uploadCaption(lines);
+  return caption ? `${label} — ${caption}` : label;
+}
+
 function truncateUserPrompt(text: string, max: number = RECAP_USER_MAX_CHARS): string {
-  const collapsed = text.replace(/\s+/g, ' ').trim();
+  const collapsed = summarizeUserPrompt(text).replace(/\s+/g, ' ').trim();
   if (collapsed.length <= max) return collapsed;
   return collapsed.slice(0, max - 1).trimEnd() + '…';
 }

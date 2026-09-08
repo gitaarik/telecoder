@@ -54,6 +54,13 @@ export interface ImageAttachment {
   data: string;
   /** MIME type, e.g. "image/jpeg", "image/png" */
   mediaType: string;
+  /**
+   * Where the caller already wrote this image, when it saved one before
+   * sending. Pty mode attaches an image by naming its path in the prompt, so a
+   * caller that supplies the path it already named saves the provider from
+   * staging a second copy — which claude would attach a second time.
+   */
+  path?: string;
 }
 
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'killed' | 'stopped';

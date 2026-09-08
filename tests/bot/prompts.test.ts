@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildPromptsMessage } from '../../src/bot/handlers/command/session.js';
+import { buildPromptsMessage, summarizeUserPrompt } from '../../src/bot/handlers/command/session.js';
 import type { UserPrompt } from '../../src/claude/session-jsonl.js';
 
 const minsAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
@@ -59,5 +59,73 @@ describe('buildPromptsMessage', () => {
     expect(out).toContain('prompt 19');
     expect(out).not.toContain('prompt 0 ');
     expect(out).toMatch(/^💬 \*Prompts\* — last \d+ \\\(\d+ older trimmed to fit\\\)$/m);
+  });
+});
+
+describe('summarizeUserPrompt', () => {
+  // Copied from a real transcript: claude had already pulled both file paths
+  // out into [Image #N] chips, which is why "Saved at:" and "  1." are bare.
+  const recordedImageNote = [
+    '[Image #1] [Image #2]User uploaded an image to the project.',
+    'Saved at:',
+    'Caption: "This is my last invoice from Groq. Costs went up — investigate."',
+    'The image is attached as a vision input — you can see it directly.',
+    'If the caption includes a question or request, answer it. Otherwise, describe what you see and ask if they want any analysis or edits.',
+    'The user attached an image at:',
+    '  1.',
+    'Read it with the Read tool to see its contents.',
+  ].join('\n');
+
+  it('reduces a recorded image note to the caption the user typed', () => {
+    expect(summarizeUserPrompt(recordedImageNote)).toBe(
+      '📷 Image — This is my last invoice from Groq. Costs went up — investigate.');
+  });
+
+  it('keeps a multi-line caption whole', () => {
+    const note = [
+      'User uploaded an image to the project.',
+      'Saved at: /home/rik/x.png',
+      'Relative path: x.png',
+      'Caption: "first line',
+      'second line"',
+      'The image is attached as a vision input — you can see it directly.',
+    ].join('\n');
+    expect(summarizeUserPrompt(note)).toBe('📷 Image — first line\nsecond line');
+  });
+
+  it('says only what it knows when there is no caption', () => {
+    const note = [
+      'User uploaded an image to the project.',
+      'Saved at: /home/rik/x.png',
+      'Caption: (none)',
+      'The image is attached as a vision input — you can see it directly.',
+    ].join('\n');
+    expect(summarizeUserPrompt(note)).toBe('📷 Image');
+  });
+
+  it('names the file for a document upload', () => {
+    const note = [
+      'User uploaded a file: invoice.pdf',
+      'Saved at: /home/rik/uploads/invoice.pdf',
+      'Caption: "what am I paying for"',
+      'Use the Read tool to read its contents. For PDFs use Read with `pages` for large files.',
+    ].join('\n');
+    expect(summarizeUserPrompt(note)).toBe('📎 invoice.pdf — what am I paying for');
+  });
+
+  it('leaves an ordinary prompt untouched', () => {
+    expect(summarizeUserPrompt('fix the login bug')).toBe('fix the login bug');
+  });
+
+  it('leaves a prompt that merely quotes the note untouched', () => {
+    const quoting = 'why does it say "User uploaded an image to the project." in /prompts?';
+    expect(summarizeUserPrompt(quoting)).toBe(quoting);
+  });
+
+  it('shows the summary in the prompts list, not the scaffold', () => {
+    const out = buildPromptsMessage([prompt(recordedImageNote, 5)]);
+    expect(out).toContain('📷 Image — This is my last invoice from Groq');
+    expect(out).not.toContain('vision input');
+    expect(out).not.toContain('Saved at');
   });
 });
