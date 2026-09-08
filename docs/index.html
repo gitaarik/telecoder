@@ -2831,7 +2831,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/tasks</code>
-              <span class="command-desc">List active background work — subagents, monitors, backgrounded shells and workflows — grouped by kind, with elapsed time; tap a number to view details. Works in both SDK and PTY mode. In PTY mode, <strong>🔎 Ask claude</strong> types <code>/tasks</code> into the live TUI and relays Claude Code's own background view, which also covers shells it started on its own and anything armed before the last bot restart.</span>
+              <span class="command-desc">List active background work — subagents, monitors, backgrounded shells and workflows — grouped by kind, with elapsed time; tap a number to view details. Entries that have gone silent for 15 minutes are flagged <strong>⚠️</strong> — a finished task normally drops off the list, so a long-quiet one usually means its completion event never arrived; monitors are exempt, since idling until an event fires is exactly what they do. Works in both SDK and PTY mode. In PTY mode, <strong>🔎 Ask claude</strong> types <code>/tasks</code> into the live TUI and relays Claude Code's own background view, which also covers shells it started on its own and anything armed before the last bot restart.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/shells</code>

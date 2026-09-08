@@ -61,12 +61,40 @@ function groupTasksForDisplay(tasks: TaskState[]): TaskGroup[] {
   return groups;
 }
 
-function formatTaskElapsed(task: TaskState): string {
-  const elapsedMs = (task.endedAt ?? Date.now()) - task.startedAt;
-  const seconds = Math.floor(elapsedMs / 1000);
+function formatDuration(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
   return `${minutes}m ${seconds % 60}s`;
+}
+
+function formatTaskElapsed(task: TaskState): string {
+  return formatDuration((task.endedAt ?? Date.now()) - task.startedAt);
+}
+
+function formatTaskSilence(task: TaskState): string {
+  return formatDuration(Date.now() - task.lastActivityAt);
+}
+
+/**
+ * How long a task may go without any SDK event before /tasks flags it as
+ * probably-finished. A completion `notification` removes the entry outright,
+ * so an entry still listed after a long silence usually means that event
+ * never arrived (restart mid-task, dropped notification).
+ *
+ * Deliberately generous: this only annotates, never hides, but a false
+ * positive on a slow-but-live agent is still noise.
+ */
+const STALE_AFTER_MS = 15 * 60 * 1000;
+
+/**
+ * Monitors are exempt. An armed monitor waiting for its first event is
+ * *supposed* to sit silent for hours, so inactivity carries no signal about
+ * whether it's still alive — flagging them would mark every idle monitor.
+ */
+function isPossiblyStale(task: TaskState): boolean {
+  if (task.taskType === 'monitor_mcp') return false;
+  return Date.now() - task.lastActivityAt > STALE_AFTER_MS;
 }
 
 function getActiveTasks(sessionKey: string): TaskState[] {
@@ -111,13 +139,20 @@ function renderTasksList(sessionKey: string, tasks: TaskState[]): { text: string
       const desc = task.description.length > 70
         ? task.description.substring(0, 67) + '...'
         : task.description;
-      lines.push(`  ${index}\\. ${esc(desc)} · ${esc(formatTaskElapsed(task))}`);
+      const staleMark = isPossiblyStale(task) ? '⚠️ ' : '';
+      lines.push(`  ${index}\\. ${staleMark}${esc(desc)} · ${esc(formatTaskElapsed(task))}`);
       numberedTasks.push(task);
       index++;
     }
     lines.push('');
   }
   lines.push('_Tap a number to view details\\._');
+  if (numberedTasks.some(isPossiblyStale)) {
+    lines.push(
+      '_⚠️ no update in a while — may have finished already\\. ' +
+        'Tap 🔎 Ask claude to confirm\\._',
+    );
+  }
 
   const keyboard: { text: string; callback_data: string }[][] = [];
   // Telegram inline keyboards render best at 5 buttons per row for short labels.
@@ -157,6 +192,9 @@ function renderTaskDetail(task: TaskState): { text: string; keyboard: { text: st
     `• *Backgrounded:* ${task.isBackgrounded ? 'yes' : 'no'}`,
     `• *Started:* ${esc(formatTaskElapsed(task))} ago`,
   ];
+  if (isPossiblyStale(task)) {
+    lines.push(`• *Last update:* ${esc(formatTaskSilence(task))} ago ⚠️`);
+  }
   if (task.taskType) {
     lines.push(`• *Type:* \`${esc(task.taskType)}\``);
   }
@@ -274,6 +312,13 @@ export async function handleTasksCallback(ctx: Context): Promise<void> {
 
   await ctx.answerCallbackQuery().catch(() => {});
 }
+
+/**
+ * Test hooks. The predicate is pure, but the render path is where a staleness
+ * regression would actually be seen, so both are exposed.
+ */
+export const _isPossiblyStale = isPossiblyStale;
+export const _renderTasksList = renderTasksList;
 
 // ---------------------------------------------------------------------------
 // "🔎 Ask claude" — relay claude's own /tasks overlay

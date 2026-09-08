@@ -19,6 +19,14 @@ export interface TaskState {
   isBackgrounded: boolean;
   skipTranscript: boolean;
   startedAt: number;
+  /**
+   * Last time the SDK said anything about this task — start, progress, or a
+   * status change. Completion arrives as a `notification`, which removes the
+   * entry outright (see notifyTaskEvent), so a long-silent entry is usually
+   * one whose notification never landed: a restart mid-task, or a dropped
+   * event. /tasks flags those instead of hiding them.
+   */
+  lastActivityAt: number;
   endedAt?: number;
   lastProgress?: { summary?: string; lastToolName?: string; usage?: TaskUsage };
   outputFile?: string;
@@ -69,6 +77,7 @@ class TaskTracker {
           isBackgrounded: event.isBackgrounded ?? isMonitor,
           skipTranscript: event.skipTranscript ?? false,
           startedAt: Date.now(),
+          lastActivityAt: Date.now(),
         };
         tasks.set(event.taskId, state);
         return state;
@@ -78,6 +87,7 @@ class TaskTracker {
         if (!existing) return undefined;
         // Note: event.description on progress events conveys the *current
         // activity*, not the task's description — keep the original.
+        existing.lastActivityAt = Date.now();
         existing.lastProgress = {
           summary: event.summary,
           lastToolName: event.lastToolName,
@@ -88,6 +98,7 @@ class TaskTracker {
       case 'updated': {
         const existing = tasks.get(event.taskId);
         if (!existing) return undefined;
+        existing.lastActivityAt = Date.now();
         if (event.status) existing.status = event.status;
         if (event.isBackgrounded !== undefined) existing.isBackgrounded = event.isBackgrounded;
         if (event.error !== undefined) existing.error = event.error;
@@ -105,6 +116,7 @@ class TaskTracker {
             isBackgrounded: false,
             skipTranscript: false,
             startedAt: Date.now(),
+            lastActivityAt: Date.now(),
             endedAt: Date.now(),
             outputFile: event.outputFile,
             finalSummary: event.summary,
