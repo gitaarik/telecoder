@@ -2164,6 +2164,15 @@
             you stop being the bottleneck for a bot several people use.</p>
           </div>
           <div class="feature-card" data-category="reliability">
+            <div class="feature-icon"><svg><use href="#i-gauge"/></svg></div>
+            <h3>Decide once, not forty times</h3>
+            <p>A job made of guarded commands shouldn't cost forty taps — a guardrail people
+            tap without reading is worse than none. <code>/autoapprove 30m</code> answers them
+            in advance for one chat, posts each command it waves through, and announces itself
+            when it lapses. A restart closes it, and <code>mkfs</code>, <code>DROP DATABASE</code>
+            and credential reads still ask.</p>
+          </div>
+          <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-welcome"/></svg></div>
             <h3>Let someone in with one tap</h3>
             <p>A stranger posts in the shared group and the refusal comes with an approve
@@ -3023,6 +3032,10 @@ CCR_AUTOSTART=true</pre>
             Group Access
           </h3>
           <div class="commands-grid">
+            <div class="command-row">
+              <code class="command-code">/autoapprove &lt;30m|off|status&gt;</code>
+              <span class="command-desc">Let the permission gate approve instead of asking, for a stated length of time. Per chat, openable by admins and approvers, announced when it opens and when it lapses, and every command it waves through is posted. The irreversible patterns still ask.</span>
+            </div>
             <div class="command-row">
               <code class="command-code">/members</code>
               <span class="command-desc">Who may prompt the agent in <em>this group</em> — admins, contributors, explicit spectators, and the default everyone else falls into. The per-group half of <code>/users</code>.</span>

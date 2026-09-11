@@ -14,30 +14,57 @@
  */
 
 import type { Context } from 'grammy';
-import { isAdmin } from '../../utils/admins.js';
+import { isAdmin, isApprover } from '../../utils/admins.js';
 
 type Handler<C extends Context> = (ctx: C) => Promise<void> | void;
 
 const DENIAL = 'Admins only — ask an admin of this bot to run it.';
+const APPROVER_DENIAL =
+  'Admins and approvers only — ask one of them to run it.';
 
 /**
  * Wrap a command or callback handler so only admins reach it. Non-admins get a
  * toast (callback) or a reply (command); with no admin subset configured every
  * allowed user is an admin, so this is transparent on a solo bot.
  */
-export function adminOnly<C extends Context>(handler: Handler<C>): Handler<C> {
+function guard<C extends Context>(
+  handler: Handler<C>,
+  allowed: (userId: number | undefined) => boolean,
+  denial: string,
+  label: string,
+): Handler<C> {
   return async (ctx: C): Promise<void> => {
-    if (isAdmin(ctx.from?.id)) {
+    if (allowed(ctx.from?.id)) {
       await handler(ctx);
       return;
     }
 
-    console.log(`[admins] DENIED user:${ctx.from?.id ?? 'unknown'} chat:${ctx.chat?.id ?? 'unknown'} admin-only handler`);
+    console.log(`[admins] DENIED user:${ctx.from?.id ?? 'unknown'} chat:${ctx.chat?.id ?? 'unknown'} ${label} handler`);
 
     if (ctx.callbackQuery) {
-      await ctx.answerCallbackQuery({ text: `🔒 ${DENIAL}`, show_alert: true }).catch(() => {});
+      await ctx.answerCallbackQuery({ text: `\u{1f512} ${denial}`, show_alert: true }).catch(() => {});
       return;
     }
-    await ctx.reply(`🔒 ${DENIAL}`).catch(() => {});
+    await ctx.reply(`\u{1f512} ${denial}`).catch(() => {});
   };
+}
+
+/**
+ * Wrap a handler so admins and approvers reach it, and guests do not.
+ *
+ * For the things an approver is trusted with beyond answering a single prompt
+ * — opening an auto-approve window — which is a decision about prompts rather
+ * than a power over the bot, and so does not belong behind {@link adminOnly}.
+ */
+export function adminOrApproverOnly<C extends Context>(handler: Handler<C>): Handler<C> {
+  return guard(
+    handler,
+    (userId) => isAdmin(userId) || isApprover(userId),
+    APPROVER_DENIAL,
+    'admin-or-approver',
+  );
+}
+
+export function adminOnly<C extends Context>(handler: Handler<C>): Handler<C> {
+  return guard(handler, isAdmin, DENIAL, 'admin-only');
 }

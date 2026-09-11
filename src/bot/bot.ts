@@ -6,7 +6,7 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import { config } from '../config.js';
 import { buildSessionKey } from '../utils/session-key.js';
 import { authMiddleware } from './middleware/auth.middleware.js';
-import { adminOnly } from './middleware/admin-only.js';
+import { adminOnly, adminOrApproverOnly } from './middleware/admin-only.js';
 import {
   handleStart,
   handleClear,
@@ -100,6 +100,7 @@ import {
   handleMembers,
   handleAccessCallback,
 } from './handlers/command/access.js';
+import { handleAutoApprove } from './handlers/command/auto-approve.js';
 import { handleSuggestionTapCallback } from './handlers/suggestion.handler.js';
 import { handleVoice } from './handlers/voice.handler.js';
 import { handlePhoto, handleImageDocument, handleTextDocument } from './handlers/photo.handler.js';
@@ -307,6 +308,7 @@ export async function createBot(): Promise<Bot> {
     ...(config.CCR_ENABLED ? [{ command: 'provider', description: '🔌 Switch AI provider' }] : []),
     ...(config.CCR_ENABLED ? [{ command: 'ccr', description: '🔌 Toggle CCR routing (alt providers)' }] : []),
     { command: 'mode', description: '🔐 How much Claude asks before acting' },
+    { command: 'autoapprove', description: '⚡ Approve guarded commands for a while' },
     { command: 'streaming', description: '⚙️ Toggle streaming / wait replies' },
     { command: 'terminalui', description: '🖥️ Toggle terminal-style display' },
     { command: 'statusline', description: '📍 Toggle per-turn status line' },
@@ -484,6 +486,9 @@ export async function createBot(): Promise<Bot> {
   cmd('loop', handleLoop);
   cmd('projectcommands', handleProjectCommands);
   cmd('permissions', adminOnly(handlePermissions));
+  // Admins *and* approvers: opening a window is a decision about prompts, not
+  // a power over the bot, so it sits with the people who answer them.
+  cmd('autoapprove', adminOrApproverOnly(handleAutoApprove));
 
   // Teleport to terminal
   cmd('teleport', adminOnly(handleTeleport));

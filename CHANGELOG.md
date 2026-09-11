@@ -7,6 +7,16 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Sharing a bot
 
+- **Auto-approve windows** — `/autoapprove 30m` lets the permission gate approve
+  instead of asking, for a stated length of time on one chat. A job made of
+  guarded commands cost a tap each, and a guardrail people tap without reading
+  has stopped being one. Admins and approvers can open a window; it posts every
+  command it waves through rather than going quiet, announces itself when it
+  lapses, and lives only in memory so a restart closes it. `mkfs`, `dd of=/dev/`,
+  `DROP DATABASE`, `terraform destroy` and credential reads keep their prompt —
+  the line is whether a wrong call can be walked back, not whether it is
+  dangerous. `/autoapprove off` and `/autoapprove status` do what they say.
+
 - **An approver tier** — `APPROVER_USER_IDS` names guests who may answer someone
   else's permission prompt without owning the bot. Being able to tap "Allow once"
   and being able to run `/restartbot` or `/method` were one flag, which forced a

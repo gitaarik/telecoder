@@ -70,6 +70,9 @@ export function getAvailableCommands(): string {
   // user is an admin, so the tag would mark every line without narrowing
   // anything.
   const adminTag = hasGuestUsers() ? ' \\(admin\\)' : '';
+  // Opening an auto-approve window sits with the people who answer prompts,
+  // which is a wider set than the people who own the bot.
+  const approverTag = hasGuestUsers() ? ' \\(admin / approver\\)' : '';
   const sections: Array<{ title: string; commands: string[] }> = [
     {
       title: 'Claude Commands',
@@ -149,6 +152,7 @@ export function getAvailableCommands(): string {
       '• `/ping` \\- Check if bot is responsive',
       '• `/cancel` \\- Cancel current request',
       '• `/mode` \\- How much Claude asks before acting',
+      `• \`/autoapprove [30m|off|status]\` \\- Let the gate approve instead of asking, for a while${approverTag}`,
       '• `/streaming` \\- Toggle streaming / wait replies',
       '• `/verbosity` \\- Pick verbosity tier \\(quiet / normal / verbose / debug\\)',
       '• `/terminalui` \\- Toggle terminal\\-style display',

@@ -8,6 +8,7 @@ import { checkToolScope, isScopeGuardEnabled } from './scope-guard.js';
 import { sessionManager } from './session-manager.js';
 import { EntityText, clip } from '../telegram/entities.js';
 import { resolveApproversInChat, appendApproverLine } from '../telegram/admin-mention.js';
+import { consumeAutoApproval, formatRemaining, type AutoApproveWindow } from './auto-approve.js';
 
 /**
  * Pattern-based permission gate for PreToolUse. When enabled, certain tool calls
@@ -121,6 +122,15 @@ export async function evaluateToolCall(req: GateRequest): Promise<GateDecision> 
 
   const { chatId, threadId } = parseSessionKey(req.sessionKey);
 
+  // An open auto-approve window answers the prompt instead of posting it. The
+  // line it posts in its place is the point: the window buys back the button
+  // tap, not the record of what was allowed.
+  const window = consumeAutoApproval(chatId, pattern.reason);
+  if (window) {
+    await announceAutoApproval(ctx, chatId, threadId, pattern.reason, req.toolInput, window);
+    return { block: false, reason: '' };
+  }
+
   // Admins, plus any approver who is not the person whose turn raised this.
   // Restrict the buttons to the *configured* roster, not the subset that
   // resolved to a display name. A prompt nobody can answer is safer than one
@@ -186,6 +196,51 @@ export async function evaluateToolCall(req: GateRequest): Promise<GateDecision> 
     };
   }
   return { block: false, reason: '' };
+}
+
+/**
+ * Post the line that stands in for the prompt a window just answered.
+ *
+ * Best-effort: an auto-approval that could not be announced is still an
+ * auto-approval, and failing the tool call because Telegram was unreachable
+ * would be a worse outcome than a gap in the chat log. The console keeps it
+ * either way.
+ */
+async function announceAutoApproval(
+  ctx: Context,
+  chatId: number,
+  threadId: number | undefined,
+  reason: string,
+  toolInput: Record<string, unknown>,
+  window: AutoApproveWindow,
+): Promise<void> {
+  console.log(
+    `[PermissionGate] auto-approved chat:${chatId} reason:${reason} `
+    + `(#${window.approved} of window opened by ${window.openedBy})`,
+  );
+
+  const b = new EntityText();
+  b.add('\u26a1 ').bold('Auto-approved').add(` \u2014 ${reason}`).newline();
+
+  const command = commandOf(toolInput);
+  if (command !== undefined) {
+    b.pre(clip(command, MAX_COMMAND_CHARS), 'bash');
+  } else {
+    b.pre(clip(JSON.stringify(toolInput), MAX_COMMAND_CHARS), 'json');
+  }
+
+  b.italic(
+    `#${window.approved} in ${window.openedByName}'s window \u2014 ${formatRemaining(window)} left. `
+    + '/autoapprove off ends it.',
+  );
+
+  const { text, entities } = b.build();
+  const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};
+  try {
+    await ctx.api.sendMessage(chatId, text, { entities, ...threadOpts });
+  } catch (err) {
+    console.error('[PermissionGate] auto-approval notice failed:', err instanceof Error ? err.message : err);
+  }
 }
 
 /** How the prompt refers to whoever's turn triggered it. */

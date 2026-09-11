@@ -213,6 +213,15 @@ What that buys you:
   waiting on; an approver tapping their *own* request gets told why that one is
   the exception. Unanswered, it denies after
   `PERMISSION_PROMPT_TIMEOUT_MINUTES`.
+- **A decision can be made once instead of forty times.** A job built out of
+  guarded commands — a dependency bump that runs `rm -rf node_modules` four
+  times, a rebase that force-pushes twice — costs a tap each, and a guardrail
+  people tap without reading is worse than one that isn't there. So
+  `/autoapprove 30m` answers them in advance for one chat. Admins and approvers
+  can open one; it posts every command it waves through, announces itself when
+  it lapses, and a restart closes it. `mkfs`, `dd of=/dev/…`, `DROP DATABASE`,
+  `terraform destroy` and credential reads still ask, because those are not
+  tedium. `/autoapprove off` ends it early, `/autoapprove status` reads it back.
 - **The gate turns itself on.** With guests present you get prompts without
   setting a second variable; `TELECODER_PERMISSION_PROMPTS=0` opts out.
 - **Lifecycle and transport are yours.** `/update`, `/restartbot`,

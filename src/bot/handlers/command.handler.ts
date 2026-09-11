@@ -560,6 +560,19 @@ export async function handlePermissions(ctx: Context): Promise<void> {
       : 'Disabled\\. Set `TELECODER_PERMISSION_PROMPTS=1` and restart the bot to enable\\.',
   ];
 
+  // An open window changes what the gate does right now, so it belongs above
+  // everything that describes what it would do otherwise.
+  const { getWindow, formatRemaining } = await import('../../claude/auto-approve.js');
+  const window = ctx.chat?.id !== undefined ? getWindow(ctx.chat.id) : null;
+  if (window) {
+    lines.push(
+      '',
+      `⚡ *Auto\\-approve is on here* — ${esc(formatRemaining(window))} left, opened by ${esc(window.openedByName)}\\.`,
+      'Guarded commands run without asking and are posted as they happen\\. ' +
+        'End it with `/autoapprove off`\\.',
+    );
+  }
+
   if (enabled && isPermissionGateImplicit()) {
     lines.push(
       '',
