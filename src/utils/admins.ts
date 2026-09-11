@@ -77,6 +77,28 @@ export function getApproverIds(): number[] {
   );
 }
 
+/**
+ * Approver ids that no allow-list carries — neither `ALLOWED_USER_IDS` nor the
+ * roster `/allow` writes to. Those can never act, so they are always a typo.
+ *
+ * This lives here rather than beside the matching `ADMIN_USER_IDS` check in
+ * config.ts because it has to read the runtime roster, and user-roster.ts
+ * imports config.ts. The env-only version of this check was wrong in exactly
+ * the case the tier exists for: a friend admitted from chat with `/allow` is
+ * never in `ALLOWED_USER_IDS`, so promoting them would have refused to start
+ * the bot — and the message would have told them to widen a list that had
+ * nothing to do with it.
+ *
+ * Reported at startup rather than enforced here: the roster moves while the
+ * bot runs, and an approver who is later `/deny`'d should stop being able to
+ * act, not take the process down with them.
+ */
+export function findOrphanedApprovers(): number[] {
+  if (config.APPROVER_USER_IDS.length === 0) return [];
+  const reachable = new Set(allAllowedUserIds());
+  return config.APPROVER_USER_IDS.filter((id) => !reachable.has(id));
+}
+
 /** True when this user may answer someone else's approval prompt. */
 export function isApprover(userId: number | undefined): boolean {
   if (userId === undefined) return false;

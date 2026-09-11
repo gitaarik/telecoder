@@ -486,30 +486,18 @@ if (parsed.data.ADMIN_USER_IDS.length > 0) {
 }
 
 /**
- * APPROVER_USER_IDS widens who may answer a prompt without widening what they
- * own. Both ways of getting it wrong produce a silent nothing, so both stop the
- * bot here rather than days later as a prompt nobody could answer.
+ * APPROVER_USER_IDS with no ADMIN_USER_IDS is a no-op: with that unset every
+ * allowed user is already an admin, so there is nobody left for this list to
+ * promote. Someone who filled it in wanted a split and got none, which is the
+ * same silent nothing the ADMIN_USER_IDS check above exists to prevent.
  *
- * An id ALLOWED_USER_IDS does not carry can never act — the auth middleware
- * turns it away first. And approvers set with no ADMIN_USER_IDS is a no-op:
- * with that unset every allowed user is already an admin, so there is nobody
- * left for this list to promote.
+ * The other way of getting it wrong — an approver no allow-list carries —
+ * is checked at startup instead, by findOrphanedApprovers(). It has to read the
+ * roster that `/allow` writes to, and this file cannot: user-roster.ts imports
+ * it. Checking only ALLOWED_USER_IDS here was wrong in precisely the case the
+ * tier exists for — a friend admitted from chat is never in that line.
  */
 if (parsed.data.APPROVER_USER_IDS.length > 0) {
-  const orphaned = parsed.data.APPROVER_USER_IDS.filter(
-    (id) => !parsed.data.ALLOWED_USER_IDS.includes(id)
-  );
-  if (orphaned.length > 0) {
-    console.error('\u274c Invalid environment configuration:');
-    console.error(
-      `  APPROVER_USER_IDS lists ${orphaned.join(', ')}, which ALLOWED_USER_IDS does not.\n` +
-      '  APPROVER_USER_IDS picks the approvers out of ALLOWED_USER_IDS; it does not grant\n' +
-      '  access on its own, so an id in one and not the other can never do anything.\n' +
-      `  Add ${orphaned.length === 1 ? 'it' : 'them'} to ALLOWED_USER_IDS too \u2014 the same id in both lines is normal.`
-    );
-    process.exit(1);
-  }
-
   if (parsed.data.ADMIN_USER_IDS.length === 0) {
     console.error('\u274c Invalid environment configuration:');
     console.error(

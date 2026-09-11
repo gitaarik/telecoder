@@ -538,7 +538,7 @@ and nothing below changes anything.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ADMIN_USER_IDS` | all allowed users | Who may approve permission prompts and run lifecycle/transport commands |
-| `APPROVER_USER_IDS` | — | Guests who may answer someone else's prompt — never their own — and get no lifecycle commands. Needs `ADMIN_USER_IDS` |
+| `APPROVER_USER_IDS` | — | Guests who may answer someone else's prompt — never their own — and get no lifecycle commands. Needs `ADMIN_USER_IDS`; the ids must be allowed, from `.env` or `/allow` |
 | `ALLOWED_GROUP_IDS` | — | Group/supergroup chat IDs the bot is shared in |
 | `RESTRICT_TO_GROUPS` | `false` | Confine guests to those groups; admins can still DM the bot |
 | `TELECODER_PERMISSION_PROMPTS` | on when guests exist | `1`/`0` to force the permission gate on or off |

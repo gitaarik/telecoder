@@ -19,6 +19,7 @@ import { preventSleep, allowSleep } from './utils/caffeinate.js';
 import { stopCleanup } from './telegram/deduplication.js';
 import { sessionHistory } from './claude/session-history.js';
 import { listAdmitted } from './utils/user-roster.js';
+import { findOrphanedApprovers, getApproverIds } from './utils/admins.js';
 import { startScheduledRunner } from './claude/scheduled-runner.js';
 import { setMonitorRelayBot } from './claude/monitor-relay.js';
 import { setUpdateBannerRelayBot } from './claude/update-banner-relay.js';
@@ -79,6 +80,23 @@ async function main() {
   }
   if (config.ADMIN_USER_IDS.length > 0) {
     console.log(`📋 Admins: ${config.ADMIN_USER_IDS.join(', ')}`);
+  }
+  // Checked here rather than in config.ts because it reads the roster logged
+  // above. An approver nothing admits can never tap a prompt, so it is always a
+  // typo — and finding it now beats finding it as a prompt nobody answered.
+  const orphanedApprovers = findOrphanedApprovers();
+  if (orphanedApprovers.length > 0) {
+    console.error('❌ Invalid configuration:');
+    console.error(
+      `  APPROVER_USER_IDS lists ${orphanedApprovers.join(', ')}, whom nothing admits to this bot.\n` +
+      '  An approver has to be able to reach the bot first: add them to ALLOWED_USER_IDS,\n' +
+      '  or /allow them from chat. APPROVER_USER_IDS only says what they may do once in.'
+    );
+    process.exit(1);
+  }
+  const approverIds = getApproverIds();
+  if (approverIds.length > 0) {
+    console.log(`📋 Approvers: ${approverIds.join(', ')}`);
   }
   if (config.ALLOWED_GROUP_IDS.length > 0) {
     console.log(

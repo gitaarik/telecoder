@@ -302,8 +302,8 @@ describe('prompt responders', () => {
 });
 
 /**
- * Both ways of mis-setting APPROVER_USER_IDS produce a silent nothing, which is
- * exactly the failure the ADMIN_USER_IDS check already exists to prevent.
+ * APPROVER_USER_IDS with no ADMIN_USER_IDS promotes nobody, which is the same
+ * silent nothing the ADMIN_USER_IDS check already exists to prevent.
  */
 describe('approver config checks', () => {
   afterEach(() => {
@@ -327,14 +327,6 @@ describe('approver config checks', () => {
     return error;
   }
 
-  it('refuses an approver the allow-list does not carry', async () => {
-    const error = expectExit();
-    await expect(loadConfig('4242', '1')).rejects.toThrow('process.exit(1)');
-    const said = error.mock.calls.flat().join('\n');
-    expect(said).toContain('4242');
-    expect(said).toContain('ALLOWED_USER_IDS');
-  });
-
   it('refuses approvers with no admin subset, which would promote nobody', async () => {
     const error = expectExit();
     await expect(loadConfig('2', '')).rejects.toThrow('process.exit(1)');
@@ -348,5 +340,60 @@ describe('approver config checks', () => {
     }) as never);
     await expect(loadConfig('2,3', '1')).resolves.toBeUndefined();
     expect(exit).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * An approver nothing admits can never tap a prompt, so it is always a typo.
+ *
+ * The property that matters here is which allow-list counts. Checking only
+ * `ALLOWED_USER_IDS` was wrong in precisely the case the tier exists for — the
+ * friend you want to promote was let in from chat with `/allow`, and is not in
+ * the env line at all.
+ */
+describe('orphaned approver ids', () => {
+  beforeEach(() => {
+    fs.rmSync(path.join(testHome, '.claudegram', 'user-roster.json'), { force: true });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  async function load(approverIds: string) {
+    vi.resetModules();
+    vi.stubEnv('ADMIN_USER_IDS', '1');
+    vi.stubEnv('APPROVER_USER_IDS', approverIds);
+    const admins = await import('../../src/utils/admins.js');
+    const roster = await import('../../src/utils/user-roster.js');
+    roster.resetRosterCache();
+    return { ...admins, ...roster };
+  }
+
+  it('finds an id no allow-list carries', async () => {
+    const { findOrphanedApprovers } = await load('4242');
+    expect(findOrphanedApprovers()).toEqual([4242]);
+  });
+
+  it('accepts an id from ALLOWED_USER_IDS', async () => {
+    const { findOrphanedApprovers } = await load('2');
+    expect(findOrphanedApprovers()).toEqual([]);
+  });
+
+  it('accepts a guest admitted from chat, who is in no env line', async () => {
+    // The regression this file exists for: /allow admits someone without a
+    // restart, and promoting them must not need ALLOWED_USER_IDS edited too.
+    const { findOrphanedApprovers, admitUser } = await load('999');
+    expect(findOrphanedApprovers()).toEqual([999]);
+
+    admitUser({ id: 999, username: 'friend' }, 1);
+    expect(findOrphanedApprovers()).toEqual([]);
+  });
+
+  it('says nothing when the list is empty', async () => {
+    const { findOrphanedApprovers } = await load('');
+    expect(findOrphanedApprovers()).toEqual([]);
   });
 });
