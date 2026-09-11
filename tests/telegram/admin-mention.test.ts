@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Api } from 'grammy';
 import {
-  resolveAdminsInChat,
+  resolveApproversInChat,
   appendApproverLine,
   describeResponderRefusal,
   resetAdminNameCache,
@@ -21,7 +21,7 @@ function fakeApi(members: Record<number, { first_name?: string; last_name?: stri
   return { api: { getChatMember } as unknown as Api, getChatMember };
 }
 
-describe('resolveAdminsInChat', () => {
+describe('resolveApproversInChat', () => {
   beforeEach(() => {
     resetAdminNameCache();
     vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -34,27 +34,27 @@ describe('resolveAdminsInChat', () => {
 
   it('joins first and last name', async () => {
     const { api } = fakeApi({ 1: { first_name: 'Rik', last_name: 'V' }, 2: {}, 3: {} });
-    const admins = await resolveAdminsInChat(api, CHAT);
+    const admins = await resolveApproversInChat(api, CHAT);
     expect(admins.find((a) => a.id === 1)?.name).toBe('Rik V');
   });
 
   it('falls back to the username when there is no name', async () => {
     const { api } = fakeApi({ 1: { username: 'rik' }, 2: {}, 3: {} });
-    expect((await resolveAdminsInChat(api, CHAT)).find((a) => a.id === 1)?.name).toBe('rik');
+    expect((await resolveApproversInChat(api, CHAT)).find((a) => a.id === 1)?.name).toBe('rik');
   });
 
   it('drops an admin who is not in the chat rather than listing them', async () => {
     // Mentioning someone absent notifies nobody, so naming them would promise
     // an approver who cannot see the prompt.
     const { api } = fakeApi({ 1: { first_name: 'Rik' } });
-    const admins = await resolveAdminsInChat(api, CHAT);
+    const admins = await resolveApproversInChat(api, CHAT);
     expect(admins.map((a) => a.id)).toEqual([1]);
   });
 
   it('asks the API once per admin and serves repeats from cache', async () => {
     const { api, getChatMember } = fakeApi({ 1: { first_name: 'Rik' }, 2: { first_name: 'Ann' }, 3: { first_name: 'Sam' } });
-    await resolveAdminsInChat(api, CHAT);
-    await resolveAdminsInChat(api, CHAT);
+    await resolveApproversInChat(api, CHAT);
+    await resolveApproversInChat(api, CHAT);
     expect(getChatMember).toHaveBeenCalledTimes(3);
   });
 
@@ -68,12 +68,12 @@ describe('resolveAdminsInChat', () => {
     });
     const api = { getChatMember } as unknown as Api;
 
-    expect((await resolveAdminsInChat(api, CHAT)).map((a) => a.id)).toEqual([1]);
+    expect((await resolveApproversInChat(api, CHAT)).map((a) => a.id)).toEqual([1]);
 
     members[2] = { first_name: 'Ann' }; // Ann joins the group
     vi.advanceTimersByTime(11 * 60 * 1000);
 
-    expect((await resolveAdminsInChat(api, CHAT)).map((a) => a.id)).toEqual([1, 2]);
+    expect((await resolveApproversInChat(api, CHAT)).map((a) => a.id)).toEqual([1, 2]);
   });
 });
 
@@ -113,5 +113,22 @@ describe('describeResponderRefusal', () => {
 
   it('handles an absent list without claiming an approver exists', () => {
     expect(describeResponderRefusal(undefined)).toBe('You cannot answer this question.');
+  });
+
+  it('tells an approver why their own request is the one they cannot answer', async () => {
+    // Without this they read "only an admin can answer that one" and conclude
+    // their approver rights never took effect, when the truth is one prompt
+    // narrower — and it is the prompt they will hit most often.
+    vi.resetModules();
+    vi.stubEnv('ADMIN_USER_IDS', '1');
+    vi.stubEnv('APPROVER_USER_IDS', '2');
+    const mod = await import('../../src/telegram/admin-mention.js');
+    try {
+      expect(mod.describeResponderRefusal([1], 2)).toMatch(/your own request/i);
+      expect(mod.describeResponderRefusal([1, 2], 3)).toMatch(/admin or approver/i);
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
   });
 });

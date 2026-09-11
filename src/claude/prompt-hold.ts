@@ -17,9 +17,9 @@ import type { Context } from 'grammy';
 import { config } from '../config.js';
 import { createPendingQuestion } from './ask-user.js';
 import { parseSessionKey } from '../utils/session-key.js';
-import { getAdminIds, isAdmin } from '../utils/admins.js';
+import { getPromptResponderIds, isAdmin } from '../utils/admins.js';
 import { EntityText, clip } from '../telegram/entities.js';
-import { resolveAdminsInChat, appendApproverLine } from '../telegram/admin-mention.js';
+import { resolveApproversInChat, appendApproverLine } from '../telegram/admin-mention.js';
 import { isCharterJudgeEnabled, judgeMessage } from './charter-judge.js';
 
 /** Longest excerpt of the held message we quote back into the prompt. */
@@ -62,32 +62,34 @@ export async function screenPrompt(
   if (!verdict.hold) return PROCEED;
 
   console.log(`[PromptHold] held session:${sessionKey} user:${ctx.from?.id ?? '?'} — ${verdict.reason}`);
-  return askAdmins(ctx, sessionKey, message, verdict.reason);
+  return askApprovers(ctx, sessionKey, message, verdict.reason);
 }
 
 /**
- * Post the approval prompt and wait. Returns once an admin decides, or once the
- * timeout does it for them.
+ * Post the approval prompt and wait. Returns once an admin or an eligible
+ * approver decides, or once the timeout does it for them.
  */
-async function askAdmins(
+async function askApprovers(
   ctx: Context,
   sessionKey: string,
   message: string,
   reason: string,
 ): Promise<HoldOutcome> {
   const { chatId, threadId } = parseSessionKey(sessionKey);
-  const admins = await resolveAdminsInChat(ctx.api, chatId);
+  // Admins, plus any approver who is not the person who sent the held message.
+  const responderIds = getPromptResponderIds(ctx.from?.id);
+  const responders = await resolveApproversInChat(ctx.api, chatId, responderIds);
   const timeoutMs = holdTimeoutMs();
 
   const optionLabels = ['✅ Let it run', '❌ Block'];
-  const { id, promise } = createPendingQuestion(optionLabels, timeoutMs, sessionKey, getAdminIds());
+  const { id, promise } = createPendingQuestion(optionLabels, timeoutMs, sessionKey, responderIds);
 
   const requester = describeRequester(ctx);
   const { text, entities } = buildHoldMessage({
     reason,
     requester,
     message,
-    admins,
+    responders,
     timeoutMinutes: Math.round(timeoutMs / 60000),
   });
 
@@ -106,7 +108,7 @@ async function askAdmins(
     // only honest outcome, and the reason says why.
     return {
       proceed: false,
-      message: '🚧 This message was held for an admin, but the approval prompt could not be posted. Nothing ran.',
+      message: '🚧 This message was held for approval, but the prompt could not be posted. Nothing ran.',
     };
   }
 
@@ -115,8 +117,8 @@ async function askAdmins(
     return {
       proceed: false,
       message: answer === null
-        ? `🚧 Held for an admin — ${reason}. No admin answered in ${Math.round(timeoutMs / 60000)} min, so nothing ran.`
-        : `🚧 An admin blocked this one — ${reason}. Nothing ran.`,
+        ? `🚧 Held for approval — ${reason}. Nobody answered in ${Math.round(timeoutMs / 60000)} min, so nothing ran.`
+        : `🚧 Blocked — ${reason}. Nothing ran.`,
     };
   }
   return PROCEED;
@@ -126,7 +128,8 @@ interface HoldParts {
   reason: string;
   requester: string | undefined;
   message: string;
-  admins: { id: number; name: string }[];
+  /** Admins plus the approvers eligible for this hold, as resolved names. */
+  responders: { id: number; name: string }[];
   timeoutMinutes: number;
 }
 
@@ -134,14 +137,14 @@ interface HoldParts {
 export function buildHoldMessage(parts: HoldParts): ReturnType<EntityText['build']> {
   const b = new EntityText();
 
-  b.add('🚧 ').bold('Held for an admin').add(` — ${parts.reason}`).newline();
+  b.add('🚧 ').bold('Held for approval').add(` — ${parts.reason}`).newline();
   if (parts.requester) b.add('Asked by ').bold(parts.requester).newline();
   b.newline();
 
   b.pre(clip(parts.message.trim(), MAX_QUOTE_CHARS));
   b.newline();
 
-  appendApproverLine(b, parts.admins);
+  appendApproverLine(b, parts.responders);
   b.newline().italic(`Nothing runs until then. Times out in ${parts.timeoutMinutes} min → blocked.`);
 
   return b.build();

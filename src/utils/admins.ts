@@ -53,6 +53,54 @@ export function isAdmin(userId: number | undefined): boolean {
 }
 
 /**
+ * The people who may answer an approval prompt but do not own the bot.
+ *
+ * This exists because "can approve" and "can restart the bot" were one flag,
+ * and on a bot shared with several people that forces a choice between one
+ * owner being the bottleneck for every prompt and handing guests the controls
+ * — including `/method` and `/permissionmode`, either of which switches the
+ * gate off. An approver is a guest in every other respect: the charter judge
+ * still reads their messages, the gate still stops their tool calls, and the
+ * lifecycle commands still refuse them.
+ *
+ * Empty when `ADMIN_USER_IDS` is unset, because then every allowed user is
+ * already an admin and there is nothing to widen. Ids the admin roster already
+ * carries are dropped rather than counted twice.
+ */
+export function getApproverIds(): number[] {
+  // config.ts refuses to start on approvers-without-admins, so this is a
+  // belt-and-braces restatement of the invariant rather than a reachable path.
+  if (config.ADMIN_USER_IDS.length === 0) return [];
+  const admins = getAdminIds();
+  return config.APPROVER_USER_IDS.filter(
+    (id) => id !== GROUP_ANONYMOUS_BOT_ID && !admins.includes(id)
+  );
+}
+
+/** True when this user may answer someone else's approval prompt. */
+export function isApprover(userId: number | undefined): boolean {
+  if (userId === undefined) return false;
+  return getApproverIds().includes(userId);
+}
+
+/**
+ * Who may answer a prompt raised by `requesterId`.
+ *
+ * Approvers are filtered against the requester: tapping "allow" on your own
+ * request confirms nothing, and a tier that let you do it would be a speed
+ * bump rather than supervision. Admins are not filtered, because an admin
+ * approving their own `sudo` is the owner of the machine agreeing with
+ * themselves — which is what a solo bot has always done.
+ *
+ * Never empty: `getAdminIds()` falls back to the whole allow-list.
+ */
+export function getPromptResponderIds(requesterId: number | undefined): number[] {
+  const admins = getAdminIds();
+  const approvers = getApproverIds().filter((id) => id !== requesterId);
+  return [...admins, ...approvers];
+}
+
+/**
  * True when at least one allowed user is not an admin — i.e. the bot is shared
  * with someone who is meant to be supervised.
  *

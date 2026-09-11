@@ -28,10 +28,11 @@ afterAll(() => {
 // The admin roster is read off the frozen `config` object, which parses env at
 // import time — so anything that changes ADMIN_USER_IDS has to stub the env and
 // re-import the module graph rather than mutating config in place.
-async function loadAdmins(adminIds?: string, allowedIds?: string) {
+async function loadAdmins(adminIds?: string, allowedIds?: string, approverIds?: string) {
   vi.resetModules();
   if (adminIds === undefined) vi.stubEnv('ADMIN_USER_IDS', '');
   else vi.stubEnv('ADMIN_USER_IDS', adminIds);
+  vi.stubEnv('APPROVER_USER_IDS', approverIds ?? '');
   // config.ts refuses to start when ADMIN_USER_IDS names an id ALLOWED_USER_IDS
   // does not, so a test using an unusual admin id has to widen both.
   if (allowedIds !== undefined) vi.stubEnv('ALLOWED_USER_IDS', allowedIds);
@@ -204,5 +205,148 @@ describe('supervision follows the runtime roster', () => {
     expect(hasGuestUsers()).toBe(true);
     revokeUser(999);
     expect(hasGuestUsers()).toBe(false);
+  });
+});
+
+/**
+ * The approver tier exists so that one owner is not the bottleneck for every
+ * prompt on a bot several people use, without that costing the guests' guard
+ * rails: an approver answers someone else's prompt and nothing more.
+ */
+describe('approver tier', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it('names the approvers without making them admins', async () => {
+    const { getApproverIds, isApprover, isAdmin } = await loadAdmins('1', undefined, '2');
+    expect(getApproverIds()).toEqual([2]);
+    expect(isApprover(2)).toBe(true);
+    expect(isAdmin(2)).toBe(false);
+  });
+
+  it('leaves an approver counted as a guest, so supervision stays on', async () => {
+    // The property that matters: hasGuestUsers() is what switches on the gate,
+    // the scope guard and the charter judge. Promoting someone to approver
+    // must not read as "this bot has no guests any more".
+    const { hasGuestUsers, getGuestIds } = await loadAdmins('1', undefined, '2');
+    expect(hasGuestUsers()).toBe(true);
+    expect(getGuestIds()).toContain(2);
+  });
+
+  it('does not count an id that is already an admin', async () => {
+    const { getApproverIds } = await loadAdmins('1,2', undefined, '2,3');
+    expect(getApproverIds()).toEqual([3]);
+  });
+
+  it('never treats the anonymous-admin bot as an approver', async () => {
+    const { isApprover } = await loadAdmins('1', `1,2,3,${1087968824}`, `2,${1087968824}`);
+    expect(isApprover(1087968824)).toBe(false);
+    expect(isApprover(2)).toBe(true);
+  });
+
+  it('ignores a blank list', async () => {
+    const { getApproverIds } = await loadAdmins('1');
+    expect(getApproverIds()).toEqual([]);
+  });
+});
+
+/**
+ * Who may answer a given prompt. The rule the tier turns on: an approver can
+ * answer anyone's request but their own, because a confirmation the requester
+ * taps themselves confirms nothing.
+ */
+describe('prompt responders', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it('offers the buttons to admins and approvers alike', async () => {
+    const { getPromptResponderIds } = await loadAdmins('1', undefined, '2,3');
+    expect(getPromptResponderIds(999).sort()).toEqual([1, 2, 3]);
+  });
+
+  it('drops the approver who raised the prompt', async () => {
+    const { getPromptResponderIds } = await loadAdmins('1', undefined, '2,3');
+    expect(getPromptResponderIds(2).sort()).toEqual([1, 3]);
+  });
+
+  it('still lets an admin approve their own request', async () => {
+    // Unchanged from a solo bot: the owner of the machine agreeing with
+    // themselves is what every install did before the tier existed.
+    const { getPromptResponderIds } = await loadAdmins('1', undefined, '2');
+    expect(getPromptResponderIds(1)).toContain(1);
+  });
+
+  it('never leaves a prompt nobody can answer', async () => {
+    // The sole approver asking is the case that could strand a prompt; the
+    // admins are always still on it.
+    const { getPromptResponderIds } = await loadAdmins('1', undefined, '2');
+    expect(getPromptResponderIds(2)).toEqual([1]);
+  });
+
+  it('falls back to the whole allow-list on a solo bot', async () => {
+    const { getPromptResponderIds } = await loadAdmins();
+    expect(getPromptResponderIds(1)).toEqual([1, 2, 3]);
+  });
+});
+
+/**
+ * Both ways of mis-setting APPROVER_USER_IDS produce a silent nothing, which is
+ * exactly the failure the ADMIN_USER_IDS check already exists to prevent.
+ */
+describe('approver config checks', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+    vi.restoreAllMocks();
+  });
+
+  async function loadConfig(approverIds: string, adminIds: string): Promise<void> {
+    vi.resetModules();
+    vi.stubEnv('ADMIN_USER_IDS', adminIds);
+    vi.stubEnv('APPROVER_USER_IDS', approverIds);
+    await import('../../src/config.js');
+  }
+
+  function expectExit() {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code})`);
+    }) as never);
+    return error;
+  }
+
+  it('refuses an approver the allow-list does not carry', async () => {
+    const error = expectExit();
+    await expect(loadConfig('4242', '1')).rejects.toThrow('process.exit(1)');
+    const said = error.mock.calls.flat().join('\n');
+    expect(said).toContain('4242');
+    expect(said).toContain('ALLOWED_USER_IDS');
+  });
+
+  it('refuses approvers with no admin subset, which would promote nobody', async () => {
+    const error = expectExit();
+    await expect(loadConfig('2', '')).rejects.toThrow('process.exit(1)');
+    const said = error.mock.calls.flat().join('\n');
+    expect(said).toContain('ADMIN_USER_IDS');
+  });
+
+  it('starts on a well-formed split', async () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('exited');
+    }) as never);
+    await expect(loadConfig('2,3', '1')).resolves.toBeUndefined();
+    expect(exit).not.toHaveBeenCalled();
   });
 });

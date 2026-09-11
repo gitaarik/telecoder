@@ -30,7 +30,7 @@
 import { Context } from 'grammy';
 import { config } from '../../../config.js';
 import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
-import { getAdminIds, isAdmin } from '../../../utils/admins.js';
+import { getAdminIds, getApproverIds, isApprover, isAdmin } from '../../../utils/admins.js';
 import {
   admitUser,
   describeUser,
@@ -221,7 +221,13 @@ export async function handleDeny(ctx: Context): Promise<void> {
       await replyMd(
         ctx,
         `🔒 ${esc(describeUser(user))} is allowed by the bot's \`.env\`, which I can't ` +
-          'edit\\. Remove their id from `ALLOWED_USER_IDS` and restart\\.',
+          'edit\\. Remove their id from `ALLOWED_USER_IDS`' +
+          (isApprover(user.id) ? ' *and* `APPROVER_USER_IDS`' : '') +
+          ' and restart\\.' +
+          (isApprover(user.id)
+            ? '\n\nBoth lines matter: an id left in `APPROVER_USER_IDS` that ' +
+              '`ALLOWED_USER_IDS` no longer carries stops the bot from starting\\.'
+            : ''),
       );
       return;
     }
@@ -246,7 +252,8 @@ function userLine(user: { id: number; username?: string; name?: string }): strin
 
 export async function handleUsers(ctx: Context): Promise<void> {
   const admins = getAdminIds();
-  const env = envAllowedIds().filter((id) => !admins.includes(id));
+  const approvers = getApproverIds();
+  const env = envAllowedIds().filter((id) => !admins.includes(id) && !approvers.includes(id));
   const admitted = listAdmitted();
   const pending = listPending();
 
@@ -254,6 +261,12 @@ export async function handleUsers(ctx: Context): Promise<void> {
 
   lines.push('', `*Admins* \\(${admins.length}\\)`);
   for (const id of admins) lines.push(`• \`${id}\`${id === ctx.from?.id ? ' — you' : ''}`);
+
+  if (approvers.length > 0) {
+    lines.push('', `*Approvers* \\(${approvers.length}\\)`);
+    for (const id of approvers) lines.push(`• \`${id}\`${id === ctx.from?.id ? ' — you' : ''}`);
+    lines.push('_Guests who can answer someone else’s approval prompt, but not their own\\._');
+  }
 
   if (env.length > 0) {
     lines.push('', `*Guests from \`.env\`* \\(${env.length}\\)`);

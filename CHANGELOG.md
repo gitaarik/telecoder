@@ -7,6 +7,18 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Sharing a bot
 
+- **An approver tier** — `APPROVER_USER_IDS` names guests who may answer someone
+  else's permission prompt without owning the bot. Being able to tap "Allow once"
+  and being able to run `/restartbot` or `/method` were one flag, which forced a
+  choice between one admin being the bottleneck for every prompt and handing
+  guests the switch that turns the gate off. An approver stays a guest in every
+  other respect — the charter judge still reads their messages, the gate still
+  stops their tool calls — and cannot approve their own request, so the prompt
+  still means something. `/users` lists them as their own tier, `/deny` names both
+  lists so removing one doesn't strand an id the orphan check refuses to start on,
+  and the toast tells an approver why their own request is the one they can't
+  answer.
+
 - **Admitting people from chat** — `/allow`, `/deny` and `/users`. A stranger who
   posts in the shared group gets an approve card naming them, and someone added
   to the group is asked about the moment they join; one tap makes them a guest,

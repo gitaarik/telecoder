@@ -147,7 +147,7 @@ async function handleAskUserCallback(ctx: Context): Promise<void> {
   if (outcome === 'forbidden') {
     // Leave the keyboard up — the people who *can* answer still need it.
     await ctx.answerCallbackQuery({
-      text: describeResponderRefusal(getQuestionResponders(id)),
+      text: describeResponderRefusal(getQuestionResponders(id), ctx.from?.id),
       show_alert: true,
     });
     return;

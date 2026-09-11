@@ -24,7 +24,7 @@ import { getAdminIds } from '../utils/admins.js';
 import { describeUser, noteSeenUser, type UserIdentity } from '../utils/user-roster.js';
 import { BoundedMap } from '../utils/bounded-map.js';
 import { sanitizeError } from '../utils/sanitize.js';
-import { resolveAdminsInChat, appendApproverLine } from './admin-mention.js';
+import { resolveApproversInChat, appendApproverLine } from './admin-mention.js';
 import { EntityText, clip } from './entities.js';
 
 /** Callback data prefix for the card's buttons. Matched in bot.ts. */
@@ -130,7 +130,8 @@ export async function requestAccess(ctx: Context, user: UserIdentity): Promise<A
     // Record them first: if the send fails, `/allow @them` should still work.
     noteSeenUser(user, chatId);
 
-    const admins = await resolveAdminsInChat(ctx.api, chatId);
+    // Admins only: letting a stranger in is an owner decision, not an approver's.
+    const admins = await resolveApproversInChat(ctx.api, chatId);
     const { text, entities } = buildAccessRequestMessage({ user, admins });
     const threadId = ctx.message?.message_thread_id;
     const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};

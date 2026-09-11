@@ -68,6 +68,28 @@ const envSchema = z.object({
         ? val.split(',').map((id) => parseInt(id.trim(), 10)).filter((id) => Number.isFinite(id))
         : []
     ),
+  // The subset of ALLOWED_USER_IDS that may answer an approval prompt without
+  // owning the bot. An approver is still a guest everywhere else — the charter
+  // judge still reads their messages, the gate still stops their tool calls,
+  // and the lifecycle commands are still closed to them. All they gain is the
+  // right to answer *someone else's* prompt, which is what stops one owner
+  // being the bottleneck for a bot several people use.
+  //
+  // They cannot answer their own: an approval the requester taps themselves
+  // confirms nothing, which is the whole reason the roster is narrowed at all.
+  // Ids that ADMIN_USER_IDS already carries are ignored here — admins can
+  // approve anyway, and listing someone twice should not mean something new.
+  // Only meaningful alongside ADMIN_USER_IDS; with that unset every allowed
+  // user is already an admin and there is nothing left for this to widen.
+  // See src/utils/admins.ts for the roster logic.
+  APPROVER_USER_IDS: z
+    .string()
+    .default('')
+    .transform((val) =>
+      val
+        ? val.split(',').map((id) => parseInt(id.trim(), 10)).filter((id) => Number.isFinite(id))
+        : []
+    ),
   // Confine non-admins to the groups in ALLOWED_GROUP_IDS. Without this a
   // shared bot is still reachable in a private chat, where the owner cannot
   // see what is being asked of it — which defeats the point of sharing it in a
@@ -458,6 +480,43 @@ if (parsed.data.ADMIN_USER_IDS.length > 0) {
       '  ADMIN_USER_IDS picks the admins out of ALLOWED_USER_IDS; it does not grant access\n' +
       '  on its own, so an id in one and not the other can never do anything.\n' +
       `  Add ${orphaned.length === 1 ? 'it' : 'them'} to ALLOWED_USER_IDS too — the same id in both lines is normal.`
+    );
+    process.exit(1);
+  }
+}
+
+/**
+ * APPROVER_USER_IDS widens who may answer a prompt without widening what they
+ * own. Both ways of getting it wrong produce a silent nothing, so both stop the
+ * bot here rather than days later as a prompt nobody could answer.
+ *
+ * An id ALLOWED_USER_IDS does not carry can never act — the auth middleware
+ * turns it away first. And approvers set with no ADMIN_USER_IDS is a no-op:
+ * with that unset every allowed user is already an admin, so there is nobody
+ * left for this list to promote.
+ */
+if (parsed.data.APPROVER_USER_IDS.length > 0) {
+  const orphaned = parsed.data.APPROVER_USER_IDS.filter(
+    (id) => !parsed.data.ALLOWED_USER_IDS.includes(id)
+  );
+  if (orphaned.length > 0) {
+    console.error('\u274c Invalid environment configuration:');
+    console.error(
+      `  APPROVER_USER_IDS lists ${orphaned.join(', ')}, which ALLOWED_USER_IDS does not.\n` +
+      '  APPROVER_USER_IDS picks the approvers out of ALLOWED_USER_IDS; it does not grant\n' +
+      '  access on its own, so an id in one and not the other can never do anything.\n' +
+      `  Add ${orphaned.length === 1 ? 'it' : 'them'} to ALLOWED_USER_IDS too \u2014 the same id in both lines is normal.`
+    );
+    process.exit(1);
+  }
+
+  if (parsed.data.ADMIN_USER_IDS.length === 0) {
+    console.error('\u274c Invalid environment configuration:');
+    console.error(
+      '  APPROVER_USER_IDS is set but ADMIN_USER_IDS is not.\n' +
+      '  With no admin subset configured every allowed user is already an admin and can\n' +
+      '  approve anything, so this list would promote nobody and change nothing.\n' +
+      '  Set ADMIN_USER_IDS to the people who own the bot, and leave the rest here.'
     );
     process.exit(1);
   }

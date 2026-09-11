@@ -174,10 +174,18 @@ who triggered it can tap themselves is not an approval.
 So an instance can split its users into **admins** and **guests**. Guests use the
 agent normally; admins own the parts that reach past their own session.
 
+One owner answering every prompt becomes its own bottleneck, though, so there is
+a tier in between: an **approver** is a guest who can answer someone else's
+permission prompt. They stay a guest in every other respect — the charter judge
+still reads their messages, the gate still stops their tool calls, and the
+lifecycle commands still refuse them — and they cannot approve their own
+request, which is what keeps the prompt meaningful.
+
 ```bash
 # .env — a bot shared with friends in one group
 ALLOWED_USER_IDS=111,222,333     # you and two friends
 ADMIN_USER_IDS=111               # just you
+APPROVER_USER_IDS=222            # can unblock a prompt, owns nothing
 ALLOWED_GROUP_IDS=-1001234567890 # the group you share
 RESTRICT_TO_GROUPS=true          # guests can't take it into a DM
 CLAUDE_METHOD_DEFAULT=pty        # the transport the gate runs on
@@ -198,10 +206,12 @@ than a diff to review afterwards.
 
 What that buys you:
 
-- **Approval prompts are admin-only.** A guarded command pauses, and the prompt
-  names its admins with a real Telegram mention — so it notifies you even in a
-  muted group, and even if you have no @username. Guests tapping it get told who
-  they're waiting on. Unanswered, it denies after
+- **Approval prompts go to admins, and to whoever you name in
+  `APPROVER_USER_IDS`.** A guarded command pauses, and the prompt names them
+  with a real Telegram mention — so it notifies you even in a muted group, and
+  even if you have no @username. Everyone else tapping it gets told who they're
+  waiting on; an approver tapping their *own* request gets told why that one is
+  the exception. Unanswered, it denies after
   `PERMISSION_PROMPT_TIMEOUT_MINUTES`.
 - **The gate turns itself on.** With guests present you get prompts without
   setting a second variable; `TELECODER_PERMISSION_PROMPTS=0` opts out.
@@ -519,6 +529,7 @@ and nothing below changes anything.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ADMIN_USER_IDS` | all allowed users | Who may approve permission prompts and run lifecycle/transport commands |
+| `APPROVER_USER_IDS` | — | Guests who may answer someone else's prompt — never their own — and get no lifecycle commands. Needs `ADMIN_USER_IDS` |
 | `ALLOWED_GROUP_IDS` | — | Group/supergroup chat IDs the bot is shared in |
 | `RESTRICT_TO_GROUPS` | `false` | Confine guests to those groups; admins can still DM the bot |
 | `TELECODER_PERMISSION_PROMPTS` | on when guests exist | `1`/`0` to force the permission gate on or off |

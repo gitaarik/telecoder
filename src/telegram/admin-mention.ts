@@ -1,11 +1,15 @@
 /**
- * Naming admins in a chat.
+ * Naming a prompt's approvers in a chat.
  *
  * An approval prompt is only as good as the notification it raises: if the
- * admin has the group muted — and anyone sharing a bot with friends will mute
- * that group — a prompt that does not mention them is a prompt that is answered
- * ten minutes later by the timeout. So the gate mentions its admins by numeric
- * id, which pings them whether or not they have a @username.
+ * people who can answer it have the group muted — and anyone sharing a bot with
+ * friends will mute that group — a prompt that does not mention them is a
+ * prompt that is answered ten minutes later by the timeout. So the gate
+ * mentions them by numeric id, which pings them whether or not they have a
+ * @username.
+ *
+ * Who that is varies per prompt: admins always, plus any approver who is not
+ * the person who asked. So the roster is passed in rather than read here.
  *
  * Rendering a mention needs a display name, and an id alone does not carry one.
  * `getChatMember` does, so it is asked once per (chat, admin) pair and the
@@ -15,7 +19,7 @@
  */
 
 import type { Api } from 'grammy';
-import { getAdminIds } from '../utils/admins.js';
+import { getAdminIds, isApprover } from '../utils/admins.js';
 import { EntityText } from './entities.js';
 
 interface KnownAdmin {
@@ -44,16 +48,23 @@ function cacheKey(chatId: number, userId: number): string {
 }
 
 /**
- * Look up the admins' display names in this chat. Admins the lookup cannot
- * resolve — not a member, or the API call failed — are dropped rather than
+ * Look up these users' display names in this chat. Anyone the lookup cannot
+ * resolve — not a member, or the API call failed — is dropped rather than
  * rendered with a placeholder: a mention of someone who is not in the chat
  * notifies nobody, and listing them would suggest an approver who cannot see
  * the prompt.
+ *
+ * Defaults to the admin roster, which is what every caller wanted before
+ * approvers existed.
  */
-export async function resolveAdminsInChat(api: Api, chatId: number): Promise<KnownAdmin[]> {
+export async function resolveApproversInChat(
+  api: Api,
+  chatId: number,
+  ids: number[] = getAdminIds(),
+): Promise<KnownAdmin[]> {
   const resolved: KnownAdmin[] = [];
 
-  for (const id of getAdminIds()) {
+  for (const id of ids) {
     const key = cacheKey(chatId, id);
     const cached = nameCache.get(key);
     if (cached && (cached.expiresAt === undefined || cached.expiresAt > Date.now())) {
@@ -64,7 +75,7 @@ export async function resolveAdminsInChat(api: Api, chatId: number): Promise<Kno
     try {
       const member = await api.getChatMember(chatId, id);
       const user = member.user;
-      const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username || `admin ${id}`;
+      const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username || `approver ${id}`;
       nameCache.set(key, { name });
       resolved.push({ id, name });
     } catch {
@@ -96,13 +107,26 @@ export function appendApproverLine(builder: EntityText, admins: KnownAdmin[]): E
   return builder.add(' can approve this.');
 }
 
-/** The toast shown when someone taps an approval button that isn't theirs. */
-export function describeResponderRefusal(allowedResponderIds: number[] | undefined): string {
+/**
+ * The toast shown when someone taps an approval button that isn't theirs.
+ *
+ * An approver who taps their own request is the one case worth naming exactly.
+ * "Only a bot admin can answer that one" is wrong for them and reads as though
+ * their approver rights had not taken effect, when the truth is narrower and
+ * they will hit it every time: they can answer anyone's prompt but this one.
+ */
+export function describeResponderRefusal(
+  allowedResponderIds: number[] | undefined,
+  userId?: number,
+): string {
   const count = allowedResponderIds?.length ?? 0;
   if (count === 0) return 'You cannot answer this question.';
+  if (isApprover(userId)) {
+    return 'You can’t approve your own request — someone else has to.';
+  }
   return count === 1
     ? 'Only this bot’s admin can answer that one.'
-    : 'Only a bot admin can answer that one.';
+    : 'Only an admin or approver can answer that one.';
 }
 
 /** Test seam — production keeps the cache for the life of the process. */

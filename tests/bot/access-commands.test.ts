@@ -223,6 +223,30 @@ describe('/users', () => {
     await handleUsers(ctx);
     expect(said(reply)).toMatch(/none yet/);
   });
+
+  it('lists approvers as their own tier rather than as plain guests', async () => {
+    // The roster is read off the frozen config, so this needs its own module
+    // graph — the rest of the file runs with ADMIN_USER_IDS unset, where every
+    // allowed user is an admin and there are no approvers to show.
+    vi.resetModules();
+    vi.stubEnv('ADMIN_USER_IDS', '1');
+    vi.stubEnv('APPROVER_USER_IDS', '2');
+    try {
+      const access = await import('../../src/bot/handlers/command/access.js');
+      const { ctx, reply } = makeCtx({ text: '/users' });
+      await access.handleUsers(ctx as unknown as Context);
+      const text = said(reply);
+
+      expect(text).toMatch(/Approvers/);
+      // 3 is the only plain guest left; 2 must not be counted among them.
+      const approverSection = text.slice(text.indexOf('Approvers'));
+      expect(approverSection).toContain('2');
+      expect(text).toMatch(/but not their own/);
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
+  });
 });
 
 describe('the access card', () => {

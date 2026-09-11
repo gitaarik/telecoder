@@ -2156,6 +2156,14 @@
             yours, and <code>RESTRICT_TO_GROUPS</code> keeps them out of private chats.</p>
           </div>
           <div class="feature-card" data-category="reliability">
+            <div class="feature-icon"><svg><use href="#i-approve"/></svg></div>
+            <h3>Spread the approvals without spreading the keys</h3>
+            <p><code>APPROVER_USER_IDS</code> lets a trusted guest answer a permission prompt
+            while staying a guest everywhere else — no <code>/restartbot</code>, no transport
+            switch. Nobody approves their own request, so the prompt still means something and
+            you stop being the bottleneck for a bot several people use.</p>
+          </div>
+          <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-welcome"/></svg></div>
             <h3>Let someone in with one tap</h3>
             <p>A stranger posts in the shared group and the refusal comes with an approve
@@ -2494,6 +2502,11 @@ CCR_AUTOSTART=true</pre>
                 <tr>
                   <td class="var-name">ADMIN_USER_IDS</td>
                   <td>Who may approve permission prompts and run lifecycle/transport commands (default: every allowed user)</td>
+                  <td class="required-optional">Optional</td>
+                </tr>
+                <tr>
+                  <td class="var-name">APPROVER_USER_IDS</td>
+                  <td>Guests who may answer someone else's permission prompt, but not their own, and get no lifecycle commands</td>
                   <td class="required-optional">Optional</td>
                 </tr>
                 <tr>

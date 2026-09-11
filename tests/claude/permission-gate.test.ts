@@ -9,7 +9,7 @@ function prompt(overrides: Partial<Parameters<typeof buildPromptMessage>[0]> = {
     toolName: 'Bash',
     toolInput: { command: 'sudo apt install ffmpeg' },
     requester: 'Bob',
-    admins: ADMINS,
+    responders: ADMINS,
     timeoutMinutes: 10,
     ...overrides,
   });
@@ -26,7 +26,7 @@ describe('buildPromptMessage', () => {
   });
 
   it('mentions each admin by id so the prompt raises a notification', () => {
-    const { text, entities } = prompt({ admins: [{ id: 42, name: 'Rik' }, { id: 43, name: 'Ann' }] });
+    const { text, entities } = prompt({ responders: [{ id: 42, name: 'Rik' }, { id: 43, name: 'Ann' }] });
     const mentions = entities.filter((e) => e.type === 'text_mention');
 
     expect(mentions).toHaveLength(2);
@@ -35,7 +35,7 @@ describe('buildPromptMessage', () => {
   });
 
   it('still reads correctly when no admin could be resolved in the chat', () => {
-    const { text, entities } = prompt({ admins: [] });
+    const { text, entities } = prompt({ responders: [] });
     expect(text).toContain('Only an admin can approve this.');
     expect(entities.filter((e) => e.type === 'text_mention')).toHaveLength(0);
   });

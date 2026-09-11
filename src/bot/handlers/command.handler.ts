@@ -547,7 +547,8 @@ export async function handleExplore(ctx: Context): Promise<void> {
 export async function handlePermissions(ctx: Context): Promise<void> {
   const { isPermissionGateEnabled, isPermissionGateImplicit, listDangerousPatterns } =
     await import('../../claude/permission-gate.js');
-  const { getAdminIds, getGuestIds, hasGuestUsers, isAdmin } = await import('../../utils/admins.js');
+  const { getAdminIds, getApproverIds, getGuestIds, hasGuestUsers, isAdmin, isApprover } =
+    await import('../../utils/admins.js');
   const enabled = isPermissionGateEnabled();
   const patterns = listDangerousPatterns();
 
@@ -607,14 +608,29 @@ export async function handlePermissions(ctx: Context): Promise<void> {
 
   if (hasGuestUsers()) {
     const admins = getAdminIds();
-    const guests = getGuestIds();
-    lines.push(
-      '',
-      `*Roles:* ${admins.length} admin${admins.length === 1 ? '' : 's'}, ${guests.length} guest${guests.length === 1 ? '' : 's'}`,
-      isAdmin(ctx.from?.id)
-        ? 'You are an *admin* — approval prompts and bot\\-lifecycle commands are yours to answer\\.'
-        : 'You are a *guest* — an admin approves guarded commands and owns bot\\-lifecycle commands\\.',
-    );
+    const approvers = getApproverIds();
+    // getGuestIds() means "not an admin", which includes the approvers. Split
+    // them out so the counts add up to the roster rather than double-counting.
+    const guests = getGuestIds().filter((id) => !approvers.includes(id));
+    const roles = [
+      `${admins.length} admin${admins.length === 1 ? '' : 's'}`,
+      ...(approvers.length > 0 ? [`${approvers.length} approver${approvers.length === 1 ? '' : 's'}`] : []),
+      `${guests.length} guest${guests.length === 1 ? '' : 's'}`,
+    ];
+    lines.push('', `*Roles:* ${roles.join(', ')}`);
+    if (isAdmin(ctx.from?.id)) {
+      lines.push('You are an *admin* — approval prompts and bot\\-lifecycle commands are yours to answer\\.');
+    } else if (isApprover(ctx.from?.id)) {
+      lines.push(
+        'You are an *approver* — you can answer anyone else’s approval prompt, but not your own\\. ' +
+          'Bot\\-lifecycle commands stay with the admins\\.',
+      );
+    } else {
+      lines.push(
+        'You are a *guest* — an admin or approver answers guarded commands, and admins own ' +
+          'bot\\-lifecycle commands\\.',
+      );
+    }
   }
 
   lines.push('', '*Guarded patterns:*', ...patterns.map((p) => `• ${esc(p.reason)}`));

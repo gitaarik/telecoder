@@ -8,7 +8,7 @@ function hold(overrides: Partial<Parameters<typeof buildHoldMessage>[0]> = {}) {
     reason: 'opens a public tunnel to this machine',
     requester: 'Bob',
     message: 'set up an ngrok tunnel so I can reach this box from home',
-    admins: ADMINS,
+    responders: ADMINS,
     timeoutMinutes: 10,
     ...overrides,
   });
@@ -17,7 +17,7 @@ function hold(overrides: Partial<Parameters<typeof buildHoldMessage>[0]> = {}) {
 describe('buildHoldMessage', () => {
   it('states the reason, who asked, and what they asked', () => {
     const { text } = hold();
-    expect(text).toContain('Held for an admin — opens a public tunnel to this machine');
+    expect(text).toContain('Held for approval — opens a public tunnel to this machine');
     expect(text).toContain('Asked by Bob');
     expect(text).toContain('set up an ngrok tunnel');
   });

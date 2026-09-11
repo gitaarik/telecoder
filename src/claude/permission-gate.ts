@@ -3,11 +3,11 @@ import { config } from '../config.js';
 import { createPendingQuestion } from './ask-user.js';
 import { parseSessionKey } from '../utils/session-key.js';
 import { legacyEnv } from '../utils/legacy-env.js';
-import { getAdminIds, hasGuestUsers } from '../utils/admins.js';
+import { getPromptResponderIds, hasGuestUsers } from '../utils/admins.js';
 import { checkToolScope, isScopeGuardEnabled } from './scope-guard.js';
 import { sessionManager } from './session-manager.js';
 import { EntityText, clip } from '../telegram/entities.js';
-import { resolveAdminsInChat, appendApproverLine } from '../telegram/admin-mention.js';
+import { resolveApproversInChat, appendApproverLine } from '../telegram/admin-mention.js';
 
 /**
  * Pattern-based permission gate for PreToolUse. When enabled, certain tool calls
@@ -21,10 +21,12 @@ import { resolveAdminsInChat, appendApproverLine } from '../telegram/admin-menti
  * than false negatives because every prompt costs someone a button tap.
  *
  * On a shared bot the prompt is the supervision mechanism, so two things about
- * it matter beyond the patterns. It is answerable only by an admin, because a
- * confirmation the requester can tap themselves confirms nothing. And it
- * mentions those admins by id, because the group it lands in is muted and an
- * unnoticed prompt is a denied prompt ten minutes later.
+ * it matter beyond the patterns. It goes to the admins, plus any approver who
+ * is not the person who raised it — a confirmation a *guest* can tap
+ * themselves confirms nothing, while an admin approving their own `sudo` is
+ * the owner of the machine agreeing with themselves, which is what a solo bot
+ * has always done. And it mentions them by id, because the group it lands in
+ * is muted and an unnoticed prompt is a denied prompt ten minutes later.
  */
 
 export const DENY_MARKER_START = '__TELECODER_DENY__';
@@ -118,11 +120,13 @@ export async function evaluateToolCall(req: GateRequest): Promise<GateDecision> 
   }
 
   const { chatId, threadId } = parseSessionKey(req.sessionKey);
-  const admins = await resolveAdminsInChat(ctx.api, chatId);
+
+  // Admins, plus any approver who is not the person whose turn raised this.
   // Restrict the buttons to the *configured* roster, not the subset that
   // resolved to a display name. A prompt nobody can answer is safer than one
   // the requester can answer, and the timeout still ends it either way.
-  const responderIds = getAdminIds();
+  const responderIds = getPromptResponderIds(ctx.from?.id);
+  const responders = await resolveApproversInChat(ctx.api, chatId, responderIds);
 
   const optionLabels = ['✅ Allow once', '❌ Deny'];
   const timeoutMs = promptTimeoutMs();
@@ -143,7 +147,7 @@ export async function evaluateToolCall(req: GateRequest): Promise<GateDecision> 
     toolName: req.toolName,
     toolInput: req.toolInput,
     requester: describeRequester(ctx),
-    admins,
+    responders,
     timeoutMinutes: Math.round(timeoutMs / 60000),
   });
 
@@ -177,8 +181,8 @@ export async function evaluateToolCall(req: GateRequest): Promise<GateDecision> 
     return {
       block: true,
       reason: answer === null
-        ? `No admin approved within ${Math.round(timeoutMs / 60000)} minutes. Denied: ${pattern.reason}`
-        : `An admin denied: ${pattern.reason}`,
+        ? `Nobody approved within ${Math.round(timeoutMs / 60000)} minutes. Denied: ${pattern.reason}`
+        : `An approver denied: ${pattern.reason}`,
     };
   }
   return { block: false, reason: '' };
@@ -197,7 +201,8 @@ interface PromptParts {
   toolName: string;
   toolInput: Record<string, unknown>;
   requester: string | undefined;
-  admins: { id: number; name: string }[];
+  /** Admins plus the approvers eligible for this prompt, as resolved names. */
+  responders: { id: number; name: string }[];
   timeoutMinutes: number;
 }
 
@@ -226,7 +231,7 @@ export function buildPromptMessage(parts: PromptParts): { text: string; entities
   }
   b.newline();
 
-  appendApproverLine(b, parts.admins);
+  appendApproverLine(b, parts.responders);
   b.newline().italic(`Times out in ${parts.timeoutMinutes} min → denied.`);
 
   return b.build();
