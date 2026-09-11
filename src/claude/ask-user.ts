@@ -17,6 +17,7 @@
  */
 
 import * as crypto from 'crypto';
+import { MAX_BUTTON_TEXT_LEN, fitsOnButton } from '../telegram/button-text.js';
 
 export interface AskUserAnswer {
   /** The label of the option the user selected. */
@@ -40,16 +41,6 @@ const MAX_CONTEXT_LEN = 3500;
 
 /** Telegram's hard cap on a text message / message edit. */
 const MAX_MESSAGE_LEN = 4096;
-
-/**
- * How wide a button's text may render before Telegram clips it. An inline
- * button is a single line the client ellipsises with no way to expand it, so
- * text past roughly this many characters is simply lost to the reader. That is
- * why every option is also written into the message body, keyed by letter, and
- * why a keyboard whose labels don't fit drops to bare letters instead of
- * showing a column of half-sentences.
- */
-const MAX_BUTTON_TEXT_LEN = 30;
 
 /** Separator between an option's letter and its label on a button. */
 const BUTTON_SEP = ' · ';
@@ -116,12 +107,12 @@ export function buildAskUserMessageText(
  * The inline keyboard for a question, shared by SDK mode (mcp-tools.ts) and
  * PTY/IPC mode (mcp-bridge.ts) so both render identically.
  *
- * A label rides on its own button while it fits — `A · Patch the regex` reads
- * fine and saves a glance at the body. The moment one option is too wide,
- * every button in that keyboard falls back to its bare letter and they pack
- * four to a row: a keyboard that is half labels and half mystery letters is
- * harder to read than one that is uniformly keyed, and the body above it
- * already spells out what each letter stands for.
+ * A label rides on its own button while it fits ({@link MAX_BUTTON_TEXT_LEN})
+ * — `A · Patch the regex` reads fine and saves a glance at the body. The
+ * moment one option is too wide, every button in that keyboard falls back to
+ * its bare letter and they pack four to a row: a keyboard that is half labels
+ * and half mystery letters is harder to read than one that is uniformly keyed,
+ * and the body above it already spells out what each letter stands for.
  */
 export function buildAskUserKeyboard(
   id: string,
@@ -129,7 +120,7 @@ export function buildAskUserKeyboard(
 ): { text: string; callback_data: string }[][] {
   const labelled = options.map((o, idx) => `${optionLetter(idx)}${BUTTON_SEP}${o.label}`);
 
-  if (labelled.every((text) => text.length <= MAX_BUTTON_TEXT_LEN)) {
+  if (labelled.every(fitsOnButton)) {
     return labelled.map((text, idx) => [{ text, callback_data: `q:${id}:${idx}` }]);
   }
 

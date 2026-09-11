@@ -25,6 +25,14 @@ import { sessionManager } from '../claude/session-manager.js';
 import { sessionJsonlPath } from '../claude/session-jsonl.js';
 import { messageOffsets, countJsonlLines } from '../claude/message-offsets.js';
 import { storeSuggestion } from '../claude/pending-suggestions.js';
+import {
+  SUGGESTION_CARD_BUTTON,
+  buildSuggestionCardPlainText,
+  buildSuggestionCardText,
+  flattenSuggestion,
+  formatSuggestionLabel,
+  suggestionFitsOnButton,
+} from './prompt-suggestion.js';
 import { hasPendingQuestionForSession } from '../claude/ask-user.js';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -39,29 +47,30 @@ const FORK_KEYBOARD = { inline_keyboard: [[{ text: '🍴 Fork', callback_data: '
  */
 const AWAITING_ANSWER_LINE = '⏸️ Waiting for your answer — see the question above ↑';
 
-/**
- * Truncate a suggestion text for inline button display. Telegram inline
- * button labels render best at <= ~40 chars; longer ones wrap awkwardly on
- * narrow screens.
- */
-function formatSuggestionLabel(text: string): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
-  return flat.length > 38 ? `💡 ${flat.slice(0, 36)}…` : `💡 ${flat}`;
+/** A suggestion registered for this turn, and how it is to be offered. */
+interface PlannedSuggestion {
+  id: string;
+  /** Flattened text — what is shown, and what a tap sends. */
+  text: string;
+  /** True when the text fits on its own button under the response. */
+  onButton: boolean;
 }
 
 /**
- * Register a suggestion in the pending-suggestions store and return the
- * options bag `attachForkButton` expects for adding the inline button.
- * Returns an empty options object when the suggestion is missing or blank
- * (caller still gets just the fork button).
+ * Register a suggestion in the pending-suggestions store and decide how it
+ * reaches the user: on a button when it fits there whole, otherwise on a card
+ * of its own. Returns null when there is no suggestion for this turn (the
+ * caller still gets its fork button).
  */
-function buildSuggestionAttachOpts(
+function planSuggestion(
   sessionKey: string,
   suggestion: string | undefined,
-): { suggestionId?: string; suggestionText?: string } {
-  if (!suggestion || !suggestion.trim()) return {};
-  const id = storeSuggestion(sessionKey, suggestion);
-  return { suggestionId: id, suggestionText: suggestion };
+): PlannedSuggestion | null {
+  const text = flattenSuggestion(suggestion ?? '');
+  if (!text) return null;
+  const onButton = suggestionFitsOnButton(text);
+  const id = storeSuggestion(sessionKey, text, onButton ? 'button' : 'card');
+  return { id, text, onButton };
 }
 
 export interface ToolOperation {
@@ -238,7 +247,7 @@ export class MessageSender {
     ctx: Context,
     sessionKey: string,
     messageId: number | null | undefined,
-    options: { suggestionId?: string; suggestionText?: string } = {},
+    suggestion: PlannedSuggestion | null = null,
   ): Promise<void> {
     if (!messageId) return;
     const session = sessionManager.getSession(sessionKey);
@@ -255,14 +264,16 @@ export class MessageSender {
       conversationId: session.conversationId,
     });
 
-    // When a prompt suggestion is available, attach it on a row above the
-    // fork button so the suggestion is the primary call-to-action and fork
-    // stays available as the secondary affordance.
+    // A suggestion short enough to read on a button goes on a row above the
+    // fork button, so it is the primary call-to-action and fork stays as the
+    // secondary affordance. A longer one is not put here at all — it would
+    // arrive clipped — and {@link sendSuggestionCard} gives it its own
+    // message instead.
     const rows: Array<Array<{ text: string; callback_data: string }>> = [];
-    if (options.suggestionId && options.suggestionText) {
+    if (suggestion?.onButton) {
       rows.push([{
-        text: formatSuggestionLabel(options.suggestionText),
-        callback_data: `sgt:${options.suggestionId}`,
+        text: formatSuggestionLabel(suggestion.text),
+        callback_data: `sgt:${suggestion.id}`,
       }]);
     }
     rows.push([{ text: '🍴 Fork', callback_data: 'fork:pick' }]);
@@ -279,6 +290,39 @@ export class MessageSender {
       const msg = err instanceof Error ? err.message.toLowerCase() : '';
       if (!msg.includes('not modified') && !msg.includes('not found') && !msg.includes('message_id_invalid')) {
         console.debug('[Fork] attachForkButton edit failed:', err instanceof Error ? err.message : err);
+      }
+    }
+  }
+
+  /**
+   * Post a suggestion that is too wide for a button as its own message: the
+   * full prompt in the body, a fixed short label on the button below it.
+   *
+   * Sent silently — the response it follows has already raised a notification,
+   * and a second ping for an optional suggestion is not worth a buzz. No-ops
+   * for a suggestion that rode on its button, and for a turn that had none.
+   */
+  async sendSuggestionCard(ctx: Context, suggestion: PlannedSuggestion | null): Promise<void> {
+    if (!suggestion || suggestion.onButton) return;
+
+    const reply_markup = {
+      inline_keyboard: [[{ text: SUGGESTION_CARD_BUTTON, callback_data: `sgt:${suggestion.id}` }]],
+    };
+    try {
+      await ctx.reply(buildSuggestionCardText(suggestion.text), {
+        parse_mode: 'MarkdownV2',
+        reply_markup,
+        disable_notification: true,
+      });
+    } catch (err) {
+      console.debug('[Suggestion] card send failed, retrying plain:', err instanceof Error ? err.message : err);
+      try {
+        await ctx.reply(buildSuggestionCardPlainText(suggestion.text), {
+          reply_markup,
+          disable_notification: true,
+        });
+      } catch {
+        // The answer itself already landed; a missing suggestion is cosmetic.
       }
     }
   }
@@ -1089,6 +1133,11 @@ export class MessageSender {
     // forks AT that point, not at some earlier chunk).
     let lastMessageId: number | null = state.messageId;
 
+    // Registered once, past the early returns above: an entry planned for a
+    // turn that never renders would sit in the store until its TTL with no
+    // button pointing at it.
+    const suggestion = planSuggestion(sessionKey, options.nextPromptSuggestion);
+
     if (state.messageId) {
       const hasInterveningPosts = (this.interveningPostsThisStream.get(sessionKey) ?? 0) > 0;
       const actionLogWasActive = actionLogger.isActive(sessionKey);
@@ -1126,7 +1175,8 @@ export class MessageSender {
               const summary = finalContent.substring(0, 200).replace(/[#*_`\[\]]/g, '') + '...';
               const message = `📄 *Response ready:*\n\n${escapeMarkdownV2(summary)}\n\n[Open in Instant View](${escapeMarkdownV2(pageUrl)})`;
               await ctx.api.editMessageText(chatId, state.messageId, message, { parse_mode: 'MarkdownV2' });
-              await this.attachForkButton(ctx, sessionKey, state.messageId, buildSuggestionAttachOpts(sessionKey, options.nextPromptSuggestion));
+              await this.attachForkButton(ctx, sessionKey, state.messageId, suggestion);
+              await this.sendSuggestionCard(ctx, suggestion);
               // Early exit on success
               this.streamStates.delete(sessionKey);
               return;
@@ -1167,7 +1217,8 @@ export class MessageSender {
       }
     }
 
-    await this.attachForkButton(ctx, sessionKey, lastMessageId, buildSuggestionAttachOpts(sessionKey, options.nextPromptSuggestion));
+    await this.attachForkButton(ctx, sessionKey, lastMessageId, suggestion);
+    await this.sendSuggestionCard(ctx, suggestion);
 
     this.streamStates.delete(sessionKey);
 

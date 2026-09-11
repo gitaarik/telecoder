@@ -1805,6 +1805,7 @@
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 6.8V12l3.4 2.1"/></symbol>
   <symbol id="i-relay" viewBox="0 0 24 24"><path d="M12 10.5v10"/><path d="M8.6 20.5h6.8"/><circle cx="12" cy="8" r="1.9"/><path d="M7.9 4.2a5.9 5.9 0 0 0 0 7.6"/><path d="M16.1 4.2a5.9 5.9 0 0 1 0 7.6"/></symbol>
   <symbol id="i-sendfile" viewBox="0 0 24 24"><path d="M5 4.5a2 2 0 0 1 2-2h6.7L18.5 7v12.5a2 2 0 0 1-2 2h-4.5"/><path d="M13.7 2.6V7h4.8"/><path d="M6.5 21v-8.5"/><path d="M3.6 15.4 6.5 12.5l2.9 2.9"/></symbol>
+  <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M8.6 15.6a6 6 0 1 1 6.8 0v2.8H8.6z"/><path d="M10.3 21.2h3.4"/></symbol>
   <symbol id="i-reap" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="m6.2 6.2 11.6 11.6"/></symbol>
 </svg>
   <canvas id="matrix-canvas"></canvas>
@@ -2003,6 +2004,14 @@
             asks with an inline keyboard — reasoning in the same message, and every option written
             out in full above the buttons, keyed A/B/C, so a long one is never lost to a clipped
             button.</p>
+          </div>
+          <div class="feature-card" data-category="agent">
+            <div class="feature-icon"><svg><use href="#i-bulb"/></svg></div>
+            <h3>The next prompt, one tap away</h3>
+            <p>Claude Code predicts what you would type next; <code>/suggestions</code> puts it in
+            the chat as a button. A short one rides on the button itself, a longer one gets its own
+            message with the prompt written out in full — so what you send is never a sentence
+            Telegram cut in half.</p>
           </div>
           <div class="feature-card" data-category="agent">
             <div class="feature-icon"><svg><use href="#i-skill"/></svg></div>
@@ -2859,7 +2868,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/suggestions</code>
-              <span class="command-desc">Toggle predicted next-prompt buttons. When on, TeleCoder scrapes Claude Code's ghost-text suggestion from the TUI at end-of-turn and surfaces it as a tappable inline button under each response. Takes effect on next session spawn.</span>
+              <span class="command-desc">Toggle predicted next-prompt buttons. When on, TeleCoder scrapes Claude Code's ghost-text suggestion from the TUI at end-of-turn and offers it as a tap: on a button under the response when it fits there whole, on a message of its own when it is too long for one. Takes effect on next session spawn.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/topic &lt;text&gt;</code>
