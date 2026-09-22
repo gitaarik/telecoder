@@ -18,7 +18,7 @@ import { resolveClaudeExecutableForMethod } from '../../utils/resolve-claude-bin
 import { getActiveMethod } from '../../providers/claude-provider.js';
 import { groupAvailableCommands, type AvailableCommands } from '../../claude/available-commands.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
-import { replyMd, getEffortLabel, buildBackToPreviousButton } from './command/shared.js';
+import { replyMd, getEffortLabel, withBackToPrevious } from './command/shared.js';
 import { getSessionTopic } from './command/topic.js';
 import { describeRole } from './command/access.js';
 import { requireActiveSession } from './session-guard.js';
@@ -32,7 +32,7 @@ export {
   resumeCommandMessage,
   truncateToBytes,
   getEffortLabel,
-  buildBackToPreviousButton,
+  withBackToPrevious,
 } from './command/shared.js';
 export {
   setSessionTopic,
@@ -264,14 +264,9 @@ Effort: ${esc(effortLabel)}${dangerousWarning}`;
   const currentConv = keyInfo
     ? sessionManager.getSession(keyInfo.sessionKey)?.conversationId
     : undefined;
-  const backButton = keyInfo
-    ? buildBackToPreviousButton(keyInfo.sessionKey, currentConv)
-    : undefined;
+  const back = withBackToPrevious(welcomeMessage, keyInfo?.sessionKey, currentConv);
 
-  await ctx.reply(welcomeMessage, {
-    parse_mode: 'MarkdownV2',
-    ...(backButton ? { reply_markup: { inline_keyboard: backButton } } : {}),
-  });
+  await ctx.reply(back.text, back.options);
 }
 
 export async function handleStatus(ctx: Context): Promise<void> {

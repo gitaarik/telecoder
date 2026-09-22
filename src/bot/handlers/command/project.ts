@@ -20,7 +20,7 @@ import {
   parseCallback,
   projectStatusSuffix,
   resumeCommandMessage,
-  buildBackToPreviousButton,
+  withBackToPrevious,
 } from './shared.js';
 import { clearTopicAndRefreshBotName } from './topic.js';
 
@@ -62,15 +62,13 @@ async function selectProjectFromCallback(ctx: Context, sessionKey: string, proje
   state.page = 0;
 
   const newConv = sessionManager.getSession(sessionKey)?.conversationId;
-  const backButton = buildBackToPreviousButton(sessionKey, newConv);
-
-  await ctx.editMessageText(
+  const back = withBackToPrevious(
     `✅ Project: *${esc(path.basename(projectPath))}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`,
-    {
-      parse_mode: 'MarkdownV2',
-      ...(backButton ? { reply_markup: { inline_keyboard: backButton } } : {}),
-    },
+    sessionKey,
+    newConv,
   );
+
+  await ctx.editMessageText(back.text, back.options);
 
   const s = sessionManager.getSession(sessionKey);
   if (s?.claudeSessionId) {
@@ -516,11 +514,12 @@ export async function handleProject(ctx: Context): Promise<void> {
   await clearTopicAndRefreshBotName(ctx, sessionKey);
 
   const newConv = sessionManager.getSession(sessionKey)?.conversationId;
-  const backButton = buildBackToPreviousButton(sessionKey, newConv);
-  await ctx.reply(`✅ Project: *${esc(args)}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`, {
-    parse_mode: 'MarkdownV2',
-    ...(backButton ? { reply_markup: { inline_keyboard: backButton } } : {}),
-  });
+  const back = withBackToPrevious(
+    `✅ Project: *${esc(args)}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`,
+    sessionKey,
+    newConv,
+  );
+  await ctx.reply(back.text, back.options);
 
   const s = sessionManager.getSession(sessionKey);
   if (s?.claudeSessionId) {
@@ -559,11 +558,12 @@ export async function handleNewProject(ctx: Context): Promise<void> {
   await clearTopicAndRefreshBotName(ctx, sessionKey);
 
   const newConv = sessionManager.getSession(sessionKey)?.conversationId;
-  const backButton = buildBackToPreviousButton(sessionKey, newConv);
-  await ctx.reply(`✅ Created and opened: *${esc(args)}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`, {
-    parse_mode: 'MarkdownV2',
-    ...(backButton ? { reply_markup: { inline_keyboard: backButton } } : {}),
-  });
+  const back = withBackToPrevious(
+    `✅ Created and opened: *${esc(args)}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`,
+    sessionKey,
+    newConv,
+  );
+  await ctx.reply(back.text, back.options);
 
   const s = sessionManager.getSession(sessionKey);
   if (s?.claudeSessionId) {

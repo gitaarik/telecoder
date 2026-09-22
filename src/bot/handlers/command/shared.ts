@@ -20,6 +20,7 @@ import {
   type EffortLevel,
 } from '../../../providers/provider-router.js';
 import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
+import { fitsOnButton } from '../../../telegram/button-text.js';
 import { userPreferences } from '../../../providers/user-preferences.js';
 import { getPtyProvider } from '../../../providers/claude-provider.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../../../utils/session-key.js';
@@ -133,24 +134,91 @@ export function formatTimeAgo(date: Date): string {
 }
 
 /**
- * One-tap "Back to previous" inline keyboard, reusing the /resume callback.
+ * How much of a session's name a picker spells out.
+ *
+ * Nothing the model writes comes close — a topic is a handful of words — but
+ * `/topic` takes whatever you type, and unbounded names could push a message
+ * past Telegram's 4096-char ceiling, which would 400 and deliver nothing at
+ * all. Generous enough never to touch a real name, low enough that a full
+ * history can't cost the whole list.
+ */
+const MAX_SESSION_NAME_LEN = 120;
+
+/**
+ * How a session is named wherever one is offered: the project, plus the topic
+ * when it has one. Shared so /resume and the back button name the same
+ * session the same way.
+ */
+export function sessionDisplayName(entry: { projectName: string; topic?: string }): string {
+  const name = entry.topic ? `${entry.projectName} · ${entry.topic}` : entry.projectName;
+  return name.length > MAX_SESSION_NAME_LEN
+    ? name.slice(0, MAX_SESSION_NAME_LEN - 1) + '…'
+    : name;
+}
+
+/** The message text and reply options for a message carrying the back button. */
+export interface BackToPreviousReply {
+  text: string;
+  options: {
+    parse_mode: 'MarkdownV2';
+    reply_markup?: { inline_keyboard: { text: string; callback_data: string }[][] };
+  };
+}
+
+/**
+ * Attach the one-tap "back to the session you just left" affordance to a
+ * message, reusing the /resume callback. Returns the text to send and the
+ * options to send it with, so the six commands that offer it don't each
+ * repeat the append; with no session key, or no session to go back to, that
+ * is the message unchanged.
+ *
+ * The session's name rides on the button while it fits, which is the whole of
+ * the common case — `↩️ Back to telecoder (2h ago)` is one tap and adds
+ * nothing to the chat. It stops fitting as soon as the session has a topic,
+ * and a button is not a place to put text that doesn't fit: Telegram gives the
+ * reader no way to expand the ellipsis, so the name was simply gone and the
+ * button said "back to" something you couldn't read. Past that width the
+ * button keeps a fixed short label and the name goes in the body, where it
+ * survives whole.
+ *
  * Skips the entry whose conversationId matches `excludeConversationId` so we
  * don't offer to return to the session you're already in.
  */
-export function buildBackToPreviousButton(
-  sessionKey: string,
+export function withBackToPrevious(
+  text: string,
+  sessionKey: string | undefined,
   excludeConversationId?: string,
-): { text: string; callback_data: string }[][] | undefined {
+): BackToPreviousReply {
+  const plain: BackToPreviousReply = { text, options: { parse_mode: 'MarkdownV2' } };
+  if (!sessionKey) return plain;
+
   const history = sessionManager.getSessionHistory(sessionKey, 5);
   const entry = history.find(
     (e) => e.claudeSessionId && e.conversationId !== excludeConversationId,
   );
-  if (!entry) return undefined;
+  if (!entry) return plain;
 
   const timeAgo = formatTimeAgo(new Date(entry.lastActivity));
-  const detail = entry.topic ? `${entry.projectName}: ${entry.topic}` : entry.projectName;
-  const trimmed = detail.length > 45 ? `${detail.slice(0, 44)}…` : detail;
-  return [[{ text: `↩️ Back to ${trimmed} (${timeAgo})`, callback_data: `resume:${entry.conversationId}` }]];
+  const name = sessionDisplayName(entry);
+  const label = `↩️ Back to ${name} (${timeAgo})`;
+  const fits = fitsOnButton(label);
+
+  return {
+    text: fits ? text : `${text}\n\n${esc(`↩️ Previous: ${name} (${timeAgo})`)}`,
+    options: {
+      parse_mode: 'MarkdownV2',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: fits ? label : '↩️ Back to previous',
+              callback_data: `resume:${entry.conversationId}`,
+            },
+          ],
+        ],
+      },
+    },
+  };
 }
 
 /**

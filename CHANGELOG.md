@@ -5,6 +5,36 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ## Unreleased
 
+### Sessions
+
+- **`/resume` says which session each button is** — a session is named
+  `project · topic`, which is routinely wider than the single line Telegram
+  renders a button on, and the client ellipsises the rest away with no way to
+  expand it. Two conversations in the same project therefore arrived as the
+  same half-line and you picked between them blind. The picker now writes every
+  session out in the message body keyed A/B/C — name and age — and the same
+  letter keys its button, the rule `claudegram_ask_user` has followed since
+  options moved into the body. Short names still ride on their own buttons
+  (`A · telecoder`); the moment one is too wide the whole keyboard drops to
+  bare letters, packed four to a row. Both features build that keyboard through
+  one function now, so a question and a session list clip at the same place
+  instead of each keeping its own threshold.
+
+- **The other two pickers that hid text on a button** — the same rule now
+  covers the "back to previous" button under `/clear` and `/project`, and the
+  `/fork` target list. The back button named its session inside its own label
+  and trimmed it at 45 characters, well past what a button renders, so the
+  moment a session had a topic you were offered "back to" something you could
+  not read. It keeps the name on the button while it fits — `↩️ Back to
+  telecoder (2h ago)`, the common case, adding nothing to the chat — and past
+  that width puts the name in the message and a fixed label on the button. The
+  fork picker listed sibling bots by name only on their buttons, so two bots
+  sharing a prefix arrived as the same clipped line; targets are now written
+  out A/B/C in the picker message. "New branch here" moved the bot's own name
+  off its label, which was single-handedly costing that keyboard its labels.
+  Six commands offered the back button with four lines of identical
+  keyboard-spreading each; that is one call now.
+
 ### Sharing a bot
 
 - **Auto-approve windows** — `/autoapprove 30m` lets the permission gate approve

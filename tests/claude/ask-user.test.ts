@@ -9,7 +9,6 @@ import {
   getQuestionOptionLabel,
   hasPendingQuestionForSession,
   buildAskUserKeyboard,
-  optionLetter,
 } from '../../src/claude/ask-user.js';
 
 describe('buildAskUserMessageText', () => {
@@ -61,18 +60,11 @@ describe('buildAskUserMessageText', () => {
   });
 });
 
-describe('optionLetter', () => {
-  it('keys the first options A, B, C', () => {
-    expect([0, 1, 2].map(optionLetter)).toEqual(['A', 'B', 'C']);
-  });
-
-  it('falls back to a 1-based number past Z', () => {
-    expect(optionLetter(26)).toBe('27');
-  });
-});
-
 describe('buildAskUserKeyboard', () => {
-  it('keeps short labels on their own buttons, one per row', () => {
+  // The width rules themselves are the shared builder's, and tested there.
+  // What belongs to a question is that each button carries its own id and the
+  // index of the option it stands for.
+  it('keys each button to its option index on this question', () => {
     const keyboard = buildAskUserKeyboard('abcd', [{ label: 'Yes' }, { label: 'No' }]);
     expect(keyboard).toEqual([
       [{ text: 'A · Yes', callback_data: 'q:abcd:0' }],
@@ -80,34 +72,16 @@ describe('buildAskUserKeyboard', () => {
     ]);
   });
 
-  it('drops the whole keyboard to bare letters when any label is too wide', () => {
-    const keyboard = buildAskUserKeyboard('abcd', [
-      { label: 'Yes' },
-      { label: 'Rewrite the readiness check to poll the cursor row' },
-    ]);
-    expect(keyboard).toEqual([
-      [
-        { text: 'A', callback_data: 'q:abcd:0' },
-        { text: 'B', callback_data: 'q:abcd:1' },
-      ],
-    ]);
-  });
-
-  it('packs letter buttons four to a row', () => {
-    const options = Array.from({ length: 6 }, (_, i) => ({ label: `Option ${i} with a label far too wide for a button` }));
+  it('keeps the indices straight once the keyboard goes compact', () => {
+    const options = Array.from({ length: 6 }, (_, i) => ({
+      label: `Option ${i} with a label far too wide for a button`,
+    }));
     const keyboard = buildAskUserKeyboard('ff', options);
     expect(keyboard.map((row) => row.map((b) => b.text))).toEqual([
       ['A', 'B', 'C', 'D'],
       ['E', 'F'],
     ]);
     expect(keyboard[1][1].callback_data).toBe('q:ff:5');
-  });
-
-  it('keeps a label that lands exactly on the width budget', () => {
-    // 'A · ' + 26 chars = 30, the maximum a button is allowed to render.
-    const label = 'x'.repeat(26);
-    expect(buildAskUserKeyboard('id', [{ label }, { label: 'No' }])[0][0].text).toBe(`A · ${label}`);
-    expect(buildAskUserKeyboard('id', [{ label: label + 'x' }, { label: 'No' }])[0][0].text).toBe('A');
   });
 });
 

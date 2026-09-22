@@ -17,18 +17,17 @@
  */
 
 import * as crypto from 'crypto';
-import { MAX_BUTTON_TEXT_LEN, fitsOnButton } from '../telegram/button-text.js';
+import {
+  type LetteredOption,
+  buildLetteredKeyboard,
+  letteredOptionLines,
+} from '../telegram/lettered-options.js';
 
 export interface AskUserAnswer {
   /** The label of the option the user selected. */
   label: string;
   /** Zero-based index into the options array. */
   index: number;
-}
-
-export interface AskUserOption {
-  label: string;
-  description?: string;
 }
 
 /**
@@ -42,22 +41,6 @@ const MAX_CONTEXT_LEN = 3500;
 /** Telegram's hard cap on a text message / message edit. */
 const MAX_MESSAGE_LEN = 4096;
 
-/** Separator between an option's letter and its label on a button. */
-const BUTTON_SEP = ' · ';
-
-/** Bare-letter buttons per row, once a keyboard has gone compact. */
-const LETTERS_PER_ROW = 4;
-
-/**
- * The key an option is known by: `A`, `B`, `C`, … It prefixes the option both
- * in the message body and on its button, so a letter-only button still points
- * at the full text above it. Past `Z` it falls back to the 1-based index;
- * callers cap at 8 options, so that is defensive only.
- */
-export function optionLetter(index: number): string {
-  return index < 26 ? String.fromCharCode(65 + index) : String(index + 1);
-}
-
 /**
  * Build the plain-text body for an ask_user Telegram message, shared by SDK
  * mode (mcp-tools.ts) and PTY/IPC mode (mcp-bridge.ts) so both render
@@ -68,7 +51,7 @@ export function optionLetter(index: number): string {
  *
  *   <context>              ← only when provided; the model's decision rationale
  *
- *   A. Label — description  ← every option, keyed by {@link optionLetter}
+ *   A. Label — description  ← every option, keyed by its letter
  *
  * The `context` block is the fix for the "user is asked to choose before the
  * explanation is shown" bug: prose the model emits *before* calling ask_user
@@ -77,7 +60,7 @@ export function optionLetter(index: number): string {
  */
 export function buildAskUserMessageText(
   question: string,
-  options: AskUserOption[],
+  options: LetteredOption[],
   context?: string,
 ): string {
   const lines: string[] = [`❓ ${question}`];
@@ -95,45 +78,23 @@ export function buildAskUserMessageText(
   // option's full text lives and the letter is how its button points back at
   // it.
   lines.push('');
-  options.forEach((o, idx) => {
-    const desc = o.description?.trim();
-    lines.push(`${optionLetter(idx)}. ${o.label}${desc ? ` — ${desc}` : ''}`);
-  });
+  lines.push(...letteredOptionLines(options));
 
   return lines.join('\n');
 }
 
 /**
  * The inline keyboard for a question, shared by SDK mode (mcp-tools.ts) and
- * PTY/IPC mode (mcp-bridge.ts) so both render identically.
- *
- * A label rides on its own button while it fits ({@link MAX_BUTTON_TEXT_LEN})
- * — `A · Patch the regex` reads fine and saves a glance at the body. The
- * moment one option is too wide, every button in that keyboard falls back to
- * its bare letter and they pack four to a row: a keyboard that is half labels
- * and half mystery letters is harder to read than one that is uniformly keyed,
- * and the body above it already spells out what each letter stands for.
+ * PTY/IPC mode (mcp-bridge.ts) so both render identically — and with every
+ * other lettered picker, through {@link buildLetteredKeyboard}.
  */
 export function buildAskUserKeyboard(
   id: string,
-  options: AskUserOption[],
+  options: LetteredOption[],
 ): { text: string; callback_data: string }[][] {
-  const labelled = options.map((o, idx) => `${optionLetter(idx)}${BUTTON_SEP}${o.label}`);
-
-  if (labelled.every(fitsOnButton)) {
-    return labelled.map((text, idx) => [{ text, callback_data: `q:${id}:${idx}` }]);
-  }
-
-  const rows: { text: string; callback_data: string }[][] = [];
-  for (let i = 0; i < options.length; i += LETTERS_PER_ROW) {
-    rows.push(
-      options.slice(i, i + LETTERS_PER_ROW).map((_, j) => ({
-        text: optionLetter(i + j),
-        callback_data: `q:${id}:${i + j}`,
-      })),
-    );
-  }
-  return rows;
+  return buildLetteredKeyboard(
+    options.map((o, idx) => ({ label: o.label, callbackData: `q:${id}:${idx}` })),
+  );
 }
 
 /**

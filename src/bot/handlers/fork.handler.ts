@@ -36,6 +36,7 @@ import {
   PendingFork,
 } from '../../claude/pending-forks.js';
 import { listSiblingBots, findBotById } from '../../utils/instances.js';
+import { buildLetteredKeyboard, letteredOptionLines } from '../../telegram/lettered-options.js';
 import { sessionJsonlPath } from '../../claude/session-jsonl.js';
 import { sessionManager } from '../../claude/session-manager.js';
 import { clearConversation } from '../../providers/provider-router.js';
@@ -53,19 +54,44 @@ interface ForkOfferTexts {
 }
 
 /**
- * Build the fork-target picker rows: this bot itself (a fresh branch of the
- * current conversation) first, then every sibling bot, then Cancel. Self is
- * always offered so you can branch a thread without needing a second bot.
+ * Build the fork-target picker: this bot itself (a fresh branch of the current
+ * conversation) first, then every sibling bot, then Cancel. Self is always
+ * offered so you can branch a thread without needing a second bot.
+ *
+ * Returns the body lines as well as the rows. A sibling's name is whatever the
+ * operator wrote in the instances config, and on a button anything past the
+ * width Telegram renders is ellipsised away with no way to read it — two bots
+ * sharing a prefix would arrive as the same clipped line. So the targets are
+ * written out in the message keyed A/B/C and the same letter keys the button,
+ * the way /resume and `claudegram_ask_user` list their options. Cancel keeps
+ * its own row and no letter: it is the way out, not one of the targets.
  */
-function buildTargetKeyboard(anchorMsgId: number): Array<Array<{ text: string; callback_data: string }>> {
-  const rows: Array<Array<{ text: string; callback_data: string }>> = [
-    [{ text: `🌱 New branch here (${BOT_NAME})`, callback_data: `fork:to:${BOT_ID}:${anchorMsgId}` }],
+export function buildTargetPicker(anchorMsgId: number): {
+  lines: string[];
+  keyboard: Array<Array<{ text: string; callback_data: string }>>;
+} {
+  const targets = [
+    // Which bot "here" is goes in the description rather than the label: it
+    // is the one sending the message, so it is context, not the choice — and
+    // parenthesising it on the label costs the whole keyboard its labels.
+    {
+      label: '🌱 New branch here',
+      description: BOT_NAME,
+      callbackData: `fork:to:${BOT_ID}:${anchorMsgId}`,
+    },
+    ...listSiblingBots(BOT_ID).map((b) => ({
+      label: b.name,
+      callbackData: `fork:to:${b.botId}:${anchorMsgId}`,
+    })),
   ];
-  for (const b of listSiblingBots(BOT_ID)) {
-    rows.push([{ text: b.name, callback_data: `fork:to:${b.botId}:${anchorMsgId}` }]);
-  }
-  rows.push([{ text: 'Cancel', callback_data: 'fork:cancel' }]);
-  return rows;
+
+  return {
+    lines: letteredOptionLines(targets).map((line) => esc(line)),
+    keyboard: [
+      ...buildLetteredKeyboard(targets),
+      [{ text: 'Cancel', callback_data: 'fork:cancel' }],
+    ],
+  };
 }
 
 /**
@@ -148,12 +174,14 @@ async function onPick(ctx: Context): Promise<void> {
 
   const projectLabel = path.basename(offset.projectPath);
 
+  const picker = buildTargetPicker(msgId);
   await ctx.reply(
-    `🍴 *Fork conversation*\n\nFrom this point in *${esc(projectLabel)}* — pick where to branch it:`,
+    `🍴 *Fork conversation*\n\nFrom this point in *${esc(projectLabel)}* — pick where to branch it:\n\n` +
+      picker.lines.join('\n'),
     {
       parse_mode: 'MarkdownV2',
       reply_parameters: { message_id: msgId },
-      reply_markup: { inline_keyboard: buildTargetKeyboard(msgId) },
+      reply_markup: { inline_keyboard: picker.keyboard },
     },
   );
 }
@@ -407,11 +435,13 @@ export async function handleForkCommand(ctx: Context): Promise<void> {
 
   const projectLabel = path.basename(session.workingDirectory);
 
+  const picker = buildTargetPicker(anchorMsgId);
   await ctx.reply(
-    `🍴 *Fork conversation*\n\nFrom the current state of *${esc(projectLabel)}* — pick where to branch it:`,
+    `🍴 *Fork conversation*\n\nFrom the current state of *${esc(projectLabel)}* — pick where to branch it:\n\n` +
+      picker.lines.join('\n'),
     {
       parse_mode: 'MarkdownV2',
-      reply_markup: { inline_keyboard: buildTargetKeyboard(anchorMsgId) },
+      reply_markup: { inline_keyboard: picker.keyboard },
     },
   );
 }

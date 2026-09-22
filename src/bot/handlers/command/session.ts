@@ -29,10 +29,14 @@ import {
   parseCallback,
   projectStatusSuffix,
   resumeCommandMessage,
-  truncateToBytes,
   formatTimeAgo,
-  buildBackToPreviousButton,
+  sessionDisplayName,
+  withBackToPrevious,
 } from './shared.js';
+import {
+  buildLetteredKeyboard,
+  letteredOptionLines,
+} from '../../../telegram/lettered-options.js';
 import {
   getSessionTopic,
   clearTopicAndRefreshBotName,
@@ -65,12 +69,8 @@ export async function handleClear(ctx: Context): Promise<void> {
     const msg = projectName
       ? `🔄 Conversation cleared\\. Project *${esc(projectName)}* is still selected\\.`
       : '🔄 Conversation cleared\\.';
-    const newConv = session?.conversationId;
-    const backButton = buildBackToPreviousButton(sessionKey, newConv);
-    await ctx.reply(msg, {
-      parse_mode: 'MarkdownV2',
-      ...(backButton ? { reply_markup: { inline_keyboard: backButton } } : {}),
-    });
+    const back = withBackToPrevious(msg, sessionKey, session?.conversationId);
+    await ctx.reply(back.text, back.options);
     return;
   }
 
@@ -117,12 +117,8 @@ export async function handleClearCallback(ctx: Context): Promise<void> {
     const msg = projectName
       ? `🔄 Conversation cleared\\. Project *${esc(projectName)}* is still selected\\.`
       : '🔄 Conversation cleared\\.';
-    const newConv = session?.conversationId;
-    const backButton = buildBackToPreviousButton(sessionKey, newConv);
-    await ctx.editMessageText(msg, {
-      parse_mode: 'MarkdownV2',
-      ...(backButton ? { reply_markup: { inline_keyboard: backButton } } : {}),
-    });
+    const back = withBackToPrevious(msg, sessionKey, session?.conversationId);
+    await ctx.editMessageText(back.text, back.options);
   } else {
     await ctx.answerCallbackQuery({ text: 'Cancelled' });
     await ctx.editMessageText('👍 Clear cancelled\\. Your session is intact\\.', { parse_mode: 'MarkdownV2' });
@@ -143,34 +139,62 @@ export async function handleResume(ctx: Context): Promise<void> {
     return;
   }
 
-  const keyboard = resumable.map((entry) => {
-    const date = new Date(entry.lastActivity);
-    const timeAgo = formatTimeAgo(date);
-    const suffix = ` (${timeAgo})`;
-    const base = entry.topic
-      ? `${entry.projectName} · ${entry.topic}`
-      : entry.projectName;
-    // Telegram caps inline button labels at 64 bytes — truncate from the right
-    // so the project name stays visible.
-    const budget = 64 - suffix.length - 1;
-    const text = (Buffer.byteLength(base, 'utf8') > budget
-      ? truncateToBytes(base, budget - 1) + '…'
-      : base) + suffix;
-
-    return [
-      {
-        text,
-        callback_data: `resume:${entry.conversationId}`,
-      },
-    ];
-  });
-
-  await ctx.reply('📜 *Recent Sessions*\n\nSelect a session to resume:', {
+  const { text, keyboard } = buildResumeMessage(resumable);
+  await ctx.reply(text, {
     parse_mode: 'MarkdownV2',
-    reply_markup: {
-      inline_keyboard: keyboard,
-    },
+    reply_markup: { inline_keyboard: keyboard },
   });
+}
+
+/** The subset of a history entry the /resume picker renders. */
+export interface ResumableSession {
+  conversationId: string;
+  projectName: string;
+  topic?: string;
+  lastActivity: string;
+}
+
+/**
+ * The /resume picker: every session written out in the message body keyed
+ * A/B/C, with the same letter on its button.
+ *
+ * A session's name is `project · topic` and its topic is a sentence fragment
+ * the model wrote, so the label routinely runs past the width a button
+ * renders. It used to be truncated to Telegram's 64-byte cap, which the client
+ * then ellipsised again at its own much narrower width — so two sessions of
+ * the same project arrived as the same half-line and you picked between them
+ * blind. Now the body carries the names and the buttons only have to be
+ * distinguishable.
+ */
+export function buildResumeMessage(entries: ResumableSession[]): {
+  text: string;
+  keyboard: { text: string; callback_data: string }[][];
+} {
+  const options = entries.map((entry) => ({
+    label: sessionDisplayName(entry),
+    // The age goes in the body rather than on the button: it is what tells two
+    // otherwise identical project names apart, and keeping it off the label
+    // leaves a short name room to stay readable on its own button.
+    description: formatTimeAgo(new Date(entry.lastActivity)),
+  }));
+
+  const lines = letteredOptionLines(options).map((line) => esc(line));
+  const text = [
+    '📜 *Recent Sessions*',
+    '',
+    'Select a session to resume:',
+    '',
+    ...lines,
+  ].join('\n');
+
+  const keyboard = buildLetteredKeyboard(
+    options.map((o, idx) => ({
+      label: o.label,
+      callbackData: `resume:${entries[idx].conversationId}`,
+    })),
+  );
+
+  return { text, keyboard };
 }
 
 export async function handleResumeCallback(ctx: Context): Promise<void> {
