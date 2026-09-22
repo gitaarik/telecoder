@@ -63,7 +63,12 @@ export interface ImageAttachment {
   path?: string;
 }
 
-export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'killed' | 'stopped';
+/**
+ * 'paused' arrives on task_updated since agent SDK 0.3. A paused task isn't in
+ * flight — the SDK's own definition of in-flight work is running/pending — so
+ * the checks that count live tasks leave it out until it reports running again.
+ */
+export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'killed' | 'stopped' | 'paused';
 
 export interface TaskUsage {
   totalTokens: number;

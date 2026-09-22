@@ -421,13 +421,22 @@ export async function sendToAgent(
       logAt('basic', `[Claude] Resuming session ${existingSessionId} for session ${sessionKey}`);
     }
 
+    // The curated set for non-dangerous mode. Current CLIs dropped TodoWrite for
+    // the Task* list tools, and a CLI ignores tool names it doesn't know — so
+    // both are listed, and either side of that change keeps a todo tool.
+    const explicitTools = [
+      'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Task', 'Skill',
+      'TodoWrite', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate',
+      'WebFetch', 'WebSearch', 'NotebookEdit',
+    ];
+
     const toolsOption = config.DANGEROUS_MODE
       ? { type: 'preset' as const, preset: 'claude_code' as const }
-      : ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Task', 'Skill', 'TodoWrite', 'WebFetch', 'WebSearch', 'NotebookEdit'];
+      : explicitTools;
 
     const allowedToolsOption = config.DANGEROUS_MODE
       ? undefined
-      : ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Task', 'Skill', 'TodoWrite', 'WebFetch', 'WebSearch', 'NotebookEdit'];
+      : explicitTools;
 
     // PreCompact hook always registered (logging only — notification sent from compact_boundary message)
     const preCompactHook: Partial<Record<HookEvent, HookCallbackMatcher[]>> = {
