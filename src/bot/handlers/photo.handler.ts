@@ -5,6 +5,7 @@ import { config } from '../../config.js';
 import { sendToAgent } from '../../providers/provider-router.js';
 import { sessionManager } from '../../claude/session-manager.js';
 import { messageSender } from '../../telegram/message-sender.js';
+import { relayCatchUpIfMissed } from './message/turn-notify.js';
 import { isDuplicate, markProcessed } from '../../telegram/deduplication.js';
 import { isStaleMessage } from '../middleware/stale-filter.js';
 import {
@@ -119,6 +120,7 @@ async function handleSavedImage(
         });
 
         await messageSender.finishStreaming(ctx, response.text);
+        await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
         await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
       });
     } else {
@@ -293,6 +295,7 @@ export async function handleTextDocument(ctx: Context): Promise<void> {
             telegramCtx: ctx,
           });
           await messageSender.finishStreaming(ctx, response.text);
+          await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
           await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
         });
       } else {

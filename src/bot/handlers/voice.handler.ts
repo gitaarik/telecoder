@@ -5,6 +5,7 @@ import * as path from 'path';
 import { config } from '../../config.js';
 import { sendToAgent } from '../../providers/provider-router.js';
 import { messageSender } from '../../telegram/message-sender.js';
+import { relayCatchUpIfMissed } from './message/turn-notify.js';
 import { isDuplicate, markProcessed } from '../../telegram/deduplication.js';
 import { isStaleMessage } from '../middleware/stale-filter.js';
 import {
@@ -145,6 +146,7 @@ export async function handleVoice(ctx: Context): Promise<void> {
           });
 
           await messageSender.finishStreaming(ctx, response.text);
+          await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
           await maybeSendVoiceReply(ctx, response.text);
         });
       } else {

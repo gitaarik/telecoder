@@ -3,6 +3,7 @@ import { sessionManager } from '../../claude/session-manager.js';
 import { sendToAgent, sendLoopToAgent, getModel, isDangerousMode, getCachedUsage, getActiveProviderName } from '../../providers/provider-router.js';
 import { config } from '../../config.js';
 import { messageSender } from '../../telegram/message-sender.js';
+import { relayCatchUpIfMissed } from './message/turn-notify.js';
 import { getUptimeFormatted } from '../middleware/stale-filter.js';
 import { getAvailableCommands } from '../../claude/command-parser.js';
 import { cancelRequest, clearQueue, isProcessing, queueRequest } from '../../claude/request-queue.js';
@@ -481,6 +482,7 @@ export async function handlePlan(ctx: Context): Promise<void> {
         });
 
         await messageSender.finishStreaming(ctx, response.text);
+        await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
         await maybeSendVoiceReply(ctx, response.text);
       });
     });
@@ -528,6 +530,7 @@ export async function handleExplore(ctx: Context): Promise<void> {
         });
 
         await messageSender.finishStreaming(ctx, response.text);
+        await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
         await maybeSendVoiceReply(ctx, response.text);
       });
     });
