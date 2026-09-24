@@ -1,10 +1,10 @@
 /**
- * A loaded fork's confirmation carries a 🍴 Fork button of its own, so the
- * same point can be forked again without scrolling back to the message the
- * fork was first taken from.
+ * A fork's confirmations carry a 🍴 Fork button of their own — in the chat
+ * that received the fork and in the one it was sent from — so the same point
+ * can be forked again without scrolling back to the message it was taken from.
  *
- * What makes that button worth having is that it forks the branch point: the
- * transcript exactly as it was loaded, whatever the conversation has added
+ * What makes those buttons worth having is that they fork the fork point: the
+ * transcript exactly as it was cut, whatever either conversation has added
  * since. These tests drive the real handlers, stores and session manager, with
  * home redirected to a scratch dir, and check what a second fork carries.
  */
@@ -74,6 +74,22 @@ const BRANCH_POINT = jsonl(
   record('a1', 'assistant', 'Looking at the parser first.'),
   record('a2', 'assistant', 'Done — tokenizer and parser are separate now.'),
 );
+
+/**
+ * A source chat two turns in, with the Fork button on its first reply
+ * (`messageId`) recorded at the end of that turn. Returns the transcript file.
+ */
+function sourceChat(chatId: number, messageId: number): string {
+  const sessionId = `source-${chatId}`;
+  const file = sessionJsonlPath(PROJECT, sessionId);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(
+    file,
+    BRANCH_POINT + jsonl(record('u2', 'user', 'Now add tests'), record('a3', 'assistant', 'Added the tests.')),
+  );
+  messageOffsets.record(String(chatId), messageId, { claudeSessionId: sessionId, projectPath: PROJECT, lineCount: 3 });
+  return file;
+}
 
 function sendFork(userId: number): void {
   putPendingFork(BOT_ID, userId, {
@@ -177,20 +193,36 @@ describe('the offer a fork arrives with', () => {
 
     // Two turns in, with the chat's stored preview on the second reply — and
     // the fork taken from the first.
-    const sourceFile = sessionJsonlPath(PROJECT, 'source-104');
-    fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
-    fs.writeFileSync(
-      sourceFile,
-      BRANCH_POINT + jsonl(record('u2', 'user', 'Now add tests'), record('a3', 'assistant', 'Added the tests.')),
-    );
+    sourceChat(chatId, 40);
     sessionManager.setWorkingDirectory(key, PROJECT);
     sessionManager.updateLastAssistantMessage(key, 'Added the tests.');
-    messageOffsets.record(key, 40, { claudeSessionId: 'source-104', projectPath: PROJECT, lineCount: 3 });
 
     await handleForkCallback(asCtx(tap(chatId, 4, 'fork:confirm:b2:40', 41)));
 
     const preview = getPendingFork('b2', 4)?.assistantPreview;
     expect(preview).toContain('Done — tokenizer and parser are separate now.');
     expect(preview).not.toContain('Added the tests.');
+  });
+});
+
+describe('the confirmation in the chat a fork was sent from', () => {
+  it('carries a Fork button for the same point', async () => {
+    const chatId = 105;
+    const sourceFile = sourceChat(chatId, 40);
+
+    const confirm = tap(chatId, 5, 'fork:confirm:b2:40', 41);
+    await handleForkCallback(asCtx(confirm));
+    expect(confirm.editMessageText).toHaveBeenCalledWith(
+      expect.stringContaining('Forked to Research bot'),
+      expect.objectContaining(FORK_BUTTON),
+    );
+
+    // The source conversation carries on, then the same point goes to a third
+    // bot — from the confirmation this time, not the original message.
+    fs.appendFileSync(sourceFile, jsonl(record('u3', 'user', 'Ship it'), record('a4', 'assistant', 'Shipped.')));
+    await handleForkCallback(asCtx(tap(chatId, 5, 'fork:confirm:b3:41', 42)));
+
+    expect(getPendingFork('b2', 5)?.jsonl).toBe(BRANCH_POINT);
+    expect(getPendingFork('b3', 5)?.jsonl).toBe(BRANCH_POINT);
   });
 });

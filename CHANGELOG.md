@@ -7,14 +7,15 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Sessions
 
-- **A loaded fork can be forked again from where it starts** — the message
-  confirming a fork (Accept in the bot that received it, `/accept`, or 🌱 New
-  branch here) now carries a 🍴 Fork button of its own. Forking the same point
-  a second time — to a third bot, or into another branch — used to mean
-  scrolling back through the source bot's history to the message the fork was
-  first taken from. The button forks the transcript as it was loaded, whatever
-  the conversation has done since, so it hands over exactly what that
-  message's own button would.
+- **A fork can be forked again from either chat** — both messages confirming a
+  fork now carry a 🍴 Fork button of their own: "✅ Fork loaded" or
+  "✅ Branched" where the branch continues (after Accept, `/accept` or 🌱 New
+  branch here), and "✅ Forked to …" in the chat it was sent from. Forking the
+  same point a second time — to a third bot, or into another branch — used to
+  mean scrolling back through the source bot's history to the message the fork
+  was first taken from. Each button forks that same point, whatever either
+  conversation has done since, so it hands over exactly what that message's
+  own button would.
 
 - **A fork offer previews the reply it was taken from** — the "Fork received"
   message quoted the source chat's latest reply as the last assistant message,

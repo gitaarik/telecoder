@@ -15,8 +15,10 @@
  *      Accept  → fork:accept    (loads transcript, switches project if needed)
  *      Decline → fork:decline   (discards pending fork)
  *
- * A loaded fork's confirmation keeps a 🍴 Fork button anchored at the branch
- * point, so the same point can be forked again from the bot that received it.
+ * Both confirmations keep a 🍴 Fork button anchored at the fork point — the
+ * "Forked to" message here and the loaded fork's in the bot that received it
+ * — so the same point can be forked again from either chat without scrolling
+ * back to the message it was taken from.
  *
  * /accept and /decline slash commands behave the same as the buttons, in
  * case the inline keyboard isn't accessible.
@@ -320,8 +322,14 @@ async function onConfirm(ctx: Context, targetBotId: string, sourceMsgId: number)
     await ctx.editMessageText(
       `✅ *Forked to ${esc(target.name)}*\n\n` +
         `Open *${esc(target.name)}* and send any message — you'll get the option to accept the forked conversation \\(${esc(projectLabel)}\\)\\.`,
-      { parse_mode: 'MarkdownV2' },
+      { parse_mode: 'MarkdownV2', reply_markup: FORK_KEYBOARD },
     );
+    // This confirmation stands for the same point as the message the fork was
+    // taken from, and it's the one at the bottom of the chat — so it gets that
+    // message's fork point, and sending the point on to another bot, or
+    // branching it here, doesn't mean scrolling back up to find it.
+    const anchorId = ctx.callbackQuery?.message?.message_id;
+    if (anchorId) messageOffsets.record(keyInfo.sessionKey, anchorId, offset);
   } catch (err) {
     console.debug('[Fork] onConfirm edit failed:', err instanceof Error ? err.message : err);
   }
