@@ -13,10 +13,15 @@ reasoning — the commit bodies are the long form, this is the index.
   branch taken in the same chat was the worst of it: the messages just above
   carry on past the point the branch starts from. The confirmation is now a
   banner — 🍴 Forked from … or 🌱 New branch, between heavy rules — that says
-  outright a new conversation starts there, quotes the reply it picks up
-  after, and says the conversation above is in `/resume`. The "✅ Forked to …"
-  message in the sending chat now says that conversation carries on
-  unchanged.
+  outright a new conversation starts there and says the conversation above is
+  in `/resume`. It shows the exchange the fork picks up after: your prompt on
+  one line, and the reply whole in a collapsed quote that opens on a tap — so
+  a fork to another bot doesn't leave that reply behind in the other chat, and
+  the last reply above your next message is one the fork actually has. No
+  summary: that would be a model call, and a retelling of the one thing you
+  need verbatim. A reply too long to fit is cut at a word, pointing to
+  `/recap` for the rest. The "✅ Forked to …" message in the sending chat now
+  says that conversation carries on unchanged.
 
 - **A fork can be forked again from either chat** — both messages confirming a
   fork now carry a 🍴 Fork button of their own: "✅ Fork loaded" or

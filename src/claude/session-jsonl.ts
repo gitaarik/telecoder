@@ -475,8 +475,11 @@ interface Turn {
 function readTurns(workingDirectory: string, sessionId: string): Turn[] {
   const filePath = sessionJsonlPath(workingDirectory, sessionId);
   if (!fs.existsSync(filePath)) return [];
+  return turnsIn(fs.readFileSync(filePath, 'utf-8'));
+}
 
-  const raw = fs.readFileSync(filePath, 'utf-8');
+/** {@link readTurns} over a transcript already in hand rather than on disk. */
+function turnsIn(raw: string): Turn[] {
   const lines = raw.split('\n');
   const turns: Turn[] = [];
 
@@ -521,8 +524,18 @@ export function readRecentExchanges(
   sessionId: string,
   n: number,
 ): RecapExchange[] {
-  const turns = readTurns(workingDirectory, sessionId);
+  return pairExchanges(readTurns(workingDirectory, sessionId)).slice(-n);
+}
 
+/**
+ * The last exchange of a transcript already in hand — a fork's, say — paired
+ * the way /recap pairs them, so the two show the same thing.
+ */
+export function lastExchangeIn(raw: string): RecapExchange | undefined {
+  return pairExchanges(turnsIn(raw)).at(-1);
+}
+
+function pairExchanges(turns: Turn[]): RecapExchange[] {
   // Pair user → assistant exchanges. Skip an unpaired trailing user turn
   // (in-flight question with no response yet).
   const exchanges: RecapExchange[] = [];
@@ -533,8 +546,7 @@ export function readRecentExchanges(
     exchanges.push({ user: turns[i].text, assistant: next.text });
     i++;
   }
-
-  return exchanges.slice(-n);
+  return exchanges;
 }
 
 /**

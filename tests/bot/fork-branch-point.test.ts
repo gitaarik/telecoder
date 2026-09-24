@@ -201,7 +201,10 @@ describe('the confirmation of a loaded fork', () => {
       expect.stringContaining('Forked from Research bot'),
       FORK_BUTTON,
     );
-    expect(accept.editMessageText.mock.lastCall?.[0]).not.toContain('\\');
+    const plain = accept.editMessageText.mock.lastCall?.[0] as string;
+    expect(plain).not.toMatch(/\\|\*\*>|\|\||^>/m);
+    expect(plain).toContain('You: Split the parser in two');
+    expect(plain).toContain('Done — tokenizer and parser are separate now.');
     expect(messageOffsets.lookup(String(chatId), 55)).toMatchObject({ lineCount: 3 });
   });
 });
@@ -213,11 +216,19 @@ describe('buildForkMarker', () => {
     projectPath: '/home/someone/dev/telecoder',
     jsonl: BRANCH_POINT,
     topic: 'Split the parser',
-    assistantPreview: 'Done — tokenizer and parser are separate now.',
     createdAt: '2026-09-24T20:00:00.000Z',
     ...overrides,
   });
-  const quoteIn = (marker: string) => marker.split('\n').find((line) => line.startsWith('>'));
+  /** A fork whose transcript is one exchange: `prompt`, answered by `reply`. */
+  const forkOf = (prompt: string, reply: string) =>
+    fork({ jsonl: jsonl(record('u1', 'user', prompt), record('a1', 'assistant', reply)) });
+  /** The collapsed quote's lines, from its opening `**>` to its closing `||`. */
+  const quoteIn = (marker: string) => {
+    const lines = marker.split('\n');
+    const start = lines.findIndex((line) => line.startsWith('**>'));
+    if (start === -1) return undefined;
+    return lines.slice(start, lines.findIndex((line, i) => i >= start && line.endsWith('||')) + 1);
+  };
 
   it('reads as a break between two conversations', () => {
     expect(buildForkMarker(fork())).toBe([
@@ -226,8 +237,11 @@ describe('buildForkMarker', () => {
       '━━━━━━━━━━━━━━━━',
       'telecoder · Split the parser',
       '',
-      'A new conversation starts here\\. It picks up after this reply:',
-      '>Done — tokenizer and parser are separate now\\.',
+      'A new conversation starts here\\. It picks up after:',
+      '*You:* Split the parser in two',
+      '**>Looking at the parser first\\.',
+      '>',
+      '>Done — tokenizer and parser are separate now\\.||',
       '',
       "_What's above is this bot's previous conversation — it's in /resume\\._",
     ].join('\n'));
@@ -239,24 +253,47 @@ describe('buildForkMarker', () => {
     expect(marker).toContain('the conversation you branched from');
   });
 
-  it('still says a new conversation starts when there is no reply to quote', () => {
-    const marker = buildForkMarker(fork({ assistantPreview: undefined }));
+  it('still says a new conversation starts when there is no exchange to show', () => {
+    const marker = buildForkMarker(fork({ jsonl: jsonl(record('u1', 'user', 'Still thinking?')) }));
     expect(marker).toContain('A new conversation starts here\\.');
+    expect(marker).not.toContain('You:');
     expect(quoteIn(marker)).toBeUndefined();
   });
 
-  it('quotes the reply as one short line, without its markdown', () => {
-    const reply = '## Summary\n\n**Done** — `parser.ts` is split.\n\n' + 'More detail follows. '.repeat(10);
-    const quote = quoteIn(buildForkMarker(fork({ assistantPreview: reply })))!;
-    expect(quote.startsWith('>Summary Done — parser\\.ts is split\\. More detail')).toBe(true);
-    expect(quote.endsWith('…')).toBe(true);
-    expect(quote.replace(/\\(.)/g, '$1').length).toBeLessThanOrEqual(1 + 120);
+  it('collapses the whole reply, without its markdown', () => {
+    const reply = '## Status\n\n**Done** — `parser.ts` is split:\n\n```ts\nexport const x = 1;\n```\n\nNext: tests.';
+    expect(quoteIn(buildForkMarker(forkOf('Where are we?', reply)))).toEqual([
+      '**>Status',
+      '>',
+      '>Done — parser\\.ts is split:',
+      '>',
+      '>export const x \\= 1;',
+      '>',
+      '>Next: tests\\.||',
+    ]);
   });
 
-  it('escapes what it quotes and names', () => {
-    const marker = buildForkMarker(fork({ topic: 'v2.1 (draft)', assistantPreview: 'Use a-b [c]!' }));
+  it('cuts a reply too long for one message, and says where the rest is', () => {
+    const marker = buildForkMarker(forkOf('Long one?', 'All good here. '.repeat(400)));
+    expect(quoteIn(marker)!.at(-1)!.endsWith('here\\. …||')).toBe(true);
+    expect(marker).toContain('The rest of the reply is in /recap\\.');
+    // Telegram counts the text once parsed; unescaped, with markup still in,
+    // is an upper bound on that.
+    expect(marker.replace(/\\(.)/g, '$1').length).toBeLessThanOrEqual(4096);
+  });
+
+  it('keeps the prompt to one line', () => {
+    const marker = buildForkMarker(forkOf('First line\nsecond line ' + 'word '.repeat(50), 'Ok.'));
+    const you = marker.split('\n').find((line) => line.startsWith('*You:*'))!;
+    expect(you.startsWith('*You:* First line second line word')).toBe(true);
+    expect(you.endsWith('…')).toBe(true);
+  });
+
+  it('escapes what it shows', () => {
+    const marker = buildForkMarker({ ...forkOf('Is a-b > c?', 'Use [c]!'), topic: 'v2.1 (draft)' });
     expect(marker).toContain('telecoder · v2\\.1 \\(draft\\)');
-    expect(quoteIn(marker)).toBe('>Use a\\-b \\[c\\]\\!');
+    expect(marker).toContain('*You:* Is a\\-b \\> c?');
+    expect(quoteIn(marker)).toEqual(['**>Use \\[c\\]\\!||']);
   });
 });
 

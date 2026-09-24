@@ -68,7 +68,11 @@ function extractExpandableBlocks(text: string): { text: string; blocks: string[]
   return { text: processed.join(''), blocks };
 }
 
-function buildExpandableSyntax(body: string): string {
+/**
+ * `body` as a collapsible quote in MarkdownV2, escaped line by line. Must start
+ * on a line of its own. Empty string for an empty body.
+ */
+export function buildExpandableSyntax(body: string): string {
   const trimmed = body.replace(/^\n+|\n+$/g, '');
   if (!trimmed) return '';
   const escaped = trimmed.split('\n').map(escapeMarkdownV2);

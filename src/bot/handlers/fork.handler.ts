@@ -43,11 +43,11 @@ import {
 } from '../../claude/pending-forks.js';
 import { listSiblingBots, findBotById } from '../../utils/instances.js';
 import { buildLetteredKeyboard, letteredOptionLines } from '../../telegram/lettered-options.js';
-import { sessionJsonlPath, lastAssistantTurnText } from '../../claude/session-jsonl.js';
+import { sessionJsonlPath, lastAssistantTurnText, lastExchangeIn } from '../../claude/session-jsonl.js';
 import { sessionManager } from '../../claude/session-manager.js';
 import { clearConversation } from '../../providers/provider-router.js';
 import { isAllowedUser } from '../../utils/user-roster.js';
-import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
+import { escapeMarkdownV2 as esc, buildExpandableSyntax } from '../../telegram/markdown.js';
 import { restoreTopicAndRefreshBotName } from './command.handler.js';
 import { getSessionTopic } from './command.handler.js';
 import { sessionDisplayName } from './command/shared.js';
@@ -560,7 +560,7 @@ async function loadFork(ctx: Context, sessionKey: string, fork: PendingFork): Pr
   // unedited, the message would go on offering Accept and Decline for a fork
   // that is already loaded.
   const marker = buildForkMarker(fork);
-  const plain = marker.replace(/\\(.)/g, '$1');
+  const plain = plainMarker(marker);
   try {
     let anchorId: number | undefined;
     if (ctx.callbackQuery) {
@@ -586,8 +586,14 @@ async function loadFork(ctx: Context, sessionKey: string, fork: PendingFork): Pr
 /** A line heavy enough to read as a break in the chat, short enough for a phone. */
 const MARKER_RULE = '━'.repeat(16);
 
-/** How much of the reply a fork picks up after its marker quotes. */
-const MARKER_QUOTE_LEN = 120;
+/** How far the prompt a fork picks up after may run on its one line. */
+const MARKER_PROMPT_LEN = 120;
+
+/**
+ * How much of the reply a fork picks up after its marker holds. Telegram caps
+ * a message at 4096 characters, and the rest of the banner has to fit too.
+ */
+const MARKER_REPLY_LEN = 3000;
 
 /**
  * The message a loaded fork leaves in its chat, in MarkdownV2: a banner where
@@ -596,14 +602,18 @@ const MARKER_QUOTE_LEN = 120;
  * Scrolled back through, the messages on either side of it would otherwise
  * read as one thread — and for a branch taken in the same chat, the messages
  * just above even carry on past the point the branch starts from. So it says
- * outright that a new conversation starts here, quotes the reply it picks up
- * after, and says where the conversation above went.
+ * outright that a new conversation starts here, shows the exchange it picks
+ * up after, and says where the conversation above went.
+ *
+ * The reply goes in whole, collapsed. A fork to another bot would otherwise
+ * leave it in the other bot's chat, and a branch taken here would leave the
+ * last reply above your next message one the branch never had.
  */
 export function buildForkMarker(fork: PendingFork): string {
   const isBranch = fork.fromBotId === BOT_ID;
   const title = isBranch ? '🌱 New branch' : `🍴 Forked from ${fork.fromBotName}`;
   const name = sessionDisplayName({ projectName: path.basename(fork.projectPath), topic: fork.topic });
-  const quote = fork.assistantPreview ? quoteLine(fork.assistantPreview) : '';
+  const exchange = lastExchangeIn(fork.jsonl);
   const above = isBranch
     ? "What's above is the conversation you branched from — it's in /resume."
     : "What's above is this bot's previous conversation — it's in /resume.";
@@ -614,28 +624,58 @@ export function buildForkMarker(fork: PendingFork): string {
     MARKER_RULE,
     esc(name),
     '',
-    quote
-      ? `${esc('A new conversation starts here. It picks up after this reply:')}\n>${esc(quote)}`
-      : esc('A new conversation starts here.'),
+    ...(exchange
+      ? [
+          esc('A new conversation starts here. It picks up after:'),
+          `*You:* ${esc(oneLine(exchange.user, MARKER_PROMPT_LEN))}`,
+          ...replyQuote(exchange.assistant),
+        ]
+      : [esc('A new conversation starts here.')]),
     '',
     `_${esc(above)}_`,
   ].join('\n');
 }
 
+/** `text` flattened onto one line and cut at `max` characters. */
+function oneLine(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
+}
+
 /**
- * The reply a fork picks up after, as one short line. Markdown emphasis and
- * heading marks go: in the quote they would only show as stray asterisks,
- * backticks and hashes.
+ * The reply as a collapsed quote. A quote holds plain text only, so markdown
+ * markers go rather than show up as stray asterisks, backticks and hashes. A
+ * reply too long for the message is cut at a line or word, and names /recap —
+ * which shows the reply whole, formatted — for the rest.
  */
-function quoteLine(reply: string): string {
-  const flat = reply
+function replyQuote(reply: string): string[] {
+  const text = reply
+    .replace(/^\s*```.*$/gm, '')
     .replace(/^#{1,6}\s+/gm, '')
     .replace(/\*\*|__|`/g, '')
-    .replace(/\s+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
-  return flat.length > MARKER_QUOTE_LEN
-    ? `${flat.slice(0, MARKER_QUOTE_LEN - 1).trimEnd()}…`
-    : flat;
+  if (text.length <= MARKER_REPLY_LEN) return [buildExpandableSyntax(text)];
+
+  const cut = text.slice(0, MARKER_REPLY_LEN);
+  const end = Math.max(cut.lastIndexOf('\n'), cut.lastIndexOf(' '));
+  return [
+    buildExpandableSyntax(`${cut.slice(0, end > 0 ? end : MARKER_REPLY_LEN).trimEnd()} …`),
+    esc('The rest of the reply is in /recap.'),
+  ];
+}
+
+/**
+ * The marker as plain text, for when Telegram won't parse it: markup dropped
+ * and escapes undone. esc() escapes every marker character in the content, so
+ * only the markup's own bare `*`, `_`, `>` and `||` match here.
+ */
+function plainMarker(marker: string): string {
+  return marker
+    .replace(/^\*\*>|^>/gm, '')
+    .replace(/(?<!\\)\|\|$/gm, '')
+    .replace(/(?<!\\)[*_]/g, '')
+    .replace(/\\(.)/g, '$1');
 }
 
 /**
