@@ -11,6 +11,7 @@
 
 import { describe, it, expect, vi, afterAll } from 'vitest';
 import type { Context } from 'grammy';
+import type { PendingFork } from '../../src/claude/pending-forks.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -46,7 +47,7 @@ process.env.TELECODER_TEST_HOME = home;
 const PROJECT = path.join(home, 'project');
 fs.mkdirSync(PROJECT);
 
-const { handleForkCallback, handleAcceptCommand } = await import('../../src/bot/handlers/fork.handler.js');
+const { handleForkCallback, handleAcceptCommand, buildForkMarker } = await import('../../src/bot/handlers/fork.handler.js');
 const { putPendingFork, getPendingFork } = await import('../../src/claude/pending-forks.js');
 const { messageOffsets } = await import('../../src/claude/message-offsets.js');
 const { sessionManager } = await import('../../src/claude/session-manager.js');
@@ -59,6 +60,8 @@ afterAll(() => {
 });
 
 const FORK_BUTTON = { reply_markup: { inline_keyboard: [[{ text: '🍴 Fork', callback_data: 'fork:pick' }]] } };
+/** How a loaded fork's marker goes out: formatted, with the button under it. */
+const MARKER_OPTIONS = { parse_mode: 'MarkdownV2', ...FORK_BUTTON };
 
 const record = (uuid: string, type: 'user' | 'assistant', text: string) => JSON.stringify({
   type,
@@ -128,8 +131,8 @@ describe('the confirmation of a loaded fork', () => {
     await handleForkCallback(asCtx(accept));
 
     expect(accept.editMessageText).toHaveBeenCalledWith(
-      expect.stringContaining('Fork loaded from Research bot'),
-      FORK_BUTTON,
+      expect.stringContaining('Forked from Research bot'),
+      MARKER_OPTIONS,
     );
     expect(messageOffsets.lookup(String(chatId), 55)).toMatchObject({
       claudeSessionId: loadedSessionId(chatId),
@@ -159,7 +162,7 @@ describe('the confirmation of a loaded fork', () => {
     expect(uuidsIn(sessionJsonlPath(PROJECT, branched))).toEqual(['u1', 'a1', 'a2']);
 
     // A branch taken here is anchored the same way, so it can be forked on.
-    expect(branch.editMessageText).toHaveBeenCalledWith(expect.stringContaining('Branched'), FORK_BUTTON);
+    expect(branch.editMessageText).toHaveBeenCalledWith(expect.stringContaining('New branch'), MARKER_OPTIONS);
     expect(messageOffsets.lookup(String(chatId), 60)).toMatchObject({
       claudeSessionId: branched,
       lineCount: 3,
@@ -178,11 +181,82 @@ describe('the confirmation of a loaded fork', () => {
     };
     await handleAcceptCommand(asCtx(command));
 
-    expect(command.reply).toHaveBeenCalledWith(expect.stringContaining('Fork loaded'), FORK_BUTTON);
+    expect(command.reply).toHaveBeenCalledWith(expect.stringContaining('Forked from Research bot'), MARKER_OPTIONS);
     expect(messageOffsets.lookup(String(chatId), 71)).toMatchObject({
       claudeSessionId: loadedSessionId(chatId),
       lineCount: 3,
     });
+  });
+
+  it('still lands, in plain text, when Telegram rejects the formatting', async () => {
+    const chatId = 106;
+    sendFork(6);
+
+    const accept = tap(chatId, 6, 'fork:accept', 55);
+    accept.editMessageText.mockRejectedValueOnce(new Error("Bad Request: can't parse entities"));
+    await handleForkCallback(asCtx(accept));
+
+    // Left as it was, the offer would go on showing Accept and Decline.
+    expect(accept.editMessageText).toHaveBeenLastCalledWith(
+      expect.stringContaining('Forked from Research bot'),
+      FORK_BUTTON,
+    );
+    expect(accept.editMessageText.mock.lastCall?.[0]).not.toContain('\\');
+    expect(messageOffsets.lookup(String(chatId), 55)).toMatchObject({ lineCount: 3 });
+  });
+});
+
+describe('buildForkMarker', () => {
+  const fork = (overrides: Partial<PendingFork> = {}): PendingFork => ({
+    fromBotName: 'Research bot',
+    fromBotId: 'b2',
+    projectPath: '/home/someone/dev/telecoder',
+    jsonl: BRANCH_POINT,
+    topic: 'Split the parser',
+    assistantPreview: 'Done — tokenizer and parser are separate now.',
+    createdAt: '2026-09-24T20:00:00.000Z',
+    ...overrides,
+  });
+  const quoteIn = (marker: string) => marker.split('\n').find((line) => line.startsWith('>'));
+
+  it('reads as a break between two conversations', () => {
+    expect(buildForkMarker(fork())).toBe([
+      '━━━━━━━━━━━━━━━━',
+      '*🍴 Forked from Research bot*',
+      '━━━━━━━━━━━━━━━━',
+      'telecoder · Split the parser',
+      '',
+      'A new conversation starts here\\. It picks up after this reply:',
+      '>Done — tokenizer and parser are separate now\\.',
+      '',
+      "_What's above is this bot's previous conversation — it's in /resume\\._",
+    ].join('\n'));
+  });
+
+  it('calls a branch taken in this chat a branch', () => {
+    const marker = buildForkMarker(fork({ fromBotId: BOT_ID, fromBotName: 'TeleCoder' }));
+    expect(marker).toContain('*🌱 New branch*');
+    expect(marker).toContain('the conversation you branched from');
+  });
+
+  it('still says a new conversation starts when there is no reply to quote', () => {
+    const marker = buildForkMarker(fork({ assistantPreview: undefined }));
+    expect(marker).toContain('A new conversation starts here\\.');
+    expect(quoteIn(marker)).toBeUndefined();
+  });
+
+  it('quotes the reply as one short line, without its markdown', () => {
+    const reply = '## Summary\n\n**Done** — `parser.ts` is split.\n\n' + 'More detail follows. '.repeat(10);
+    const quote = quoteIn(buildForkMarker(fork({ assistantPreview: reply })))!;
+    expect(quote.startsWith('>Summary Done — parser\\.ts is split\\. More detail')).toBe(true);
+    expect(quote.endsWith('…')).toBe(true);
+    expect(quote.replace(/\\(.)/g, '$1').length).toBeLessThanOrEqual(1 + 120);
+  });
+
+  it('escapes what it quotes and names', () => {
+    const marker = buildForkMarker(fork({ topic: 'v2.1 (draft)', assistantPreview: 'Use a-b [c]!' }));
+    expect(marker).toContain('telecoder · v2\\.1 \\(draft\\)');
+    expect(quoteIn(marker)).toBe('>Use a\\-b \\[c\\]\\!');
   });
 });
 
@@ -216,6 +290,8 @@ describe('the confirmation in the chat a fork was sent from', () => {
       expect.stringContaining('Forked to Research bot'),
       expect.objectContaining(FORK_BUTTON),
     );
+    // Unlike the chat the fork lands in, this one is still the same conversation.
+    expect(confirm.editMessageText.mock.lastCall?.[0]).toContain('This conversation carries on here unchanged');
 
     // The source conversation carries on, then the same point goes to a third
     // bot — from the confirmation this time, not the original message.

@@ -50,6 +50,7 @@ import { isAllowedUser } from '../../utils/user-roster.js';
 import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
 import { restoreTopicAndRefreshBotName } from './command.handler.js';
 import { getSessionTopic } from './command.handler.js';
+import { sessionDisplayName } from './command/shared.js';
 
 const BOT_NAME = config.BOT_NAME;
 
@@ -321,7 +322,8 @@ async function onConfirm(ctx: Context, targetBotId: string, sourceMsgId: number)
   try {
     await ctx.editMessageText(
       `✅ *Forked to ${esc(target.name)}*\n\n` +
-        `Open *${esc(target.name)}* and send any message — you'll get the option to accept the forked conversation \\(${esc(projectLabel)}\\)\\.`,
+        `Open *${esc(target.name)}* and send any message — you'll get the option to accept the forked conversation \\(${esc(projectLabel)}\\)\\.\n\n` +
+        `_This conversation carries on here unchanged\\._`,
       { parse_mode: 'MarkdownV2', reply_markup: FORK_KEYBOARD },
     );
     // This confirmation stands for the same point as the message the fork was
@@ -547,24 +549,28 @@ async function loadFork(ctx: Context, sessionKey: string, fork: PendingFork): Pr
     await restoreTopicAndRefreshBotName(ctx, sessionKey, fork.topic);
   }
 
-  const projectLabel = path.basename(fork.projectPath);
-  const doneText = fork.fromBotId === BOT_ID
-    ? `✅ Branched into a new conversation (${projectLabel}). Your previous thread is in /resume. Send a message to continue from the branch point.`
-    : `✅ Fork loaded from ${fork.fromBotName} (${projectLabel}). Send a message to continue from where it left off.`;
-
-  // The done message is where the branch starts in this chat, so it carries a
+  // The marker is where the branch starts in this chat, so it carries a
   // 🍴 Fork button of its own. Forking the same point again — to another bot,
   // or into another branch here — then doesn't mean scrolling back to the
   // message this fork was first taken from. Like that message's button, it
   // forks the transcript as it was at that point, whatever the conversation
   // has done since.
+  //
+  // A marker Telegram won't parse still has to land in plain text: left
+  // unedited, the message would go on offering Accept and Decline for a fork
+  // that is already loaded.
+  const marker = buildForkMarker(fork);
+  const plain = marker.replace(/\\(.)/g, '$1');
   try {
     let anchorId: number | undefined;
     if (ctx.callbackQuery) {
-      await ctx.editMessageText(doneText, { reply_markup: FORK_KEYBOARD });
+      await ctx.editMessageText(marker, { parse_mode: 'MarkdownV2', reply_markup: FORK_KEYBOARD })
+        .catch(() => ctx.editMessageText(plain, { reply_markup: FORK_KEYBOARD }));
       anchorId = ctx.callbackQuery.message?.message_id;
     } else {
-      anchorId = (await ctx.reply(doneText, { reply_markup: FORK_KEYBOARD })).message_id;
+      const sent = await ctx.reply(marker, { parse_mode: 'MarkdownV2', reply_markup: FORK_KEYBOARD })
+        .catch(() => ctx.reply(plain, { reply_markup: FORK_KEYBOARD }));
+      anchorId = sent.message_id;
     }
     if (anchorId) {
       messageOffsets.record(sessionKey, anchorId, {
@@ -575,6 +581,61 @@ async function loadFork(ctx: Context, sessionKey: string, fork: PendingFork): Pr
       });
     }
   } catch { /* ignore */ }
+}
+
+/** A line heavy enough to read as a break in the chat, short enough for a phone. */
+const MARKER_RULE = '━'.repeat(16);
+
+/** How much of the reply a fork picks up after its marker quotes. */
+const MARKER_QUOTE_LEN = 120;
+
+/**
+ * The message a loaded fork leaves in its chat, in MarkdownV2: a banner where
+ * one conversation ends and another begins.
+ *
+ * Scrolled back through, the messages on either side of it would otherwise
+ * read as one thread — and for a branch taken in the same chat, the messages
+ * just above even carry on past the point the branch starts from. So it says
+ * outright that a new conversation starts here, quotes the reply it picks up
+ * after, and says where the conversation above went.
+ */
+export function buildForkMarker(fork: PendingFork): string {
+  const isBranch = fork.fromBotId === BOT_ID;
+  const title = isBranch ? '🌱 New branch' : `🍴 Forked from ${fork.fromBotName}`;
+  const name = sessionDisplayName({ projectName: path.basename(fork.projectPath), topic: fork.topic });
+  const quote = fork.assistantPreview ? quoteLine(fork.assistantPreview) : '';
+  const above = isBranch
+    ? "What's above is the conversation you branched from — it's in /resume."
+    : "What's above is this bot's previous conversation — it's in /resume.";
+
+  return [
+    MARKER_RULE,
+    `*${esc(title)}*`,
+    MARKER_RULE,
+    esc(name),
+    '',
+    quote
+      ? `${esc('A new conversation starts here. It picks up after this reply:')}\n>${esc(quote)}`
+      : esc('A new conversation starts here.'),
+    '',
+    `_${esc(above)}_`,
+  ].join('\n');
+}
+
+/**
+ * The reply a fork picks up after, as one short line. Markdown emphasis and
+ * heading marks go: in the quote they would only show as stray asterisks,
+ * backticks and hashes.
+ */
+function quoteLine(reply: string): string {
+  const flat = reply
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\*\*|__|`/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return flat.length > MARKER_QUOTE_LEN
+    ? `${flat.slice(0, MARKER_QUOTE_LEN - 1).trimEnd()}…`
+    : flat;
 }
 
 /**

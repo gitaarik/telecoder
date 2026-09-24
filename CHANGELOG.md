@@ -7,6 +7,17 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Sessions
 
+- **A fork stands out where it starts** — loading a fork left one plain line,
+  "✅ Fork loaded from …" or "✅ Branched into a new conversation", between two
+  conversations that otherwise read as one thread when you scroll back. A
+  branch taken in the same chat was the worst of it: the messages just above
+  carry on past the point the branch starts from. The confirmation is now a
+  banner — 🍴 Forked from … or 🌱 New branch, between heavy rules — that says
+  outright a new conversation starts there, quotes the reply it picks up
+  after, and says the conversation above is in `/resume`. The "✅ Forked to …"
+  message in the sending chat now says that conversation carries on
+  unchanged.
+
 - **A fork can be forked again from either chat** — both messages confirming a
   fork now carry a 🍴 Fork button of their own: "✅ Fork loaded" or
   "✅ Branched" where the branch continues (after Accept, `/accept` or 🌱 New
