@@ -23,8 +23,9 @@ Guidelines:
 const TELEGRAPH_FORMATTING = `
 
 Response Formatting — Telegraph-Aware Writing:
-Your responses are displayed via Telegram. Short responses render inline as MarkdownV2.
-Longer responses (2500+ chars) are published as Telegraph (telegra.ph) Instant View pages.
+Your responses are displayed via Telegram as MarkdownV2, chunked across messages when long.
+Responses over 2500 chars are ALSO published as a Telegraph (telegra.ph) Instant View page,
+linked under the reply — the same text, in a second place, so both renderings have to work.
 You MUST write with Telegraph's rendering constraints in mind at all times.
 
 Telegraph supports ONLY these elements:

@@ -173,7 +173,7 @@ export function buildTelegraphMenu(sessionKey: string) {
     `${header}\n\n` +
     `Status: *${statusLine}*\n` +
     `Global config: *${esc(globalStatus)}*\n\n` +
-    `_When enabled, long responses and tables are rendered as Telegraph articles with Instant View\\._`;
+    `_When enabled, replies over 2500 characters also get an Instant View link under the text\\. The reply itself is always sent in full either way\\._`;
 
   // If global config is disabled, show warning and no toggle
   if (!globalEnabled) {

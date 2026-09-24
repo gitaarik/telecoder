@@ -102,6 +102,20 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **Long replies stopped being replaced by a 200-character stub** — with
+  Instant View on, any reply past 2500 characters — or one merely containing a
+  markdown table — was swapped in chat for `text.substring(0, 200) + '...'` and
+  a telegra.ph link. The answer never arrived, the stub was cut at a raw
+  character offset mid-word with its markdown stripped out, and the only way
+  back to what the model wrote was `/recap`. Telegraph is additive now: the
+  reply goes out in full, chunked as usual, and the page URL hangs under the
+  last chunk — or takes a chunk of its own when appending would overflow it. A
+  telegra.ph outage costs the link, never the text. The table trigger is gone
+  outright; `convertToTelegramMarkdown` has rewritten pipe tables into bullet
+  lists for a long time, so there was nothing left to compensate for.
+
+### Reliability
+
 - **`/restartbot` no longer kills a systemd-managed bot for good** — the restart
   ran `botctl recover` as a detached child, but `detached: true` escapes the
   process group and not the cgroup. Under systemd the helper was reaped along

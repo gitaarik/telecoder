@@ -1,7 +1,7 @@
 import { Context, Api, InputFile, GrammyError } from 'grammy';
 import { config } from '../config.js';
 import { processMessageForTelegram, escapeMarkdownV2, splitMessage } from './markdown.js';
-import { shouldUseTelegraph, createTelegraphPage, createTelegraphFromFile } from './telegraph.js';
+import { shouldPublishTelegraph, createTelegraphPage, createTelegraphFromFile } from './telegraph.js';
 import { isTerminalUIEnabled } from './terminal-settings.js';
 import {
   getSpinnerFrame,
@@ -123,6 +123,46 @@ const TYPING_INTERVAL_MS = 4000; // Send typing every 4 seconds
 const MIN_EDIT_INTERVAL_MS = 10000; // Minimum time between message edits (~5 edits/min safe zone)
 const MONITOR_TASK_TYPE = 'monitor_mcp';
 
+/**
+ * Publish a long reply as an Instant View page and return the footer line that
+ * points at it, or null when the chat hasn't asked for pages, the reply is
+ * short, or telegra.ph is unreachable.
+ *
+ * Every failure path returns null rather than throwing. The page is decoration
+ * on an answer that is about to be delivered in full either way, so a Telegraph
+ * outage must never cost the user the reply — which is exactly what the old
+ * publish-or-nothing flow did when it swapped the text out for a 200-character
+ * stub and the link then failed to render.
+ */
+async function publishTelegraphFooter(text: string, sessionKey?: string): Promise<string | null> {
+  if (!shouldPublishTelegraph(text, sessionKey)) return null;
+  try {
+    const pageUrl = await createTelegraphPage('Claude Response', text);
+    if (!pageUrl) return null;
+    return `📄 [Open in Instant View](${escapeMarkdownV2(pageUrl)})`;
+  } catch (error) {
+    console.error('[Telegraph] Failed to publish page:', error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
+/**
+ * Hang `footer` under the last chunk of a reply, or give it a chunk of its own
+ * when appending would push that message past Telegram's limit.
+ *
+ * Exported for tests: the boundary is the whole point of the function, and it
+ * is the one place a bug would silently cost a chunk.
+ */
+export function withTelegraphFooter(parts: string[], footer: string | null): string[] {
+  if (!footer) return parts;
+  const suffix = `\n\n${footer}`;
+  const last = parts[parts.length - 1];
+  if (last !== undefined && last.length + suffix.length <= config.MAX_MESSAGE_LENGTH) {
+    return [...parts.slice(0, -1), last + suffix];
+  }
+  return [...parts, footer];
+}
+
 // `mcp__claudegram-tools__claudegram_send_file` → `claudegram_send_file`
 function stripMcpServerPrefix(toolName: string): string {
   if (!toolName.startsWith('mcp__')) return toolName;
@@ -188,26 +228,14 @@ export class MessageSender {
   async sendMessage(ctx: Context, text: string): Promise<number | null> {
     const keyInfo = getSessionKeyFromCtx(ctx);
     let lastMessageId: number | null = null;
-    // Check if we should use Telegraph for this content
-    if (shouldUseTelegraph(text, keyInfo?.sessionKey)) {
-      const pageUrl = await createTelegraphPage('Claude Response', text);
 
-      if (pageUrl) {
-        // Send Telegraph link with a brief summary
-        const summary = text.substring(0, 200).replace(/[#*_`\[\]]/g, '') + '...';
-        const message = `📄 *Full response available:*\n\n${escapeMarkdownV2(summary)}\n\n[Open in Instant View](${escapeMarkdownV2(pageUrl)})`;
-
-        try {
-          const sent = await ctx.reply(message, { parse_mode: 'MarkdownV2' });
-          return sent.message_id;
-        } catch (error) {
-          console.error('[Telegraph] Failed to send link, falling back to chunks:', error);
-        }
-      }
-    }
-
-    // Default: MarkdownV2 with chunking
-    const parts = processMessageForTelegram(text, config.MAX_MESSAGE_LENGTH);
+    // MarkdownV2 with chunking, plus an Instant View footer when the reply is
+    // long enough to be worth one. The text always goes out in full — the page
+    // is a second way to read it, not a replacement for it.
+    const parts = withTelegraphFooter(
+      processMessageForTelegram(text, config.MAX_MESSAGE_LENGTH),
+      await publishTelegraphFooter(text, keyInfo?.sessionKey),
+    );
 
     for (const part of parts) {
       try {
@@ -1168,25 +1196,10 @@ export class MessageSender {
         }
       } else {
         // Original behavior: No intervening posts, so edit the main message directly.
-        if (shouldUseTelegraph(finalContent, sessionKey)) {
-          const pageUrl = await createTelegraphPage('Claude Response', finalContent);
-          if (pageUrl) {
-            try {
-              const summary = finalContent.substring(0, 200).replace(/[#*_`\[\]]/g, '') + '...';
-              const message = `📄 *Response ready:*\n\n${escapeMarkdownV2(summary)}\n\n[Open in Instant View](${escapeMarkdownV2(pageUrl)})`;
-              await ctx.api.editMessageText(chatId, state.messageId, message, { parse_mode: 'MarkdownV2' });
-              await this.attachForkButton(ctx, sessionKey, state.messageId, suggestion);
-              await this.sendSuggestionCard(ctx, suggestion);
-              // Early exit on success
-              this.streamStates.delete(sessionKey);
-              return;
-            } catch (error) {
-              console.error('[Telegraph] Failed, falling back to chunks:', error);
-            }
-          }
-        }
-
-        const parts = processMessageForTelegram(finalContent, config.MAX_MESSAGE_LENGTH);
+        const parts = withTelegraphFooter(
+          processMessageForTelegram(finalContent, config.MAX_MESSAGE_LENGTH),
+          await publishTelegraphFooter(finalContent, sessionKey),
+        );
         try {
           const firstPart = parts[0] || 'Done\\.';
           await ctx.api.editMessageText(chatId, state.messageId, firstPart, { parse_mode: 'MarkdownV2' });

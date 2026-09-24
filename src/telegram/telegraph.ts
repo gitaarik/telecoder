@@ -16,9 +16,8 @@ const telegraphAccountSchema = z.object({
 // Telegraph account data (no client needed - using native fetch)
 let telegraphAccount: z.infer<typeof telegraphAccountSchema> | null = null;
 
-// Thresholds for when to use Telegraph vs inline
-const TELEGRAPH_THRESHOLD = 2500; // Use Telegraph for messages longer than this
-const TABLE_PATTERN = /\|.*\|.*\|/; // Detect markdown tables
+// Length past which a reply is worth an Instant View page alongside the text.
+const TELEGRAPH_THRESHOLD = 2500;
 
 /**
  * Initialize Telegraph account (creates one if needed)
@@ -90,31 +89,27 @@ export async function initTelegraph(): Promise<void> {
 }
 
 /**
- * Check if content should use Telegraph (long content or has tables)
- * Returns false if Telegraph is disabled globally or for this chat
+ * Whether `content` is long enough to be worth an Instant View page *alongside*
+ * the inline reply. False when Telegraph is off globally or for this chat.
+ *
+ * The page is an extra way to read the answer, never a substitute for it. It
+ * used to be a substitute: anything past the threshold was replaced in chat by
+ * a 200-character stub ending in an ellipsis, and the only way back to the text
+ * the model actually wrote was `/recap`. Callers now send the reply in full and
+ * hang the URL under it.
+ *
+ * Length is the only trigger. Merely containing a markdown table used to send a
+ * three-line reply to Telegraph as well, on the grounds that MarkdownV2 can't
+ * render tables — but `convertToTelegramMarkdown` rewrites pipe tables into
+ * bullet lists before they ever reach Telegram, so there is nothing left to
+ * compensate for.
  */
-export function shouldUseTelegraph(content: string, sessionKey?: string): boolean {
-  // Check if Telegraph is enabled in config (global kill switch)
-  if (!config.TELEGRAPH_ENABLED) {
-    return false;
-  }
+export function shouldPublishTelegraph(content: string, sessionKey?: string): boolean {
+  // Global kill switch, then the per-chat toggle.
+  if (!config.TELEGRAPH_ENABLED) return false;
+  if (sessionKey !== undefined && !isTelegraphEnabled(sessionKey)) return false;
 
-  // Check per-session settings if sessionKey provided
-  if (sessionKey !== undefined && !isTelegraphEnabled(sessionKey)) {
-    return false;
-  }
-
-  // Use Telegraph for long content
-  if (content.length > TELEGRAPH_THRESHOLD) {
-    return true;
-  }
-
-  // Use Telegraph if content has tables (not supported in MarkdownV2)
-  if (TABLE_PATTERN.test(content)) {
-    return true;
-  }
-
-  return false;
+  return content.length > TELEGRAPH_THRESHOLD;
 }
 
 /**
