@@ -37,7 +37,7 @@ import { hasPendingQuestionForSession } from '../claude/ask-user.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const FORK_KEYBOARD = { inline_keyboard: [[{ text: '🍴 Fork', callback_data: 'fork:pick' }]] };
+export const FORK_KEYBOARD = { inline_keyboard: [[{ text: '🍴 Fork', callback_data: 'fork:pick' }]] };
 
 /**
  * Status-bubble text shown while an ask_user question is waiting on a tap.

@@ -7,6 +7,15 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Sessions
 
+- **A loaded fork can be forked again from where it starts** — the message
+  confirming a fork (Accept in the bot that received it, `/accept`, or 🌱 New
+  branch here) now carries a 🍴 Fork button of its own. Forking the same point
+  a second time — to a third bot, or into another branch — used to mean
+  scrolling back through the source bot's history to the message the fork was
+  first taken from. The button forks the transcript as it was loaded, whatever
+  the conversation has done since, so it hands over exactly what that
+  message's own button would.
+
 - **`/resume` says which session each button is** — a session is named
   `project · topic`, which is routinely wider than the single line Telegram
   renders a button on, and the client ellipsises the rest away with no way to

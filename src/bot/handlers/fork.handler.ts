@@ -15,6 +15,9 @@
  *      Accept  → fork:accept    (loads transcript, switches project if needed)
  *      Decline → fork:decline   (discards pending fork)
  *
+ * A loaded fork's confirmation keeps a 🍴 Fork button anchored at the branch
+ * point, so the same point can be forked again from the bot that received it.
+ *
  * /accept and /decline slash commands behave the same as the buttons, in
  * case the inline keyboard isn't accessible.
  */
@@ -25,7 +28,8 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { BOT_ID, config } from '../../config.js';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
-import { messageOffsets } from '../../claude/message-offsets.js';
+import { messageOffsets, countJsonlLines } from '../../claude/message-offsets.js';
+import { FORK_KEYBOARD } from '../../telegram/message-sender.js';
 import {
   getPendingFork,
   putPendingFork,
@@ -497,6 +501,11 @@ async function loadFork(ctx: Context, sessionKey: string, fork: PendingFork): Pr
     return;
   }
 
+  // The branch point, for the 🍴 Fork button on the done message below.
+  // Counted before the session points at the file: from then on the next
+  // turn appends to it.
+  const loadedLineCount = countJsonlLines(targetPath);
+
   // Reset this bot's session to the forked project + transcript. Calling
   // setWorkingDirectory mints a fresh conversation; if the project matches
   // an existing session, we still want a clean slate, so we follow up with
@@ -533,11 +542,28 @@ async function loadFork(ctx: Context, sessionKey: string, fork: PendingFork): Pr
   const doneText = fork.fromBotId === BOT_ID
     ? `✅ Branched into a new conversation (${projectLabel}). Your previous thread is in /resume. Send a message to continue from the branch point.`
     : `✅ Fork loaded from ${fork.fromBotName} (${projectLabel}). Send a message to continue from where it left off.`;
+
+  // The done message is where the branch starts in this chat, so it carries a
+  // 🍴 Fork button of its own. Forking the same point again — to another bot,
+  // or into another branch here — then doesn't mean scrolling back to the
+  // message this fork was first taken from. Like that message's button, it
+  // forks the transcript as it was at that point, whatever the conversation
+  // has done since.
   try {
+    let anchorId: number | undefined;
     if (ctx.callbackQuery) {
-      await ctx.editMessageText(doneText);
+      await ctx.editMessageText(doneText, { reply_markup: FORK_KEYBOARD });
+      anchorId = ctx.callbackQuery.message?.message_id;
     } else {
-      await ctx.reply(doneText);
+      anchorId = (await ctx.reply(doneText, { reply_markup: FORK_KEYBOARD })).message_id;
+    }
+    if (anchorId) {
+      messageOffsets.record(sessionKey, anchorId, {
+        claudeSessionId: newSessionId,
+        projectPath: fork.projectPath,
+        lineCount: loadedLineCount,
+        conversationId: sessionManager.getSession(sessionKey)?.conversationId,
+      });
     }
   } catch { /* ignore */ }
 }
