@@ -47,7 +47,7 @@ const PROJECT = path.join(home, 'project');
 fs.mkdirSync(PROJECT);
 
 const { handleForkCallback, handleAcceptCommand } = await import('../../src/bot/handlers/fork.handler.js');
-const { putPendingFork } = await import('../../src/claude/pending-forks.js');
+const { putPendingFork, getPendingFork } = await import('../../src/claude/pending-forks.js');
 const { messageOffsets } = await import('../../src/claude/message-offsets.js');
 const { sessionManager } = await import('../../src/claude/session-manager.js');
 const { sessionJsonlPath } = await import('../../src/claude/session-jsonl.js');
@@ -167,5 +167,30 @@ describe('the confirmation of a loaded fork', () => {
       claudeSessionId: loadedSessionId(chatId),
       lineCount: 3,
     });
+  });
+});
+
+describe('the offer a fork arrives with', () => {
+  it('previews the reply the fork was taken from, not the latest one', async () => {
+    const chatId = 104;
+    const key = String(chatId);
+
+    // Two turns in, with the chat's stored preview on the second reply — and
+    // the fork taken from the first.
+    const sourceFile = sessionJsonlPath(PROJECT, 'source-104');
+    fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+    fs.writeFileSync(
+      sourceFile,
+      BRANCH_POINT + jsonl(record('u2', 'user', 'Now add tests'), record('a3', 'assistant', 'Added the tests.')),
+    );
+    sessionManager.setWorkingDirectory(key, PROJECT);
+    sessionManager.updateLastAssistantMessage(key, 'Added the tests.');
+    messageOffsets.record(key, 40, { claudeSessionId: 'source-104', projectPath: PROJECT, lineCount: 3 });
+
+    await handleForkCallback(asCtx(tap(chatId, 4, 'fork:confirm:b2:40', 41)));
+
+    const preview = getPendingFork('b2', 4)?.assistantPreview;
+    expect(preview).toContain('Done — tokenizer and parser are separate now.');
+    expect(preview).not.toContain('Added the tests.');
   });
 });

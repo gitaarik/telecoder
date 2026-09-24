@@ -265,8 +265,14 @@ export function readLastAssistantTurnText(
 ): string | undefined {
   const filePath = sessionJsonlPath(workingDirectory, sessionId);
   if (!fs.existsSync(filePath)) return undefined;
+  return lastAssistantTurnText(fs.readFileSync(filePath, 'utf-8'));
+}
 
-  const raw = fs.readFileSync(filePath, 'utf-8');
+/**
+ * {@link readLastAssistantTurnText} over a transcript already in hand rather
+ * than on disk — a fork's cut of one, which has no file until it is loaded.
+ */
+export function lastAssistantTurnText(raw: string): string | undefined {
   const lines = raw.split('\n');
 
   // Walk forward; remember where the last real user prompt sits, then collect

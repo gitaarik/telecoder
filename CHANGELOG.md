@@ -16,6 +16,11 @@ reasoning — the commit bodies are the long form, this is the index.
   the conversation has done since, so it hands over exactly what that
   message's own button would.
 
+- **A fork offer previews the reply it was taken from** — the "Fork received"
+  message quoted the source chat's latest reply as the last assistant message,
+  so a fork taken from any earlier point arrived introduced by text it doesn't
+  contain. The preview is now read out of the cut transcript itself.
+
 - **`/resume` says which session each button is** — a session is named
   `project · topic`, which is routinely wider than the single line Telegram
   renders a button on, and the client ellipsises the rest away with no way to

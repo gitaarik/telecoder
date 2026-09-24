@@ -41,10 +41,9 @@ import {
 } from '../../claude/pending-forks.js';
 import { listSiblingBots, findBotById } from '../../utils/instances.js';
 import { buildLetteredKeyboard, letteredOptionLines } from '../../telegram/lettered-options.js';
-import { sessionJsonlPath } from '../../claude/session-jsonl.js';
+import { sessionJsonlPath, lastAssistantTurnText } from '../../claude/session-jsonl.js';
 import { sessionManager } from '../../claude/session-manager.js';
 import { clearConversation } from '../../providers/provider-router.js';
-import { sessionHistory } from '../../claude/session-history.js';
 import { isAllowedUser } from '../../utils/user-roster.js';
 import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
 import { restoreTopicAndRefreshBotName } from './command.handler.js';
@@ -275,8 +274,10 @@ async function onConfirm(ctx: Context, targetBotId: string, sourceMsgId: number)
   }
 
   const topic = getSessionTopic(keyInfo.sessionKey);
-  const lastEntry = sessionHistory.getLastSession(keyInfo.sessionKey);
-  const assistantPreview = lastEntry?.lastAssistantPreview?.substring(0, 200);
+  // The reply the fork was taken from, read out of the cut transcript. The
+  // chat's stored preview is its latest reply, which a fork taken from any
+  // earlier message doesn't contain.
+  const assistantPreview = lastAssistantTurnText(truncated)?.substring(0, 200);
 
   const userId = ctx.from?.id;
   if (!userId) {
