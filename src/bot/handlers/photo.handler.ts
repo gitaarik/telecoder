@@ -134,6 +134,7 @@ async function handleSavedImage(
         telegramCtx: ctx,
       });
       await messageSender.sendMessage(ctx, response.text);
+      await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
     }
   });
 }
@@ -307,6 +308,7 @@ export async function handleTextDocument(ctx: Context): Promise<void> {
           telegramCtx: ctx,
         });
         await messageSender.sendMessage(ctx, response.text);
+        await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
       }
     });
   } catch (error) {

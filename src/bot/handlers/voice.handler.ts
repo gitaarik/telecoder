@@ -157,6 +157,7 @@ export async function handleVoice(ctx: Context): Promise<void> {
 
         const response = await sendToAgent(sessionKey, transcript, { abortController, telegramCtx: ctx });
         await messageSender.sendMessage(ctx, response.text);
+        await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
         await maybeSendVoiceReply(ctx, response.text);
       }
     });

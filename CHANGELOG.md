@@ -128,15 +128,16 @@ reasoning — the commit bodies are the long form, this is the index.
   outright; `convertToTelegramMarkdown` has rewritten pipe tables into bullet
   lists for a long time, so there was nothing left to compensate for.
 
-- **Turns started from a voice note, a photo, a text file, `/plan` or
-  `/explore` had no catch-up** — `relayCatchUpIfMissed` is the safety net that
-  compares what was relayed against the canonical assistant text in the session
-  log and posts whatever is missing. Text messages, force-reply prompts and
-  scheduled runs called it; these five turn endings never did, so those turns
-  also never updated the relayed tracker — leaving `/sync` comparing a fresh log
-  against a stale baseline and offering to re-post an earlier turn's reply.
-  `/loop` is deliberately still out: it concatenates several turns, and the
-  single-turn comparison would either no-op or duplicate the last iteration.
+- **Turns started from a voice note, a photo, a text file, a Reddit summary,
+  `/plan` or `/explore` had no catch-up** — `relayCatchUpIfMissed` is the
+  safety net that compares what was relayed against the canonical assistant
+  text in the session log and posts whatever is missing. Text messages,
+  force-reply prompts and scheduled runs called it; these turns never did, in
+  streaming or wait mode, so they also never updated the relayed tracker —
+  leaving `/sync` comparing a fresh log against a stale baseline and offering
+  to re-post an earlier turn's reply. The `/loop` command is deliberately still
+  out: it concatenates several turns, and the single-turn comparison would
+  either no-op or duplicate the last iteration.
 
 ### Reliability
 

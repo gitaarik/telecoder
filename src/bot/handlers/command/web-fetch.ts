@@ -15,6 +15,7 @@ import { sessionManager } from '../../../claude/session-manager.js';
 import { sendToAgent } from '../../../providers/provider-router.js';
 import { queueRequest, setAbortController } from '../../../claude/request-queue.js';
 import { messageSender } from '../../../telegram/message-sender.js';
+import { relayCatchUpIfMissed } from '../message/turn-notify.js';
 import { createTelegraphPage } from '../../../telegram/telegraph.js';
 import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
 import { maybeSendVoiceReply } from '../../../tts/voice-reply.js';
@@ -345,6 +346,7 @@ export async function handleRedditActionCallback(ctx: Context): Promise<void> {
                   telegramCtx: ctx,
                 });
                 await messageSender.finishStreaming(ctx, response.text);
+                await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
                 await maybeSendVoiceReply(ctx, response.text);
               });
             } else {
@@ -353,6 +355,7 @@ export async function handleRedditActionCallback(ctx: Context): Promise<void> {
               setAbortController(sessionKey, abortController);
               const response = await sendToAgent(sessionKey, prompt, { abortController, telegramCtx: ctx });
               await messageSender.sendMessage(ctx, response.text);
+              await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
               await maybeSendVoiceReply(ctx, response.text);
             }
           });
