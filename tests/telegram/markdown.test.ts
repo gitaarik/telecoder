@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { convertToTelegramMarkdown, escapeMarkdownV2, escapeMarkdownV2Code } from '../../src/telegram/markdown.js';
+import {
+  convertToTelegramMarkdown,
+  escapeMarkdownV2,
+  escapeMarkdownV2Code,
+  processMessageForTelegram,
+  splitMessage,
+} from '../../src/telegram/markdown.js';
 
 describe('convertToTelegramMarkdown — blockquotes', () => {
   // Regression: the telegram-markdown-v2 library escapes the `>` marker and
@@ -51,6 +57,52 @@ describe('convertToTelegramMarkdown — blockquotes', () => {
     const out = convertToTelegramMarkdown('   > indented quote');
     expect(out).toContain('>indented quote');
     expect(out).not.toContain('\\>');
+  });
+});
+
+describe('splitMessage — a code block cut across parts', () => {
+  // Regression: the part after a cut inside a code block ended with a stray
+  // fence. Telegram rejected it ("Can't find end of Pre entity") and the part
+  // went out as plain text — which is why the last message of a long reply
+  // lost its formatting.
+
+  const fences = (part: string) => (part.match(/```/g) ?? []).length;
+  const prose = 'A line of prose\\.\n'.repeat(190); // 3420 chars of MarkdownV2
+  const codeBlock = '```bash\n' + Array.from({ length: 60 }, (_, i) => `    echo line ${i}`).join('\n') + '\n```\n';
+
+  it('closes the block in one part and reopens it in the next', () => {
+    const parts = splitMessage(`${prose}\n${codeBlock}\n*Done\\.*`, 4000);
+    expect(parts).toHaveLength(2);
+    expect(parts[0]).toMatch(/\n```$/);
+    expect(parts[1].startsWith('```bash\n')).toBe(true);
+  });
+
+  it('leaves the last part with balanced fences', () => {
+    const parts = splitMessage(`${prose}\n${codeBlock}\n*Done\\.*`, 4000);
+    expect(fences(parts[1]) % 2).toBe(0);
+    expect(parts[1]).toMatch(/\*Done\\\.\*\n\n_\\\[2\/2\\\]_$/);
+  });
+
+  it('keeps every part balanced when more than one cut lands in a code block', () => {
+    // The part after the first cut used to read its own reopening fence as a
+    // closer, so every fence after it was counted the wrong way round.
+    const parts = splitMessage(`${prose}${codeBlock}${prose}${codeBlock}*Done\\.*`, 4000);
+    expect(parts).toHaveLength(3);
+    expect(parts.slice(1).every((p) => p.startsWith('```bash\n'))).toBe(true);
+    for (const part of parts) expect(fences(part) % 2).toBe(0);
+  });
+
+  it('keeps the indentation of the first line of code after the cut', () => {
+    const parts = splitMessage(`${prose}\n${codeBlock}`, 4000);
+    expect(parts[1]).toMatch(/^```bash\n {4}echo line \d+\n/);
+  });
+
+  it('holds end to end, from markdown to the parts that are sent', () => {
+    const markdown = 'A line of prose.\n\n'.repeat(190) + codeBlock + '\n**Done.**';
+    const parts = processMessageForTelegram(markdown, 4000);
+    expect(parts).toHaveLength(2);
+    expect(parts[1].startsWith('```\n')).toBe(true); // the cut landed in the code block
+    for (const part of parts) expect(fences(part) % 2).toBe(0);
   });
 });
 

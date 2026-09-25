@@ -133,6 +133,17 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **The last message of a long reply lost its formatting** — when a reply was
+  split across messages at a point inside a code block, the splitter closed
+  the block at the end of one part and reopened it at the top of the next, but
+  then counted that reopening fence as a closer as well. The next part ended
+  with a stray fence Telegram couldn't match ("Can't find end of Pre entity"),
+  so it was rejected and re-sent as plain text, with its bold and code showing
+  as raw `*` and backtick markers. Past two parts, every fence after the first
+  cut was counted the wrong way round. Each part now starts outside a code
+  block, with the reopened fence as part of its own text. The first line of a
+  reopened block also keeps its indentation, which used to be trimmed off.
+
 - **Long replies stopped being replaced by a 200-character stub** — with
   Instant View on, any reply past 2500 characters — or one merely containing a
   markdown table — was swapped in chat for `text.substring(0, 200) + '...'` and

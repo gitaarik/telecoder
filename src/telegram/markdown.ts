@@ -268,6 +268,27 @@ export function escapeMarkdownV2Code(text: string): string {
 }
 
 /**
+ * Whether `chunk` ends inside a fenced code block, and that block's language.
+ *
+ * Counting always starts outside a block. A part cut inside a code block hands
+ * the rest of that block to the next part under a reopened fence, so every
+ * part opens outside one — the reopened fence is part of its text, not state
+ * carried over from the part before. Carrying it over counted that fence
+ * twice: the next part then read its own reopening fence as a closer and
+ * ended with a stray unclosed fence, which Telegram rejects as "Can't find end
+ * of Pre entity", dropping the whole part to plain text.
+ */
+function trailingCodeBlock(chunk: string): { open: boolean; lang: string } {
+  let open = false;
+  let lang = '';
+  for (const match of chunk.matchAll(/```(\w*)?/g)) {
+    open = !open;
+    lang = open ? match[1] || '' : '';
+  }
+  return { open, lang };
+}
+
+/**
  * Smart message splitter that respects code blocks and markdown formatting
  */
 export function splitMessage(text: string, maxLength: number = MAX_MESSAGE_LENGTH): string[] {
@@ -277,69 +298,23 @@ export function splitMessage(text: string, maxLength: number = MAX_MESSAGE_LENGT
 
   const parts: string[] = [];
   let remaining = text;
-  let inCodeBlock = false;
-  let codeBlockLang = '';
 
   while (remaining.length > 0) {
     if (remaining.length <= maxLength) {
-      // If we're in a code block, close it properly
-      if (inCodeBlock) {
-        remaining = remaining + '\n```';
-      }
       parts.push(remaining);
       break;
     }
 
     // Find the chunk to split
-    let chunk = remaining.substring(0, maxLength);
+    const chunk = remaining.substring(0, maxLength);
     let splitIndex = maxLength;
 
-    // Track code block state in this chunk
-    const codeBlockMatches = chunk.matchAll(/```(\w*)?/g);
-    let lastCodeBlockIndex: number = -1;
-    let tempInCodeBlock: boolean = inCodeBlock;
-    let tempLang: string = codeBlockLang;
-
-    for (const match of codeBlockMatches) {
-      lastCodeBlockIndex = match.index!;
-      if (tempInCodeBlock) {
-        // Closing a code block
-        tempInCodeBlock = false;
-        tempLang = '';
-      } else {
-        // Opening a code block
-        tempInCodeBlock = true;
-        tempLang = match[1] || '';
-      }
-    }
-
-    // If we're ending mid-code-block, we need to handle it carefully
-    if (tempInCodeBlock) {
-      // Try to find a good split point before the last code block start
-      // or at a newline within the code block
-
-      // First, try to split at a newline
-      let newlineSplit = chunk.lastIndexOf('\n');
-
-      // If the newline is too early (less than half), look for the last complete line
+    if (trailingCodeBlock(chunk).open) {
+      // Ending mid-code-block: split at a newline within the code block, so
+      // no line of code is cut in two — unless the line is too long for that
+      const newlineSplit = chunk.lastIndexOf('\n');
       if (newlineSplit > maxLength / 2) {
         splitIndex = newlineSplit + 1;
-        chunk = remaining.substring(0, splitIndex);
-
-        // Recount code blocks in the adjusted chunk
-        const adjustedMatches = chunk.matchAll(/```(\w*)?/g);
-        tempInCodeBlock = inCodeBlock;
-        tempLang = codeBlockLang;
-
-        for (const match of adjustedMatches) {
-          if (tempInCodeBlock) {
-            tempInCodeBlock = false;
-            tempLang = '';
-          } else {
-            tempInCodeBlock = true;
-            tempLang = match[1] || '';
-          }
-        }
       }
     } else {
       // Not in a code block - try to split at natural boundaries
@@ -359,43 +334,22 @@ export function splitMessage(text: string, maxLength: number = MAX_MESSAGE_LENGT
           }
         }
       }
-
-      chunk = remaining.substring(0, splitIndex);
-
-      // Recount code blocks
-      const adjustedMatches = chunk.matchAll(/```(\w*)?/g);
-      tempInCodeBlock = inCodeBlock;
-      tempLang = codeBlockLang;
-
-      for (const match of adjustedMatches) {
-        if (tempInCodeBlock) {
-          tempInCodeBlock = false;
-          tempLang = '';
-        } else {
-          tempInCodeBlock = true;
-          tempLang = match[1] || '';
-        }
-      }
     }
 
-    // If we end in a code block, close it and note to reopen
-    if (tempInCodeBlock) {
-      chunk = chunk.trimEnd() + '\n```';
-      inCodeBlock = true;
-      codeBlockLang = tempLang;
+    // The split point can still land inside a code block — a paragraph break
+    // inside one, say — so check the part as cut, not the chunk
+    const part = remaining.substring(0, splitIndex);
+    const rest = remaining.substring(splitIndex);
+    const codeBlock = trailingCodeBlock(part);
+
+    if (codeBlock.open) {
+      // Close the block here and reopen it at the top of the next part. The
+      // rest keeps its leading whitespace: it is the indentation of the code
+      parts.push(part.trimEnd() + '\n```');
+      remaining = '```' + codeBlock.lang + '\n' + rest;
     } else {
-      inCodeBlock = tempInCodeBlock;
-      codeBlockLang = tempLang;
-    }
-
-    parts.push(chunk);
-
-    // Prepare remaining text
-    remaining = remaining.substring(splitIndex).trimStart();
-
-    // If we were in a code block, reopen it
-    if (inCodeBlock && remaining.length > 0) {
-      remaining = '```' + codeBlockLang + '\n' + remaining;
+      parts.push(part);
+      remaining = rest.trimStart();
     }
   }
 
