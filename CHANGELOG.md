@@ -144,6 +144,15 @@ reasoning — the commit bodies are the long form, this is the index.
   block, with the reopened fence as part of its own text. The first line of a
   reopened block also keeps its indentation, which used to be trimmed off.
 
+- **A quote under a list item no longer costs the message its formatting** —
+  a `>` quote on the line right under a list item came out indented, as that
+  item's continuation. Telegram only reads `>` as a quote at the very start of
+  a line; anywhere else it is a reserved character, so the message was
+  rejected and re-sent as plain text. The same went for a collapsible
+  `<expandable>` quote written on an item's line. Quotes now always start
+  their line, which is the only way Telegram draws them anyway. A `$` in a
+  collapsible quote also stays as written; `$$` used to collapse to `$`.
+
 - **Long replies stopped being replaced by a 200-character stub** — with
   Instant View on, any reply past 2500 characters — or one merely containing a
   markdown table — was swapped in chat for `text.substring(0, 200) + '...'` and

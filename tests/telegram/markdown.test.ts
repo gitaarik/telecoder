@@ -58,6 +58,33 @@ describe('convertToTelegramMarkdown — blockquotes', () => {
     expect(out).toContain('>indented quote');
     expect(out).not.toContain('\\>');
   });
+
+  it('puts a quote under a list item at the start of its line', () => {
+    // Regression: convert() indents the quote as the list item's continuation,
+    // and Telegram rejects a `>` anywhere but the start of a line — so the
+    // whole message went out as plain text.
+    const out = convertToTelegramMarkdown('1. **No need to reply.** One line is enough:\n   > Hi Rodrigo, thanks.\n2. Next.');
+    expect(out).toMatch(/^>Hi Rodrigo, thanks\\\.$/m);
+    expect(out).not.toMatch(/^[ \t]+>/m);
+  });
+
+  it('puts every line of a multi-line quote under a list item at the start of its line', () => {
+    const out = convertToTelegramMarkdown('- Intro:\n  > line one\n  > line two\n- Next.');
+    expect(out).toMatch(/^>line one\n>line two$/m);
+    expect(out).not.toMatch(/^[ \t]+>/m);
+  });
+});
+
+describe('convertToTelegramMarkdown — expandable quotes', () => {
+  it('puts a collapsible quote on a list item line at the start of its line', () => {
+    const out = convertToTelegramMarkdown('1. Intro: <expandable>hidden\nmore</expandable>\n2. Next.');
+    expect(out).toMatch(/^\*\*>hidden\n>more\|\|$/m);
+  });
+
+  it('keeps a $ in the quote as written', () => {
+    const out = convertToTelegramMarkdown("<expandable>costs $$5, or $' more</expandable>");
+    expect(out).toContain("costs $$5, or $' more");
+  });
 });
 
 describe('splitMessage — a code block cut across parts', () => {

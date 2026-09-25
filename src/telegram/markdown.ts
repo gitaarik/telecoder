@@ -83,10 +83,23 @@ export function buildExpandableSyntax(body: string): string {
   return [head, ...middle, tail].join('\n');
 }
 
+/**
+ * Swap a quote's placeholder for its MarkdownV2, dropping any indentation in
+ * front of it. Telegram only reads a quote marker (`>`, `**>`) at the very
+ * start of a line, and convert() indents a placeholder that sits on the line
+ * under a list item, as that item's continuation. The marker then lands
+ * mid-line, where it is a reserved character, and Telegram rejects the whole
+ * message. A Telegram quote can't be indented anyway.
+ */
+function restoreQuote(text: string, placeholder: string, quote: string): string {
+  // Function replacer so `$` in the quote isn't treated as a replacement pattern.
+  return text.replace(new RegExp(`[ \\t]*${placeholder}`), () => quote);
+}
+
 function restoreExpandableBlocks(text: string, blocks: string[]): string {
   let result = text;
   blocks.forEach((body, idx) => {
-    result = result.replace(expandablePlaceholder(idx), buildExpandableSyntax(body));
+    result = restoreQuote(result, expandablePlaceholder(idx), buildExpandableSyntax(body));
   });
   return result;
 }
@@ -145,9 +158,7 @@ function restoreBlockquotes(text: string, blocks: string[]): string {
     // already stripped, so no blockquote region is re-extracted at this level).
     const convertedInner = convertToTelegramMarkdown(inner).replace(/\n+$/, '');
     const quoted = convertedInner.split('\n').map((l) => `>${l}`).join('\n');
-    // Function replacer so `$` in the quoted content isn't treated as a
-    // replacement pattern.
-    result = result.replace(blockquotePlaceholder(idx), () => quoted);
+    result = restoreQuote(result, blockquotePlaceholder(idx), quoted);
   });
   return result;
 }
