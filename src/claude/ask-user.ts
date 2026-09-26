@@ -11,12 +11,20 @@
  * resolvePendingQuestion(id, ...), which fulfils the awaited promise so the
  * agent loop continues with the user's choice.
  *
- * In-memory only — if the bot restarts mid-question, the pending entries
- * are lost and the tool will time out (10 min default), at which point the
- * agent receives a "user did not respond" result and can move on.
+ * A question nobody answers times out after QUESTION_TIMEOUT_MINUTES (10 by
+ * default): the agent receives a "user did not respond" result and moves on,
+ * and the caller closes the message (closeExpiredQuestion) so its keyboard
+ * doesn't outlive the wait.
+ *
+ * In-memory only — a restart forgets every open question without touching its
+ * message. The first tap on one of those gets the expired answer, and the tap
+ * handler takes the dead keyboard down then.
  */
 
 import * as crypto from 'crypto';
+import type { Api } from 'grammy';
+import type { MessageEntity } from 'grammy/types';
+import { config } from '../config.js';
 import {
   type LetteredOption,
   buildLetteredKeyboard,
@@ -40,6 +48,21 @@ const MAX_CONTEXT_LEN = 3500;
 
 /** Telegram's hard cap on a text message / message edit. */
 const MAX_MESSAGE_LEN = 4096;
+
+/**
+ * How long a question waits for a tap: QUESTION_TIMEOUT_MINUTES, 10 by
+ * default. One clock for everything a turn stops to ask — claudegram_ask_user,
+ * claudegram_poll_user, a relayed Claude Code dialog. Permission prompts and
+ * held messages keep their own, PERMISSION_PROMPT_TIMEOUT_MINUTES.
+ */
+export function questionTimeoutMinutes(): number {
+  const minutes = config.QUESTION_TIMEOUT_MINUTES;
+  return Number.isFinite(minutes) && minutes > 0 ? minutes : 10;
+}
+
+export function questionTimeoutMs(): number {
+  return questionTimeoutMinutes() * 60 * 1000;
+}
 
 /**
  * Build the plain-text body for an ask_user Telegram message, shared by SDK
@@ -110,10 +133,70 @@ export function buildAskUserKeyboard(
  * question that has already been resolved.
  */
 export function appendAnsweredFooter(original: string, label: string): string | null {
+  return appendFooter(original, `✅ Answered: ${label}`);
+}
+
+/**
+ * The counterpart of {@link appendAnsweredFooter} for a question nobody
+ * answered: `note` says what happened instead. Same length rule, same `null`.
+ */
+export function appendExpiredFooter(original: string, note: string): string | null {
+  return appendFooter(original, `⏱️ ${note}`);
+}
+
+function appendFooter(original: string, footer: string): string | null {
   if (!original) return null;
-  const footer = `\n\n✅ Answered: ${label}`;
-  if (original.length + footer.length > MAX_MESSAGE_LEN) return null;
-  return original + footer;
+  const appended = `${original}\n\n${footer}`;
+  return appended.length > MAX_MESSAGE_LEN ? null : appended;
+}
+
+/**
+ * The line an ask_user question ends on once it expires — shared by SDK mode
+ * and PTY/IPC mode, like the rest of the message.
+ */
+export function buildAskUserExpiredNote(): string {
+  return `No answer within ${questionTimeoutMinutes()} min, so Claude carried on without one.`;
+}
+
+/**
+ * Close a question nobody answered in time: take its keyboard down and say
+ * what happened where the answer would have gone.
+ *
+ * A tap is the only other thing that strips a keyboard, so without this a
+ * question that simply ran out of time kept buttons that looked as live as
+ * the moment they were posted — and tapping one got nothing but a toast. Each
+ * caller runs it once its wait comes back empty, with the text it sent and
+ * the entities too, when it sent some: an edit that leaves them out drops the
+ * formatting. They stay valid because the footer only appends.
+ *
+ * Best-effort, like the answered path in bot.ts. A footer that won't fit or an
+ * edit Telegram refuses still gets the keyboard taken down on its own.
+ */
+export async function closeExpiredQuestion(
+  api: Pick<Api, 'editMessageText' | 'editMessageReplyMarkup'>,
+  message: { chat: { id: number }; message_id: number },
+  text: string,
+  note: string,
+  entities?: MessageEntity[],
+): Promise<void> {
+  const chatId = message.chat.id;
+  const closed = appendExpiredFooter(text, note);
+  if (closed !== null) {
+    try {
+      await api.editMessageText(chatId, message.message_id, closed, entities ? { entities } : undefined);
+      return;
+    } catch {
+      // Losing the note is cosmetic; a live keyboard on a closed question is
+      // not — fall through and take the keyboard down on its own.
+    }
+  }
+  try {
+    await api.editMessageReplyMarkup(chatId, message.message_id);
+  } catch (err) {
+    // Nothing left to try here. A tap on it still gets the expired answer,
+    // and the tap handler strips the keyboard then.
+    console.warn('[AskUser] could not close an expired question:', err instanceof Error ? err.message : err);
+  }
 }
 
 /**
@@ -164,8 +247,6 @@ const pending: Map<string, PendingEntry> = new Map();
 // the user. Counter (not boolean) supports rare overlapping asks per session.
 const pendingBySession: Map<string, number> = new Map();
 
-const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
-
 function clearPending(id: string): PendingEntry | undefined {
   const entry = pending.get(id);
   if (!entry) return undefined;
@@ -185,7 +266,7 @@ function clearPending(id: string): PendingEntry | undefined {
  */
 export function createPendingQuestion(
   optionLabels: string[],
-  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+  timeoutMs: number = questionTimeoutMs(),
   sessionKey?: string,
   allowedResponderIds?: number[],
 ): { id: string; promise: Promise<AskUserAnswer | null> } {

@@ -22,7 +22,14 @@ import { InputFile, type Context } from 'grammy';
 import { registerIpcHandler } from './ipc-server.js';
 import { sessionManager } from './session-manager.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../utils/workspace-guard.js';
-import { createPendingQuestion, buildAskUserMessageText, buildAskUserKeyboard } from './ask-user.js';
+import {
+  createPendingQuestion,
+  buildAskUserMessageText,
+  buildAskUserKeyboard,
+  buildAskUserExpiredNote,
+  closeExpiredQuestion,
+  questionTimeoutMinutes,
+} from './ask-user.js';
 import { createPendingPoll } from './poll-user.js';
 import { scheduler } from './scheduler.js';
 import { readLastAssistantTurnText } from './session-jsonl.js';
@@ -94,7 +101,8 @@ async function flushTurnProse(
 // ask-user registry SDK mode uses, sends a Telegram inline keyboard, and
 // awaits the user's button tap. The existing callback-query dispatcher
 // (handling `q:<id>:<idx>` callback_data) resolves the promise so we can
-// return the chosen label to claude. Times out at 10 min via createPendingQuestion's default.
+// return the chosen label to claude. Times out after QUESTION_TIMEOUT_MINUTES via
+// createPendingQuestion's default.
 registerIpcHandler('/mcp/ask_user', async (turn, body) => {
   const question = String(body.question ?? '').trim();
   const context = typeof body.context === 'string' ? body.context : undefined;
@@ -146,7 +154,7 @@ registerIpcHandler('/mcp/ask_user', async (turn, body) => {
   // button carries a callback-query context with no `message`, which would
   // silently drop the thread and post the question into General.
   const threadId = parseSessionKey(turn.sessionKey).threadId;
-  await ctx.api.sendMessage(ctx.chat.id, messageText, {
+  const sent = await ctx.api.sendMessage(ctx.chat.id, messageText, {
     reply_markup: { inline_keyboard: keyboard },
     ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
   });
@@ -159,9 +167,10 @@ registerIpcHandler('/mcp/ask_user', async (turn, body) => {
   const answer = await promise;
   await messageSender.noteQuestionAnswered(ctx, turn.sessionKey);
   if (!answer) {
+    await closeExpiredQuestion(ctx.api, sent, messageText, buildAskUserExpiredNote());
     return {
       success: true,
-      message: 'User did not respond within 10 minutes. Proceed using your best judgment or ask again.',
+      message: `User did not respond within ${questionTimeoutMinutes()} minutes. Proceed using your best judgment or ask again.`,
     };
   }
   return { success: true, message: `User selected: ${answer.label}` };
@@ -364,7 +373,17 @@ registerIpcHandler('/mcp/poll_user', async (turn, body) => {
   const answer = await createPendingPoll(pollId, options, allowsMultiple, turn.sessionKey);
 
   if (!answer) {
-    return { success: true, message: 'No one voted within 10 minutes. Proceed using your best judgment.' };
+    // Close the poll: nothing is counting votes any more, and an open one
+    // still invites them. A stopped poll shows its final results instead.
+    try {
+      await ctx.api.stopPoll(sent.chat.id, sent.message_id);
+    } catch {
+      // Cosmetic — the agent gets its answer either way.
+    }
+    return {
+      success: true,
+      message: `No one voted within ${questionTimeoutMinutes()} minutes. Proceed using your best judgment.`,
+    };
   }
   if (answer.labels.length === 0) {
     return { success: true, message: 'Vote received but no options recorded.' };

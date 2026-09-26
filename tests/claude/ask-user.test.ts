@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import type { MessageEntity } from 'grammy/types';
 import {
   buildAskUserMessageText,
   appendAnsweredFooter,
+  appendExpiredFooter,
+  closeExpiredQuestion,
+  questionTimeoutMinutes,
+  questionTimeoutMs,
   buildAnswerConfirmation,
   createPendingQuestion,
   resolvePendingQuestion,
@@ -101,6 +106,111 @@ describe('appendAnsweredFooter', () => {
 
   it('declines when there is no original text to append to', () => {
     expect(appendAnsweredFooter('', 'Option A')).toBeNull();
+  });
+});
+
+describe('appendExpiredFooter', () => {
+  it('says what happened where the answer would have gone', () => {
+    expect(appendExpiredFooter('❓ Pick one', 'No answer within 10 min.')).toBe(
+      '❓ Pick one\n\n⏱️ No answer within 10 min.',
+    );
+  });
+
+  it('declines when the footer would push the edit past Telegram\'s limit', () => {
+    expect(appendExpiredFooter('x'.repeat(4090), 'No answer within 10 min.')).toBeNull();
+  });
+});
+
+describe('closeExpiredQuestion', () => {
+  const message = { chat: { id: 42 }, message_id: 7 };
+
+  function fakeApi() {
+    return {
+      editMessageText: vi.fn().mockResolvedValue(true),
+      editMessageReplyMarkup: vi.fn().mockResolvedValue(true),
+    };
+  }
+
+  function close(api: ReturnType<typeof fakeApi>, text: string, entities?: MessageEntity[]) {
+    type EditApi = Parameters<typeof closeExpiredQuestion>[0];
+    return closeExpiredQuestion(api as unknown as EditApi, message, text, 'No answer.', entities);
+  }
+
+  it('rewrites the question with the note, which takes the keyboard down with it', async () => {
+    const api = fakeApi();
+    await close(api, '❓ Pick one');
+    // An edit without reply_markup is what removes the keyboard.
+    expect(api.editMessageText).toHaveBeenCalledWith(42, 7, '❓ Pick one\n\n⏱️ No answer.', undefined);
+    expect(api.editMessageReplyMarkup).not.toHaveBeenCalled();
+  });
+
+  it('carries the entities the question went out with', async () => {
+    const api = fakeApi();
+    const entities: MessageEntity[] = [{ type: 'bold', offset: 0, length: 4 }];
+    await close(api, 'Held for approval', entities);
+    expect(api.editMessageText).toHaveBeenCalledWith(42, 7, 'Held for approval\n\n⏱️ No answer.', { entities });
+  });
+
+  it('still takes the keyboard down when Telegram refuses the rewrite', async () => {
+    const api = fakeApi();
+    api.editMessageText.mockRejectedValue(new Error('400: Bad Request'));
+    await close(api, '❓ Pick one');
+    expect(api.editMessageReplyMarkup).toHaveBeenCalledWith(42, 7);
+  });
+
+  it('takes the keyboard down on its own when the note will not fit', async () => {
+    const api = fakeApi();
+    await close(api, 'x'.repeat(4090));
+    expect(api.editMessageText).not.toHaveBeenCalled();
+    expect(api.editMessageReplyMarkup).toHaveBeenCalledWith(42, 7);
+  });
+
+  it('never throws, even when the message cannot be touched at all', async () => {
+    const api = fakeApi();
+    api.editMessageText.mockRejectedValue(new Error('gone'));
+    api.editMessageReplyMarkup.mockRejectedValue(new Error('gone'));
+    const quiet = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(close(api, '❓ Pick one')).resolves.toBeUndefined();
+    quiet.mockRestore();
+  });
+});
+
+describe('questionTimeoutMinutes', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it('is ten minutes unless QUESTION_TIMEOUT_MINUTES says otherwise', () => {
+    expect(questionTimeoutMinutes()).toBe(10);
+    expect(questionTimeoutMs()).toBe(10 * 60 * 1000);
+  });
+
+  it('follows QUESTION_TIMEOUT_MINUTES', async () => {
+    vi.stubEnv('QUESTION_TIMEOUT_MINUTES', '30');
+    vi.resetModules();
+    const fresh = await import('../../src/claude/ask-user.js');
+    expect(fresh.questionTimeoutMinutes()).toBe(30);
+  });
+
+  it('falls back to ten on a value that is not a positive number', async () => {
+    vi.stubEnv('QUESTION_TIMEOUT_MINUTES', 'soon');
+    vi.resetModules();
+    const fresh = await import('../../src/claude/ask-user.js');
+    expect(fresh.questionTimeoutMinutes()).toBe(10);
+  });
+
+  it('is the clock a question runs on when no timeout is given', async () => {
+    vi.useFakeTimers();
+    const { promise } = createPendingQuestion(['A', 'B']);
+    let settled = false;
+    void promise.then(() => { settled = true; });
+
+    await vi.advanceTimersByTimeAsync(questionTimeoutMs() - 1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(promise).resolves.toBeNull();
   });
 });
 

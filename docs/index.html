@@ -2003,7 +2003,8 @@
             <p>Claude posts a live checklist for multi-step work, and when it needs a decision it
             asks with an inline keyboard — reasoning in the same message, and every option written
             out in full above the buttons, keyed A/B/C, so a long one is never lost to a clipped
-            button.</p>
+            button. A question nobody answers in time closes itself instead of leaving
+            live-looking buttons behind.</p>
           </div>
           <div class="feature-card" data-category="agent">
             <div class="feature-icon"><svg><use href="#i-bulb"/></svg></div>
@@ -2597,6 +2598,11 @@ CCR_AUTOSTART=true</pre>
                 <tr>
                   <td class="var-name">DANGEROUS_MODE</td>
                   <td>Auto-approve all tool permissions (default: false)</td>
+                  <td class="required-no">No</td>
+                </tr>
+                <tr>
+                  <td class="var-name">QUESTION_TIMEOUT_MINUTES</td>
+                  <td>How long a question from Claude (buttons, polls, relayed dialogs) waits for an answer before the turn carries on and the question closes (default: 10)</td>
                   <td class="required-no">No</td>
                 </tr>
                 <tr><td colspan="3" style="color: var(--brand); font-weight: 600; padding-top: 1.25rem;">API Keys</td></tr>

@@ -143,6 +143,16 @@ async function handleAskUserCallback(ctx: Context): Promise<void> {
   const outcome = resolvePendingQuestion(id, idx, ctx.from?.id);
   if (outcome === 'expired') {
     await ctx.answerCallbackQuery({ text: 'This question already expired.' });
+    // A question that timed out is closed by whoever was waiting on it, but a
+    // restart forgets every open question without touching its message. Take
+    // the keyboard down so it stops looking answerable. Text left alone: a
+    // quick second tap on a question just answered lands here too, and its
+    // "✅ Answered" footer must survive.
+    try {
+      await ctx.editMessageReplyMarkup();
+    } catch {
+      // Already gone, or the message can't be edited — nothing left to do.
+    }
     return;
   }
   if (outcome === 'forbidden') {

@@ -37,8 +37,9 @@ const claudeSessionId = process.env.TELECODER_CLAUDE_SESSION_ID || '';
  *
  * Deliberately `node:http` rather than `fetch`. claudegram_ask_user and
  * claudegram_poll_user are long polls: the bot holds the request open — sending
- * no response headers at all — for up to 10 minutes while it waits for a
- * Telegram button tap. undici, which backs global fetch, enforces a 5-minute
+ * no response headers at all — for as long as the question stays open
+ * (QUESTION_TIMEOUT_MINUTES, 10 by default) while it waits for a Telegram
+ * button tap. undici, which backs global fetch, enforces a 5-minute
  * `headersTimeout` that can only be lifted with a custom dispatcher, so every
  * question left unanswered for 5 minutes died as an opaque `fetch failed`
  * (UND_ERR_HEADERS_TIMEOUT) instead of the intended graceful 10-minute "user
@@ -46,9 +47,9 @@ const claudeSessionId = process.env.TELECODER_CLAUDE_SESSION_ID || '';
  * post a second keyboard while the first was still live.
  *
  * `http.request` applies no timeout unless asked, which puts the deadline back
- * with the layers that actually know it: the bot's own 10-minute question timer
- * (see createPendingQuestion), with claude's MCP_TOOL_TIMEOUT (15 min, set by
- * PtyProvider) as the outer backstop. The server side already disables its own
+ * with the layers that actually know it: the bot's own question timer (see
+ * createPendingQuestion), with claude's MCP_TOOL_TIMEOUT (set by PtyProvider to
+ * five minutes past it) as the outer backstop. The server side already disables its own
  * timeouts for the same reason — see startIpcServer.
  */
 function ipc<T = unknown>(routePath: string, payload: Record<string, unknown> = {}): Promise<T> {
@@ -220,7 +221,7 @@ if (process.env.TELECODER_MEDIUM_ENABLED === 'true') {
 // ── claudegram_ask_user (IPC: long-poll on Telegram button tap) ──────
 server.tool(
   'claudegram_ask_user',
-  'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or 10 minutes pass. Keep the question short and the options crisp — a label of ≤ 25 chars stays on its button; anything longer makes the whole keyboard fall back to lettered buttons (A/B/C) with the full labels listed in the message body. Prefer this over the built-in AskUserQuestion when interacting through TeleCoder. IMPORTANT: `context` is required and carries everything the user needs to decide (the comparison, trade-offs, findings, rationale) — it renders in the SAME message as the buttons. Do NOT write that explanation as prose before calling this tool: text you emit before an ask_user call is not delivered to the user until after they answer, so they would be choosing blind.',
+  'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or the question times out. Keep the question short and the options crisp — a label of ≤ 25 chars stays on its button; anything longer makes the whole keyboard fall back to lettered buttons (A/B/C) with the full labels listed in the message body. Prefer this over the built-in AskUserQuestion when interacting through TeleCoder. IMPORTANT: `context` is required and carries everything the user needs to decide (the comparison, trade-offs, findings, rationale) — it renders in the SAME message as the buttons. Do NOT write that explanation as prose before calling this tool: text you emit before an ask_user call is not delivered to the user until after they answer, so they would be choosing blind.',
   {
     question: z.string().describe('The question to display to the user. Keep concise (1-2 sentences).'),
     context: z

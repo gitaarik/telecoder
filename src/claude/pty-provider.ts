@@ -50,6 +50,7 @@ import {
 } from './tui-state.js';
 import { stageImagesForPty } from './stage-images.js';
 import { blockingModal, relayModal, waitForDialogToClear, type ModalPty } from './modal-relay.js';
+import { questionTimeoutMs } from './ask-user.js';
 import {
   ensurePermissionMode,
   permissionModeInfo,
@@ -976,12 +977,13 @@ export class PtyProvider implements Provider {
         // no other way to read the model's reply.
         CLAUDE_CODE_FORCE_SESSION_PERSISTENCE: '1',
         // Claude code's default MCP tool-call timeout is 60s. claudegram_ask_user
-        // long-polls for up to 10 min waiting on a Telegram button tap; without
-        // this override claude aborts the call at 60s, fires postToolUseFailure
-        // with an empty tool_response (rendered as "(no output)" in the action
-        // log), and the model gives up on the tool. 15 min covers the 10-min
-        // ask-user window with margin.
-        MCP_TOOL_TIMEOUT: '900000',
+        // long-polls for up to QUESTION_TIMEOUT_MINUTES waiting on a Telegram
+        // button tap; without this override claude aborts the call at 60s,
+        // fires postToolUseFailure with an empty tool_response (rendered as
+        // "(no output)" in the action log), and the model gives up on the tool.
+        // Five minutes past the question timeout, and never under the 15 min it
+        // has always been, so the bot's own timer is the one that fires.
+        MCP_TOOL_TIMEOUT: String(Math.max(15 * 60 * 1000, questionTimeoutMs() + 5 * 60 * 1000)),
         // Suppress claude's "How is Claude doing this session?" feedback
         // survey. It renders as plain text in the PTY ("1: Bad  2: Fine ..."),
         // which has no clickable buttons in Telegram and just clutters the
@@ -1553,7 +1555,7 @@ export class PtyProvider implements Provider {
       case 'timeout':
         throw new Error(
           "Nobody answered Claude Code's dialog, so I left it alone and your message wasn't "
-          + 'delivered. Answer the buttons above, then send it again.',
+          + "delivered. Send it again to get the dialog's buttons back.",
         );
       default:
         throw new Error(

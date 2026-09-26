@@ -14,8 +14,9 @@
  */
 
 import type { Context } from 'grammy';
+import type { Message } from 'grammy/types';
 import { config } from '../config.js';
-import { createPendingQuestion } from './ask-user.js';
+import { closeExpiredQuestion, createPendingQuestion } from './ask-user.js';
 import { parseSessionKey } from '../utils/session-key.js';
 import { getPromptResponderIds, isAdmin } from '../utils/admins.js';
 import { EntityText, clip } from '../telegram/entities.js';
@@ -96,8 +97,9 @@ async function askApprovers(
   const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};
   const keyboard = optionLabels.map((label, idx) => [{ text: label, callback_data: `q:${id}:${idx}` }]);
 
+  let sent: Message.TextMessage;
   try {
-    await ctx.api.sendMessage(chatId, text, {
+    sent = await ctx.api.sendMessage(chatId, text, {
       entities,
       reply_markup: { inline_keyboard: keyboard },
       ...threadOpts,
@@ -113,6 +115,13 @@ async function askApprovers(
   }
 
   const answer = await promise;
+  if (answer === null) {
+    await closeExpiredQuestion(
+      ctx.api, sent, text,
+      `No answer within ${Math.round(timeoutMs / 60000)} min, so nothing ran.`,
+      entities,
+    );
+  }
   if (!answer || answer.index === 1) {
     return {
       proceed: false,

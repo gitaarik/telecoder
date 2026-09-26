@@ -416,6 +416,17 @@ const envSchema = z.object({
     .string()
     .default('7200000')
     .transform((val) => parseInt(val, 10)),
+  // How long a question from the agent — claudegram_ask_user buttons, a
+  // claudegram_poll_user poll, a Claude Code dialog relayed to the chat —
+  // waits for an answer before the turn carries on without one. The turn is
+  // paused for the whole wait, so a long timeout is a long stall whenever a
+  // question goes unanswered; keep it well under CLAUDE_PTY_HARD_TIMEOUT_MS,
+  // which ends the turn regardless. Permission prompts have their own,
+  // PERMISSION_PROMPT_TIMEOUT_MINUTES.
+  QUESTION_TIMEOUT_MINUTES: z
+    .string()
+    .default('10')
+    .transform((val) => parseInt(val, 10)),
   // HTTP proxy for Telegram API requests (e.g. socks5://127.0.0.1:1080 or http://proxy:8080)
   TELEGRAM_PROXY_URL: z.string().optional(),
   // Completion notification (send a new message after long streaming tasks)

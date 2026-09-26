@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Context } from 'grammy';
 import { blockingModal, buildChoices, relayModal, type ModalPty } from '../../src/claude/modal-relay.js';
 import { parseModal } from '../../src/claude/tui-modal.js';
@@ -43,24 +43,38 @@ function fakePty(screens: string[]): ModalPty & { written: string[] } {
   };
 }
 
-/** Captures what would be sent, and hands back the pending question's id. */
-function fakeCtx(): { ctx: Context; sent: { text: string; keyboard?: string[][] }[] } {
+/**
+ * Captures what would be sent and edited. Messages are numbered from 1 in the
+ * order they go out, which is what `edits` refers back to.
+ */
+function fakeCtx(): {
+  ctx: Context;
+  sent: { text: string; keyboard?: string[][] }[];
+  edits: { messageId: number; text: string }[];
+} {
   const sent: { text: string; keyboard?: string[][] }[] = [];
+  const edits: { messageId: number; text: string }[] = [];
   const ctx = {
     chat: { id: 42 },
     api: {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      sendMessage: vi.fn(async (_chat: number, text: string, opts?: any) => {
+      sendMessage: vi.fn(async (chat: number, text: string, opts?: any) => {
         sent.push({
           text,
           keyboard: opts?.reply_markup?.inline_keyboard?.map(
             (row: { text: string; callback_data: string }[]) => row.map((b) => b.callback_data),
           ),
         });
+        return { message_id: sent.length, chat: { id: chat } };
       }),
+      editMessageText: vi.fn(async (_chat: number, messageId: number, text: string) => {
+        edits.push({ messageId, text });
+        return true;
+      }),
+      editMessageReplyMarkup: vi.fn(async () => true),
     },
   } as unknown as Context;
-  return { ctx, sent };
+  return { ctx, sent, edits };
 }
 
 /** The pending-question id inside the first button's callback_data. */
@@ -198,6 +212,10 @@ describe('buildChoices', () => {
 });
 
 describe('relayModal', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('walks to the chosen row and commits once the cursor lands', async () => {
     const pty = fakePty([trustDialog, trustDialogOnSecond]);
     const { ctx, sent } = fakeCtx();
@@ -247,6 +265,24 @@ describe('relayModal', () => {
 
     expect(await pending).toEqual({ kind: 'timeout' });
     expect(pty.written).toEqual([]);
+  });
+
+  it('closes the question when nobody answers in time', async () => {
+    // Left up, its buttons would look live while nothing was waiting on them
+    // any more: a tap on one would only get the "expired" toast.
+    vi.useFakeTimers();
+    const pty = fakePty([trustDialog]);
+    const { ctx, sent, edits } = fakeCtx();
+
+    const pending = relayModal(pty, '42', ctx, '/tmp/x');
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+
+    expect(await pending).toEqual({ kind: 'timeout' });
+    expect(pty.written).toEqual([]);
+    expect(edits).toEqual([{
+      messageId: 1,
+      text: `${sent[0].text}\n\n⏱️ No answer within 10 min, so I left the dialog alone.`,
+    }]);
   });
 
   it('presses nothing when the user leaves it alone', async () => {

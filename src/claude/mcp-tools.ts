@@ -16,7 +16,14 @@ import { sessionManager } from './session-manager.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../utils/workspace-guard.js';
 import { setSessionTopic, clearTopicAndRefreshBotName } from '../bot/handlers/command/topic-store.js';
 import { messageSender } from '../telegram/message-sender.js';
-import { createPendingQuestion, buildAskUserMessageText, buildAskUserKeyboard } from './ask-user.js';
+import {
+  createPendingQuestion,
+  buildAskUserMessageText,
+  buildAskUserKeyboard,
+  buildAskUserExpiredNote,
+  closeExpiredQuestion,
+  questionTimeoutMinutes,
+} from './ask-user.js';
 import { parseSessionKey } from '../utils/session-key.js';
 
 // Lazy imports to avoid circular deps and unnecessary module loading
@@ -478,7 +485,7 @@ function publishTelegraphTool(_toolsCtx: McpToolsContext) {
 function askUserTool(toolsCtx: McpToolsContext) {
   return tool(
     'claudegram_ask_user',
-    'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or 10 minutes pass. Keep the question short and the options crisp — a label of ≤ 25 chars stays on its button; anything longer makes the whole keyboard fall back to lettered buttons (A/B/C) with the full labels listed in the message body. IMPORTANT: `context` is required and carries everything the user needs to decide (the comparison, trade-offs, findings, rationale) — it renders in the SAME message as the buttons. Do NOT write that explanation as prose before calling this tool: text you emit before an ask_user call is not delivered to the user until after they answer, so they would be choosing blind.',
+    'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or the question times out. Keep the question short and the options crisp — a label of ≤ 25 chars stays on its button; anything longer makes the whole keyboard fall back to lettered buttons (A/B/C) with the full labels listed in the message body. IMPORTANT: `context` is required and carries everything the user needs to decide (the comparison, trade-offs, findings, rationale) — it renders in the SAME message as the buttons. Do NOT write that explanation as prose before calling this tool: text you emit before an ask_user call is not delivered to the user until after they answer, so they would be choosing blind.',
     {
       question: z.string().describe('The question to display to the user. Keep concise (1-2 sentences).'),
       context: z
@@ -523,7 +530,7 @@ function askUserTool(toolsCtx: McpToolsContext) {
         // button carries a callback-query context with no `message`, which
         // would silently drop the thread and post into General.
         const threadId = parseSessionKey(toolsCtx.sessionKey).threadId;
-        await ctx.api.sendMessage(ctx.chat.id, messageText, {
+        const sent = await ctx.api.sendMessage(ctx.chat.id, messageText, {
           reply_markup: { inline_keyboard: keyboard },
           ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
         });
@@ -532,8 +539,9 @@ function askUserTool(toolsCtx: McpToolsContext) {
         const answer = await promise;
         await messageSender.noteQuestionAnswered(ctx, toolsCtx.sessionKey);
         if (!answer) {
+          await closeExpiredQuestion(ctx.api, sent, messageText, buildAskUserExpiredNote());
           return {
-            content: [{ type: 'text' as const, text: 'User did not respond within 10 minutes. Proceed using your best judgment or ask again.' }],
+            content: [{ type: 'text' as const, text: `User did not respond within ${questionTimeoutMinutes()} minutes. Proceed using your best judgment or ask again.` }],
             isError: false,
           };
         }

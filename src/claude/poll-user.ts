@@ -10,6 +10,8 @@
  * that moment). Users can change votes afterward but we've already returned.
  */
 
+import { questionTimeoutMs } from './ask-user.js';
+
 interface PendingPollEntry {
   resolve: (answer: PollAnswer | null) => void;
   timer: NodeJS.Timeout;
@@ -26,8 +28,6 @@ export interface PollAnswer {
 }
 
 const pending: Map<string, PendingPollEntry> = new Map();
-
-const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
 function clearPending(pollId: string): PendingPollEntry | undefined {
   const entry = pending.get(pollId);
@@ -47,7 +47,7 @@ export function createPendingPoll(
   optionLabels: string[],
   allowsMultiple: boolean,
   sessionKey?: string,
-  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+  timeoutMs: number = questionTimeoutMs(),
 ): Promise<PollAnswer | null> {
   return new Promise((resolve) => {
     const timer = setTimeout(() => {

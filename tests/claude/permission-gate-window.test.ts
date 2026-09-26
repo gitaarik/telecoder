@@ -21,14 +21,18 @@ const { evaluateToolCall } = await import('../../src/claude/permission-gate.js')
 const { openWindow, resetAutoApprove, getWindow } = await import('../../src/claude/auto-approve.js');
 
 function fakeCtx() {
-  const sendMessage = vi.fn().mockResolvedValue(undefined);
+  // Resolves to the sent message, as the real API does: the gate keeps it so
+  // it can close the prompt if nobody answers.
+  const sendMessage = vi.fn().mockResolvedValue({ message_id: 7, chat: { id: CHAT } });
+  const editMessageText = vi.fn().mockResolvedValue(true);
+  const editMessageReplyMarkup = vi.fn().mockResolvedValue(true);
   const getChatMember = vi.fn().mockRejectedValue(new Error('not a member'));
   const ctx = {
     chat: { id: CHAT },
     from: { id: 3, first_name: 'Guest' },
-    api: { sendMessage, getChatMember },
+    api: { sendMessage, editMessageText, editMessageReplyMarkup, getChatMember },
   } as unknown as Context;
-  return { ctx, sendMessage };
+  return { ctx, sendMessage, editMessageText };
 }
 
 function call(ctx: Context, command: string) {
@@ -123,6 +127,39 @@ describe('the gate with no window', () => {
 
     await vi.advanceTimersByTimeAsync(11 * 60 * 1000);
     expect((await pending).block).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it('closes a prompt nobody answered, so its buttons stop looking live', async () => {
+    vi.useFakeTimers();
+    const { ctx, sendMessage, editMessageText } = fakeCtx();
+    const pending = call(ctx, 'rm -rf node_modules');
+
+    await vi.advanceTimersByTimeAsync(11 * 60 * 1000);
+    await pending;
+
+    // Same entities it went out with, or the edit would strip the formatting.
+    const [, text, opts] = sendMessage.mock.calls[0]!;
+    expect(editMessageText).toHaveBeenCalledWith(
+      CHAT, 7, `${text}\n\n⏱️ No answer within 10 min, so it was denied.`, { entities: opts.entities },
+    );
+    vi.useRealTimers();
+  });
+
+  it('closes a prompt that went out plain without putting formatting back', async () => {
+    vi.useFakeTimers();
+    const { ctx, sendMessage, editMessageText } = fakeCtx();
+    // The first send is the entity one; Telegram refusing it leaves the plain retry.
+    sendMessage.mockRejectedValueOnce(new Error("400: can't parse entities"));
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const pending = call(ctx, 'rm -rf node_modules');
+
+    await vi.advanceTimersByTimeAsync(11 * 60 * 1000);
+    await pending;
+
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+    expect(editMessageText.mock.calls[0]![3]).toBeUndefined();
+    quiet.mockRestore();
     vi.useRealTimers();
   });
 });

@@ -149,9 +149,10 @@ export async function startIpcServer(): Promise<{ port: number }> {
     });
   });
 
-  // Long-poll friendly: claudegram_ask_user can hold a request open for up to
-  // 10 min waiting on a user button tap, and Node's default requestTimeout
-  // (5 min in Node 18+) would otherwise kill the connection mid-wait. This
+  // Long-poll friendly: claudegram_ask_user can hold a request open for as long
+  // as QUESTION_TIMEOUT_MINUTES waiting on a user button tap, and Node's
+  // default requestTimeout (5 min in Node 18+) would otherwise kill the
+  // connection mid-wait. This
   // server is bound to 127.0.0.1 only, so disabling the cap doesn't expose
   // anything to the network.
   server.requestTimeout = 0;

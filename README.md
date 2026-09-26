@@ -564,6 +564,7 @@ See [Sharing a bot](#sharing-a-bot) for how the pieces fit together.
 | `STREAMING_MODE` | `streaming` | `streaming` or `wait` |
 | `DANGEROUS_MODE` | `false` | Auto-approve all tool permissions |
 | `CANCEL_ON_NEW_MESSAGE` | `false` | Auto-cancel running query on new message |
+| `QUESTION_TIMEOUT_MINUTES` | `10` | How long a question from Claude (buttons, polls, relayed dialogs) waits before the turn carries on without an answer and the question closes |
 | `CLAUDE_SDK_LOG_LEVEL` | `off` | SDK log level: off, basic, verbose, trace |
 
 ### Group chats

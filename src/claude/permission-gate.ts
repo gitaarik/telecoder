@@ -1,6 +1,7 @@
 import type { Context } from 'grammy';
+import type { Message, MessageEntity } from 'grammy/types';
 import { config } from '../config.js';
-import { createPendingQuestion } from './ask-user.js';
+import { closeExpiredQuestion, createPendingQuestion } from './ask-user.js';
 import { parseSessionKey } from '../utils/session-key.js';
 import { legacyEnv } from '../utils/legacy-env.js';
 import { getPromptResponderIds, hasGuestUsers } from '../utils/admins.js';
@@ -163,8 +164,12 @@ export async function evaluateToolCall(req: GateRequest): Promise<GateDecision> 
 
   const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};
 
+  // Kept for closing the prompt if nobody answers it, with whichever entities
+  // it actually went out with.
+  let sent: Message.TextMessage;
+  let sentEntities: MessageEntity[] | undefined = entities;
   try {
-    await ctx.api.sendMessage(chatId, text, {
+    sent = await ctx.api.sendMessage(chatId, text, {
       entities,
       reply_markup: { inline_keyboard: keyboard },
       ...threadOpts,
@@ -176,10 +181,11 @@ export async function evaluateToolCall(req: GateRequest): Promise<GateDecision> 
     // the prompt entirely.
     console.error('[PermissionGate] entity send failed, retrying plain:', err instanceof Error ? err.message : err);
     try {
-      await ctx.api.sendMessage(chatId, text, {
+      sent = await ctx.api.sendMessage(chatId, text, {
         reply_markup: { inline_keyboard: keyboard },
         ...threadOpts,
       });
+      sentEntities = undefined;
     } catch (err2) {
       console.error('[PermissionGate] failed to send prompt:', err2 instanceof Error ? err2.message : err2);
       return { block: true, reason: `Failed to send approval prompt to user. Denied: ${pattern.reason}` };
@@ -187,6 +193,13 @@ export async function evaluateToolCall(req: GateRequest): Promise<GateDecision> 
   }
 
   const answer = await promise;
+  if (answer === null) {
+    await closeExpiredQuestion(
+      ctx.api, sent, text,
+      `No answer within ${Math.round(timeoutMs / 60000)} min, so it was denied.`,
+      sentEntities,
+    );
+  }
   if (!answer || answer.index === 1) {
     return {
       block: true,

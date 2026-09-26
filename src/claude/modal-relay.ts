@@ -23,13 +23,12 @@
  */
 
 import type { Context } from 'grammy';
-import { createPendingQuestion } from './ask-user.js';
+import type { Message } from 'grammy/types';
+import { closeExpiredQuestion, createPendingQuestion, questionTimeoutMinutes } from './ask-user.js';
 import { arrowsTo, keystrokeFor, parseModal, type TuiModal } from './tui-modal.js';
 import { hasInputBox } from './tui-state.js';
 import { parseSessionKey } from '../utils/session-key.js';
 
-/** How long a relayed dialog waits for a tap before giving up on it. */
-const ANSWER_TIMEOUT_MS = 10 * 60 * 1000;
 /** Settle time after writing a key, before re-reading the screen. */
 const KEY_SETTLE_MS = 400;
 /** Telegram's inline-keyboard rows we are willing to render. */
@@ -111,17 +110,25 @@ export async function relayModal(
 
   const choices = buildChoices(modal);
   const labels = [...choices.map((c) => c.label), '✋ Leave it alone'];
+  const text = buildModalMessage(modal, cwd);
   if (choices.length === 0) {
-    await send(ctx, sessionKey, buildModalMessage(modal, cwd), undefined);
+    await send(ctx, sessionKey, text, undefined);
     return { kind: 'declined', why: 'the dialog offers no keys this bot can press' };
   }
 
-  const { id, promise } = createPendingQuestion(labels, ANSWER_TIMEOUT_MS, sessionKey);
-  const keyboard = labels.map((text, idx) => [{ text, callback_data: `q:${id}:${idx}` }]);
-  await send(ctx, sessionKey, buildModalMessage(modal, cwd), keyboard);
+  // Waits QUESTION_TIMEOUT_MINUTES, like any other question the turn asks.
+  const { id, promise } = createPendingQuestion(labels, undefined, sessionKey);
+  const keyboard = labels.map((label, idx) => [{ text: label, callback_data: `q:${id}:${idx}` }]);
+  const sent = await send(ctx, sessionKey, text, keyboard);
 
   const answer = await promise;
-  if (!answer) return { kind: 'timeout' };
+  if (!answer) {
+    await closeExpiredQuestion(
+      ctx.api, sent, text,
+      `No answer within ${questionTimeoutMinutes()} min, so I left the dialog alone.`,
+    );
+    return { kind: 'timeout' };
+  }
   const choice = choices[answer.index];
   if (!choice) return { kind: 'declined', why: 'you chose to leave it alone' };
 
@@ -200,12 +207,12 @@ async function send(
   sessionKey: string,
   text: string,
   keyboard: { text: string; callback_data: string }[][] | undefined,
-): Promise<void> {
+): Promise<Message.TextMessage> {
   const { chatId, threadId } = parseSessionKey(sessionKey);
   // Plain text, no parse mode: the body is claude's own render and carries
   // box-drawing characters, underscores and asterisks that would 400 an edit
   // if Telegram tried to read them as formatting.
-  await ctx.api.sendMessage(chatId, text, {
+  return ctx.api.sendMessage(chatId, text, {
     ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
     ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
   });
