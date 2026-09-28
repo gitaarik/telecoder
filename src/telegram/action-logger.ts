@@ -15,6 +15,10 @@ import { getSessionKeyFromCtx } from '../utils/session-key.js';
 
 // Constants
 const MIN_EDIT_INTERVAL_MS = 10000; // Minimum time between message edits (~5 edits/min safe zone)
+// Telegram's cap on a message's text.
+const MAX_MESSAGE_CHARS = 4096;
+// The most actions the live log shows at once.
+const LIVE_LOG_ENTRIES = 10;
 // How long a log stays open once its turn has ended, so tool results still in
 // flight land in it before it collapses.
 const COLLAPSE_DELAY_MS = 5000;
@@ -270,9 +274,10 @@ export class ActionLogger {
     // If no message exists yet, create it now that we have content
     if (!state.messageId) {
       const sendOpts = state.threadId !== undefined ? { message_thread_id: state.threadId } : {};
+      const shown = this.entriesThatFit(state.entries);
 
       try {
-        const content = this.renderActionLog(state.entries);
+        const content = this.renderActionLog(state.entries, shown);
         const message = await ctx.api.sendMessage(state.chatId, content, {
           parse_mode: 'MarkdownV2',
           ...sendOpts
@@ -285,7 +290,7 @@ export class ActionLogger {
         console.error('[ActionLogger] Failed to create initial message:', error);
         // Try plain text fallback
         try {
-          const plainContent = this.renderActionLogPlain(state.entries);
+          const plainContent = this.renderActionLogPlain(state.entries, shown);
           const message = await ctx.api.sendMessage(state.chatId, plainContent, {
             parse_mode: undefined,
             ...sendOpts
@@ -308,7 +313,8 @@ export class ActionLogger {
     const timeSinceLastUpdate = now - state.lastUpdate;
     if (timeSinceLastUpdate < MIN_EDIT_INTERVAL_MS) return;
 
-    const content = this.renderActionLog(state.entries);
+    const shown = this.entriesThatFit(state.entries);
+    const content = this.renderActionLog(state.entries, shown);
 
     try {
       await ctx.api.editMessageText(
@@ -342,7 +348,7 @@ export class ActionLogger {
 
       // Fallback to plain text if MarkdownV2 parsing fails
       try {
-        const plainContent = this.renderActionLogPlain(state.entries);
+        const plainContent = this.renderActionLogPlain(state.entries, shown);
         await ctx.api.editMessageText(
           state.chatId,
           state.messageId,
@@ -357,17 +363,33 @@ export class ActionLogger {
   }
 
   /**
-   * Render action log entries as MarkdownV2
+   * How many of the newest entries the live log can show: ten, or fewer when
+   * ten would overflow a message.
+   *
+   * Ten entries with a command and a couple of hundred characters of output
+   * each come to more than a Telegram message holds. An edit that long fails
+   * with MESSAGE_TOO_LONG, and so did the plain-text fallback, which is hardly
+   * shorter — so a busy turn's live log froze partway through. Measured on the
+   * MarkdownV2 source, which is never shorter than the text Telegram counts
+   * once it has parsed the markup, nor than the plain-text render.
    */
-  private renderActionLog(entries: ActionEntry[]): string {
+  private entriesThatFit(entries: ActionEntry[]): number {
+    let shown = Math.min(entries.length, LIVE_LOG_ENTRIES);
+    while (shown > 1 && this.renderActionLog(entries, shown).length > MAX_MESSAGE_CHARS) shown--;
+    return shown;
+  }
+
+  /**
+   * Render the newest `shown` action log entries as MarkdownV2
+   */
+  private renderActionLog(entries: ActionEntry[], shown: number): string {
     if (entries.length === 0) {
       return '📋 **Action Log**\n\n_No actions yet\\.\\.\\._';
     }
 
     const lines = ['📋 **Action Log**', ''];
 
-    // Show only last 10 entries to keep message reasonable
-    const recentEntries = entries.slice(-10);
+    const recentEntries = entries.slice(-shown);
 
     recentEntries.forEach((entry, index) => {
       const statusEmoji = entry.status === 'completed' ? '✅' :
@@ -401,24 +423,24 @@ export class ActionLogger {
       }
     });
 
-    if (entries.length > 10) {
-      lines.unshift(`_Showing last 10 of ${entries.length} actions_`, '');
+    if (entries.length > shown) {
+      lines.unshift(`_Showing last ${shown} of ${entries.length} actions_`, '');
     }
 
     return lines.join('\n');
   }
 
   /**
-   * Render action log entries as plain text (fallback)
+   * Render the newest `shown` action log entries as plain text (fallback)
    */
-  private renderActionLogPlain(entries: ActionEntry[]): string {
+  private renderActionLogPlain(entries: ActionEntry[], shown: number): string {
     if (entries.length === 0) {
       return '📋 Action Log\n\nNo actions yet...';
     }
 
     const lines = ['📋 Action Log', ''];
 
-    const recentEntries = entries.slice(-10);
+    const recentEntries = entries.slice(-shown);
 
     recentEntries.forEach((entry, index) => {
       const statusEmoji = entry.status === 'completed' ? '✅' :
@@ -452,8 +474,8 @@ export class ActionLogger {
       }
     });
 
-    if (entries.length > 10) {
-      lines.unshift(`Showing last 10 of ${entries.length} actions`, '');
+    if (entries.length > shown) {
+      lines.unshift(`Showing last ${shown} of ${entries.length} actions`, '');
     }
 
     return lines.join('\n');
