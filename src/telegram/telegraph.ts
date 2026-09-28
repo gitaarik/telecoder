@@ -447,6 +447,23 @@ async function createPageWithUuidTitle(
   return { url: json.result.url };
 }
 
+// Telegraph's cap on a page's content. createPage turns anything bigger away
+// with CONTENT_TOO_BIG.
+const PAGE_CONTENT_LIMIT = 64 * 1024;
+
+/**
+ * Whether `markdown` fits on one Telegraph page. Telegraph doesn't say how it
+ * counts its 64 KB, so this takes the strictest reading — the content as JSON
+ * with `/` and every non-ASCII character escaped — and keeps a kilobyte back
+ * for the title heading createPageWithUuidTitle puts on top.
+ */
+export function fitsTelegraphPage(markdown: string): boolean {
+  const json = JSON.stringify(markdownToNodes(markdown))
+    .replace(/\//g, '\\/')
+    .replace(/[^\x00-\x7f]/g, '\\uffff');
+  return json.length <= PAGE_CONTENT_LIMIT - 1024;
+}
+
 /**
  * Create a Telegraph page from markdown content
  * Uses a UUID-based title to prevent URL guessing

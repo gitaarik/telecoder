@@ -1235,18 +1235,9 @@ export class MessageSender {
 
     this.streamStates.delete(sessionKey);
 
-    // Delay action logging cleanup to allow for any remaining tool results,
-    // then collapse the live log into a Telegraph link before discarding state.
-    if (keyInfo?.sessionKey && actionLogger.isActive(keyInfo.sessionKey)) {
-      const sk = keyInfo.sessionKey;
-      setTimeout(async () => {
-        try {
-          await actionLogger.finalize(ctx, sk);
-        } finally {
-          actionLogger.cleanup(sk);
-        }
-      }, 5000); // 5 second delay to allow tool results to be processed
-    }
+    // Collapse the live log into a Telegraph link once any remaining tool
+    // results have landed.
+    actionLogger.endTurn(ctx, sessionKey);
   }
 
   /**
@@ -1287,18 +1278,9 @@ export class MessageSender {
 
     this.streamStates.delete(sessionKey);
 
-    // Delay action logging cleanup to allow for any remaining tool results,
-    // then collapse the live log into a Telegraph link before discarding state.
-    if (keyInfo?.sessionKey && actionLogger.isActive(keyInfo.sessionKey)) {
-      const sk = keyInfo.sessionKey;
-      setTimeout(async () => {
-        try {
-          await actionLogger.finalize(ctx, sk);
-        } finally {
-          actionLogger.cleanup(sk);
-        }
-      }, 5000); // 5 second delay to allow tool results to be processed
-    }
+    // Collapse the live log into a Telegraph link once any remaining tool
+    // results have landed.
+    actionLogger.endTurn(ctx, sessionKey);
   }
 
   /**

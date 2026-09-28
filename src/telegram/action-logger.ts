@@ -7,7 +7,7 @@
 import { Context, GrammyError } from 'grammy';
 import { escapeMarkdownV2 } from './markdown.js';
 import { getToolIcon, extractToolDetail, elideToolOutput, stripAnsi } from './terminal-renderer.js';
-import { createTelegraphPage } from './telegraph.js';
+import { createTelegraphPage, fitsTelegraphPage } from './telegraph.js';
 import { isTelegraphEnabled } from './telegraph-settings.js';
 import type { ToolResultEvent, EditDiffEvent } from '../providers/types.js';
 import type { TaskState } from './task-tracker.js';
@@ -15,6 +15,9 @@ import { getSessionKeyFromCtx } from '../utils/session-key.js';
 
 // Constants
 const MIN_EDIT_INTERVAL_MS = 10000; // Minimum time between message edits (~5 edits/min safe zone)
+// How long a log stays open once its turn has ended, so tool results still in
+// flight land in it before it collapses.
+const COLLAPSE_DELAY_MS = 5000;
 
 // `mcp__claudegram-tools__claudegram_send_file` → `claudegram_send_file`
 function stripMcpServerPrefix(toolName: string): string {
@@ -457,21 +460,43 @@ export class ActionLogger {
   }
 
   /**
+   * Collapse the session's log once its turn is over, then let it go.
+   *
+   * Holds on to this turn's log rather than looking the session up again when
+   * the delay runs out. A message queued behind the turn starts the next one
+   * straight away, and that turn's initialize() replaces the session's log
+   * well inside the delay — looked up by key, the timer collapsed the new
+   * turn's log mid-turn, or threw it away while it was still empty, and never
+   * collapsed this one.
+   */
+  endTurn(ctx: Context, sessionKey: string): void {
+    const state = this.logStates.get(sessionKey);
+    if (!state) return;
+    setTimeout(async () => {
+      try {
+        await this.finalize(ctx, sessionKey, state);
+      } finally {
+        // Unless a newer turn's log has taken the session over since.
+        if (this.logStates.get(sessionKey) === state) this.logStates.delete(sessionKey);
+      }
+    }, COLLAPSE_DELAY_MS);
+  }
+
+  /**
    * Collapse the in-chat action log into a Telegraph link at the end of a turn.
    * Renders all entries (no 10-entry cap) onto a Telegraph page, then edits
    * the existing action-log message into a brief "📋 N actions · view full
    * log" summary. If Telegraph is disabled or fails, the message is left as-is
    * (callers still get the live-streamed view).
    */
-  async finalize(ctx: Context, sessionKey: string): Promise<void> {
-    const state = this.logStates.get(sessionKey);
-    if (!state || state.finalized) return;
+  private async finalize(ctx: Context, sessionKey: string, state: ActionLogState): Promise<void> {
+    if (state.finalized) return;
     if (!state.messageId || state.entries.length === 0) return;
     if (!isTelegraphEnabled(sessionKey)) return;
 
     state.finalized = true;
 
-    const markdown = this.renderTelegraphMarkdown(state.entries);
+    const markdown = this.renderTelegraphPage(state.entries);
     const pageUrl = await createTelegraphPage('Action log', markdown);
     if (!pageUrl) {
       // Telegraph creation failed (rate limit, network); leave the live log
@@ -496,13 +521,47 @@ export class ActionLogger {
   }
 
   /**
-   * Render the full action log as markdown for a Telegraph page. Uses the
-   * same truncation that was applied when entries were captured — no attempt
-   * to recover untruncated content.
+   * The full action log as markdown for a Telegraph page, cut down until it
+   * fits on one.
+   *
+   * Telegraph refuses a page over 64 KB, and a long turn's log passes that
+   * easily — 40 results at the verbose tier's 2,000 characters is 80 KB — which
+   * left the live log standing uncollapsed. Output goes first: each pass
+   * halves how much of an entry's input and output the page keeps, so every
+   * action stays listed. Only once the title lines alone are too much do the
+   * oldest actions drop off.
    */
-  private renderTelegraphMarkdown(entries: ActionEntry[]): string {
+  private renderTelegraphPage(entries: ActionEntry[]): string {
+    const longest = entries.reduce(
+      (max, e) => Math.max(max, e.subtitle?.length ?? 0, e.content?.length ?? 0),
+      0,
+    );
+    for (let cap = longest; cap > 0; cap = Math.floor(cap / 2)) {
+      const markdown = this.renderTelegraphMarkdown(entries, cap);
+      if (fitsTelegraphPage(markdown)) return markdown;
+    }
+
+    let keep = entries.length;
+    let markdown = this.renderTelegraphMarkdown(entries, 0);
+    while (keep > 1 && !fitsTelegraphPage(markdown)) {
+      keep = Math.ceil(keep / 2);
+      markdown = this.renderTelegraphMarkdown(entries, 0, entries.length - keep);
+    }
+    return markdown;
+  }
+
+  /**
+   * Render the action log as markdown for a Telegraph page, from the entries
+   * as captured — no attempt to recover untruncated content. Each entry's
+   * input and output are cut to `bodyCap` characters, and left off at 0; the
+   * first `skip` entries are left off entirely.
+   */
+  private renderTelegraphMarkdown(entries: ActionEntry[], bodyCap: number, skip = 0): string {
     const sections: string[] = [];
-    entries.forEach((entry, index) => {
+    if (skip > 0) {
+      sections.push(`_${skip} earlier action${skip === 1 ? '' : 's'} left off to fit the page._`);
+    }
+    entries.slice(skip).forEach((entry, index) => {
       const statusEmoji = entry.status === 'completed' ? '✅' :
                          entry.status === 'error' ? '❌' : '⏳';
       const time = new Date(entry.timestamp).toLocaleTimeString('en-US', {
@@ -511,20 +570,25 @@ export class ActionLogger {
         minute: '2-digit',
         second: '2-digit',
       });
+      const cut = (text: string | undefined) => text && bodyCap > 0
+        ? elideToolOutput(text, Infinity, bodyCap, { isError: entry.status === 'error' })
+        : undefined;
+      const subtitle = cut(entry.subtitle);
+      const content = cut(entry.content);
 
       const headerLines: string[] = [];
-      headerLines.push(`## ${index + 1}. ${entry.icon} ${statusEmoji} ${entry.title}`);
+      headerLines.push(`## ${skip + index + 1}. ${entry.icon} ${statusEmoji} ${entry.title}`);
       headerLines.push(`_${time}_`);
-      if (entry.subtitle) {
+      if (subtitle) {
         headerLines.push('');
         headerLines.push('```');
-        headerLines.push(entry.subtitle);
+        headerLines.push(subtitle);
         headerLines.push('```');
       }
-      if (entry.content) {
+      if (content) {
         headerLines.push('');
         headerLines.push('```');
-        headerLines.push(entry.content);
+        headerLines.push(content);
         headerLines.push('```');
       }
       sections.push(headerLines.join('\n'));
@@ -543,13 +607,6 @@ export class ActionLogger {
     else if (completed < entries.length) counts.push(`${completed} completed`);
     const summary = counts.join(' · ');
     return `📋 _${escapeMarkdownV2(summary)}_ · [view full log](${escapeMarkdownV2(pageUrl)})`;
-  }
-
-  /**
-   * Clean up action log for a session
-   */
-  cleanup(sessionKey: string): void {
-    this.logStates.delete(sessionKey);
   }
 
   /**
