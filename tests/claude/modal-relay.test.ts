@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Context } from 'grammy';
 import type { MessageEntity } from 'grammy/types';
 import {
-  blockingModal, buildChoices, buildModalMessage, relayModal, type ModalPty,
+  blockingModal, buildChoices, buildModalMessage, openDialogError, relayModal, type ModalPty, type OpenDialog,
 } from '../../src/claude/modal-relay.js';
 import { parseModal } from '../../src/claude/tui-modal.js';
 import { resolvePendingQuestion } from '../../src/claude/ask-user.js';
@@ -420,6 +420,37 @@ const bashPrompt = [
 function styled(message: { text: string; entities: MessageEntity[] }): [string, string][] {
   return message.entities.map((e) => [e.type, message.text.slice(e.offset, e.offset + e.length)]);
 }
+
+describe('openDialogError', () => {
+  const open: OpenDialog[] = [
+    { kind: 'timeout' },
+    { kind: 'declined', why: 'you chose to leave it alone' },
+    { kind: 'failed', why: 'the cursor stopped on option 1, not 2' },
+    { kind: 'still-open', label: '1. Yes' },
+  ];
+
+  it('says the message wasn\'t delivered only before it was', () => {
+    // Mid-turn it went in long before the dialog opened; saying otherwise
+    // sent people off to resend a message claude already had.
+    for (const dialog of open) {
+      expect(openDialogError(dialog, 'before-prompt'), dialog.kind).toMatch(/your message wasn't delivered/i);
+      expect(openDialogError(dialog, 'mid-turn'), dialog.kind).not.toContain('delivered');
+      expect(openDialogError(dialog, 'mid-turn'), dialog.kind).toContain('stopped waiting on this turn');
+    }
+  });
+
+  it('keeps the reason a relay gave up', () => {
+    expect(openDialogError(open[1], 'mid-turn'))
+      .toBe('I stopped waiting on this turn — you chose to leave it alone. Claude Code is still paused on that dialog.');
+  });
+
+  it('points a dialog left open mid-turn at the next message, which offers it again', () => {
+    expect(openDialogError({ kind: 'timeout' }, 'mid-turn')).toMatch(/next message, which brings its buttons back\.$/);
+    expect(openDialogError({ kind: 'still-open', label: '1. Yes' }, 'mid-turn'))
+      .toBe('I pressed "1. Yes", but Claude Code\'s dialog is still open, so I stopped waiting on this turn. '
+        + 'Your next message brings its buttons back.');
+  });
+});
 
 describe('buildModalMessage', () => {
   it('lays a Bash prompt out for a phone', () => {

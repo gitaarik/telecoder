@@ -49,7 +49,9 @@ import {
   tailLines,
 } from './tui-state.js';
 import { stageImagesForPty } from './stage-images.js';
-import { blockingModal, relayModal, waitForDialogToClear, type ModalPty, type RelayStage } from './modal-relay.js';
+import {
+  blockingModal, openDialogError, relayModal, waitForDialogToClear, type ModalPty, type RelayStage,
+} from './modal-relay.js';
 import { questionTimeoutMs } from './ask-user.js';
 import {
   ensurePermissionMode,
@@ -1479,14 +1481,6 @@ export class PtyProvider implements Provider {
   }
 
   /**
-   * Put claude's dialog in the chat and press what comes back.
-   *
-   * Returns only when a key was written and the dialog cleared; every other
-   * outcome throws, because the prompt genuinely was not delivered and saying
-   * so beats a silent retry. Nothing is pressed on a timeout — see
-   * modal-relay.ts for why an unanswered dialog is left exactly as it is.
-   */
-  /**
    * Ask the chat about a dialog that opened mid-turn, without blocking the
    * timer that found it.
    *
@@ -1518,6 +1512,14 @@ export class PtyProvider implements Provider {
     reject(error);
   }
 
+  /**
+   * Put claude's dialog in the chat and press what comes back.
+   *
+   * Returns only when a key was written and the dialog cleared. Every other
+   * outcome throws, saying what it means for `stage` (see openDialogError) —
+   * that beats a silent retry. Nothing is pressed on a timeout: see
+   * modal-relay.ts for why an unanswered dialog is left exactly as it is.
+   */
   private async _relayModal(
     session: PtySession, sessionKey: string, options: AgentOptions | undefined, stage: RelayStage,
   ): Promise<void> {
@@ -1539,30 +1541,14 @@ export class PtyProvider implements Provider {
     const outcome = await relayModal(pty, sessionKey, ctx, session.cwd, stage);
     console.warn(`[PtyProvider] ${sessionKey}: claude opened a dialog — relay ${outcome.kind}`);
 
-    switch (outcome.kind) {
-      case 'answered':
-        if (!await waitForDialogToClear(pty, DIALOG_CLEAR_MS)) {
-          throw new Error(
-            `I pressed "${outcome.label}", but Claude Code hasn't returned to its input box, `
-            + "so your message wasn't delivered. Send it again in a moment.",
-          );
-        }
-        // Marked only now, with the dialog gone: from here the screen looks
-        // like a finished turn until claude resumes, and _checkEndOfTurn needs
-        // to know not to believe it.
-        session.dialogAnsweredAt = Date.now();
-        return;
-      case 'timeout':
-        throw new Error(
-          "Nobody answered Claude Code's dialog, so I left it alone and your message wasn't "
-          + "delivered. Send it again to get the dialog's buttons back.",
-        );
-      default:
-        throw new Error(
-          `Your message wasn't delivered — ${outcome.why}. `
-          + 'Claude Code is still waiting on that dialog.',
-        );
+    if (outcome.kind !== 'answered') throw new Error(openDialogError(outcome, stage));
+    if (!await waitForDialogToClear(pty, DIALOG_CLEAR_MS)) {
+      throw new Error(openDialogError({ kind: 'still-open', label: outcome.label }, stage));
     }
+    // Marked only now, with the dialog gone: from here the screen looks like a
+    // finished turn until claude resumes, and _checkEndOfTurn needs to know
+    // not to believe it.
+    session.dialogAnsweredAt = Date.now();
   }
 
   /**

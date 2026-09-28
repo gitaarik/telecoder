@@ -136,6 +136,49 @@ function appendDialog(b: EntityText, modal: TuiModal): void {
   });
 }
 
+/**
+ * A relay that ended with the dialog still up: nobody answered, the user left
+ * it, the bot couldn't drive it — or a key was pressed and it didn't close.
+ */
+export type OpenDialog =
+  | Exclude<ModalOutcome, { kind: 'answered' }>
+  | { kind: 'still-open'; label: string };
+
+/**
+ * Why the turn stops at a dialog that is still open, for the chat.
+ *
+ * Where the turn stands decides what's true. Before a prompt, the user's
+ * message is what didn't happen: it was never typed in, and sending it again
+ * is the fix. Mid-turn it was delivered long before, and saying otherwise sent
+ * people off to resend a message claude already had. What stops there is the
+ * bot waiting on the turn, while claude stays paused on the dialog — and the
+ * next message meets it before anything else, with its buttons.
+ */
+export function openDialogError(dialog: OpenDialog, stage: RelayStage): string {
+  if (stage === 'before-prompt') {
+    switch (dialog.kind) {
+      case 'still-open':
+        return `I pressed "${dialog.label}", but Claude Code hasn't returned to its input box, `
+          + "so your message wasn't delivered. Send it again in a moment.";
+      case 'timeout':
+        return "Nobody answered Claude Code's dialog, so I left it alone and your message wasn't "
+          + "delivered. Send it again to get the dialog's buttons back.";
+      default:
+        return `Your message wasn't delivered — ${dialog.why}. Claude Code is still waiting on that dialog.`;
+    }
+  }
+  switch (dialog.kind) {
+    case 'still-open':
+      return `I pressed "${dialog.label}", but Claude Code's dialog is still open, so I stopped `
+        + 'waiting on this turn. Your next message brings its buttons back.';
+    case 'timeout':
+      return "Nobody answered Claude Code's dialog, so I left it alone and stopped waiting on "
+        + 'this turn. Claude Code is paused on it until your next message, which brings its buttons back.';
+    default:
+      return `I stopped waiting on this turn — ${dialog.why}. Claude Code is still paused on that dialog.`;
+  }
+}
+
 /** What a tap does, and what happens once it has. */
 function closingLine(modal: TuiModal, stage: RelayStage): string {
   if (buildChoices(modal).length === 0) {

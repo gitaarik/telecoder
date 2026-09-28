@@ -168,6 +168,16 @@ reasoning — the commit bodies are the long form, this is the index.
   of the screen, now counts as the end of a dialog. It gets its choices as
   buttons, and no key buttons, since it names none.
 
+- **A dialog left open mid-turn no longer says your message wasn't
+  delivered** — when a dialog that opened partway through a turn went
+  unanswered, or couldn't be answered from the chat, the turn ended with
+  "your message wasn't delivered. Send it again". It had been delivered: the
+  dialog came from the work it started, and resending it only queued a
+  duplicate. Mid-turn it now says the bot stopped waiting on the turn, that
+  Claude Code is still paused on the dialog, and that your next message
+  brings its buttons back. Before a message goes in, the wording is unchanged,
+  since there the message really wasn't typed in.
+
 - **The last message of a long reply lost its formatting** — when a reply was
   split across messages at a point inside a code block, the splitter closed
   the block at the end of one part and reopened it at the top of the next, but
