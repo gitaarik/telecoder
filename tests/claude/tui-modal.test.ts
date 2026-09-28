@@ -350,6 +350,72 @@ describe('parseModal parts', () => {
   });
 });
 
+/**
+ * WebFetch's permission prompt, copied off a live 2.1.284 pty. It has no
+ * footer: the dialog ends on its last row, and the one key it names is written
+ * into that row. Held for over a minute on the live pty, it never drew one.
+ */
+const fetchDialog = [
+  SEP,
+  ' Fetch',
+  '',
+  '   url: https://example.com/',
+  '   prompt: What is the title of this page?',
+  '   Claude wants to fetch content from example.com',
+  '',
+  ' Do you want to allow Claude to fetch this content?',
+  ' ❯ 1. Yes',
+  "   2. Yes, and don't ask again for example.com",
+  '   3. No, and tell Claude what to do differently (esc)',
+].join('\n');
+
+describe('parseModal without a footer', () => {
+  it('reads WebFetch\'s prompt off its numbered rows', () => {
+    const modal = parseModal(fetchDialog);
+    expect(modal?.title).toBe('Fetch');
+    expect(modal?.options.map((o) => o.text)).toEqual([
+      'Yes',
+      "Yes, and don't ask again for example.com",
+      'No, and tell Claude what to do differently (esc)',
+    ]);
+    expect(modal?.highlighted).toBe(0);
+    expect(modal?.hints).toEqual([]);
+  });
+
+  it('follows the cursor down the rows, as the arrow walk needs to', () => {
+    // Also off the live pty, after one ArrowDown.
+    const moved = fetchDialog.replace(' ❯ 1. Yes', '   1. Yes')
+      .replace("   2. Yes, and don't", " ❯ 2. Yes, and don't");
+    expect(parseModal(moved)?.highlighted).toBe(1);
+  });
+
+  it('still reads it with a status line under it', () => {
+    expect(parseModal(`${fetchDialog}\n  ⏵⏵ auto mode on (shift+tab to cycle)`)?.options).toHaveLength(3);
+  });
+
+  it('does not read a list that stops short of the bottom as a dialog', () => {
+    // Four lines of something else under it: the list is no longer where the
+    // dialog ends, so it could be anything — transcript, most likely.
+    const buried = [fetchDialog, '  a', '  b', '  c', '  d'].join('\n');
+    expect(parseModal(buried)).toBeNull();
+  });
+
+  it('does not read unnumbered rows with no footer as a dialog', () => {
+    expect(parseModal([SEP, ' Pick one', ' ❯ No, exit', '   Yes, I trust this folder'].join('\n'))).toBeNull();
+  });
+
+  it('does not read a numbered prompt typed into the input box as a dialog', () => {
+    // The box's own rule sits under it, so the list is not below the seam.
+    expect(parseModal([
+      SEP, '❯ 1. fix the bug', '  2. add tests', SEP, '  ⏵⏵ auto mode on (shift+tab to cycle)',
+    ].join('\n'))).toBeNull();
+  });
+
+  it('does not read an echoed prompt with no seam above it as a dialog', () => {
+    expect(parseModal(['● Done.', '❯ 1. fix the bug', '  2. add tests'].join('\n'))).toBeNull();
+  });
+});
+
 describe('parseModal with chrome below the footer', () => {
   // The footer is not reliably the last line on screen. Claude draws its
   // status bar under a dialog, and every one of these made the parser answer

@@ -28,6 +28,29 @@ const trustDialogOnSecond = trustDialog
 const inputBox = [SEP, '❯ ', SEP, '  ⏵⏵ bypass permissions on (shift+tab to cycle)'].join('\n');
 
 /**
+ * WebFetch's permission prompt off a live 2.1.284 pty, with the cursor on
+ * `row`. It has no footer; its last row is where it ends.
+ */
+function fetchDialogAt(row: number): string {
+  const rows = [
+    '1. Yes',
+    "2. Yes, and don't ask again for example.com",
+    '3. No, and tell Claude what to do differently (esc)',
+  ].map((text, i) => `${i === row ? ' ❯ ' : '   '}${text}`);
+  return [
+    SEP,
+    ' Fetch',
+    '',
+    '   url: https://example.com/',
+    '   prompt: What is the title of this page?',
+    '   Claude wants to fetch content from example.com',
+    '',
+    ' Do you want to allow Claude to fetch this content?',
+    ...rows,
+  ].join('\n');
+}
+
+/**
  * A pty that moves its own cursor in response to arrow keys, the way claude's
  * dialogs do — so a test can tell a relay that verified the cursor from one
  * that merely hoped.
@@ -173,6 +196,11 @@ describe('blockingModal', () => {
   it('is null on a half-drawn screen it cannot read as a dialog', () => {
     expect(blockingModal('● Loading conversation…')).toBeNull();
   });
+
+  it('sees WebFetch\'s prompt, which has no footer to find it by', () => {
+    // Missed, it sat mid-turn until the hard ceiling with nobody asked.
+    expect(blockingModal(fetchDialogAt(0))?.options).toHaveLength(3);
+  });
 });
 
 describe('buildChoices', () => {
@@ -223,6 +251,20 @@ describe('relayModal', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it('answers a footerless dialog the same way, walking to the row first', async () => {
+    const pty = fakePty([fetchDialogAt(0), fetchDialogAt(1), fetchDialogAt(2)]);
+    const { ctx, sent } = fakeCtx();
+
+    const pending = relayModal(pty, '42', ctx, '/tmp/x', 'mid-turn');
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    // Its rows and nothing else: with no footer, no key is named to offer.
+    expect(sent[0].keyboard).toHaveLength(4);
+    resolvePendingQuestion(questionId(sent), 1); // "Yes, and don't ask again"
+
+    expect(await pending).toEqual({ kind: 'answered', label: "2. Yes, and don't ask again for example.com" });
+    expect(pty.written).toEqual(['\x1b[B', '\r']);
   });
 
   it('walks to the chosen row and commits once the cursor lands', async () => {

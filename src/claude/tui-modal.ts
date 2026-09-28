@@ -21,7 +21,9 @@
  * the same list without the numbers, which is how the trust dialog draws its
  * `No, exit` / `Yes, I trust this folder`, and dialogs with no list at all
  * (`/tasks`, `/config`) where the footer's key hints are the only affordances
- * there are.
+ * there are. WebFetch's permission prompt is the odd one out the other way: a
+ * numbered list and no footer at all, so there the list has to mark where the
+ * dialog ends ({@link findListEnd}).
  *
  * The footer is parsed rather than assumed, because the keys do not mean the
  * same thing twice. `/model` closes on Esc; `/tasks` closes on Esc; `/config`
@@ -190,6 +192,31 @@ function findFooter(lines: string[]): { index: number; hints: ModalKeyHint[] } |
 }
 
 /**
+ * Where a dialog with no footer ends, standing in for {@link findFooter}.
+ *
+ * WebFetch's permission prompt has none. It ends on its last row, and the one
+ * key it names is written into that row — `3. No, and tell Claude what to do
+ * differently (esc)` — so a parser that insisted on a footer never saw it,
+ * and a turn that asked to fetch a page sat on the dialog, unrelayed, until
+ * the hard ceiling. What marks the end instead is the list itself: numbered
+ * rows with the cursor on one, under the seam, reaching the bottom of the
+ * screen. The glyph's other haunts don't fit that shape — echoed prompts sit
+ * above the seam, and the input box has a rule of its own beneath it.
+ *
+ * Numbered rows only, because that is how claude draws a list meant for
+ * picking from, and it keeps this to the shape that was measured. The index is
+ * just past the list, where a footer would be; there are no hints to go with it.
+ */
+function findListEnd(lines: string[], width: number): { index: number; hints: ModalKeyHint[] } | null {
+  const seam = lastRuleBefore(lines, lines.length);
+  if (seam < 0) return null;
+  const { options, list } = extractOptions(lines.slice(seam + 1), width);
+  if (!list || options.length < 2 || options.some((o) => o.number === undefined)) return null;
+  const index = seam + 1 + list.end + 1;
+  return lines.length - index <= MAX_FOOTER_CHROME ? { index, hints: [] } : null;
+}
+
+/**
  * Split the footer into its hints. Returns [] for a line that is prose rather
  * than chrome, which is what keeps a dialog we cannot drive from being offered
  * buttons that do nothing.
@@ -215,8 +242,10 @@ export function parseKeyHints(footer: string): ModalKeyHint[] {
 export function parseModal(screenText: string): TuiModal | null {
   const { lines, gaps } = bodyLines(screenText);
   if (lines.length === 0) return null;
+  // The terminal's width, near enough: the seam is drawn edge to edge.
+  const width = Math.max(...lines.map((l) => l.length));
 
-  const footer = findFooter(lines);
+  const footer = findFooter(lines) ?? findListEnd(lines, width);
   if (!footer) return null;
   const { hints, index: footerIndex } = footer;
 
@@ -248,8 +277,6 @@ export function parseModal(screenText: string): TuiModal | null {
   }
   if (body.length === 0) return null;
 
-  // The terminal's width, near enough: the seam is drawn edge to edge.
-  const width = Math.max(...lines.map((l) => l.length));
   const { options, highlighted, rows, list } = extractOptions(body, width);
   // A cursor we could not resolve into rows is the one state that must not
   // produce buttons. The footer's `Enter to confirm` would then be the only

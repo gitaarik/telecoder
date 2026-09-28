@@ -157,6 +157,17 @@ reasoning — the commit bodies are the long form, this is the index.
   buttons now, along with the other keys that change a dialog without
   answering it.
 
+- **Claude Code asking to fetch a page reaches the chat** — WebFetch's
+  permission prompt was never relayed. The dialog reader found a dialog by
+  its footer, the "Esc to cancel · …" line under the choices, and this prompt
+  has none: it ends on its last choice, with the one key it names written
+  into that choice ("No, and tell Claude what to do differently (esc)"). A
+  turn that wanted to fetch a page in a mode that asks first sat on the
+  dialog, with nobody asked, until the turn's hard ceiling. A numbered list
+  with the cursor on it, under the dialog's top rule and reaching the bottom
+  of the screen, now counts as the end of a dialog. It gets its choices as
+  buttons, and no key buttons, since it names none.
+
 - **The last message of a long reply lost its formatting** — when a reply was
   split across messages at a point inside a code block, the splitter closed
   the block at the end of one part and reopened it at the top of the next, but
