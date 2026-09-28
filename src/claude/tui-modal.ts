@@ -493,11 +493,19 @@ export function arrowsTo(modal: TuiModal, index: number): string[] | null {
   return Array.from({ length: Math.abs(distance) }, () => (distance > 0 ? '\x1b[B' : '\x1b[A'));
 }
 
-/** The byte a footer hint's key sends. Null for keys we cannot synthesise. */
+/**
+ * The byte a footer hint's key sends. Null for keys that don't answer the
+ * dialog, which are no use as a button.
+ *
+ * Tab is one of those, though claude's footers name it. A permission prompt's
+ * `Tab to amend` turns the highlighted row into a text field — `Yes, and tell
+ * Claude what to do next` — and waits for a note there, which a button cannot
+ * type. Pressing it only ever changed the dialog without closing it, and the
+ * turn then failed on a dialog that was still open.
+ */
 export function keystrokeFor(key: string): string | null {
   if (/^Enter/.test(key)) return '\r';
   if (key === 'Esc') return '\x1b';
-  if (key === 'Tab') return '\t';
   if (key === 'Space') return ' ';
   if (/^[a-z]$/.test(key)) return key;
   // ↑/↓, ←/→ and / are navigation or search affordances, not answers.

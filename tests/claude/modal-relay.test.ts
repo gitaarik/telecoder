@@ -148,14 +148,15 @@ describe('blockingModal', () => {
     expect(modal?.highlighted).toBe(0);
   });
 
-  it('offers every row plus the keys the footer names', () => {
+  it('offers every row plus the footer keys that answer it', () => {
+    // Not `Tab to amend`: that opens a text field on the highlighted row, so
+    // pressing it left the dialog up and failed the turn.
     expect(buildChoices(blockingModal(permissionPrompt)!).map((c) => c.label)).toEqual([
       '1. Yes',
       '2. Yes, and always allow access to /tmp/tc-perm-tI…',
       '3. Yes, and switch to auto mode · auto mode handle…',
       '4. No',
       'Esc — cancel',
-      'Tab — amend',
     ]);
   });
 

@@ -453,4 +453,10 @@ describe('keystrokeFor', () => {
     expect(keystrokeFor('←/→')).toBeNull();
     expect(keystrokeFor('/')).toBeNull();
   });
+
+  it('refuses Tab, which opens a text field instead of answering', () => {
+    // Measured on a live 2.1.284 permission prompt: after Tab the cursor row
+    // read "Yes, and tell Claude what to do next" and the dialog stayed open.
+    expect(keystrokeFor('Tab')).toBeNull();
+  });
 });

@@ -149,6 +149,14 @@ reasoning — the commit bodies are the long form, this is the index.
   the formatting. The answered edit also used to strip formatting from the
   bot's own permission prompts; it keeps it now too.
 
+- **A relayed permission prompt no longer offers "Tab — amend"** — the
+  button pressed Tab, which doesn't answer the prompt: it turns the
+  highlighted row into a text field ("Yes, and tell Claude what to do next")
+  for a note a button can't type. The dialog stayed open, so the turn failed
+  with "Claude Code hasn't returned to its input box". Tab is left out of the
+  buttons now, along with the other keys that change a dialog without
+  answering it.
+
 - **The last message of a long reply lost its formatting** — when a reply was
   split across messages at a point inside a code block, the splitter closed
   the block at the end of one part and reopened it at the top of the next, but
