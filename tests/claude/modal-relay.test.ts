@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Context } from 'grammy';
-import { blockingModal, buildChoices, relayModal, type ModalPty } from '../../src/claude/modal-relay.js';
+import type { MessageEntity } from 'grammy/types';
+import {
+  blockingModal, buildChoices, buildModalMessage, relayModal, type ModalPty,
+} from '../../src/claude/modal-relay.js';
 import { parseModal } from '../../src/claude/tui-modal.js';
 import { resolvePendingQuestion } from '../../src/claude/ask-user.js';
 
@@ -45,30 +48,34 @@ function fakePty(screens: string[]): ModalPty & { written: string[] } {
 
 /**
  * Captures what would be sent and edited. Messages are numbered from 1 in the
- * order they go out, which is what `edits` refers back to.
+ * order they go out, which is what `edits` refers back to. `refuseEntities`
+ * makes the fake Telegram 400 any send that carries formatting.
  */
-function fakeCtx(): {
+function fakeCtx({ refuseEntities = false } = {}): {
   ctx: Context;
-  sent: { text: string; keyboard?: string[][] }[];
-  edits: { messageId: number; text: string }[];
+  sent: { text: string; keyboard?: string[][]; entities?: MessageEntity[] }[];
+  edits: { messageId: number; text: string; entities?: MessageEntity[] }[];
 } {
-  const sent: { text: string; keyboard?: string[][] }[] = [];
-  const edits: { messageId: number; text: string }[] = [];
+  const sent: { text: string; keyboard?: string[][]; entities?: MessageEntity[] }[] = [];
+  const edits: { messageId: number; text: string; entities?: MessageEntity[] }[] = [];
   const ctx = {
     chat: { id: 42 },
     api: {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       sendMessage: vi.fn(async (chat: number, text: string, opts?: any) => {
+        if (refuseEntities && opts?.entities) throw new Error("Bad Request: can't parse entities");
         sent.push({
           text,
           keyboard: opts?.reply_markup?.inline_keyboard?.map(
             (row: { text: string; callback_data: string }[]) => row.map((b) => b.callback_data),
           ),
+          entities: opts?.entities,
         });
         return { message_id: sent.length, chat: { id: chat } };
       }),
-      editMessageText: vi.fn(async (_chat: number, messageId: number, text: string) => {
-        edits.push({ messageId, text });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      editMessageText: vi.fn(async (_chat: number, messageId: number, text: string, opts?: any) => {
+        edits.push({ messageId, text, entities: opts?.entities });
         return true;
       }),
       editMessageReplyMarkup: vi.fn(async () => true),
@@ -214,13 +221,14 @@ describe('buildChoices', () => {
 describe('relayModal', () => {
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('walks to the chosen row and commits once the cursor lands', async () => {
     const pty = fakePty([trustDialog, trustDialogOnSecond]);
     const { ctx, sent } = fakeCtx();
 
-    const pending = relayModal(pty, '42', ctx, '/home/rik/dev/plainpost');
+    const pending = relayModal(pty, '42', ctx, '/home/rik/dev/plainpost', 'before-prompt');
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     resolvePendingQuestion(questionId(sent), 1); // "Yes, I trust this folder"
 
@@ -232,7 +240,7 @@ describe('relayModal', () => {
     const pty = fakePty([trustDialog]);
     const { ctx, sent } = fakeCtx();
 
-    const pending = relayModal(pty, '42', ctx, '/tmp/x');
+    const pending = relayModal(pty, '42', ctx, '/tmp/x', 'before-prompt');
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     resolvePendingQuestion(questionId(sent), 2); // "Esc — cancel"
 
@@ -245,7 +253,7 @@ describe('relayModal', () => {
     const pty = fakePty([trustDialog]);
     const { ctx, sent } = fakeCtx();
 
-    const pending = relayModal(pty, '42', ctx, '/tmp/x');
+    const pending = relayModal(pty, '42', ctx, '/tmp/x', 'before-prompt');
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     resolvePendingQuestion(questionId(sent), 1); // ask for row 2
 
@@ -259,7 +267,7 @@ describe('relayModal', () => {
     const pty = fakePty([trustDialog]);
     const { ctx, sent } = fakeCtx();
 
-    const pending = relayModal(pty, '42', ctx, '/tmp/x');
+    const pending = relayModal(pty, '42', ctx, '/tmp/x', 'before-prompt');
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     resolvePendingQuestion(questionId(sent), 99); // out of range → resolves null
 
@@ -274,14 +282,18 @@ describe('relayModal', () => {
     const pty = fakePty([trustDialog]);
     const { ctx, sent, edits } = fakeCtx();
 
-    const pending = relayModal(pty, '42', ctx, '/tmp/x');
+    const pending = relayModal(pty, '42', ctx, '/tmp/x', 'before-prompt');
     await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
 
     expect(await pending).toEqual({ kind: 'timeout' });
     expect(pty.written).toEqual([]);
+    // With the entities it went out with — an edit without them would strip
+    // the dialog back to plain text just as it closes.
+    expect(sent[0].entities?.length).toBeGreaterThan(0);
     expect(edits).toEqual([{
       messageId: 1,
       text: `${sent[0].text}\n\n⏱️ No answer within 10 min, so I left the dialog alone.`,
+      entities: sent[0].entities,
     }]);
   });
 
@@ -289,7 +301,7 @@ describe('relayModal', () => {
     const pty = fakePty([trustDialog]);
     const { ctx, sent } = fakeCtx();
 
-    const pending = relayModal(pty, '42', ctx, '/tmp/x');
+    const pending = relayModal(pty, '42', ctx, '/tmp/x', 'before-prompt');
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     resolvePendingQuestion(questionId(sent), 3); // the trailing "Leave it alone"
 
@@ -301,7 +313,7 @@ describe('relayModal', () => {
     const pty = fakePty([inputBox]);
     const { ctx, sent } = fakeCtx();
 
-    expect((await relayModal(pty, '42', ctx, '/tmp/x')).kind).toBe('declined');
+    expect((await relayModal(pty, '42', ctx, '/tmp/x', 'before-prompt')).kind).toBe('declined');
     expect(pty.written).toEqual([]);
     expect(sent).toHaveLength(0);
   });
@@ -310,12 +322,130 @@ describe('relayModal', () => {
     const pty = fakePty([trustDialog]);
     const { ctx, sent } = fakeCtx();
 
-    const pending = relayModal(pty, '42', ctx, '/home/rik/dev/plainpost');
+    const pending = relayModal(pty, '42', ctx, '/home/rik/dev/plainpost', 'before-prompt');
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].text).toContain('Yes, I trust this folder');
     expect(sent[0].text).toContain('/home/rik/dev/plainpost');
 
     resolvePendingQuestion(questionId(sent), 3);
     await pending;
+  });
+
+  it('sends the dialog plain when Telegram refuses its formatting, buttons and all', async () => {
+    // Without the buttons there is no answering the dialog from the chat, so
+    // formatting is the thing to give up.
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const pty = fakePty([trustDialog]);
+    const { ctx, sent } = fakeCtx({ refuseEntities: true });
+
+    const pending = relayModal(pty, '42', ctx, '/tmp/x', 'before-prompt');
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].entities).toBeUndefined();
+    expect(sent[0].keyboard).toHaveLength(4);
+
+    resolvePendingQuestion(questionId(sent), 3);
+    await pending;
+  });
+});
+
+/**
+ * A Bash prompt off a live pty running claude 2.1.284, blank rows and all.
+ * The shape that used to reach the chat as a wall of gutters and cursor glyphs.
+ */
+const bashPrompt = [
+  SEP,
+  ' Bash command',
+  '',
+  "   │ cd /tmp/tc-probe && python3 - <<'EOF'",
+  '   │ import json',
+  "   │ r = json.load(open('record.json'))",
+  "   │ print({k: v for k, v in r.items() if k != 'skip'})",
+  '   │ EOF',
+  "   │ git log -1 --format='%h %s' -- record.json",
+  '   Count the entries in the probe record',
+  '',
+  ' Contains brace with quote character (expansion obfuscation)',
+  '',
+  ' Do you want to proceed?',
+  ' ❯ 1. Yes',
+  '   2. No',
+  '',
+  ' Esc to cancel · Tab to amend',
+].join('\n');
+
+/** Each entity as the text it covers, so an assertion reads like the message. */
+function styled(message: { text: string; entities: MessageEntity[] }): [string, string][] {
+  return message.entities.map((e) => [e.type, message.text.slice(e.offset, e.offset + e.length)]);
+}
+
+describe('buildModalMessage', () => {
+  it('lays a Bash prompt out for a phone', () => {
+    const message = buildModalMessage(parseModal(bashPrompt)!, '/tmp/tc-probe', 'mid-turn');
+    const command = [
+      "cd /tmp/tc-probe && python3 - <<'EOF'",
+      'import json',
+      "r = json.load(open('record.json'))",
+      "print({k: v for k, v in r.items() if k != 'skip'})",
+      'EOF',
+      "git log -1 --format='%h %s' -- record.json",
+    ].join('\n');
+
+    expect(message.text).toBe([
+      '⌨️ Claude Code needs an answer',
+      'Project: tc-probe',
+      '',
+      'Bash command',
+      '',
+      command,
+      'Count the entries in the probe record',
+      '',
+      'Contains brace with quote character (expansion obfuscation)',
+      '',
+      'Do you want to proceed?',
+      '1. Yes',
+      '2. No',
+      '',
+      "Tap your answer and I'll press it in Claude Code so it can carry on.",
+    ].join('\n'));
+    expect(styled(message)).toEqual([
+      ['bold', 'Claude Code needs an answer'],
+      ['bold', 'tc-probe'],
+      ['bold', 'Bash command'],
+      ['pre', command],
+      ['bold', 'Do you want to proceed?'],
+      ['italic', "Tap your answer and I'll press it in Claude Code so it can carry on."],
+    ]);
+  });
+
+  it('leaves no cursor glyph, gutter or diff fence in the chat', () => {
+    const edit = parseModal([
+      SEP, ' Edit file', ' notes.txt', '╌'.repeat(120), ' 1  hello', ' 2 -world', ' 2 +there', '╌'.repeat(120),
+      ' Do you want to make this edit to notes.txt?', ' ❯ 1. Yes', '   2. No', ' Esc to cancel · Tab to amend',
+    ].join('\n'))!;
+    for (const modal of [parseModal(bashPrompt)!, edit, parseModal(trustDialog)!, parseModal(permissionPrompt)!]) {
+      expect(buildModalMessage(modal, '/tmp/x', 'mid-turn').text).not.toMatch(/[❯│╌─]/);
+    }
+    expect(styled(buildModalMessage(edit, '/tmp/x', 'mid-turn'))).toContainEqual(['pre', '1  hello\n2 -world\n2 +there']);
+  });
+
+  it('writes out in full each row its button clips, keyed by the same number', () => {
+    const { text } = buildModalMessage(parseModal(permissionPrompt)!, '/tmp/x', 'mid-turn');
+    expect(text).toContain('2. Yes, and always allow access to /tmp/tc-perm-tIf6Th from this project');
+    // Unnumbered rows get a bullet instead, so they still read as choices.
+    expect(buildModalMessage(parseModal(trustDialog)!, '/tmp/x', 'mid-turn').text)
+      .toContain('• No, exit\n• Yes, I trust this folder');
+  });
+
+  it('says what the tap leads to: the message it is holding, or the turn carrying on', () => {
+    const modal = parseModal(trustDialog)!;
+    expect(buildModalMessage(modal, '/tmp/x', 'before-prompt').text).toMatch(/then send your message\.$/);
+    expect(buildModalMessage(modal, '/tmp/x', 'mid-turn').text).toMatch(/so it can carry on\.$/);
+  });
+
+  it('asks for no tap when the dialog offers nothing to press', () => {
+    const modal = parseModal([SEP, '  Background', '  No tasks currently running', '  ↑/↓ to select'].join('\n'))!;
+    const { text } = buildModalMessage(modal, '/tmp/x', 'before-prompt');
+    expect(text).toMatch(/needs someone at the terminal\.$/);
+    expect(text).not.toContain('Tap');
   });
 });

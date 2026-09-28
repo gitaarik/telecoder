@@ -133,6 +133,22 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **Claude Code's dialogs arrive laid out for a phone** — a dialog relayed to
+  the chat, most often a permission prompt (Claude Code raises some even in
+  auto mode, such as a heredoc whose braces and quotes trip its "expansion
+  obfuscation" check), came through as its raw terminal render. It was
+  hard-wrapped at 120 columns and then rewrapped by the phone, the command sat
+  in a `│` gutter, an edit's diff sat between two screen-wide rows of dashes,
+  and the rows repeated the buttons behind a `❯` cursor. Blank lines were
+  dropped, so title, command, reason and question ran together. Now the title
+  and the question are bold, the command or diff is in a code block, prose
+  Claude Code wrapped is rejoined, and each choice is written out once in full
+  under its button's number, since the button clips it. The last line says
+  what a tap does, and a dialog that opens mid-turn no longer promises to
+  "deliver your message". Answering the dialog, or letting it time out, keeps
+  the formatting. The answered edit also used to strip formatting from the
+  bot's own permission prompts; it keeps it now too.
+
 - **The last message of a long reply lost its formatting** — when a reply was
   split across messages at a point inside a code block, the splitter closed
   the block at the end of one part and reopened it at the top of the next, but

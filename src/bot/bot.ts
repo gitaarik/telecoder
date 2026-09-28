@@ -1,5 +1,6 @@
 import { startIpcServer } from '../claude/ipc-server.js';
 import { Bot, type Context } from 'grammy';
+import type { MessageEntity } from 'grammy/types';
 import { autoRetry } from '@grammyjs/auto-retry';
 import { sequentialize } from '@grammyjs/runner';
 import { HttpsProxyAgent } from 'https-proxy-agent';
@@ -167,7 +168,7 @@ async function handleAskUserCallback(ctx: Context): Promise<void> {
   await ctx.answerCallbackQuery();
 
   const message = ctx.callbackQuery?.message as
-    | { text?: string; message_id?: number }
+    | { text?: string; entities?: MessageEntity[]; message_id?: number }
     | undefined;
   const answerText = optionLabel ?? `option ${idx + 1}`;
 
@@ -176,11 +177,19 @@ async function handleAskUserCallback(ctx: Context): Promise<void> {
   //
   // Plain text: the label is model-supplied and may contain unbalanced
   // Markdown punctuation (underscores in URL params, stray asterisks, …)
-  // which would 400 the edit.
+  // which would 400 the edit. A question that went out with entities — a
+  // relayed dialog, a permission prompt — gets them back, or the edit strips
+  // it to plain text; the footer only appends, so their offsets still hold.
   try {
     const answered = appendAnsweredFooter(message?.text ?? '', answerText);
-    if (answered !== null) await ctx.editMessageText(answered);
-    else await ctx.editMessageReplyMarkup();
+    if (answered === null) await ctx.editMessageReplyMarkup();
+    else if (!message?.entities) await ctx.editMessageText(answered);
+    else {
+      // An entity Telegram balks at the second time round — a mention it no
+      // longer allows — shouldn't cost the footer as well.
+      await ctx.editMessageText(answered, { entities: message.entities })
+        .catch(() => ctx.editMessageText(answered));
+    }
   } catch {
     // Edit may fail if the message changed shape. Losing the footer is
     // cosmetic; leaving a live keyboard on a resolved question is not, so

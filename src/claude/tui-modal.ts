@@ -35,11 +35,35 @@
 export interface ModalOption {
   /** The number claude printed, when it numbered its rows at all. */
   number?: number;
-  /** The row's text, glyph and number stripped. */
+  /** The row's text, glyph and number stripped, clipped to fit a button. */
   label: string;
+  /** The row's text in full, for the message body — the button clips it. */
+  text: string;
+  /**
+   * What the dialog says about the row, when it says anything: the column
+   * `/model` prints beside it, or the sentence auto hangs underneath it.
+   */
+  detail?: string;
   /** Index into {@link TuiModal.options} — the arrow-key distance travels this. */
   index: number;
 }
+
+/**
+ * One stretch of a dialog's body, read for showing in a chat rather than for
+ * pressing. The screen's layout does not survive the trip on its own: a phone
+ * rewraps every line of it, and in a proportional font the indentation that
+ * tells a command from the prose around it means nothing.
+ */
+export type ModalPart =
+  /** Prose, with claude's wraps at the terminal edge undone — each line is a real break. */
+  | { kind: 'text'; lines: string[]; gapBefore: boolean }
+  /**
+   * Drawn content, exactly as drawn: the command in its `│` gutter, the diff
+   * between an edit's dashed fences. Rewrapping either would change what it says.
+   */
+  | { kind: 'verbatim'; lines: string[]; gapBefore: boolean }
+  /** Where the selectable rows sit. Their text is on {@link TuiModal.options}. */
+  | { kind: 'options'; gapBefore: boolean };
 
 /** One `<key> to <action>` affordance from the footer. */
 export interface ModalKeyHint {
@@ -60,10 +84,25 @@ export interface TuiModal {
   hints: ModalKeyHint[];
   /** The body as rendered, for relaying a dialog we could not fully parse. */
   body: string;
+  /** The body read into prose, drawn blocks and the option list, in screen order. */
+  parts: ModalPart[];
 }
 
 /** The seam rule between the transcript and a dialog's body. */
 const RULE = /^\s*─{10,}\s*$/u;
+/**
+ * The dashed rules an edit prompt draws above and below its diff. What sits
+ * between a pair is file content, and is shown exactly as drawn.
+ */
+const FENCE = /^\s*╌{10,}\s*$/u;
+/** A row in claude's quote gutter — how a Bash prompt draws its command. */
+const GUTTER = /^\s*│ ?(.*)$/u;
+/**
+ * How far short of the terminal's edge claude's prose wraps. Dialogs are
+ * padded, so a row breaks a column or two early: `/model`'s blurb broke at a
+ * row its next word would only have taken to column 119 of 120.
+ */
+const WRAP_SLACK = 4;
 /**
  * The cursor's row: indent, the glyph, a gap, then the label. The capture
  * groups give the column its label starts at, which is what finds the rows
@@ -102,12 +141,35 @@ const MAX_FOOTER_CHROME = 3;
  */
 const MAX_LABEL = 48;
 
-function bodyLines(screenText: string): string[] {
-  return screenText.split('\n').map((l) => l.trimEnd()).filter((l) => l.trim()).slice(-MAX_BODY_ROWS);
+/**
+ * The screen's non-blank rows, the bottom {@link MAX_BODY_ROWS} of them, and
+ * for each whether a blank row sat above it. The parse reads only the rows;
+ * the gaps are for showing the result, since they are how claude splits a
+ * dialog into its title, command, reason and question.
+ */
+function bodyLines(screenText: string): { lines: string[]; gaps: boolean[] } {
+  const lines: string[] = [];
+  const gaps: boolean[] = [];
+  let gap = false;
+  for (const raw of screenText.split('\n')) {
+    const line = raw.trimEnd();
+    if (!line.trim()) {
+      gap = true;
+      continue;
+    }
+    lines.push(line);
+    gaps.push(gap);
+    gap = false;
+  }
+  return { lines: lines.slice(-MAX_BODY_ROWS), gaps: gaps.slice(-MAX_BODY_ROWS) };
+}
+
+function collapse(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
 }
 
 function clip(text: string, max: number): string {
-  const collapsed = text.replace(/\s+/g, ' ').trim();
+  const collapsed = collapse(text);
   // trimEnd after slicing: a cut that lands on a space would otherwise render
   // the gap before the ellipsis, which reads as a missing word.
   return collapsed.length > max ? `${collapsed.slice(0, max - 1).trimEnd()}…` : collapsed;
@@ -151,7 +213,7 @@ export function parseKeyHints(footer: string): ModalKeyHint[] {
  * verbatim rather than press anything.
  */
 export function parseModal(screenText: string): TuiModal | null {
-  const lines = bodyLines(screenText);
+  const { lines, gaps } = bodyLines(screenText);
   if (lines.length === 0) return null;
 
   const footer = findFooter(lines);
@@ -186,7 +248,9 @@ export function parseModal(screenText: string): TuiModal | null {
   }
   if (body.length === 0) return null;
 
-  const { options, highlighted, rows } = extractOptions(body);
+  // The terminal's width, near enough: the seam is drawn edge to edge.
+  const width = Math.max(...lines.map((l) => l.length));
+  const { options, highlighted, rows, list } = extractOptions(body, width);
   // A cursor we could not resolve into rows is the one state that must not
   // produce buttons. The footer's `Enter to confirm` would then be the only
   // thing on offer, and Enter commits whatever the cursor is on — which is
@@ -204,6 +268,7 @@ export function parseModal(screenText: string): TuiModal | null {
     highlighted,
     hints,
     body: body.join('\n'),
+    parts: readParts(body, gaps.slice(seam + 1, footerIndex), list, width),
   };
 }
 
@@ -247,8 +312,9 @@ function rowRole(line: string, col: number): 'row' | 'skip' | 'end' {
  */
 function extractOptions(
   body: string[],
-): { options: ModalOption[]; highlighted: number; rows: Set<number> } {
-  const none = { options: [], highlighted: -1, rows: new Set<number>() };
+  width: number,
+): { options: ModalOption[]; highlighted: number; rows: Set<number>; list: BodySpan | null } {
+  const none = { options: [], highlighted: -1, rows: new Set<number>(), list: null };
 
   const cursor = body.findIndex((l) => CURSOR_ROW.test(l));
   if (cursor < 0) return none;
@@ -266,25 +332,146 @@ function extractOptions(
   // or a rule sits between them.
   const highlighted = indexes.length;
   indexes.push(cursor);
-  for (let i = cursor + 1; i < body.length; i++) {
-    const role = rowRole(body[i], labelCol);
+  // Where this walk stops is where the list ends: what hangs under its last
+  // row still belongs to that row.
+  let stop = cursor + 1;
+  for (; stop < body.length; stop++) {
+    const role = rowRole(body[stop], labelCol);
     if (role === 'end') break;
-    if (role === 'row') indexes.push(i);
+    if (role === 'row') indexes.push(stop);
   }
 
   const options: ModalOption[] = [];
   const rows = new Set<number>();
-  for (const i of indexes) {
+  indexes.forEach((i, k) => {
     rows.add(i);
     const text = i === cursor ? match[3] : body[i].slice(labelCol);
     const numbered = ROW_NUMBER.exec(text);
+    const own = numbered ? numbered[2] : text;
+    const under = body.slice(i + 1, indexes[k + 1] ?? stop).filter((l) => !RULE.test(l));
     options.push({
       ...(numbered ? { number: Number(numbered[1]) } : {}),
-      label: clip(numbered ? numbered[2] : text, MAX_LABEL),
+      label: clip(own, MAX_LABEL),
+      ...readRow(body[i], own, under, width),
       index: options.length,
     });
+  });
+  return { options, highlighted, rows, list: { start: indexes[0], end: stop - 1 } };
+}
+
+/** A run of body rows, first and last inclusive. */
+interface BodySpan {
+  start: number;
+  end: number;
+}
+
+/**
+ * A row's full text, and what the dialog says about it.
+ *
+ * `under` is whatever hangs beneath the row before the next one: the rest of
+ * a label claude wrapped at the edge, then any description — auto writes a
+ * sentence under each choice. `/model` puts its description beside the row
+ * instead, a wide gap away, which is what splitting on a run of spaces finds.
+ */
+function readRow(
+  row: string, own: string, under: string[], width: number,
+): { text: string; detail?: string } {
+  let text = own;
+  let last = row;
+  let n = 0;
+  while (n < under.length && wrapsOnto(last, under[n], width)) {
+    text += ` ${under[n].trim()}`;
+    last = under[n++];
   }
-  return { options, highlighted, rows };
+  const [label, ...beside] = text.trim().split(/\s{2,}/);
+  const detail = collapse([...beside, ...under.slice(n)].join(' '));
+  return { text: collapse(label), ...(detail ? { detail } : {}) };
+}
+
+/**
+ * Read the body into what a chat can show, in the order claude drew it.
+ *
+ * Blank rows split it into parts, as they split the dialog on screen, and so
+ * does any change between prose and drawn content — a Bash prompt's command
+ * sits straight under its title, with nothing but its gutter to set it off.
+ */
+function readParts(body: string[], gaps: boolean[], list: BodySpan | null, width: number): ModalPart[] {
+  const parts: ModalPart[] = [];
+  let open: { kind: 'text' | 'verbatim'; lines: string[]; gapBefore: boolean } | null = null;
+  let fenced = false;
+
+  for (let i = 0; i < body.length; i++) {
+    const line = body[i];
+    if (list && i >= list.start && i <= list.end) {
+      if (i === list.start) parts.push({ kind: 'options', gapBefore: gaps[i] });
+      open = null;
+      continue;
+    }
+    if (FENCE.test(line)) {
+      fenced = !fenced;
+      open = null;
+      continue;
+    }
+    if (RULE.test(line)) {
+      open = null;
+      continue;
+    }
+
+    const gutter = fenced ? null : GUTTER.exec(line);
+    const kind = fenced || gutter ? 'verbatim' : 'text';
+    if (open?.kind === 'verbatim' && kind === 'verbatim' && gaps[i]) {
+      // A blank row inside drawn content is part of the content.
+      open.lines.push('');
+    } else if (!open || open.kind !== kind || gaps[i]) {
+      open = { kind, lines: [], gapBefore: gaps[i] };
+      parts.push(open);
+    }
+    open.lines.push(gutter ? gutter[1] : line);
+  }
+
+  // The dialog's own prose sits at one indent; what it quotes — a one-line
+  // command, a URL — is indented under it. Only the prose gets rejoined: a
+  // command whose last row ends near the edge would otherwise swallow the
+  // description under it, and show the user a command they aren't approving.
+  const base = Math.min(...parts.flatMap((p) => (p.kind === 'text' ? p.lines.map(indentOf) : [])));
+
+  return parts.map((part) => {
+    if (part.kind === 'text') return { ...part, lines: unwrap(part.lines, width, base) };
+    if (part.kind === 'verbatim') return { ...part, lines: dedent(part.lines) };
+    return part;
+  });
+}
+
+/**
+ * Undo claude's wraps at the terminal edge. It breaks prose where the width
+ * runs out, and a phone then wraps both halves again, stranding the odd word
+ * on a line of its own. A row carries on into the next exactly when the next
+ * one's first word would not have fitted on it.
+ */
+function unwrap(lines: string[], width: number, indent: number): string[] {
+  const out: string[] = [];
+  lines.forEach((line, i) => {
+    const prose = i > 0 && indentOf(lines[i - 1]) === indent && indentOf(line) === indent;
+    if (prose && wrapsOnto(lines[i - 1], line, width)) out[out.length - 1] += ` ${line.trim()}`;
+    else out.push(line.trim());
+  });
+  return out;
+}
+
+function indentOf(line: string): number {
+  return line.search(/\S/);
+}
+
+/** True when claude broke `row` at the edge and `next` is the rest of it. */
+function wrapsOnto(row: string, next: string, width: number): boolean {
+  const word = next.trim().split(/\s/, 1)[0];
+  return row.length + 1 + word.length > width - WRAP_SLACK;
+}
+
+/** Strip the indentation every line shares — the dialog's, not the content's. */
+function dedent(lines: string[]): string[] {
+  const depth = Math.min(...lines.filter((l) => l.trim()).map(indentOf));
+  return Number.isFinite(depth) ? lines.map((l) => l.slice(depth)) : lines;
 }
 
 /**

@@ -49,7 +49,7 @@ import {
   tailLines,
 } from './tui-state.js';
 import { stageImagesForPty } from './stage-images.js';
-import { blockingModal, relayModal, waitForDialogToClear, type ModalPty } from './modal-relay.js';
+import { blockingModal, relayModal, waitForDialogToClear, type ModalPty, type RelayStage } from './modal-relay.js';
 import { questionTimeoutMs } from './ask-user.js';
 import {
   ensurePermissionMode,
@@ -1401,7 +1401,7 @@ export class PtyProvider implements Provider {
         relayed = true;
         // Throws unless a key was actually pressed, in which case we go round
         // and wait for the input box the dialog was covering.
-        await this._relayModal(session, sessionKey, options);
+        await this._relayModal(session, sessionKey, options, 'before-prompt');
         continue;
       }
       if (verdict === 'modal') {
@@ -1501,7 +1501,7 @@ export class PtyProvider implements Provider {
     if (!relay) return;
 
     session.relayingModal = true;
-    void this._relayModal(session, relay.sessionKey, relay.options)
+    void this._relayModal(session, relay.sessionKey, relay.options, 'mid-turn')
       .catch((error: unknown) => {
         this._failTurn(session, error instanceof Error ? error : new Error(String(error)));
       })
@@ -1519,7 +1519,7 @@ export class PtyProvider implements Provider {
   }
 
   private async _relayModal(
-    session: PtySession, sessionKey: string, options: AgentOptions | undefined,
+    session: PtySession, sessionKey: string, options: AgentOptions | undefined, stage: RelayStage,
   ): Promise<void> {
     const modal = parseModal(this._getScreenText(session));
     const ctx = (options as { telegramCtx?: Context } | undefined)?.telegramCtx;
@@ -1536,7 +1536,7 @@ export class PtyProvider implements Provider {
       write: (data) => session.term.write(data),
       screen: () => this._getScreenText(session),
     };
-    const outcome = await relayModal(pty, sessionKey, ctx, session.cwd);
+    const outcome = await relayModal(pty, sessionKey, ctx, session.cwd, stage);
     console.warn(`[PtyProvider] ${sessionKey}: claude opened a dialog — relay ${outcome.kind}`);
 
     switch (outcome.kind) {

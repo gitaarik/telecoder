@@ -22,12 +22,15 @@
  *     setting that changed, and only the second is unrecoverable.
  */
 
+import * as path from 'path';
 import type { Context } from 'grammy';
-import type { Message } from 'grammy/types';
+import type { Message, MessageEntity } from 'grammy/types';
 import { closeExpiredQuestion, createPendingQuestion, questionTimeoutMinutes } from './ask-user.js';
 import { arrowsTo, keystrokeFor, parseModal, type TuiModal } from './tui-modal.js';
 import { hasInputBox } from './tui-state.js';
+import { EntityText, type EntityMessage } from '../telegram/entities.js';
 import { parseSessionKey } from '../utils/session-key.js';
+import { sanitizeError } from '../utils/sanitize.js';
 
 /** Settle time after writing a key, before re-reading the screen. */
 const KEY_SETTLE_MS = 400;
@@ -78,17 +81,69 @@ export function buildChoices(modal: TuiModal): { label: string; send: 'option' |
   return choices.slice(0, MAX_BUTTONS - 1);
 }
 
-/** The message body: what claude is asking, verbatim, above the buttons. */
-export function buildModalMessage(modal: TuiModal, cwd: string): string {
-  return [
-    '⌨️ Claude Code is asking something and can\'t be answered from here.',
-    '',
-    `Project: ${cwd}`,
-    '',
-    modal.body,
-    '',
-    'Tap an option and I\'ll press it in the terminal, then deliver your message.',
-  ].join('\n');
+/**
+ * What is waiting on the dialog: the message the user just sent, which can't
+ * be typed in while it's open, or a turn that ran into it partway through.
+ */
+export type RelayStage = 'before-prompt' | 'mid-turn';
+
+/**
+ * The message above the buttons: claude's dialog, laid out for a phone.
+ *
+ * The screen does not travel well as it is. Claude hard-wraps it at 120
+ * columns, which a phone then wraps again; the indentation and the gutter that
+ * set a command apart mean nothing in a proportional font; and the rows repeat
+ * the buttons with a cursor glyph nobody can move. So the body goes out as the
+ * parts {@link parseModal} read it into — title and question in bold, drawn
+ * content in a monospace block, each row once in full, since its button is
+ * clipped.
+ *
+ * Entities rather than a parse mode: the body is claude's own render, and the
+ * underscores and asterisks of whatever command it is asking about would be
+ * read as Markdown and 400 the send.
+ */
+export function buildModalMessage(modal: TuiModal, cwd: string, stage: RelayStage): EntityMessage {
+  const b = new EntityText();
+  b.add('⌨️ ').bold('Claude Code needs an answer').newline();
+  b.add('Project: ').bold(path.basename(cwd) || cwd).newline(2);
+  appendDialog(b, modal);
+  return b.newline(2).italic(closingLine(modal, stage)).build();
+}
+
+function appendDialog(b: EntityText, modal: TuiModal): void {
+  const { parts } = modal;
+  // The line the rows answer — "Do you want to proceed?" — sits right above them.
+  const question = parts.findIndex((p) => p.kind === 'options') - 1;
+
+  parts.forEach((part, i) => {
+    if (i > 0) b.newline(part.gapBefore ? 2 : 1);
+    if (part.kind === 'verbatim') {
+      b.pre(part.lines.join('\n'));
+    } else if (part.kind === 'options') {
+      modal.options.forEach((o, n) => {
+        const key = o.number === undefined ? '•' : `${o.number}.`;
+        b.newline(n > 0 ? 1 : 0).add(`${key} ${o.text}${o.detail ? ` — ${o.detail}` : ''}`);
+      });
+    } else {
+      part.lines.forEach((line, n) => {
+        const heading = (i === 0 && n === 0)
+          || (i === question && n === part.lines.length - 1 && line.endsWith('?'));
+        b.newline(n > 0 ? 1 : 0);
+        if (heading) b.bold(line);
+        else b.add(line);
+      });
+    }
+  });
+}
+
+/** What a tap does, and what happens once it has. */
+function closingLine(modal: TuiModal, stage: RelayStage): string {
+  if (buildChoices(modal).length === 0) {
+    return 'It offers no key I can press from here, so it needs someone at the terminal.';
+  }
+  return stage === 'before-prompt'
+    ? "Tap your answer and I'll press it in Claude Code, then send your message."
+    : "Tap your answer and I'll press it in Claude Code so it can carry on.";
 }
 
 /**
@@ -104,28 +159,30 @@ export async function relayModal(
   sessionKey: string,
   ctx: Context,
   cwd: string,
+  stage: RelayStage,
 ): Promise<ModalOutcome> {
   const modal = parseModal(pty.screen());
   if (!modal) return { kind: 'declined', why: 'the screen could not be read as a dialog' };
 
   const choices = buildChoices(modal);
   const labels = [...choices.map((c) => c.label), '✋ Leave it alone'];
-  const text = buildModalMessage(modal, cwd);
+  const message = buildModalMessage(modal, cwd, stage);
   if (choices.length === 0) {
-    await send(ctx, sessionKey, text, undefined);
+    await send(ctx, sessionKey, message, undefined);
     return { kind: 'declined', why: 'the dialog offers no keys this bot can press' };
   }
 
   // Waits QUESTION_TIMEOUT_MINUTES, like any other question the turn asks.
   const { id, promise } = createPendingQuestion(labels, undefined, sessionKey);
   const keyboard = labels.map((label, idx) => [{ text: label, callback_data: `q:${id}:${idx}` }]);
-  const sent = await send(ctx, sessionKey, text, keyboard);
+  const { sent, entities } = await send(ctx, sessionKey, message, keyboard);
 
   const answer = await promise;
   if (!answer) {
     await closeExpiredQuestion(
-      ctx.api, sent, text,
+      ctx.api, sent, message.text,
       `No answer within ${questionTimeoutMinutes()} min, so I left the dialog alone.`,
+      entities,
     );
     return { kind: 'timeout' };
   }
@@ -202,18 +259,30 @@ function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/**
+ * Send the dialog, and say which entities it went out with — closing it later
+ * has to repeat them, or the edit strips the formatting.
+ */
 async function send(
   ctx: Context,
   sessionKey: string,
-  text: string,
+  message: EntityMessage,
   keyboard: { text: string; callback_data: string }[][] | undefined,
-): Promise<Message.TextMessage> {
+): Promise<{ sent: Message.TextMessage; entities?: MessageEntity[] }> {
   const { chatId, threadId } = parseSessionKey(sessionKey);
-  // Plain text, no parse mode: the body is claude's own render and carries
-  // box-drawing characters, underscores and asterisks that would 400 an edit
-  // if Telegram tried to read them as formatting.
-  return ctx.api.sendMessage(chatId, text, {
+  const extra = {
     ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
     ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
-  });
+  };
+  try {
+    const sent = await ctx.api.sendMessage(chatId, message.text, { ...extra, entities: message.entities });
+    return { sent, entities: message.entities };
+  } catch (err) {
+    // Nothing in the text is parsed, so if Telegram refused it, an entity is
+    // what it refused — and that shouldn't cost the dialog its buttons, the
+    // only way to answer it from the chat. Anything else, like a network
+    // failure, fails the plain send too and surfaces as it always did.
+    console.warn('[ModalRelay] formatted dialog refused, sending it plain:', sanitizeError(err));
+    return { sent: await ctx.api.sendMessage(chatId, message.text, extra) };
+  }
 }

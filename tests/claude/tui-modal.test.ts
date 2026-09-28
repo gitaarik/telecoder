@@ -96,6 +96,53 @@ const inputBox = [
   '  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents                        ● high · /effort',
 ].join('\n');
 
+/**
+ * A Bash prompt, copied off a live pty running claude 2.1.284 — blank rows
+ * and all, since they are what split it into title, command, reason and
+ * question. A multi-line command is drawn in a `│` gutter; the reason is
+ * claude's own safety check, which asks in every mode, auto included. This is
+ * the shape that reached the chat as a wall of gutters and cursor glyphs.
+ */
+const bashPrompt = [
+  SEP,
+  ' Bash command',
+  '',
+  "   │ cd /tmp/tc-probe && python3 - <<'EOF'",
+  '   │ import json',
+  "   │ r = json.load(open('record.json'))",
+  "   │ print({k: v for k, v in r.items() if k != 'skip'})",
+  '   │ EOF',
+  "   │ git log -1 --format='%h %s' -- record.json",
+  '   Count the entries in the probe record',
+  '',
+  ' Contains brace with quote character (expansion obfuscation)',
+  '',
+  ' Do you want to proceed?',
+  ' ❯ 1. Yes',
+  '   2. No',
+  '',
+  ' Esc to cancel · Tab to amend',
+].join('\n');
+
+/** An edit prompt off the same pty. Its diff sits between dashed fences as wide as the screen. */
+const DIFF_FENCE = '╌'.repeat(120);
+const editPrompt = [
+  SEP,
+  ' Edit file',
+  ' notes.txt',
+  DIFF_FENCE,
+  ' 1  hello',
+  ' 2 -world',
+  ' 2 +there',
+  DIFF_FENCE,
+  ' Do you want to make this edit to notes.txt?',
+  ' ❯ 1. Yes',
+  '   2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)',
+  '   3. No',
+  '',
+  ' Esc to cancel · Tab to amend',
+].join('\n');
+
 describe('parseModal', () => {
   it('reads title, options and cursor off a select dialog', () => {
     const modal = parseModal(modelDialog);
@@ -188,6 +235,118 @@ describe('parseModal', () => {
 
   it('keeps the body verbatim so an unparsed dialog can still be shown', () => {
     expect(parseModal(trustDialog)?.body).toContain('/home/rik/dev/plainpost');
+  });
+});
+
+describe('parseModal parts', () => {
+  it('splits a Bash prompt where claude leaves its blank rows', () => {
+    expect(parseModal(bashPrompt)?.parts).toEqual([
+      { kind: 'text', lines: ['Bash command'], gapBefore: false },
+      {
+        kind: 'verbatim',
+        lines: [
+          "cd /tmp/tc-probe && python3 - <<'EOF'",
+          'import json',
+          "r = json.load(open('record.json'))",
+          "print({k: v for k, v in r.items() if k != 'skip'})",
+          'EOF',
+          "git log -1 --format='%h %s' -- record.json",
+        ],
+        gapBefore: true,
+      },
+      { kind: 'text', lines: ['Count the entries in the probe record'], gapBefore: false },
+      { kind: 'text', lines: ['Contains brace with quote character (expansion obfuscation)'], gapBefore: true },
+      { kind: 'text', lines: ['Do you want to proceed?'], gapBefore: true },
+      { kind: 'options', gapBefore: false },
+    ]);
+  });
+
+  it('keeps a diff exactly as drawn, and leaves its fences behind', () => {
+    const parts = parseModal(editPrompt)!.parts;
+    expect(parts.map((p) => p.kind)).toEqual(['text', 'verbatim', 'text', 'options']);
+    expect(parts[1]).toEqual({ kind: 'verbatim', lines: ['1  hello', '2 -world', '2 +there'], gapBefore: false });
+    expect(JSON.stringify(parts)).not.toContain('╌');
+  });
+
+  it('rejoins a sentence claude broke at the edge, and keeps its real line breaks', () => {
+    expect(parseModal(trustDialog)?.parts[0]).toEqual({
+      kind: 'text',
+      gapBefore: false,
+      lines: [
+        'Accessing workspace:',
+        '/home/rik/dev/plainpost',
+        'Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open '
+          + "source project, or work from your team). If not, take a moment to review what's in this folder first.",
+        "Claude Code'll be able to read, edit, and execute files here.",
+        'Security guide',
+      ],
+    });
+  });
+
+  it('never rejoins what claude quotes, however near the edge it ends', () => {
+    // A one-line command is indented under the title rather than drawn in a
+    // gutter. This one ends close enough to the edge that its description's
+    // first word would not have fitted after it — joined as prose, the chat
+    // would show a command ending in "Search docs for the needle".
+    const command = 'cd /srv/app && grep -rn "needle" docs/ planning/ tracking/ STATUS.md 2>/dev/null | grep -v archive | head -15';
+    const quoted = (indent: string) => parseModal([
+      SEP, ' Bash command', '', `${indent}${command}`, `${indent}Search docs for the needle`, '',
+      ' Do you want to proceed?', ' ❯ 1. Yes', '   2. No', '', ' Esc to cancel · Tab to amend',
+    ].join('\n'))!.parts[1];
+
+    expect(quoted('   ')).toEqual({ kind: 'text', lines: [command, 'Search docs for the needle'], gapBefore: true });
+    // The same two rows at the dialog's own indent read as one wrapped
+    // sentence — which is what proves the command really ends near the edge.
+    expect(quoted(' ')).toEqual({ kind: 'text', lines: [`${command} Search docs for the needle`], gapBefore: true });
+  });
+
+  it('gives each row its full text, and /model\'s side column as its detail', () => {
+    const modal = parseModal(modelDialog)!;
+    expect(modal.options[0]).toMatchObject({
+      text: 'Default (recommended) ✔',
+      detail: 'Opus 5 with 1M context · Best for everyday, complex tasks',
+    });
+    expect(modal.options[4]).toMatchObject({ text: 'Haiku', detail: 'Haiku 4.5 · Fastest for quick answers' });
+    // The blurb above the rows was wrapped too, and the status line below
+    // them is prose again, not a row.
+    expect(modal.parts.map((p) => p.kind)).toEqual(['text', 'options', 'text']);
+  });
+
+  it('keeps the whole of a row the button has to clip', () => {
+    const option = parseModal(editPrompt)!.options[1];
+    expect(option.label).toMatch(/…$/);
+    expect(option.text).toBe(
+      'Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)',
+    );
+  });
+
+  it('hangs the sentence under each of auto\'s choices on that choice', () => {
+    const modal = parseModal(autoDialog)!;
+    expect(modal.options.map((o) => [o.text, o.detail])).toEqual([
+      ['Back up, then delete', 'Copy keep.txt to the session scratchpad first, then run rm -rf keep.txt. Recoverable for this session.'],
+      ['Delete it', 'Run rm -rf keep.txt as-is. The file and its contents are gone permanently.'],
+      ['Cancel', 'Leave keep.txt untouched.'],
+      ['Type something.', undefined],
+      ['Chat about this', undefined],
+    ]);
+    // The rule inside the list is part of the list, not a break in the body.
+    expect(modal.parts.map((p) => p.kind)).toEqual(['text', 'verbatim', 'options']);
+  });
+
+  it('reads a row claude wrapped at the edge as one label, not a label and a detail', () => {
+    const modal = parseModal([
+      SEP,
+      ' Do you want to make this edit to notes.txt?',
+      ' ❯ 1. Yes',
+      '   2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for the rest of this session',
+      '      (shift+tab)',
+      '   3. No',
+      ' Esc to cancel · Tab to amend',
+    ].join('\n'))!;
+    expect(modal.options[1]).toMatchObject({
+      text: 'Yes, and switch to accept edits (auto-approve file edits and common file commands) for the rest of this session (shift+tab)',
+    });
+    expect(modal.options[1].detail).toBeUndefined();
   });
 });
 
