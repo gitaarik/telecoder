@@ -92,6 +92,14 @@ class SessionHistory {
     const loaded = readJsonFile(this.historyFile, sessionHistoryDataSchema, 'SessionHistory');
     // Keep string keys as-is (supports both "12345" and "12345:42" formats)
     this.data = { sessions: { ...(loaded?.sessions ?? {}) } };
+    // Files written before history was kept most-recently-used first are in
+    // creation order, where a conversation you went back to sits below newer
+    // ones. `lastActivity` is only ever moved by using a conversation, so
+    // sorting on it puts one of those files back in the order it would have
+    // had. For a file already in that order this is a no-op.
+    for (const history of Object.values(this.data.sessions)) {
+      history.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
+    }
   }
 
   private save(): void {
@@ -135,13 +143,15 @@ class SessionHistory {
       lastActivity: new Date().toISOString(),
     };
 
-    if (existingIndex >= 0) {
-      // Update existing entry
-      history[existingIndex] = entry;
-    } else {
-      // Add new entry at the beginning
-      history.unshift(entry);
-    }
+    // The entry saved is always the conversation the chat is now in — a new
+    // one, or one it went back to — so it goes to the front. Everything that
+    // wants "the current conversation" reads index 0: the topic, the startup
+    // prompt, and the restore after a restart. Left where it was, a
+    // conversation you went back to wrote its topic onto the newest one and
+    // lost the restore to it. The cap below then drops whichever was used
+    // longest ago, rather than whichever was started first.
+    if (existingIndex >= 0) history.splice(existingIndex, 1);
+    history.unshift(entry);
 
     // Keep only recent history
     if (history.length > MAX_HISTORY_PER_CHAT) {
