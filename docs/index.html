@@ -1802,6 +1802,7 @@
   <symbol id="i-back" viewBox="0 0 24 24"><path d="M4 9.5h11a5.5 5.5 0 0 1 0 11H9"/><path d="M7.6 5.9 4 9.5l3.6 3.6"/></symbol>
   <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M3.5 8.2A2.5 2.5 0 0 1 6 5.7h8.4"/><path d="M3.5 8.2v9.1a2.5 2.5 0 0 0 2.5 2.5h12a2.5 2.5 0 0 0 2.5-2.5v-6.2"/><path d="m3.7 8 8.3 5.6 3.6-2.4"/><circle cx="19" cy="6" r="2.6"/></symbol>
   <symbol id="i-fork" viewBox="0 0 24 24"><circle cx="6" cy="5.5" r="2.4"/><circle cx="18" cy="5.5" r="2.4"/><circle cx="6" cy="18.5" r="2.4"/><path d="M6 7.9v8.2"/><path d="M18 7.9v1.6c0 3-3 3.5-6 4.2"/></symbol>
+  <symbol id="i-tree" viewBox="0 0 24 24"><circle cx="12" cy="19.5" r="2.2"/><circle cx="5" cy="5" r="2.2"/><circle cx="12" cy="4.5" r="2.2"/><circle cx="19" cy="5" r="2.2"/><path d="M12 17.3V6.7"/><path d="M12 13c-4.2 0-7-1.6-7-5.8"/><path d="M12 13c4.2 0 7-1.6 7-5.8"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 6.8V12l3.4 2.1"/></symbol>
   <symbol id="i-relay" viewBox="0 0 24 24"><path d="M12 10.5v10"/><path d="M8.6 20.5h6.8"/><circle cx="12" cy="8" r="1.9"/><path d="M7.9 4.2a5.9 5.9 0 0 0 0 7.6"/><path d="M16.1 4.2a5.9 5.9 0 0 1 0 7.6"/></symbol>
   <symbol id="i-sendfile" viewBox="0 0 24 24"><path d="M5 4.5a2 2 0 0 1 2-2h6.7L18.5 7v12.5a2 2 0 0 1-2 2h-4.5"/><path d="M13.7 2.6V7h4.8"/><path d="M6.5 21v-8.5"/><path d="M3.6 15.4 6.5 12.5l2.9 2.9"/></symbol>
@@ -2192,8 +2193,18 @@
             <div class="feature-icon"><svg><use href="#i-fork"/></svg></div>
             <h3>Fork a conversation</h3>
             <p>Every reply carries a 🍴 Fork button that branches from that point — into a fresh
-            conversation, or handed to a sibling bot. A banner marks where the fork starts, with a
-            button of its own to fork that point again. The original is kept either way.</p>
+            conversation, or handed to a sibling bot. A banner marks where the fork starts, with
+            buttons to fork that point again or open the tree of branches. The original is kept
+            either way.</p>
+          </div>
+          <div class="feature-card" data-category="sessions">
+            <div class="feature-icon"><svg><use href="#i-tree"/></svg></div>
+            <h3>Find your way back through forks</h3>
+            <p><code>/tree</code> draws every branch of a forked conversation in one message
+            &mdash; where each split off, and which one you're on &mdash; keyed A/B/C. Tap a letter
+            to carry on that branch or start a new one from that point, including branches long
+            gone from <code>/resume</code> or handed to another bot. It's read off the transcripts
+            themselves, so forks made before it existed are in it too.</p>
           </div>
           <div class="feature-card" data-category="sessions">
             <div class="feature-icon"><svg><use href="#i-sidechat"/></svg></div>
@@ -2806,6 +2817,10 @@ CCR_AUTOSTART=true</pre>
             <div class="command-row">
               <code class="command-code">/fork</code>
               <span class="command-desc">Fork the current conversation — into a new branch on this same bot, or hand it off to a sibling bot (alternative to tapping the 🍴 Fork button on a past assistant message)</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/tree</code>
+              <span class="command-desc">Draw the current conversation's fork tree in one message — every branch, where it split off, and which one you're on. Tap a point's letter to carry on that branch or start a new one from there. Also on the 🌳 button of every branch banner</span>
             </div>
             <div class="command-row">
               <code class="command-code">/accept</code>

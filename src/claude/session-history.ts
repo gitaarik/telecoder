@@ -310,6 +310,68 @@ class SessionHistory {
     delete this.data.sessions[sessionKey];
     this.save();
   }
+
+  /** Every chat of this bot whose history holds the Claude session `claudeSessionId`. */
+  findByClaudeSessionId(claudeSessionId: string): Array<{ sessionKey: string; entry: SessionHistoryEntry }> {
+    const found: Array<{ sessionKey: string; entry: SessionHistoryEntry }> = [];
+    for (const [sessionKey, history] of Object.entries(this.data.sessions)) {
+      for (const entry of history) {
+        if (entry.claudeSessionId === claudeSessionId) found.push({ sessionKey, entry });
+      }
+    }
+    return found;
+  }
 }
 
 export const sessionHistory = new SessionHistory();
+
+/** A chat whose history holds a conversation — in this bot, or in a sibling. */
+export interface HistoryOwner {
+  botId: string;
+  sessionKey: string;
+  entry: SessionHistoryEntry;
+}
+
+/**
+ * Every chat history on this machine holding one of `claudeSessionIds`, keyed
+ * by session id: this bot's, from memory, and each sibling's, from the file it
+ * keeps next to ours. A sibling's file is only as fresh as its last save,
+ * which is every change it makes.
+ *
+ * The shared sessions.json that predates per-bot files is left out: every bot
+ * copied it as its starting point, so what it lists is either in a bot's own
+ * file too, or long gone from all of them.
+ */
+export function findHistoryOwners(claudeSessionIds: string[], selfBotId: string): Map<string, HistoryOwner[]> {
+  const wanted = new Set(claudeSessionIds);
+  const owners = new Map<string, HistoryOwner[]>();
+  const add = (owner: HistoryOwner) => {
+    const id = owner.entry.claudeSessionId;
+    if (!id || !wanted.has(id)) return;
+    const list = owners.get(id);
+    if (list) list.push(owner);
+    else owners.set(id, [owner]);
+  };
+
+  for (const id of wanted) {
+    for (const { sessionKey, entry } of sessionHistory.findByClaudeSessionId(id)) {
+      add({ botId: selfBotId, sessionKey, entry });
+    }
+  }
+
+  let names: string[] = [];
+  try {
+    names = fs.readdirSync(HISTORY_DIR);
+  } catch {
+    // No state dir means no sibling has saved anything yet.
+  }
+  for (const name of names) {
+    const botId = /^sessions-(.+)\.json$/.exec(name)?.[1];
+    if (!botId || botId === selfBotId) continue;
+    const data = readJsonFile(path.join(HISTORY_DIR, name), sessionHistoryDataSchema, 'SessionHistory');
+    for (const [sessionKey, history] of Object.entries(data?.sessions ?? {})) {
+      for (const entry of history) add({ botId, sessionKey, entry });
+    }
+  }
+  return owners;
+}

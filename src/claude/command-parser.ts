@@ -97,6 +97,7 @@ export function getAvailableCommands(): string {
         '• `/clear` \\- Clear session and start fresh',
         '• `/status` \\- Show current session info',
         '• `/fork` \\- Fork current conversation to another bot',
+        '• `/tree` \\- Show where this conversation branched, and jump between branches',
         '• `/accept` \\- Accept a pending fork from another bot',
         '• `/decline` \\- Discard a pending fork',
       ],

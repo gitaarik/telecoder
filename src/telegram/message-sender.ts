@@ -40,6 +40,17 @@ import * as path from 'path';
 export const FORK_KEYBOARD = { inline_keyboard: [[{ text: '🍴 Fork', callback_data: 'fork:pick' }]] };
 
 /**
+ * The buttons on the banner where a chat switched conversations: fork that
+ * point again, or open the tree of branches it belongs to.
+ */
+export const BRANCH_MARKER_KEYBOARD = {
+  inline_keyboard: [[
+    { text: '🍴 Fork', callback_data: 'fork:pick' },
+    { text: '🌳 Tree', callback_data: 'tree:show' },
+  ]],
+};
+
+/**
  * Status-bubble text shown while an ask_user question is waiting on a tap.
  * Replaces the spinner: the watchdog is deliberately paused during a pending
  * question, so nothing else stops the bubble animating "Thinking…" at a turn

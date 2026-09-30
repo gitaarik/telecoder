@@ -16,17 +16,17 @@ export interface UserPrompt {
   pending: boolean;
 }
 
-interface ContentBlock {
+export interface ContentBlock {
   type?: string;
   text?: string;
 }
 
-interface JsonlMessage {
+export interface JsonlMessage {
   role?: string;
   content?: string | ContentBlock[];
 }
 
-interface JsonlRecord {
+export interface JsonlRecord {
   type?: string;
   message?: JsonlMessage;
   /** Claude Code's per-record id. Used to tell one turn's prompt from the next. */
@@ -80,7 +80,7 @@ function isApiErrorRecord(rec: JsonlRecord | Record<string, unknown>): boolean {
  * boundary at all and degrading a working read into a screen-scrape fallback.
  * Unknown shapes keep the old behaviour; only the known-synthetic ones move.
  */
-function isSyntheticUserRecord(rec: JsonlRecord): boolean {
+export function isSyntheticUserRecord(rec: JsonlRecord): boolean {
   return rec.origin?.kind === 'task-notification'
     || rec.promptSource === 'system'
     || rec.isMeta === true
@@ -240,7 +240,7 @@ export function readLastCompactionFromJsonl(
 }
 
 /** Pull joined text from a record's content blocks, ignoring tool/thinking blocks. */
-function extractText(content: JsonlMessage['content']): string {
+export function extractText(content: JsonlMessage['content']): string {
   if (typeof content === 'string') return content.trim();
   if (!Array.isArray(content)) return '';
   return content

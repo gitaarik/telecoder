@@ -94,6 +94,7 @@ import {
 import { handleMessage, handleCcrThrottleCallback } from './handlers/message.handler.js';
 import { handleSchedule, handleSchedules, handleUnschedule } from './handlers/schedule.handler.js';
 import { handleForkCallback, handleAcceptCommand, handleDeclineCommand, handleForkCommand } from './handlers/fork.handler.js';
+import { handleTreeCommand, handleTreeCallback } from './handlers/tree.handler.js';
 import {
   handleAllow,
   handleDeny,
@@ -293,6 +294,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'loop', description: '🔄 Run in loop mode' },
     { command: 'sessions', description: '📚 View saved sessions' },
     { command: 'fork', description: '🍴 Fork this conversation to another bot' },
+    { command: 'tree', description: '🌳 Show where this conversation branched, and jump between branches' },
     { command: 'accept', description: '📦 Accept a pending fork from another bot' },
     { command: 'decline', description: '🚫 Discard a pending fork' },
     { command: 'recap', description: '📋 Recap last messages of current session' },
@@ -403,6 +405,9 @@ export async function createBot(): Promise<Bot> {
   // would queue it behind the very turn the user wants to inspect.
   cmd('sync', handleSync);
   cmd('handoff', handleHandoff);
+  // /tree is read-only until a button is tapped, so it answers mid-turn; the
+  // buttons that switch conversations refuse while a reply is running.
+  cmd('tree', handleTreeCommand);
   // Schedule commands bypass sequentialize so they remain responsive even
   // when a scheduled-fire turn is already running (the cap-enforcing create,
   // the list, and the remove all need to work mid-stream).
@@ -425,6 +430,10 @@ export async function createBot(): Promise<Bot> {
   // just shows another message), and accept/decline operate on file state,
   // not the live agent, so they don't need to wait in line.
   bot.callbackQuery(/^fork:/, handleForkCallback);
+  // /tree's buttons likewise: opening a point only redraws the message, and
+  // carrying on a branch or branching from a point checks for a running reply
+  // itself, so a tap mid-turn gets an answer instead of waiting in line.
+  bot.callbackQuery(/^tree:/, handleTreeCallback);
   // Menu buttons for /restartbot and /rebuildbot must bypass sequentialize
   // for the same reason their parent commands do: users tap these precisely
   // when the bot is hung, so the callback can't be queued behind the stuck

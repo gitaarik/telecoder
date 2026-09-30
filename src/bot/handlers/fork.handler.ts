@@ -31,7 +31,7 @@ import * as crypto from 'crypto';
 import { BOT_ID, config } from '../../config.js';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
 import { messageOffsets, countJsonlLines } from '../../claude/message-offsets.js';
-import { FORK_KEYBOARD } from '../../telegram/message-sender.js';
+import { FORK_KEYBOARD, BRANCH_MARKER_KEYBOARD } from '../../telegram/message-sender.js';
 import {
   getPendingFork,
   putPendingFork,
@@ -43,7 +43,12 @@ import {
 } from '../../claude/pending-forks.js';
 import { listSiblingBots, findBotById } from '../../utils/instances.js';
 import { buildLetteredKeyboard, letteredOptionLines } from '../../telegram/lettered-options.js';
-import { sessionJsonlPath, lastAssistantTurnText, lastExchangeIn } from '../../claude/session-jsonl.js';
+import {
+  sessionJsonlPath,
+  lastAssistantTurnText,
+  lastExchangeIn,
+  type RecapExchange,
+} from '../../claude/session-jsonl.js';
 import { sessionManager } from '../../claude/session-manager.js';
 import { clearConversation } from '../../providers/provider-router.js';
 import { isAllowedUser } from '../../utils/user-roster.js';
@@ -492,8 +497,16 @@ export async function handleDeclineCommand(ctx: Context): Promise<void> {
  * session-manager call mints a fresh conversation in the new cwd; if it's
  * the same project, we still want a fresh conversation so we don't tack the
  * old transcript onto whatever's already loaded.
+ *
+ * `marker` rewords the banner for a caller whose fork doesn't come from the
+ * chat above it — /tree branches from any point, not the message you tapped.
  */
-async function loadFork(ctx: Context, sessionKey: string, fork: PendingFork): Promise<void> {
+export async function loadFork(
+  ctx: Context,
+  sessionKey: string,
+  fork: PendingFork,
+  marker?: ForkMarkerOptions,
+): Promise<void> {
   // Generate a fresh sessionId for this bot's copy of the transcript. We
   // rewrite the `sessionId` field in each record so the file is internally
   // consistent — Claude Code stamps the original session's id into every
@@ -522,7 +535,6 @@ async function loadFork(ctx: Context, sessionKey: string, fork: PendingFork): Pr
   // an existing session, we still want a clean slate, so we follow up with
   // startNewConversation when needed.
   const existing = sessionManager.getSession(sessionKey);
-  const projectChanged = !existing || existing.workingDirectory !== fork.projectPath;
   if (existing && existing.workingDirectory === fork.projectPath) {
     sessionManager.startNewConversation(sessionKey);
   } else {
@@ -541,42 +553,61 @@ async function loadFork(ctx: Context, sessionKey: string, fork: PendingFork): Pr
   // in-memory provider state are dropped.
   clearConversation(sessionKey);
 
-  // Restore the source topic AND (if the project changed) refresh the bot's
-  // Telegram display name so the user sees the new project reflected in the
-  // bot name on the next message. restoreTopicAndRefreshBotName handles both
-  // the topic write and the rate-limited setMyName call internally.
-  if (projectChanged || fork.topic) {
-    await restoreTopicAndRefreshBotName(ctx, sessionKey, fork.topic);
-  }
-
-  // The marker is where the branch starts in this chat, so it carries a
-  // 🍴 Fork button of its own. Forking the same point again — to another bot,
-  // or into another branch here — then doesn't mean scrolling back to the
-  // message this fork was first taken from. Like that message's button, it
-  // forks the transcript as it was at that point, whatever the conversation
-  // has done since.
+  // Restore the source topic AND refresh the bot's Telegram display name, so
+  // a change of project shows in the bot name on the next message.
+  // restoreTopicAndRefreshBotName handles both the topic write and the
+  // rate-limited setMyName call internally.
   //
-  // A marker Telegram won't parse still has to land in plain text: left
-  // unedited, the message would go on offering Accept and Decline for a fork
-  // that is already loaded.
-  const marker = buildForkMarker(fork);
+  // Even with no topic to restore: the one in memory is the conversation this
+  // chat just left, and a fork that arrives without a topic — from a chat
+  // that had none, or from /tree, where no history may name the point — would
+  // otherwise carry it on. Restoring none falls back to the title Claude Code
+  // gave the transcript.
+  await restoreTopicAndRefreshBotName(ctx, sessionKey, fork.topic);
+
+  await postMarker(ctx, sessionKey, buildForkMarker(fork, marker), {
+    claudeSessionId: newSessionId,
+    projectPath: fork.projectPath,
+    lineCount: loadedLineCount,
+  });
+}
+
+/**
+ * Put a banner where the chat switched conversations — over the message whose
+ * button made the switch, or as a reply to the command that did — and anchor
+ * its 🍴 Fork button at `point`.
+ *
+ * The banner is where the new conversation starts in this chat, so it forks
+ * that point: sending it to another bot, or branching it again here, doesn't
+ * mean scrolling back to the message it was first taken from. Like that
+ * message's button, it forks the transcript as it was at that point, whatever
+ * the conversation has done since. Its 🌳 button opens the tree the
+ * conversation is part of.
+ *
+ * A marker Telegram won't parse still has to land in plain text: left
+ * unedited, the message would go on offering the buttons that made the switch.
+ */
+export async function postMarker(
+  ctx: Context,
+  sessionKey: string,
+  marker: string,
+  point: { claudeSessionId: string; projectPath: string; lineCount: number },
+): Promise<void> {
   const plain = plainMarker(marker);
   try {
     let anchorId: number | undefined;
     if (ctx.callbackQuery) {
-      await ctx.editMessageText(marker, { parse_mode: 'MarkdownV2', reply_markup: FORK_KEYBOARD })
-        .catch(() => ctx.editMessageText(plain, { reply_markup: FORK_KEYBOARD }));
+      await ctx.editMessageText(marker, { parse_mode: 'MarkdownV2', reply_markup: BRANCH_MARKER_KEYBOARD })
+        .catch(() => ctx.editMessageText(plain, { reply_markup: BRANCH_MARKER_KEYBOARD }));
       anchorId = ctx.callbackQuery.message?.message_id;
     } else {
-      const sent = await ctx.reply(marker, { parse_mode: 'MarkdownV2', reply_markup: FORK_KEYBOARD })
-        .catch(() => ctx.reply(plain, { reply_markup: FORK_KEYBOARD }));
+      const sent = await ctx.reply(marker, { parse_mode: 'MarkdownV2', reply_markup: BRANCH_MARKER_KEYBOARD })
+        .catch(() => ctx.reply(plain, { reply_markup: BRANCH_MARKER_KEYBOARD }));
       anchorId = sent.message_id;
     }
     if (anchorId) {
       messageOffsets.record(sessionKey, anchorId, {
-        claudeSessionId: newSessionId,
-        projectPath: fork.projectPath,
-        lineCount: loadedLineCount,
+        ...point,
         conversationId: sessionManager.getSession(sessionKey)?.conversationId,
       });
     }
@@ -595,6 +626,14 @@ const MARKER_PROMPT_LEN = 120;
  */
 const MARKER_REPLY_LEN = 3000;
 
+/** What a switch left above the banner, when it wasn't the conversation branched from. */
+export const LEFT_ABOVE = "What's above is the conversation you were in — it's in /resume.";
+
+export interface ForkMarkerOptions {
+  /** What the closing line says went where — the conversation above the banner. */
+  above?: string;
+}
+
 /**
  * The message a loaded fork leaves in its chat, in MarkdownV2: a banner where
  * one conversation ends and another begins.
@@ -609,15 +648,45 @@ const MARKER_REPLY_LEN = 3000;
  * leave it in the other bot's chat, and a branch taken here would leave the
  * last reply above your next message one the branch never had.
  */
-export function buildForkMarker(fork: PendingFork): string {
+export function buildForkMarker(fork: PendingFork, opts: ForkMarkerOptions = {}): string {
   const isBranch = fork.fromBotId === BOT_ID;
-  const title = isBranch ? '🌱 New branch' : `🍴 Forked from ${fork.fromBotName}`;
-  const name = sessionDisplayName({ projectName: path.basename(fork.projectPath), topic: fork.topic });
-  const exchange = lastExchangeIn(fork.jsonl);
-  const above = isBranch
-    ? "What's above is the conversation you branched from — it's in /resume."
-    : "What's above is this bot's previous conversation — it's in /resume.";
+  return buildMarker({
+    title: isBranch ? '🌱 New branch' : `🍴 Forked from ${fork.fromBotName}`,
+    name: sessionDisplayName({ projectName: path.basename(fork.projectPath), topic: fork.topic }),
+    lead: 'A new conversation starts here.',
+    after: 'It picks up after:',
+    exchange: lastExchangeIn(fork.jsonl),
+    above: opts.above ?? (isBranch
+      ? "What's above is the conversation you branched from — it's in /resume."
+      : "What's above is this bot's previous conversation — it's in /resume."),
+  });
+}
 
+/**
+ * The banner for going back to a branch that already exists: the same break
+ * in the chat as a fork's, except the conversation below it isn't new — it
+ * carries on from the exchange shown.
+ */
+export function buildBackOnBranchMarker(branch: { projectPath: string; topic?: string; jsonl: string }): string {
+  return buildMarker({
+    title: '↪️ Back on a branch',
+    name: sessionDisplayName({ projectName: path.basename(branch.projectPath), topic: branch.topic }),
+    lead: "You're back on an earlier branch.",
+    after: 'It carries on from:',
+    exchange: lastExchangeIn(branch.jsonl),
+    above: LEFT_ABOVE,
+  });
+}
+
+function buildMarker(parts: {
+  title: string;
+  name: string;
+  lead: string;
+  after: string;
+  exchange?: RecapExchange;
+  above: string;
+}): string {
+  const { title, name, lead, after, exchange, above } = parts;
   return [
     MARKER_RULE,
     `*${esc(title)}*`,
@@ -626,42 +695,56 @@ export function buildForkMarker(fork: PendingFork): string {
     '',
     ...(exchange
       ? [
-          esc('A new conversation starts here. It picks up after:'),
+          esc(`${lead} ${after}`),
           `*You:* ${esc(oneLine(exchange.user, MARKER_PROMPT_LEN))}`,
           ...replyQuote(exchange.assistant),
         ]
-      : [esc('A new conversation starts here.')]),
+      : [esc(lead)]),
     '',
     `_${esc(above)}_`,
   ].join('\n');
 }
 
 /** `text` flattened onto one line and cut at `max` characters. */
-function oneLine(text: string, max: number): string {
+export function oneLine(text: string, max: number): string {
   const flat = text.replace(/\s+/g, ' ').trim();
-  return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
+  return flat.length > max ? `${sliceWhole(flat, max - 1).trimEnd()}…` : flat;
+}
+
+/**
+ * The first `end` UTF-16 units of `text`, one fewer when the cut would fall
+ * inside an emoji. Half a surrogate pair is not valid text, and Telegram
+ * rejects a message carrying one.
+ */
+function sliceWhole(text: string, end: number): string {
+  const last = text.charCodeAt(end - 1);
+  return text.slice(0, last >= 0xd800 && last <= 0xdbff ? end - 1 : end);
 }
 
 /**
  * The reply as a collapsed quote. A quote holds plain text only, so markdown
  * markers go rather than show up as stray asterisks, backticks and hashes. A
- * reply too long for the message is cut at a line or word, and names /recap —
- * which shows the reply whole, formatted — for the rest.
+ * reply longer than `max` is cut at a line or word, followed by `rest` — by
+ * default, naming /recap, which shows the reply whole, formatted.
  */
-function replyQuote(reply: string): string[] {
+export function replyQuote(
+  reply: string,
+  max: number = MARKER_REPLY_LEN,
+  rest: string | null = 'The rest of the reply is in /recap.',
+): string[] {
   const text = reply
     .replace(/^\s*```.*$/gm, '')
     .replace(/^#{1,6}\s+/gm, '')
     .replace(/\*\*|__|`/g, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-  if (text.length <= MARKER_REPLY_LEN) return [buildExpandableSyntax(text)];
+  if (text.length <= max) return [buildExpandableSyntax(text)];
 
-  const cut = text.slice(0, MARKER_REPLY_LEN);
+  const cut = sliceWhole(text, max);
   const end = Math.max(cut.lastIndexOf('\n'), cut.lastIndexOf(' '));
   return [
-    buildExpandableSyntax(`${cut.slice(0, end > 0 ? end : MARKER_REPLY_LEN).trimEnd()} …`),
-    esc('The rest of the reply is in /recap.'),
+    buildExpandableSyntax(`${(end > 0 ? cut.slice(0, end) : cut).trimEnd()} …`),
+    ...(rest ? [esc(rest)] : []),
   ];
 }
 
@@ -670,7 +753,7 @@ function replyQuote(reply: string): string[] {
  * and escapes undone. esc() escapes every marker character in the content, so
  * only the markup's own bare `*`, `_`, `>` and `||` match here.
  */
-function plainMarker(marker: string): string {
+export function plainMarker(marker: string): string {
   return marker
     .replace(/^\*\*>|^>/gm, '')
     .replace(/(?<!\\)\|\|$/gm, '')

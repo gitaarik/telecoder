@@ -378,6 +378,7 @@ Open your bot in Telegram → `/start`
 | `/sync` | Resend the latest assistant reply from the session log if Telegram missed any of it |
 | `/handoff` | Dump the conversation to markdown — Telegraph link plus downloadable file |
 | `/fork` | Fork the conversation — new branch on this bot, or hand off to a sibling bot |
+| `/tree` | Draw the conversation's fork tree; tap a point to carry on that branch or branch from it |
 | `/accept` | Accept a pending fork from another bot |
 | `/decline` | Discard a pending fork without loading it |
 | `/schedule <when> <prompt>` | Schedule a recurring prompt (`every 5m`, `daily 9am`, or raw cron) |

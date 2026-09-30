@@ -47,7 +47,7 @@ process.env.TELECODER_TEST_HOME = home;
 const PROJECT = path.join(home, 'project');
 fs.mkdirSync(PROJECT);
 
-const { handleForkCallback, handleAcceptCommand, buildForkMarker } = await import('../../src/bot/handlers/fork.handler.js');
+const { handleForkCallback, handleAcceptCommand, buildForkMarker, oneLine, replyQuote } = await import('../../src/bot/handlers/fork.handler.js');
 const { putPendingFork, getPendingFork } = await import('../../src/claude/pending-forks.js');
 const { messageOffsets } = await import('../../src/claude/message-offsets.js');
 const { sessionManager } = await import('../../src/claude/session-manager.js');
@@ -60,8 +60,17 @@ afterAll(() => {
 });
 
 const FORK_BUTTON = { reply_markup: { inline_keyboard: [[{ text: '🍴 Fork', callback_data: 'fork:pick' }]] } };
-/** How a loaded fork's marker goes out: formatted, with the button under it. */
-const MARKER_OPTIONS = { parse_mode: 'MarkdownV2', ...FORK_BUTTON };
+/** A loaded fork's marker: 🍴 to fork that point again, 🌳 for the tree it is part of. */
+const MARKER_BUTTONS = {
+  reply_markup: {
+    inline_keyboard: [[
+      { text: '🍴 Fork', callback_data: 'fork:pick' },
+      { text: '🌳 Tree', callback_data: 'tree:show' },
+    ]],
+  },
+};
+/** How a loaded fork's marker goes out: formatted, with its buttons under it. */
+const MARKER_OPTIONS = { parse_mode: 'MarkdownV2', ...MARKER_BUTTONS };
 
 const record = (uuid: string, type: 'user' | 'assistant', text: string) => JSON.stringify({
   type,
@@ -199,7 +208,7 @@ describe('the confirmation of a loaded fork', () => {
     // Left as it was, the offer would go on showing Accept and Decline.
     expect(accept.editMessageText).toHaveBeenLastCalledWith(
       expect.stringContaining('Forked from Research bot'),
-      FORK_BUTTON,
+      MARKER_BUTTONS,
     );
     const plain = accept.editMessageText.mock.lastCall?.[0] as string;
     expect(plain).not.toMatch(/\\|\*\*>|\|\||^>/m);
@@ -294,6 +303,23 @@ describe('buildForkMarker', () => {
     expect(marker).toContain('telecoder · v2\\.1 \\(draft\\)');
     expect(marker).toContain('*You:* Is a\\-b \\> c?');
     expect(quoteIn(marker)).toEqual(['**>Use \\[c\\]\\!||']);
+  });
+});
+
+describe('cutting text short', () => {
+  /** Half of a surrogate pair: not valid text, and Telegram rejects a message carrying one. */
+  const brokenEmoji = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+
+  it('never cuts an emoji in half on one line', () => {
+    // The cut at 9 characters would land between the two halves of 😀.
+    const cut = oneLine('abcdefgh😀 and the rest', 10);
+    expect(cut).toBe('abcdefgh…');
+    expect(cut).not.toMatch(brokenEmoji);
+  });
+
+  it('never cuts an emoji in half in a reply with no space to cut at', () => {
+    const [quote] = replyQuote('日本語'.repeat(3) + '😀'.repeat(10), 10);
+    expect(quote).not.toMatch(brokenEmoji);
   });
 });
 

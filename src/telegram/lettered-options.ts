@@ -86,12 +86,21 @@ export function buildLetteredKeyboard(
     return labelled.map((text, idx) => [{ text, callback_data: options[idx].callbackData }]);
   }
 
+  return buildLetterKeyboard(options.map((o) => o.callbackData));
+}
+
+/**
+ * A keyboard of bare letters, four to a row: `A` for the first callback, `B`
+ * for the next. For a message whose body is already the full list — a tree
+ * drawn line by line, say — where a label on the button would only repeat it.
+ */
+export function buildLetterKeyboard(callbackData: string[]): { text: string; callback_data: string }[][] {
   const rows: { text: string; callback_data: string }[][] = [];
-  for (let i = 0; i < options.length; i += LETTERS_PER_ROW) {
+  for (let i = 0; i < callbackData.length; i += LETTERS_PER_ROW) {
     rows.push(
-      options.slice(i, i + LETTERS_PER_ROW).map((o, j) => ({
+      callbackData.slice(i, i + LETTERS_PER_ROW).map((data, j) => ({
         text: optionLetter(i + j),
-        callback_data: o.callbackData,
+        callback_data: data,
       })),
     );
   }
