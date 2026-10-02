@@ -406,9 +406,14 @@ export async function handleRecap(ctx: Context): Promise<void> {
 // replies again — so it lists only what you typed, one line each, in a single
 // message. That's the whole difference from /recap, which re-sends every
 // assistant reply in full and buries the prompts you came back to read.
+//
+// Most prompts are short (a median line of 72 characters across 40 recent
+// sessions), so the default can reach well back: 15 fit in one message in all
+// 40, about two phone screens. 25 fit in 35 of them, and the budget below cuts
+// the rest oldest-first, so a higher cap would mostly buy a "trimmed" note.
 const PROMPTS_MAX_CHARS = 300;
-const PROMPTS_DEFAULT_N = 5;
-const PROMPTS_MAX_N = 20;
+const PROMPTS_DEFAULT_N = 15;
+const PROMPTS_MAX_N = 25;
 // Telegram's hard cap is 4096 chars per message. Budget below it: escaping is
 // applied before a line is measured, but the header and newlines are not.
 const PROMPTS_BUDGET_CHARS = 3800;
@@ -417,7 +422,7 @@ const PROMPTS_BUDGET_CHARS = 3800;
  * Render the prompt list as one MarkdownV2 message, oldest first so it reads in
  * the same order as the chat above it.
  *
- * The budget is spent newest-first and the list flipped afterwards: 20 pasted
+ * The budget is spent newest-first and the list flipped afterwards: 25 pasted
  * prompts can exceed one Telegram message, and when something has to go it
  * should be the oldest, not the one you just sent.
  */
@@ -455,7 +460,7 @@ export async function handlePrompts(ctx: Context): Promise<void> {
   if (arg) {
     const parsed = parseInt(arg, 10);
     if (Number.isNaN(parsed) || parsed < 1) {
-      await replyMd(ctx, '⚠️ Usage: `/prompts [N]` where N is the number of prompts \\(default 5, max 20\\)\\.');
+      await replyMd(ctx, `⚠️ Usage: \`/prompts [N]\` where N is the number of prompts \\(default ${PROMPTS_DEFAULT_N}, max ${PROMPTS_MAX_N}\\)\\.`);
       return;
     }
     n = Math.min(parsed, PROMPTS_MAX_N);

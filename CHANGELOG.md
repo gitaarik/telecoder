@@ -66,6 +66,13 @@ reasoning — the commit bodies are the long form, this is the index.
   Six commands offered the back button with four lines of identical
   keyboard-spreading each; that is one call now.
 
+- **`/prompts` reaches further back** — it lists the last 15 prompts by
+  default instead of 5, and `/prompts N` goes up to 25 instead of 20. Most
+  prompts are a short line, so five used a fraction of the room one message
+  has. Across 40 recent sessions, 15 always fit in one message, at
+  about two phone screens. 25 fit in all but 5 of them, and in those the
+  oldest are dropped to fit, as before, and the header says how many.
+
 ### Sharing a bot
 
 - **Auto-approve windows** — `/autoapprove 30m` lets the permission gate approve
