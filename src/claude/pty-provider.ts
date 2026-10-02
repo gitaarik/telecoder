@@ -32,7 +32,7 @@ import {
   buildSettingsJson,
   buildMcpConfigJson,
   buildMcpEnv,
-  buildMcpToolsSystemPromptNote,
+  buildPtySystemPromptNote,
 } from './pty-spawn-config.js';
 import { getModelsForBinary } from './model-catalog.js';
 import { scrapePromptSuggestion } from './prompt-suggestion-scraper.js';
@@ -946,8 +946,9 @@ export class PtyProvider implements Provider {
       // Make our MCP tools discoverable to claude. Without this the tool
       // names appear in claude's deferred-tools list but claude often picks
       // WebFetch/Bash for the same task because the deferred listing has
-      // no descriptions.
-      '--append-system-prompt', buildMcpToolsSystemPromptNote(),
+      // no descriptions. The same note says a message arriving inside
+      // <pasted_content> tags is still the user's own (PASTED_MESSAGE_NOTE).
+      '--append-system-prompt', buildPtySystemPromptNote(),
       // Hard-disable claude's built-in AskUserQuestion. The headless xterm has
       // no real user to type a response, so an AskUserQuestion call freezes
       // the turn until MAX_TURN_MS fires (~30 min). The system-prompt note

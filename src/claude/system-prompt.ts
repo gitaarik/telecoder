@@ -7,7 +7,7 @@
  * isn't 200 lines of prose, and so prompt edits show up as prompt-only diffs.
  *
  * Note this is the SDK side only. PTY mode gets its tool guidance from
- * buildMcpToolsSystemPromptNote() in pty-provider.ts, which describes the
+ * buildMcpToolsSystemPromptNote() in pty-spawn-config.ts, which describes the
  * larger tool set that src/bin/mcp-server.ts registers.
  */
 

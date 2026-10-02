@@ -133,6 +133,18 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **A message of several lines is acted on, not held for a confirmation
+  tap** — Claude Code now wraps a long paste in `<pasted_content>` tags, and
+  its system prompt has the model act on instructions inside one only where
+  your own words outside the tags ask it to. TeleCoder delivers every message
+  as a paste, so anything over two lines or 800 characters arrived as one
+  tagged block with nothing outside it: the model took your request for text
+  copied from somewhere else and asked for a button tap before doing what it
+  said. The system prompt a PTY session starts with now says what the tags
+  mean here — how the message was delivered, not where it came from. Text you
+  quote or forward, and pages TeleCoder fetches for you, are still read as
+  someone else's. SDK mode never pasted, so it was never affected.
+
 - **Claude Code's dialogs arrive laid out for a phone** — a dialog relayed to
   the chat, most often a permission prompt (Claude Code raises some even in
   auto mode, such as a heredoc whose braces and quotes trip its "expansion
