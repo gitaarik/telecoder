@@ -17,6 +17,7 @@ import {
   TOOL_ICONS,
 } from './terminal-renderer.js';
 import { taskTracker, type TaskState } from './task-tracker.js';
+import { EntityText, type EntityMessage } from './entities.js';
 import type { TaskEvent, ToolResultEvent, EditDiffEvent } from '../providers/types.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../utils/session-key.js';
 import { resolveVerbosityFlags } from '../utils/verbosity.js';
@@ -206,6 +207,70 @@ function formatTodoList(todos: TodoItem[]): string {
     }
   }
   return lines.join('\n');
+}
+
+/** Everything one refresh of the live status bubble shows. */
+export interface StatusBubbleView {
+  /** An ask_user question is waiting on a tap. */
+  awaitingAnswer: boolean;
+  /** The tool running now, or null while Claude is thinking. */
+  operation: ToolOperation | null;
+  spinnerIndex: number;
+  /** How long `operation` has been running. */
+  elapsedMs: number;
+  /** The Telegram rate-limit pause the last edit ran into, if any. */
+  pausedMs?: number;
+  /** Claude Code's live spinner tip (PTY mode); null when none is on screen. */
+  tip: string | null;
+  /** Background-task footer; empty when nothing runs in the background. */
+  footer: string;
+}
+
+/**
+ * Lay out the live status bubble.
+ *
+ * A running Bash command goes in a `bash` code block, the way the permission
+ * prompt shows one: monospace keeps a long one-liner's pipes and `$(...)`
+ * legible, and the block's copy button hands back the bare command.
+ *
+ * Entities rather than MarkdownV2: the command is the model's own text, and an
+ * underscore or backtick in it would break the parse and fail the edit.
+ *
+ * Exported for tests.
+ */
+export function renderStatusBubble(view: StatusBubbleView): EntityMessage {
+  const b = new EntityText();
+  const { operation } = view;
+
+  if (view.awaitingAnswer) {
+    // A pending ask_user question outranks the tool/thinking status: the turn
+    // is blocked on a button tap, and a spinner here reads as work still in
+    // progress, which is exactly the cue that makes a question easy to miss.
+    b.add(AWAITING_ANSWER_LINE);
+  } else if (operation) {
+    b.add(renderStatusLine(
+      view.spinnerIndex,
+      getToolIcon(operation.name),
+      getToolAction(operation.name),
+      operation.detail?.trim(),
+      view.elapsedMs,
+      view.pausedMs,
+    ));
+    // Bash commands render their (possibly multi-line) command in a separate
+    // block below the header so the timer stays on a clean single line.
+    if (operation.commandBlock) b.newline().pre(operation.commandBlock, 'bash');
+  } else {
+    b.add(`${getSpinnerFrame(view.spinnerIndex)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...`);
+  }
+
+  // Mirror Claude Code's live spinner tip under the status line, as the TUI
+  // shows it. Suppressed while a question is pending — the tip is whatever was
+  // on screen when the model blocked, and it dilutes the one line that matters.
+  if (view.tip && !view.awaitingAnswer) b.newline().add(`  ⎿ 💡 ${view.tip}`);
+
+  if (view.footer) b.newline(2).add(view.footer);
+
+  return b.build();
 }
 
 export class MessageSender {
@@ -987,59 +1052,18 @@ export class MessageSender {
       return;
     }
 
-    const parts: string[] = [];
-
-    // A pending ask_user question outranks the tool/thinking status: the turn
-    // is blocked on a button tap, and a spinner here reads as work still in
-    // progress, which is exactly the cue that makes a question easy to miss.
-    const awaitingAnswer = hasPendingQuestionForSession(state.sessionKey);
-    if (awaitingAnswer) {
-      parts.push(AWAITING_ANSWER_LINE);
-    } else if (state.currentOperation) {
-      const icon = getToolIcon(state.currentOperation.name);
-      const action = getToolAction(state.currentOperation.name);
-      const detail = state.currentOperation.detail ? ` ${state.currentOperation.detail}` : '';
-      const elapsedMs = now - state.operationStartTime;
-      const pausedMs = state.lastRateLimitDurationMs > 0 ? state.lastRateLimitDurationMs : undefined;
-      parts.push(renderStatusLine(state.spinnerIndex, icon, action, detail ? detail.trim() : undefined, elapsedMs, pausedMs));
-      // Bash commands render their (possibly multi-line) command in a separate
-      // block below the header so the timer stays on a clean single line. The
-      // `$ ` prefix marks the first line like a shell paste.
-      if (state.currentOperation.commandBlock) {
-        parts.push(`$ ${state.currentOperation.commandBlock}`);
-      }
-    }
-
-    // If nothing to show, show thinking indicator
-    if (parts.length === 0) {
-      parts.push(`${getSpinnerFrame(state.spinnerIndex)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...`);
-    }
-
-    // Mirror Claude Code's live spinner tip under the status line, as the TUI
-    // shows it. Scraped from the PTY render; null when no tip is on screen.
-    // Suppressed while a question is pending — the tip is whatever was on
-    // screen when the model blocked, and it dilutes the one line that matters.
-    if (state.tip && !awaitingAnswer) {
-      parts.push(`  ⎿ 💡 ${state.tip}`);
-    }
-
-    // Append compact footer when SDK background tasks are running.
-    const backgroundedTasks = taskTracker.getBackgroundedTasks(state.sessionKey);
-    const footer = renderBackgroundFooter(backgroundedTasks);
-    if (footer) {
-      parts.push('');
-      parts.push(footer);
-    }
-
-    const displayContent = parts.join('\n');
+    const { text, entities } = renderStatusBubble({
+      awaitingAnswer: hasPendingQuestionForSession(state.sessionKey),
+      operation: state.currentOperation,
+      spinnerIndex: state.spinnerIndex,
+      elapsedMs: now - state.operationStartTime,
+      pausedMs: state.lastRateLimitDurationMs > 0 ? state.lastRateLimitDurationMs : undefined,
+      tip: state.tip,
+      footer: renderBackgroundFooter(taskTracker.getBackgroundedTasks(state.sessionKey)),
+    });
 
     try {
-      await ctx.api.editMessageText(
-        state.chatId,
-        state.messageId,
-        displayContent,
-        { parse_mode: undefined }
-      );
+      await ctx.api.editMessageText(state.chatId, state.messageId, text, { entities });
       state.lastUpdate = Date.now();
       // Successful edit — clear any rate-limit annotation after it's been shown once
       state.lastRateLimitDurationMs = 0;

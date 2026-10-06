@@ -140,6 +140,15 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **A running command reads as code in the status bubble** — while a Bash
+  command ran, the status bubble showed it as plain text under the timer, so
+  a long one-liner, such as a loop polling `gh pr checks`, sat there as a raw
+  run of pipes, quotes and `$(...)` for as long as it ran. The command is now
+  in a `bash` code block, the way the permission prompt shows one, and the
+  block's copy button hands back just the command. It goes out as Telegram
+  entities rather than MarkdownV2, so nothing in the command can break the
+  update.
+
 - **A message of several lines is acted on, not held for a confirmation
   tap** — Claude Code now wraps a long paste in `<pasted_content>` tags, and
   its system prompt has the model act on instructions inside one only where
