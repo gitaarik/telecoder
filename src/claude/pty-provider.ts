@@ -1048,6 +1048,12 @@ export class PtyProvider implements Provider {
       // fires, the replacement is the live session — don't wipe it out.
       if (this.sessions.get(sessionKey) === session) {
         this.sessions.delete(sessionKey);
+        // claude went down on its own — a crash, an OOM kill — so nothing has
+        // been through _cleanupSession. Its background tasks went with it, and
+        // the respawn reports them stopped by task id alone, which the relay
+        // can't match to what it armed: left in place they'd count as running
+        // for good.
+        teardownMonitorRelay(sessionKey);
       }
     });
 

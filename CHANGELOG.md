@@ -140,6 +140,13 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **A crashed Claude Code no longer leaves its background tasks counted as
+  running** — when Claude Code exits on its own, killed for running out of
+  memory say, the tasks it ran in the background end with it. TeleCoder only
+  cleared them when it shut Claude Code down itself, so after a crash they
+  stayed in the count indefinitely. They're now cleared however Claude Code
+  exits.
+
 - **A background task that finished mid-turn no longer counts as running** —
   if a background task finished while Claude was in the middle of a turn, the
   "🔄 N tasks running in background" footer, `/tasks` and the background card
