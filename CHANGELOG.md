@@ -140,6 +140,14 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **A command moved to the background is counted while it runs** — Claude
+  Code doesn't kill a Bash command that runs into its 10-minute limit: it
+  moves it to the background and carries on. TeleCoder only counted commands
+  started in the background, so one moved there was missing from the
+  "🔄 N tasks running in background" footer, `/tasks` and the background card
+  for as long as it ran. It now counts from the moment it moves, and its
+  running time starts from when the command did.
+
 - **A crashed Claude Code no longer leaves its background tasks counted as
   running** — when Claude Code exits on its own, killed for running out of
   memory say, the tasks it ran in the background end with it. TeleCoder only

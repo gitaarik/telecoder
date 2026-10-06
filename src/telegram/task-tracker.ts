@@ -76,7 +76,7 @@ class TaskTracker {
           status: 'running',
           isBackgrounded: event.isBackgrounded ?? isMonitor,
           skipTranscript: event.skipTranscript ?? false,
-          startedAt: Date.now(),
+          startedAt: event.startedAt ?? Date.now(),
           lastActivityAt: Date.now(),
         };
         tasks.set(event.taskId, state);

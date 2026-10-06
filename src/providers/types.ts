@@ -90,6 +90,12 @@ export interface TaskStartedEvent {
    * so we have to derive it at task_started time.
    */
   isBackgrounded?: boolean;
+  /**
+   * When the task began, for one already running before it was reported: a
+   * Bash call claude moved to the background had been running in the
+   * foreground until then. Defaults to the time of the event.
+   */
+  startedAt?: number;
 }
 
 export interface TaskProgressEvent {

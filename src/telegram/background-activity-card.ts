@@ -122,11 +122,12 @@ export function noteTaskArmed(
   kind: BackgroundTaskKind,
   description: string,
   toolUseId?: string,
+  startedAt = Date.now(),
 ): void {
   const state = getOrCreate(sessionKey);
   if (!state) return;
   if (toolUseId) {
-    state.running.set(toolUseId, { kind, description, startedAt: Date.now() });
+    state.running.set(toolUseId, { kind, description, startedAt });
   } else {
     // No tool_use_id means no terminal notification can ever be matched to
     // it, so a running row would never clear. Record it as a one-off event

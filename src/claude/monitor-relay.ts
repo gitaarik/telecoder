@@ -210,12 +210,32 @@ export function classifyAsyncTool(
 }
 
 /**
+ * A plain Bash call claude moved to the background partway through. A command
+ * that runs into the 10-minute foreground cap isn't killed: the call returns
+ * with a `backgroundTaskId`, and the command finishes later the way a
+ * run_in_background one does, with a task-notification. classifyAsyncTool saw
+ * an ordinary call at PreToolUse, so only the response tells.
+ */
+export function movedToBackground(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  toolResponse: unknown,
+): boolean {
+  if (toolName !== 'Bash' || classifyAsyncTool(toolName, toolInput) !== null) return false;
+  return !!toolResponse && typeof toolResponse === 'object'
+    && typeof (toolResponse as { backgroundTaskId?: unknown }).backgroundTaskId === 'string';
+}
+
+/**
  * Register that an async tool was invoked (see classifyAsyncTool). Arms the
  * JSONL watcher on first call per session so future task-notifications and
  * their assistant responses get relayed to Telegram, and records the task
  * with `taskTracker` so /tasks and the footer counters can see it.
  *
  * Idempotent — multiple async tool calls in one session share one watcher.
+ *
+ * `startedAt` is for a task that was already running when it was armed — see
+ * movedToBackground.
  */
 export function onAsyncToolArmed(
   kind: AsyncToolKind,
@@ -224,6 +244,7 @@ export function onAsyncToolArmed(
   claudeSessionId: string,
   description: string,
   toolUseId?: string,
+  startedAt = Date.now(),
 ): void {
   let state = states.get(sessionKey);
   if (!state) {
@@ -260,7 +281,7 @@ export function onAsyncToolArmed(
     state.armedTasks.set(toolUseId, {
       kind,
       description,
-      startedAt: Date.now(),
+      startedAt,
     });
     taskTracker.handleEvent(sessionKey, {
       type: 'started',
@@ -271,10 +292,11 @@ export function onAsyncToolArmed(
       // Everything routed through this relay is backgrounded by definition —
       // that's the property that made it need a relay in the first place.
       isBackgrounded: true,
+      startedAt,
     });
   }
 
-  noteTaskArmed(sessionKey, kind, description, toolUseId);
+  noteTaskArmed(sessionKey, kind, description, toolUseId, startedAt);
 }
 
 export function markTurnStart(sessionKey: string): void {

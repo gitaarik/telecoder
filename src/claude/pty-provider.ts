@@ -25,7 +25,7 @@ import {
 // Side-effect import: registers /mcp/* IPC handlers that bridge the standalone
 // MCP subprocess back to bot-side state (Telegram API, session topic, …).
 import './mcp-bridge.js';
-import { onAsyncToolArmed, markTurnStart, markTurnEnd, teardown as teardownMonitorRelay, relayPushNotification, classifyAsyncTool } from './monitor-relay.js';
+import { onAsyncToolArmed, markTurnStart, markTurnEnd, teardown as teardownMonitorRelay, relayPushNotification, classifyAsyncTool, movedToBackground, type AsyncToolKind } from './monitor-relay.js';
 import { relayUpdateBanner, scrapeUpdateBanner } from './update-banner-relay.js';
 import { evaluateToolCall, isPermissionGateEnabled, DENY_MARKER_START, DENY_MARKER_END } from './permission-gate.js';
 import {
@@ -2101,6 +2101,43 @@ function extractToolResponseContent(toolResponse: unknown): string {
   catch { return String(obj); }
 }
 
+/**
+ * Arm the monitor relay for a backgrounded tool call, which also registers it
+ * with the tracker behind /tasks and the footer. `startedAt` is for a call
+ * that was already running before it went to the background.
+ */
+function armAsyncTool(
+  turn: ActiveTurn,
+  kind: AsyncToolKind,
+  toolInput: Record<string, unknown>,
+  toolUseId: unknown,
+  startedAt?: number,
+): void {
+  const session = sessionManager.getSession(turn.sessionKey);
+  if (!session?.claudeSessionId) return;
+  const description = String(
+    toolInput.description ??
+    // Workflow documents `description` as ignored, so it's often absent;
+    // `name` is the field that actually identifies the run.
+    toolInput.name ??
+    toolInput.target ??
+    toolInput.file_path ??
+    toolInput.path ??
+    toolInput.command ??
+    toolInput.prompt ??
+    kind,
+  );
+  onAsyncToolArmed(
+    kind,
+    turn.sessionKey,
+    session.workingDirectory,
+    session.claudeSessionId,
+    description,
+    typeof toolUseId === 'string' && toolUseId ? toolUseId : undefined,
+    startedAt,
+  );
+}
+
 registerIpcHandler('/hook/preToolUse', async (turn, body) => {
   const toolName = String(body.tool_name ?? 'unknown');
   const toolInput = (body.tool_input ?? {}) as Record<string, unknown>;
@@ -2111,25 +2148,7 @@ registerIpcHandler('/hook/preToolUse', async (turn, body) => {
   // still get routed to Telegram, and register the task with the tracker
   // behind /tasks. See classifyAsyncTool for which tools qualify.
   const asyncKind = classifyAsyncTool(toolName, toolInput);
-  if (asyncKind) {
-    const session = sessionManager.getSession(turn.sessionKey);
-    const description = String(
-      toolInput.description ??
-      // Workflow documents `description` as ignored, so it's often absent;
-      // `name` is the field that actually identifies the run.
-      toolInput.name ??
-      toolInput.target ??
-      toolInput.file_path ??
-      toolInput.path ??
-      toolInput.command ??
-      toolInput.prompt ??
-      asyncKind,
-    );
-    const toolUseId = typeof body.tool_use_id === 'string' ? body.tool_use_id : undefined;
-    if (session?.claudeSessionId) {
-      onAsyncToolArmed(asyncKind, turn.sessionKey, session.workingDirectory, session.claudeSessionId, description, toolUseId);
-    }
-  }
+  if (asyncKind) armAsyncTool(turn, asyncKind, toolInput, body.tool_use_id);
 
   // PushNotification: claude's "ping the user" tool. The native impl fires
   // an OS-level notification on the bot host (no real user there); for us
@@ -2170,6 +2189,13 @@ registerIpcHandler('/hook/postToolUse', (turn, body) => {
 
   turn.onToolEnd?.();
   fireAndForget('onToolEnd', () => turn.options.onToolEnd?.());
+
+  // A Bash call that ran into claude's foreground cap carries on in the
+  // background. Track it from here, dated from when it actually started.
+  if (movedToBackground(toolName, toolInput, body.tool_response)) {
+    const ranForMs = Number((body.tool_response as { timedOutAfterMs?: unknown }).timedOutAfterMs) || 0;
+    armAsyncTool(turn, 'bash_background', toolInput, body.tool_use_id, Date.now() - ranForMs);
+  }
 
   if (toolName === 'Edit' || toolName === 'Write') {
     // Successful Edit/Write — surface the diff so the bot shows before/after.

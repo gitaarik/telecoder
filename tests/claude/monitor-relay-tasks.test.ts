@@ -15,6 +15,7 @@ const {
   markTurnEnd,
   teardown,
   classifyAsyncTool,
+  movedToBackground,
 } = await import('../../src/claude/monitor-relay.js');
 const { taskTracker } = await import('../../src/telegram/task-tracker.js');
 const { _inspectCard } = await import('../../src/telegram/background-activity-card.js');
@@ -122,6 +123,32 @@ describe('classifyAsyncTool', () => {
     for (const name of ['Read', 'Edit', 'Write', 'Grep', 'TaskOutput', 'monitor']) {
       expect(classifyAsyncTool(name, {})).toBeNull();
     }
+  });
+});
+
+describe('movedToBackground', () => {
+  // What claude answers a Bash call with when it ran into the foreground cap.
+  const moved = {
+    stdout: '', stderr: '', interrupted: false, isImage: false, noOutputExpected: false,
+    backgroundTaskId: 'bqf7xbwkd', timedOutAfterMs: 600000,
+  };
+
+  it('spots a plain Bash call that claude moved to the background', () => {
+    expect(movedToBackground('Bash', { command: 'npm run smoke', timeout: 600000 }, moved)).toBe(true);
+  });
+
+  it('leaves a run_in_background call to PreToolUse, which already armed it', () => {
+    expect(movedToBackground('Bash', { command: 'npm test', run_in_background: true }, moved)).toBe(false);
+  });
+
+  it('ignores a call that finished in the foreground', () => {
+    expect(movedToBackground('Bash', { command: 'ls' }, { stdout: 'a\nb', stderr: '', interrupted: false })).toBe(false);
+  });
+
+  it('ignores other tools and responses that are not objects', () => {
+    expect(movedToBackground('Read', { file_path: '/x' }, moved)).toBe(false);
+    expect(movedToBackground('Bash', { command: 'ls' }, 'bqf7xbwkd')).toBe(false);
+    expect(movedToBackground('Bash', { command: 'ls' }, null)).toBe(false);
   });
 });
 
