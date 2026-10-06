@@ -122,6 +122,23 @@ function parseTaskNotification(rec: { origin?: { kind?: string }; message?: { co
   };
 }
 
+interface QueuedCommandAttachment {
+  type?: string;
+  prompt?: unknown;
+  origin?: { kind?: string };
+}
+
+/**
+ * A task-notification claude delivered into a turn that was already running.
+ * It gets no user record of its own: the queue logs it as removed with reason
+ * `absorbed_mid_turn`, and the turn carries it as a `queued_command`
+ * attachment.
+ */
+function parseAbsorbedNotification(attachment: QueuedCommandAttachment | undefined): TaskNotification | null {
+  if (attachment?.type !== 'queued_command') return null;
+  return parseTaskNotification({ origin: attachment.origin, message: { content: attachment.prompt } });
+}
+
 const states = new Map<string, MonitorState>();
 let botRef: Bot | null = null;
 
@@ -372,6 +389,7 @@ function handleChange(state: MonitorState): void {
       type?: string;
       origin?: { kind?: string };
       message?: { content?: unknown; role?: string };
+      attachment?: QueuedCommandAttachment;
     };
 
     if (typed.type === 'user') {
@@ -397,6 +415,16 @@ function handleChange(state: MonitorState): void {
           postMonitorMessage(state.sessionKey, state.pendingNotification, '');
         }
         state.pendingNotification = notif;
+      }
+    } else if (typed.type === 'attachment') {
+      // A task that finishes while claude is mid-turn never gets the user
+      // record above; its completion only arrives folded into that turn. Left
+      // unread, the task stays "running" in the footer and /tasks for the rest
+      // of the session. Only the completion is taken from here — the model's
+      // reply to it belongs to the turn that absorbed it.
+      const notif = parseAbsorbedNotification(typed.attachment);
+      if (notif?.status && notif.toolUseId && state.armedTasks.has(notif.toolUseId)) {
+        handleTerminalNotification(state, notif);
       }
     } else if (typed.type === 'assistant') {
       // Assistant text during an active turn belongs to the turn pipeline.

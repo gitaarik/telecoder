@@ -51,6 +51,38 @@ function appendNotification(toolUseId: string, status: string): void {
   fs.appendFileSync(logPath(), JSON.stringify(rec) + '\n');
 }
 
+/**
+ * Something claude folded into a turn already running, as the session log
+ * records it: no user record, only a `queued_command` attachment on that turn.
+ * A task notification arrives this way, and so does a message from a peer
+ * session.
+ */
+function appendAbsorbed(prompt: string, from: 'task' | 'peer' = 'task'): void {
+  const rec = {
+    type: 'attachment',
+    attachment: {
+      type: 'queued_command',
+      prompt,
+      ...(from === 'task'
+        ? { commandMode: 'task-notification', origin: { kind: 'task-notification', producer: 'session-task' } }
+        : { commandMode: 'prompt', origin: { kind: 'peer', name: 'sjs-ops-3e' } }),
+    },
+  };
+  fs.appendFileSync(logPath(), JSON.stringify(rec) + '\n');
+}
+
+function appendAbsorbedCompletion(toolUseId: string, status: string): void {
+  appendAbsorbed(
+    '<task-notification>\n' +
+    '<task-id>bqzciinde</task-id>\n' +
+    `<tool-use-id>${toolUseId}</tool-use-id>\n` +
+    '<output-file>/tmp/tasks/bqzciinde.output</output-file>\n' +
+    `<status>${status}</status>\n` +
+    '<summary>Background command "Watch CI" completed (exit code 0)</summary>\n' +
+    '</task-notification>',
+  );
+}
+
 function arm(kind: Parameters<typeof onAsyncToolArmed>[0], description: string, toolUseId?: string): void {
   onAsyncToolArmed(kind, SESSION_KEY, CWD, SESSION_ID, description, toolUseId);
 }
@@ -209,6 +241,50 @@ describe('PTY-mode task tracking', () => {
     const remaining = taskTracker.getTasks(SESSION_KEY);
     expect(remaining).toHaveLength(1);
     expect(remaining[0].id).toBe('toolu_08');
+  });
+
+  it('drops the task when its completion is absorbed into a running turn', () => {
+    seedLog();
+    arm('bash_background', 'Watch CI', 'toolu_0c');
+
+    appendAbsorbedCompletion('toolu_0c', 'completed');
+    markTurnEnd(SESSION_KEY);
+
+    expect(taskTracker.getTasks(SESSION_KEY)).toHaveLength(0);
+    expect(taskTracker.getBackgroundedCount(SESSION_KEY)).toBe(0);
+    expect(_inspectCard(SESSION_KEY)?.running).toBe(0);
+  });
+
+  it('keeps a monitor running when one of its events is absorbed mid-turn', () => {
+    seedLog();
+    arm('monitor', 'CI gates', 'toolu_0d');
+
+    // An event carries no status and no tool-use id: the monitor is still live.
+    appendAbsorbed(
+      '<task-notification>\n' +
+      '<task-id>biflh7fuu</task-id>\n' +
+      '<summary>Monitor event: "CI gates"</summary>\n' +
+      '<event>gate 3 passed</event>\n' +
+      '</task-notification>',
+    );
+    markTurnEnd(SESSION_KEY);
+
+    expect(taskTracker.hasActiveMonitor(SESSION_KEY)).toBe(true);
+  });
+
+  it('ignores a peer message absorbed the same way', () => {
+    seedLog();
+    arm('bash_background', 'npm test', 'toolu_0e');
+
+    appendAbsorbed(
+      '<cross-session-message from-name="sjs-ops-3e">\n' +
+      'Your toolu_0e run is still going, I will wait for it.\n' +
+      '</cross-session-message>',
+      'peer',
+    );
+    markTurnEnd(SESSION_KEY);
+
+    expect(taskTracker.getTasks(SESSION_KEY)).toHaveLength(1);
   });
 
   it('clears tracked tasks on teardown so a respawned session starts clean', () => {

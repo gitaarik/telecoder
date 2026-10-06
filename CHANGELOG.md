@@ -140,6 +140,15 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **A background task that finished mid-turn no longer counts as running** —
+  if a background task finished while Claude was in the middle of a turn, the
+  "🔄 N tasks running in background" footer, `/tasks` and the background card
+  went on counting it as running until the session ended. TeleCoder 4 showed
+  two tasks running with nothing running at all. Claude Code folds a
+  completion like that into the turn in progress instead of logging it as a
+  message of its own, and TeleCoder only looked for the message. It now reads
+  the folded-in completion too.
+
 - **A running command reads as code in the status bubble** — while a Bash
   command ran, the status bubble showed it as plain text under the timer, so
   a long one-liner, such as a loop polling `gh pr checks`, sat there as a raw
