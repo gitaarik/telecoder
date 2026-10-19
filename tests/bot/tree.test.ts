@@ -45,7 +45,7 @@ process.env.TELECODER_TEST_HOME = home;
 const PROJECT = path.join(home, 'project');
 fs.mkdirSync(PROJECT);
 
-const { handleTreeCommand, handleTreeCallback, promptLabel, renderTree } = await import('../../src/bot/handlers/tree.handler.js');
+const { handleTreeCommand, handleTreeCallback, renderTree } = await import('../../src/bot/handlers/tree.handler.js');
 const { treeOf, preorder } = await import('../../src/claude/fork-tree.js');
 const { sessionManager } = await import('../../src/claude/session-manager.js');
 const { sessionHistory } = await import('../../src/claude/session-history.js');
@@ -143,32 +143,6 @@ const BRANCH_MARKER_KEYBOARD = {
     { text: '🌳 Tree', callback_data: 'tree:show' },
   ]],
 };
-
-describe('promptLabel', () => {
-  it('names a prompt by what the user asked', () => {
-    expect(promptLabel('  Plan the\n parser ')).toBe('Plan the parser');
-    expect(promptLabel('<pasted_content id="a43f">Build log:\nall green</pasted_content id="a43f">\n'))
-      .toBe('Build log: all green');
-    expect(promptLabel('- ok so could we refactor it')).toBe('ok so could we refactor it');
-    expect(promptLabel('User uploaded an image to the project.\nSaved at: /x.png\nCaption: "this one"'))
-      .toBe('📷 Image — this one');
-  });
-
-  it('prefers the words under a quoted reply to the quote', () => {
-    expect(promptLabel('> The usual answer is hybrid search.\n\nIs that what he meant?')).toBe('Is that what he meant?');
-    expect(promptLabel('> The usual answer is hybrid search.')).toBe('The usual answer is hybrid search.');
-  });
-
-  it('does not count a command as a turn', () => {
-    expect(promptLabel('/compact')).toBeUndefined();
-    expect(promptLabel('/model opus')).toBeUndefined();
-    expect(promptLabel('<command-name>/compact</command-name> <command-message>compact</command-message>')).toBeUndefined();
-    expect(promptLabel('<local-command-stdout>Compacted</local-command-stdout>')).toBeUndefined();
-    expect(promptLabel('[Request interrupted by user]')).toBeUndefined();
-    // A path is not a command.
-    expect(promptLabel('/home/me/notes.md has the plan')).toBe('/home/me/notes.md has the plan');
-  });
-});
 
 describe('renderTree', () => {
   it('draws the whole tree, a letter per point, and marks where the chat is', () => {

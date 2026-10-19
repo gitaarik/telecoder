@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildPromptsMessage, summarizeUserPrompt } from '../../src/bot/handlers/command/session.js';
+import { buildPromptsMessage, promptLabel, summarizeUserPrompt } from '../../src/bot/handlers/command/session.js';
 import type { UserPrompt } from '../../src/claude/session-jsonl.js';
 
 const minsAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
@@ -127,5 +127,31 @@ describe('summarizeUserPrompt', () => {
     expect(out).toContain('📷 Image — This is my last invoice from Groq');
     expect(out).not.toContain('vision input');
     expect(out).not.toContain('Saved at');
+  });
+});
+
+describe('promptLabel', () => {
+  it('names a prompt by what the user asked', () => {
+    expect(promptLabel('  Plan the\n parser ')).toBe('Plan the parser');
+    expect(promptLabel('<pasted_content id="a43f">Build log:\nall green</pasted_content id="a43f">\n'))
+      .toBe('Build log: all green');
+    expect(promptLabel('- ok so could we refactor it')).toBe('ok so could we refactor it');
+    expect(promptLabel('User uploaded an image to the project.\nSaved at: /x.png\nCaption: "this one"'))
+      .toBe('📷 Image — this one');
+  });
+
+  it('prefers the words under a quoted reply to the quote', () => {
+    expect(promptLabel('> The usual answer is hybrid search.\n\nIs that what he meant?')).toBe('Is that what he meant?');
+    expect(promptLabel('> The usual answer is hybrid search.')).toBe('The usual answer is hybrid search.');
+  });
+
+  it('does not count a command as a turn', () => {
+    expect(promptLabel('/compact')).toBeUndefined();
+    expect(promptLabel('/model opus')).toBeUndefined();
+    expect(promptLabel('<command-name>/compact</command-name> <command-message>compact</command-message>')).toBeUndefined();
+    expect(promptLabel('<local-command-stdout>Compacted</local-command-stdout>')).toBeUndefined();
+    expect(promptLabel('[Request interrupted by user]')).toBeUndefined();
+    // A path is not a command.
+    expect(promptLabel('/home/me/notes.md has the plan')).toBe('/home/me/notes.md has the plan');
   });
 });

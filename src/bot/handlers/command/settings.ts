@@ -10,6 +10,7 @@
 import { Context } from 'grammy';
 import { config } from '../../../config.js';
 import { sessionManager } from '../../../claude/session-manager.js';
+import { promptsIn } from '../../../claude/fork-tree.js';
 import {
   setEffort,
   getEffort,
@@ -50,6 +51,7 @@ import {
   PTY_RESTART_NOTE,
 } from './shared.js';
 import { getSessionTopic } from './topic.js';
+import { promptLabel } from './session.js';
 import { getStreamingMode, setStreamingMode } from './streaming-mode.js';
 import { getBgProcesses } from './tasks.js';
 import {
@@ -560,17 +562,45 @@ function shortenModelName(model: string): string {
   return stripped.replace(/^claude-/, '').replace(/-\d{8}$/, '');
 }
 
-const STATUS_LINE_PROMPT_MAX = 140;
+// The last few prompts rather than only the latest: a turn often starts from
+// an "ok" or a "yeah", which says nothing without the prompts before it.
+const STATUS_LINE_PROMPTS = 5;
+// Per prompt, about two and a half lines on a phone. Five of them sit under
+// every answer, and here a prompt only has to be recognised, not reread.
+const STATUS_LINE_PROMPT_MAX = 100;
 
-function formatLastPromptLine(prompt: string): string {
-  // Collapse to a single line and truncate so verbose action logs above don't
-  // bury the prompt itself; the user just needs enough to recognise it.
-  const normalised = prompt.replace(/\s+/g, ' ').trim();
-  if (!normalised) return '';
-  const truncated = normalised.length > STATUS_LINE_PROMPT_MAX
-    ? normalised.slice(0, STATUS_LINE_PROMPT_MAX - 1).trimEnd() + '…'
-    : normalised;
-  return `_▸ ${esc(truncated)}_`;
+/**
+ * The status line's prompt lines, oldest first so they read in the same order
+ * as the chat above them. `prompts` are raw, as the session log keeps them;
+ * anything that wasn't a turn, like a /compact, is dropped before the last few
+ * are taken, so it doesn't use up one of the lines.
+ */
+export function formatRecentPrompts(prompts: string[]): string {
+  return prompts
+    .flatMap((prompt) => promptLabel(prompt) ?? [])
+    .slice(-STATUS_LINE_PROMPTS)
+    .map((label) => {
+      // Cut by code point, so an emoji at the cut isn't split in half.
+      const chars = Array.from(label);
+      const shown = chars.length > STATUS_LINE_PROMPT_MAX
+        ? chars.slice(0, STATUS_LINE_PROMPT_MAX - 1).join('').trimEnd() + '…'
+        : label;
+      return `_▸ ${esc(shown)}_`;
+    })
+    .join('\n');
+}
+
+/**
+ * The session's prompts as its log records them, so the list reaches back past
+ * a restart and past prompts sent from elsewhere. The turn's own prompt stands
+ * in when the log has none to give.
+ */
+function recentPrompts(sessionKey: string | undefined, lastPrompt: string): string[] {
+  const session = sessionKey ? sessionManager.getSession(sessionKey) : undefined;
+  const logged = session?.claudeSessionId
+    ? promptsIn(session.workingDirectory, session.claudeSessionId)
+    : [];
+  return logged.length > 0 ? logged : [lastPrompt];
 }
 
 /**
@@ -596,7 +626,7 @@ function buildStatusLineMarkdown(
   }
 
   if (lastPrompt && userPreferences.getShowPromptInStatusLine(chatId)) {
-    const formatted = formatLastPromptLine(lastPrompt);
+    const formatted = formatRecentPrompts(recentPrompts(sessionKey, lastPrompt));
     if (formatted) sections.push(formatted);
   }
 
@@ -683,8 +713,8 @@ function buildStatusLineMenu(chatId: number, sessionKey: string): { text: string
       { text: !showTopic ? '✓ Show topic: Off' : 'Show topic: Off', callback_data: 'statusline:topic:off' },
     ],
     [
-      { text: showPrompt ? '✓ Show last prompt: On' : 'Show last prompt: On', callback_data: 'statusline:prompt:on' },
-      { text: !showPrompt ? '✓ Show last prompt: Off' : 'Show last prompt: Off', callback_data: 'statusline:prompt:off' },
+      { text: showPrompt ? '✓ Show last prompts: On' : 'Show last prompts: On', callback_data: 'statusline:prompt:on' },
+      { text: !showPrompt ? '✓ Show last prompts: Off' : 'Show last prompts: Off', callback_data: 'statusline:prompt:off' },
     ],
     [
       { text: showSession ? '✓ Show session: On' : 'Show session: On', callback_data: 'statusline:session:on' },
@@ -697,10 +727,11 @@ function buildStatusLineMenu(chatId: number, sessionKey: string): { text: string
     `📍 *Status Line*\n\n` +
     `Status line: *${enabled ? 'ON' : 'OFF'}*\n` +
     `Show topic: *${showTopic ? 'ON' : 'OFF'}*\n` +
-    `Show last prompt: *${showPrompt ? 'ON' : 'OFF'}*\n` +
+    `Show last prompts: *${showPrompt ? 'ON' : 'OFF'}*\n` +
     `Show session: *${showSession ? 'ON' : 'OFF'}*\n\n` +
     `_Sends a small italic line after each turn so you can see the current state without scrolling\\._ ` +
-    `_Show last prompt is handy under /verbosity verbose, where the action log can push your prompt off screen\\._ ` +
+    `_Show last prompts lists the last ${STATUS_LINE_PROMPTS} you sent, so an "ok" still shows what it answered\\. ` +
+    `Handy under /verbosity verbose, where the action log can push them off screen\\._ ` +
     `_The session line shows a copy\\-pasteable \`claude \\-\\-resume\` command for CLI fallback\\._\n\n` +
     `Preview:\n${preview}`;
 
@@ -741,7 +772,7 @@ export async function handleStatusLineCallback(ctx: Context): Promise<void> {
   } else if (action === 'prompt:on' || action === 'prompt:off') {
     const newState = action === 'prompt:on';
     userPreferences.setShowPromptInStatusLine(chatId, newState);
-    toastText = `Show last prompt ${newState ? 'ON' : 'OFF'}`;
+    toastText = `Show last prompts ${newState ? 'ON' : 'OFF'}`;
   } else if (action === 'on' || action === 'off') {
     const newState = action === 'on';
     userPreferences.setShowStatusLine(chatId, newState);

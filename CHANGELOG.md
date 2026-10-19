@@ -73,6 +73,17 @@ reasoning — the commit bodies are the long form, this is the index.
   about two phone screens. 25 fit in all but 5 of them, and in those the
   oldest are dropped to fit, as before, and the header says how many.
 
+- **The status line shows your last five prompts** — with "Show last prompt"
+  on in `/statusline`, the line after each answer showed only the prompt that
+  turn answered, and a turn often starts from an "ok" or a "yeah" that says
+  nothing on its own. It now lists the last five, oldest first. They are read
+  from the session log, so they reach back past a restart. A `/compact` and
+  the notes Claude Code writes in your place, like "[Request interrupted by
+  user]", don't take one of the five; a paste shows its text and an upload its
+  caption, the way `/tree` labels a branch. Each is cut at 100 characters
+  instead of 140, about two and a half lines on a phone, since five of them
+  now sit under every answer.
+
 ### Sharing a bot
 
 - **Auto-approve windows** — `/autoapprove 30m` lets the permission gate approve

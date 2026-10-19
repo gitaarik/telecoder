@@ -315,6 +315,38 @@ export function summarizeUserPrompt(text: string): string {
   return caption ? `${label} — ${caption}` : label;
 }
 
+/**
+ * A prompt as a label: what the user asked, cleaned of what got wrapped
+ * around it — or undefined when it wasn't a turn of the conversation at all,
+ * but a command.
+ *
+ * /tree names a branch after the first prompt past a split, and the status
+ * line lists the last few; on the evidence of real transcripts either is often
+ * a paste, a reply quoted back, or a /compact. A paste keeps its text and
+ * loses its tags; a quote gives way to the words the user wrote under it,
+ * which say what the prompt asks rather than what it answers.
+ */
+export function promptLabel(raw: string): string | undefined {
+  const text = raw.trim();
+  // Claude Code's record of a slash command, and of what one printed.
+  if (/^<(command-name|command-message|local-command-)/.test(text)) return undefined;
+  // A slash command sent as the prompt: /compact, /model opus. A path is not one.
+  if (/^\/[a-z][\w:-]*(\s|$)/i.test(text)) return undefined;
+  // A note Claude Code writes in the user's place, like [Request interrupted by user].
+  if (/^\[[^\]]*\]$/.test(text)) return undefined;
+
+  const unwrapped = summarizeUserPrompt(text.replace(/<\/?pasted_content[^>]*>/g, '').trim());
+  const lines = unwrapped.split('\n');
+  const own = lines.filter((line) => !/^\s*>/.test(line)).join(' ');
+  const quoted = lines.map((line) => line.replace(/^\s*>\s?/, '')).join(' ');
+  const label = (own.trim() ? own : quoted)
+    .replace(/\s+/g, ' ')
+    .trim()
+    // A prompt written as a list starts with its marker, which says nothing.
+    .replace(/^(?:[-*•]|\d+[.)])\s+/, '');
+  return label || undefined;
+}
+
 function truncateUserPrompt(text: string, max: number = RECAP_USER_MAX_CHARS): string {
   const collapsed = summarizeUserPrompt(text).replace(/\s+/g, ' ').trim();
   if (collapsed.length <= max) return collapsed;
