@@ -174,6 +174,16 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **A message that starts with a long link gets through** — Claude Code wraps
+  its input box at word boundaries. In a message like "I'm about to submit
+  https://…long link…", the link moved down a row, which split the opening
+  words TeleCoder looks for to confirm a message landed. Every attempt was
+  reported as "didn't take your message", however often you resent it. Worse,
+  clearing the box between attempts removed only the bottom row. Copies of the
+  opening words piled up three per attempt, and they were sent along with your
+  next message. TeleCoder now finds the opening words across a row break, and
+  clears every row it filled.
+
 - **A command moved to the background is counted while it runs** — Claude
   Code doesn't kill a Bash command that runs into its 10-minute limit: it
   moves it to the background and carries on. TeleCoder only counted commands

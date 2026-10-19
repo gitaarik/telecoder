@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  clearPresses,
   hasInputBox,
   inputBoxPastePlaceholders,
   isGenerating,
@@ -354,5 +355,78 @@ describe('newPastePlaceholder', () => {
   it('treats an empty screen as having nothing known', () => {
     expect(pastePlaceholderIds('').size).toBe(0);
     expect(newPastePlaceholder(new Set(), failureScreen)).toEqual({ id: 9, lines: 7 });
+  });
+});
+
+describe('clearPresses', () => {
+  // The pty provider's INPUT_BOX_COLS: on a live 120-column pty a 115-character
+  // row fits and a 117-character one wraps.
+  const BOX = 115;
+
+  /**
+   * Rows claude's editor fills with `line`: greedy word wrap, the space at a
+   * break dropped, a word longer than a row broken across rows.
+   */
+  function wrappedRows(line: string, width: number): number {
+    let rows = 1;
+    let used = 0;
+    for (const word of line.split(' ')) {
+      let rest = word.length;
+      if (used > 0 && used + 1 + rest > width) { rows++; used = 0; }
+      else if (used > 0) used++;
+      while (used + rest > width) { rest -= width - used; rows++; used = 0; }
+      used += rest;
+    }
+    return rows;
+  }
+
+  /** One press per row, plus one for each line break a press lands on. */
+  function pressesNeeded(prompt: string, width: number): number {
+    const lines = prompt.split('\n');
+    return lines.reduce((sum, line) => sum + wrappedRows(line, width), 0) + lines.length - 1;
+  }
+
+  it('covers the prompt one press left three copies of', () => {
+    // Measured on a live pty: two rows, so two presses.
+    const prompt = "I'm about to submit https://evallab.rikwanders.tech/t/10-16-compare-two-code-reviews-compare-reviews-of-example-ch11-p do a final check";
+    expect(pressesNeeded(prompt, BOX)).toBe(2);
+    expect(clearPresses(prompt, BOX)).toBeGreaterThanOrEqual(2);
+  });
+
+  it('covers a wrapped prompt with line breaks', () => {
+    // Measured on a live pty: four rows and two line breaks took six presses.
+    const prompt = [
+      'line one of a multi-line message that is long enough to wrap around the one hundred and twenty column input box xx yy',
+      'second line',
+      'third https://evallab.rikwanders.tech/t/10-16-compare-two-code-reviews-compare-reviews-of-example-ch11-p end',
+    ].join('\n');
+    expect(pressesNeeded(prompt, BOX)).toBe(6);
+    expect(clearPresses(prompt, BOX)).toBeGreaterThanOrEqual(6);
+  });
+
+  it('covers any prompt claude draws in full, however its words fall', () => {
+    // Claude draws a paste of up to 800 characters and two line breaks as
+    // text; anything bigger becomes a one-row placeholder. Words of every
+    // length, including longer than a row, are what make wrapping wasteful.
+    let seed = 7;
+    const random = (n: number) => { seed = (seed * 1103515245 + 12345) % 2 ** 31; return seed % n; };
+    for (let trial = 0; trial < 2000; trial++) {
+      const lines: string[] = [];
+      for (let l = 0, n = 1 + random(3); l < n; l++) {
+        const words: string[] = [];
+        for (let w = 0, count = random(12); w < count; w++) words.push('x'.repeat(1 + random(BOX * 1.5)));
+        lines.push(words.join(' '));
+      }
+      const prompt = lines.join('\n').slice(0, 800);
+      expect(clearPresses(prompt, BOX)).toBeGreaterThanOrEqual(pressesNeeded(prompt, BOX));
+    }
+  });
+
+  it('stays small for a short prompt', () => {
+    expect(clearPresses('push', BOX)).toBeLessThanOrEqual(3);
+  });
+
+  it('caps a prompt claude would collapse anyway', () => {
+    expect(clearPresses('x'.repeat(50_000), BOX)).toBe(64);
   });
 });

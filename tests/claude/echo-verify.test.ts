@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import headless from '@xterm/headless';
-import { inputBoxText, newPastePlaceholder, pastePlaceholderIds } from '../../src/claude/tui-state.js';
+import { inputBoxHolds, inputBoxText, newPastePlaceholder, pastePlaceholderIds } from '../../src/claude/tui-state.js';
 
 const { Terminal } = headless;
 
@@ -141,5 +141,68 @@ describe('echo-verify on a saturated buffer', () => {
     ].join('\r\n'));
 
     expect(inputBoxText(screenText(term))).toBeUndefined();
+  });
+});
+
+describe('echo-verify on a prompt the box wrapped', () => {
+  // The message that could not be sent to TeleCoder 6, three times in a row.
+  // Its first 24 characters run into a URL too long for the rest of the row,
+  // so claude moves the whole URL down a row and the needle straddles the break.
+  const URL = 'https://evallab.rikwanders.tech/t/10-16-compare-two-code-reviews-compare-reviews-of-example-ch11-p';
+  const NEEDLE = "I'm about to submit http";
+
+  /** The box exactly as a live 120x40 pty drew that paste. */
+  function drawWrappedBox(term: headless.Terminal, firstRow: string): Promise<void> {
+    return write(term, [
+      SEP,
+      `❯ ${firstRow}`,
+      `  ${URL} do a final check`,
+      SEP,
+      '  ⏵⏵ auto mode on (shift+tab to cycle)                    Ctrl+Y to paste deleted text',
+      '',
+    ].join('\r\n'));
+  }
+
+  it('finds the needle across the row break', async () => {
+    const term = await saturatedSession();
+    await drawWrappedBox(term, "I'm about to submit");
+    const screen = screenText(term);
+
+    // The old check: the words are on screen, but not in one piece.
+    expect(inputBoxText(screen)).not.toContain(NEEDLE);
+    expect(inputBoxHolds(screen, NEEDLE)).toBe(true);
+  });
+
+  it('finds it in a side-bordered box too', async () => {
+    const term = await saturatedSession();
+    await write(term, [
+      `╭${'─'.repeat(COLS - 2)}╮`,
+      `│ ❯ I'm about to submit${' '.repeat(COLS - 24)}│`,
+      `│   ${URL}${' '.repeat(COLS - URL.length - 5)}│`,
+      `╰${'─'.repeat(COLS - 2)}╯`,
+      '',
+    ].join('\r\n'));
+
+    expect(inputBoxHolds(screenText(term), NEEDLE)).toBe(true);
+  });
+
+  it('does not find a prompt the box does not hold', async () => {
+    const term = await saturatedSession();
+    await drawWrappedBox(term, "I'm about to send");
+
+    expect(inputBoxHolds(screenText(term), NEEDLE)).toBe(false);
+  });
+
+  it('does not find a prompt that is only in the transcript', async () => {
+    const term = await saturatedSession();
+    await write(term, [`❯ I'm about to submit ${URL}`, '● Submitted.', ''].join('\r\n'));
+    await drawBox(term, '');
+
+    expect(inputBoxHolds(screenText(term), NEEDLE)).toBe(false);
+  });
+
+  it('reports no box at all as not holding it', async () => {
+    const term = await saturatedSession();
+    expect(inputBoxHolds(screenText(term), NEEDLE)).toBe(false);
   });
 });

@@ -220,6 +220,56 @@ export function inputBoxText(screenText: string): string | undefined {
   return lines.slice(inputRow).join('\n');
 }
 
+/** What a row break can add between two characters of one line: spacing and side borders. */
+const WRAP_FILLER = /[\s│]+/gu;
+
+/**
+ * Does the input box hold `needle`, however claude wrapped it?
+ *
+ * Claude wraps the box at word boundaries. When the prompt's opening words are
+ * followed by a word too long for the rest of the row, such as a URL, the row
+ * breaks inside the slice we look for:
+ *
+ *     ❯ I'm about to submit
+ *       https://evallab.rikwanders.tech/t/10-16-compare-two-code-reviews-…
+ *
+ * A plain substring search for `I'm about to submit http` cannot see that, so
+ * every attempt missed and the user was told nothing had been sent. Nothing a
+ * row break adds is part of the prompt, so both sides drop it before comparing.
+ */
+export function inputBoxHolds(screenText: string, needle: string): boolean {
+  const box = inputBoxText(screenText);
+  return box !== undefined && box.replace(WRAP_FILLER, '').includes(needle.replace(WRAP_FILLER, ''));
+}
+
+/** Most Ctrl+U presses one clear sends. A paste this long is always collapsed. */
+const MAX_CLEAR_PRESSES = 64;
+
+/**
+ * How many Ctrl+U presses empty the input box of `prompt`, in a box
+ * `boxCols` wide.
+ *
+ * One press deletes back to the start of the row the cursor is on. That is
+ * the row as wrapped on screen, not the line. A press at the start of a row
+ * deletes only the line break before it. So one press after a prompt that
+ * wrapped leaves its first row behind. Measured against a live 120x40 pty:
+ * the retry loop's single press left `I'm about to submit` in the box, the
+ * next attempt pasted the whole prompt after it, and three attempts left
+ * three copies there to ride along with the user's next message.
+ *
+ * The count is the most rows the prompt can fill, plus one press per line
+ * break. Claude wraps at word boundaries, which can leave a row half empty
+ * where long words meet, so each row is assumed to hold only half the box's
+ * width. A press with nothing left to delete does nothing, so sending too many
+ * costs only the time it takes.
+ */
+export function clearPresses(prompt: string, boxCols: number): number {
+  const lines = prompt.split(/\r\n|\r|\n/);
+  const perRow = Math.max(1, Math.floor(boxCols / 2));
+  const rows = lines.reduce((sum, line) => sum + Math.ceil(line.length / perRow) + 1, 0);
+  return Math.min(rows + lines.length, MAX_CLEAR_PRESSES);
+}
+
 /**
  * Collapsed pastes sitting in the input box right now, as opposed to anywhere
  * on the screen. This is the reader for "did Enter take?", where the whole-
