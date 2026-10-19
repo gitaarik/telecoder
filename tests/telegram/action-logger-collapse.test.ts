@@ -18,7 +18,7 @@ vi.mock('../../src/telegram/telegraph-settings.js', () => ({
   isTelegraphEnabled: () => true,
 }));
 
-const createTelegraphPage = vi.fn(async (_title: string, _markdown: string) => 'https://telegra.ph/log');
+const createTelegraphPage = vi.fn(async (_title: string, _markdown: string): Promise<string | null> => 'https://telegra.ph/log');
 vi.mock('../../src/telegram/telegraph.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/telegram/telegraph.js')>()),
   createTelegraphPage: (title: string, markdown: string) => createTelegraphPage(title, markdown),
@@ -65,9 +65,9 @@ describe('ActionLogger.endTurn', () => {
     const logger = new ActionLogger();
     const { ctx, collapsed } = fakeChat();
     await logger.initialize(ctx, SESSION);
-    await logger.addToolResult(ctx, SESSION, bash('ls'), 20, 2000);
+    await logger.addToolResult(SESSION, bash('ls'), 20, 2000);
 
-    logger.endTurn(ctx, SESSION);
+    logger.endTurn(SESSION);
     expect(collapsed()).toEqual([]);
 
     await vi.advanceTimersByTimeAsync(5000);
@@ -79,18 +79,18 @@ describe('ActionLogger.endTurn', () => {
     const logger = new ActionLogger();
     const { ctx, collapsed } = fakeChat();
     await logger.initialize(ctx, SESSION);
-    await logger.addToolResult(ctx, SESSION, bash('ls'), 20, 2000); // message 100
-    logger.endTurn(ctx, SESSION);
+    await logger.addToolResult(SESSION, bash('ls'), 20, 2000); // message 100
+    logger.endTurn(SESSION);
 
     // A message queued behind the turn starts the next one straight away.
     await logger.initialize(ctx, SESSION);
-    await logger.addToolResult(ctx, SESSION, bash('pwd'), 20, 2000); // message 101
+    await logger.addToolResult(SESSION, bash('pwd'), 20, 2000); // message 101
 
     await vi.advanceTimersByTimeAsync(5000);
     expect(collapsed()).toEqual([100]);
     expect(logger.isActive(SESSION)).toBe(true);
 
-    logger.endTurn(ctx, SESSION);
+    logger.endTurn(SESSION);
     await vi.advanceTimersByTimeAsync(5000);
     expect(collapsed()).toEqual([100, 101]);
     expect(logger.isActive(SESSION)).toBe(false);
@@ -101,10 +101,10 @@ describe('ActionLogger.endTurn', () => {
     const { ctx, collapsed } = fakeChat();
     await logger.initialize(ctx, SESSION);
     for (let i = 1; i <= 60; i++) {
-      await logger.addToolResult(ctx, SESSION, bash(`cat file${i}`, 'x'.repeat(2000)), 20, 2000);
+      await logger.addToolResult(SESSION, bash(`cat file${i}`, 'x'.repeat(2000)), 20, 2000);
     }
 
-    logger.endTurn(ctx, SESSION);
+    logger.endTurn(SESSION);
     await vi.advanceTimersByTimeAsync(5000);
 
     const [, markdown] = createTelegraphPage.mock.calls[0];
@@ -120,10 +120,10 @@ describe('ActionLogger.endTurn', () => {
     const { ctx, collapsed } = fakeChat();
     await logger.initialize(ctx, SESSION);
     for (let i = 1; i <= 1000; i++) {
-      await logger.addToolResult(ctx, SESSION, bash(`echo ${i}`), 20, 2000);
+      await logger.addToolResult(SESSION, bash(`echo ${i}`), 20, 2000);
     }
 
-    logger.endTurn(ctx, SESSION);
+    logger.endTurn(SESSION);
     await vi.advanceTimersByTimeAsync(5000);
 
     const [, markdown] = createTelegraphPage.mock.calls[0];
@@ -132,6 +132,23 @@ describe('ActionLogger.endTurn', () => {
     expect(markdown).toContain('## 1000. ');
     expect(markdown).not.toContain('## 1. ');
     expect(collapsed()).toEqual([100]);
+  });
+
+  it("leaves the full log in place, no longer marked live, when there's no page to collapse into", async () => {
+    const logger = new ActionLogger();
+    const { ctx, api, collapsed } = fakeChat();
+    const status = () => ({ text: '⏳ 💻 Running [12s]', entities: [] });
+    await logger.initialize(ctx, SESSION, status);
+    await logger.addToolResult(SESSION, bash('ls'), 20, 2000);
+    createTelegraphPage.mockResolvedValueOnce(null);
+
+    logger.endTurn(SESSION);
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(collapsed()).toEqual([]);
+    const [, messageId, text] = api.editMessageText.mock.calls.at(-1) as unknown as [number, number, string];
+    expect(messageId).toBe(100);
+    expect(text).toMatch(/^📋 Action Log\n\n.+ Bash result\n\$ ls\nok$/);
   });
 });
 

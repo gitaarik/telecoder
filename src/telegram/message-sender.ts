@@ -17,11 +17,11 @@ import {
   TOOL_ICONS,
 } from './terminal-renderer.js';
 import { taskTracker, type TaskState } from './task-tracker.js';
-import { EntityText, type EntityMessage } from './entities.js';
+import { EntityText, clip, type EntityMessage } from './entities.js';
 import type { TaskEvent, ToolResultEvent, EditDiffEvent } from '../providers/types.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../utils/session-key.js';
 import { resolveVerbosityFlags } from '../utils/verbosity.js';
-import { actionLogger } from './action-logger.js';
+import { actionLogger, type StatusSource } from './action-logger.js';
 import { sessionManager } from '../claude/session-manager.js';
 import { sessionJsonlPath } from '../claude/session-jsonl.js';
 import { messageOffsets, countJsonlLines } from '../claude/message-offsets.js';
@@ -57,7 +57,22 @@ export const BRANCH_MARKER_KEYBOARD = {
  * question, so nothing else stops the bubble animating "Thinking…" at a turn
  * that is actually parked on the user.
  */
-const AWAITING_ANSWER_LINE = '⏸️ Waiting for your answer — see the question above ↑';
+const AWAITING_ANSWER_LINE = '⏸️ Waiting for your answer — see the question below ↓';
+
+/**
+ * Status-bubble text once the action log has taken the live status line over.
+ * The log is posted below the bubble and is usually tall enough to push it off
+ * screen, so the status line moves to the bottom of the log, where the user is
+ * looking.
+ */
+const LOG_POINTER_LINE = '⏳ Working — live log below ↓';
+
+/**
+ * Cap on a tool's detail in the status line under the action log. Verbose mode
+ * shows paths and patterns whole, and the line shares its message with up to
+ * ten actions.
+ */
+const LOG_STATUS_DETAIL_CHARS = 200;
 
 /** A suggestion registered for this turn, and how it is to be offered. */
 interface PlannedSuggestion {
@@ -113,6 +128,8 @@ interface StreamState {
   operationStartTime: number;
   rateLimitedUntil: number;
   lastRateLimitDurationMs: number;
+  // The bubble reads LOG_POINTER_LINE: the action log carries the status line.
+  bubblePointsAtLog: boolean;
   // Claude Code's live spinner tip (PTY mode), mirrored under the status line.
   // Null when no tip is currently on screen.
   tip: string | null;
@@ -521,8 +538,11 @@ export class MessageSender {
     const initialText = `${getSpinnerFrame(0)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...`;
     const message = await ctx.reply(initialText, { parse_mode: undefined });
 
-    // Start continuous typing indicator
-    const typingInterval = this.startTypingIndicator(ctx.api, chatId, threadId);
+    // "typing…" only for a turn with no live status line. Terminal mode has
+    // one — in the bubble, then at the bottom of the action log — and Telegram
+    // Desktop draws the typing animation on the CPU for as long as it is up,
+    // which renewed every few seconds is the whole turn.
+    const typingInterval = terminalMode ? null : this.startTypingIndicator(ctx.api, chatId, threadId);
 
     const now = Date.now();
     const state: StreamState = {
@@ -542,6 +562,7 @@ export class MessageSender {
       operationStartTime: now,
       rateLimitedUntil: 0,
       lastRateLimitDurationMs: 0,
+      bubblePointsAtLog: false,
       tip: null,
       todoMessageId: null,
       todoLastRendered: '',
@@ -559,7 +580,7 @@ export class MessageSender {
     // degrades to a turn without an action log rather than no turn at all.
     if (actionLogEnabled) {
       try {
-        await actionLogger.initialize(ctx, sessionKey);
+        await actionLogger.initialize(ctx, sessionKey, this.logStatusSource(state));
       } catch (error) {
         console.error('[ActionLog] initialize failed, continuing without it:', error);
       }
@@ -743,7 +764,7 @@ export class MessageSender {
     const keyInfo = getSessionKeyFromCtx(ctx);
     const sessionKey = keyInfo?.sessionKey;
     if (sessionKey && actionLogger.isActive(sessionKey)) {
-      await actionLogger.addMonitorEvent(ctx, sessionKey, task, eventText);
+      await actionLogger.addMonitorEvent(sessionKey, task, eventText);
       return;
     }
 
@@ -842,11 +863,12 @@ export class MessageSender {
       // and initializing here would start a *second*, live-looking action log
       // below the collapsed summary. Stragglers post as their own message
       // instead, matching what postMonitorEvent already does.
-      if (!this.streamStates.has(sessionKey)) {
+      const stream = this.streamStates.get(sessionKey);
+      if (!stream) {
         console.debug(`[ActionLog] Straggler for ${sessionKey} after log cleanup — posting directly instead of opening a new log`);
         return false;
       }
-      await actionLogger.initialize(ctx, sessionKey);
+      await actionLogger.initialize(ctx, sessionKey, this.logStatusSource(stream));
     }
     await forward(sessionKey);
     return true;
@@ -866,7 +888,7 @@ export class MessageSender {
     maxLines: number,
     maxChars: number,
   ): Promise<void> {
-    if (await this.routeToActionLog(ctx, (sk) => actionLogger.addToolResult(ctx, sk, event, maxLines, maxChars))) {
+    if (await this.routeToActionLog(ctx, (sk) => actionLogger.addToolResult(sk, event, maxLines, maxChars))) {
       return;
     }
 
@@ -906,7 +928,7 @@ export class MessageSender {
    * can contain anything that would break MarkdownV2 parsing.
    */
   async postEditDiff(ctx: Context, event: EditDiffEvent, maxLines: number): Promise<void> {
-    if (await this.routeToActionLog(ctx, (sk) => actionLogger.addEditDiff(ctx, sk, event, maxLines))) {
+    if (await this.routeToActionLog(ctx, (sk) => actionLogger.addEditDiff(sk, event, maxLines))) {
       return;
     }
 
@@ -950,7 +972,7 @@ export class MessageSender {
     const keyInfo = getSessionKeyFromCtx(ctx);
     const sessionKey = keyInfo?.sessionKey;
     if (sessionKey && actionLogger.isActive(sessionKey)) {
-      await actionLogger.addTaskCompletion(ctx, sessionKey, task);
+      await actionLogger.addTaskCompletion(sessionKey, task);
       return;
     }
 
@@ -1033,10 +1055,78 @@ export class MessageSender {
     if (posted) this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
   }
 
-  private async flushTerminalUpdate(ctx: Context, state: StreamState): Promise<void> {
+  /** What the status line shows right now. */
+  private statusView(state: StreamState): StatusBubbleView {
+    return {
+      awaitingAnswer: hasPendingQuestionForSession(state.sessionKey),
+      operation: state.currentOperation,
+      spinnerIndex: state.spinnerIndex,
+      elapsedMs: Date.now() - state.operationStartTime,
+      pausedMs: state.lastRateLimitDurationMs > 0 ? state.lastRateLimitDurationMs : undefined,
+      tip: state.tip,
+      footer: renderBackgroundFooter(taskTracker.getBackgroundedTasks(state.sessionKey)),
+    };
+  }
+
+  /**
+   * The status line as the action log draws it at its bottom, or undefined for
+   * a turn without one (terminal UI off).
+   *
+   * It shares a message with up to ten actions, so a long command is clipped
+   * as compact mode clips it — verbose mode allows 3,500 characters — and a
+   * long detail is cut short. The bubble's rate-limit note is left off: it is
+   * about the bubble's own edits, which have stopped.
+   */
+  private logStatusSource(state: StreamState): StatusSource | undefined {
+    if (!state.terminalMode) return undefined;
+    return () => {
+      const view = this.statusView(state);
+      const operation = view.operation && {
+        ...view.operation,
+        detail: view.operation.detail && clip(view.operation.detail, LOG_STATUS_DETAIL_CHARS),
+        commandBlock: formatBashCommandBlock(view.operation.commandBlock, false),
+      };
+      return renderStatusBubble({ ...view, operation, pausedMs: undefined });
+    };
+  }
+
+  /**
+   * Swap the bubble's status line for a pointer to the action log, once the log
+   * carries the status line.
+   */
+  private async pointBubbleAtLog(ctx: Context, state: StreamState): Promise<void> {
+    if (state.bubblePointsAtLog || !state.messageId || Date.now() < state.rateLimitedUntil) return;
+    state.bubblePointsAtLog = true;
+    try {
+      await ctx.api.editMessageText(state.chatId, state.messageId, LOG_POINTER_LINE, { parse_mode: undefined });
+      state.lastUpdate = Date.now();
+    } catch (error: unknown) {
+      if (error instanceof GrammyError && error.error_code === 429) {
+        // Point it on a later refresh, once the backoff is over.
+        state.bubblePointsAtLog = false;
+        state.rateLimitedUntil = Date.now() + (error.parameters.retry_after ?? 60) * 1000;
+        return;
+      }
+      // Anything else is cosmetic: the bubble keeps its last status line.
+    }
+  }
+
+  /**
+   * Refresh the live status line. `immediate` skips the edit throttle, for a
+   * change the user has to see now.
+   */
+  private async flushTerminalUpdate(ctx: Context, state: StreamState, immediate = false): Promise<void> {
     // Verify state is still active
     const currentState = this.streamStates.get(state.sessionKey);
     if (!currentState || currentState !== state || !state.messageId || !state.terminalMode) {
+      return;
+    }
+
+    // Once the action log is in the chat it carries the status line, which
+    // it redraws on its own throttle. The bubble just points down at it.
+    if (actionLogger.showsStatus(state.sessionKey)) {
+      await this.pointBubbleAtLog(ctx, state);
+      await actionLogger.refreshStatus(state.sessionKey, immediate);
       return;
     }
 
@@ -1048,23 +1138,16 @@ export class MessageSender {
 
     // Throttle edits to avoid rate limits
     const timeSinceLastUpdate = now - state.lastUpdate;
-    if (timeSinceLastUpdate < MIN_EDIT_INTERVAL_MS) {
+    if (!immediate && timeSinceLastUpdate < MIN_EDIT_INTERVAL_MS) {
       return;
     }
 
-    const { text, entities } = renderStatusBubble({
-      awaitingAnswer: hasPendingQuestionForSession(state.sessionKey),
-      operation: state.currentOperation,
-      spinnerIndex: state.spinnerIndex,
-      elapsedMs: now - state.operationStartTime,
-      pausedMs: state.lastRateLimitDurationMs > 0 ? state.lastRateLimitDurationMs : undefined,
-      tip: state.tip,
-      footer: renderBackgroundFooter(taskTracker.getBackgroundedTasks(state.sessionKey)),
-    });
+    const { text, entities } = renderStatusBubble(this.statusView(state));
 
     try {
       await ctx.api.editMessageText(state.chatId, state.messageId, text, { entities });
       state.lastUpdate = Date.now();
+      state.bubblePointsAtLog = false;
       // Successful edit — clear any rate-limit annotation after it's been shown once
       state.lastRateLimitDurationMs = 0;
     } catch (error: unknown) {
@@ -1157,8 +1240,7 @@ export class MessageSender {
     if (state.terminalMode) {
       // Bypass the edit throttle: the point of the notice is that it lands
       // now, not up to MIN_EDIT_INTERVAL_MS later on the next spinner tick.
-      state.lastUpdate = 0;
-      await this.flushTerminalUpdate(ctx, state).catch(() => {});
+      await this.flushTerminalUpdate(ctx, state, true).catch(() => {});
       return;
     }
 
@@ -1272,7 +1354,7 @@ export class MessageSender {
 
     // Collapse the live log into a Telegraph link once any remaining tool
     // results have landed.
-    actionLogger.endTurn(ctx, sessionKey);
+    actionLogger.endTurn(sessionKey);
   }
 
   /**
@@ -1315,7 +1397,7 @@ export class MessageSender {
 
     // Collapse the live log into a Telegraph link once any remaining tool
     // results have landed.
-    actionLogger.endTurn(ctx, sessionKey);
+    actionLogger.endTurn(sessionKey);
   }
 
   /**

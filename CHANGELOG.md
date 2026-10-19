@@ -208,6 +208,29 @@ reasoning — the commit bodies are the long form, this is the index.
   message of its own, and TeleCoder only looked for the message. It now reads
   the folded-in completion too.
 
+- **A running turn no longer keeps "typing…" up** — every turn renewed
+  Telegram's "typing…" indicator every four seconds until it ended, and
+  Telegram Desktop draws that animation on the CPU for as long as it shows, so
+  a long turn kept the client busy the whole time. A turn with the live status
+  line (`/terminalui`, on by default) no longer sends it: the status line
+  already shows the turn is alive. With the terminal UI off, "typing…" stays,
+  since nothing else would. In verbose mode the status line now sits at the
+  bottom of the action log, because the log is posted below the status bubble
+  and is usually tall enough to push it off screen. That left "typing…" as the
+  only live sign you could see. The bubble points down at the log, and the
+  log's header starts with ⏳ while the turn runs, so the chat list shows it's
+  still going. The waiting-for-your-answer line now points down at the
+  question too; it said "above", but the question is posted below it.
+
+- **The live action log catches up** — the log was edited at most every ten
+  seconds, and an action that arrived sooner was left off until another one
+  came in. After a burst of quick reads followed by a long build, the log
+  stayed a couple of actions behind for the whole build. It now draws the
+  waiting actions once the ten seconds are up, and after a Telegram rate limit
+  it draws again instead of dropping the change. Commands and output go out
+  as entities rather than MarkdownV2, so they show verbatim and nothing in
+  them can break an edit.
+
 - **A running command reads as code in the status bubble** — while a Bash
   command ran, the status bubble showed it as plain text under the timer, so
   a long one-liner, such as a loop polling `gh pr checks`, sat there as a raw

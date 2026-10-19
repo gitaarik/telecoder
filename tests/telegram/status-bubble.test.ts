@@ -81,7 +81,7 @@ describe('renderStatusBubble', () => {
       operation: { name: 'Bash', commandBlock: 'npm test' },
       tip: 'Use /btw to ask a side question',
     }));
-    expect(text).toBe('⏸️ Waiting for your answer — see the question above ↑');
+    expect(text).toBe('⏸️ Waiting for your answer — see the question below ↓');
     expect(entities).toEqual([]);
   });
 });
