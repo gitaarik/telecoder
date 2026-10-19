@@ -100,6 +100,14 @@ export class EntityText {
     }));
   }
 
+  /** Append another built message, its entities shifted to where it lands. */
+  append(message: EntityMessage): this {
+    for (const entity of message.entities) {
+      this.entities.push({ ...entity, offset: entity.offset + this.offset });
+    }
+    return this.add(message.text);
+  }
+
   /** Current length in UTF-16 code units — the unit Telegram's 4096 cap counts. */
   get length(): number {
     return this.offset;

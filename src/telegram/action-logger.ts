@@ -2,10 +2,16 @@
  * ActionLogger consolidates verbose mode action messages into a single editable
  * message instead of posting many separate messages. This provides a more
  * UI-like experience where actions are accumulated and displayed together.
+ *
+ * While its turn runs, the log also carries the turn's live status line at its
+ * bottom. The log is posted below the status bubble and is usually tall enough
+ * to push the bubble off screen, so the bottom of the log is where the user is
+ * looking.
  */
 
-import { Context, GrammyError } from 'grammy';
+import { GrammyError, type Api, type Context } from 'grammy';
 import { escapeMarkdownV2 } from './markdown.js';
+import { EntityText, type EntityMessage } from './entities.js';
 import { getToolIcon, extractToolDetail, elideToolOutput, stripAnsi } from './terminal-renderer.js';
 import { createTelegraphPage, fitsTelegraphPage } from './telegraph.js';
 import { isTelegraphEnabled } from './telegraph-settings.js';
@@ -19,6 +25,8 @@ const MIN_EDIT_INTERVAL_MS = 10000; // Minimum time between message edits (~5 ed
 const MAX_MESSAGE_CHARS = 4096;
 // The most actions the live log shows at once.
 const LIVE_LOG_ENTRIES = 10;
+// How much of an action's command and output the live log shows.
+const LIVE_ENTRY_CHARS = 200;
 // How long a log stays open once its turn has ended, so tool results still in
 // flight land in it before it collapses.
 const COLLAPSE_DELAY_MS = 5000;
@@ -28,6 +36,10 @@ function stripMcpServerPrefix(toolName: string): string {
   if (!toolName.startsWith('mcp__')) return toolName;
   const lastSep = toolName.lastIndexOf('__');
   return lastSep > 0 ? toolName.slice(lastSep + 2) : toolName;
+}
+
+function cutForLiveLog(text: string): string {
+  return text.length > LIVE_ENTRY_CHARS ? text.substring(0, LIVE_ENTRY_CHARS - 3) + '...' : text;
 }
 
 export interface ActionEntry {
@@ -42,15 +54,41 @@ export interface ActionEntry {
   status: 'running' | 'completed' | 'error';
 }
 
+/**
+ * The turn's live status line, rendered afresh each time the log is drawn.
+ * Supplied by MessageSender, which tracks what the turn is doing.
+ */
+export type StatusSource = () => EntityMessage;
+
+/** How the log is drawn: still running, and with which status line under it. */
+interface LogView {
+  live: boolean;
+  status?: EntityMessage;
+}
+
 interface ActionLogState {
+  sessionKey: string;
+  api: Api;
   chatId: number;
   threadId?: number;
   messageId: number | null;
   entries: ActionEntry[];
   lastUpdate: number;
   rateLimitedUntil: number;
+  /** Drawn under the newest entry until the turn ends. Absent when the turn has no status line. */
+  statusSource?: StatusSource;
+  /** The turn is over: the log drops its live marker and status line. */
+  ended: boolean;
   /** Once finalized, addX still records entries but skips message edits so the collapsed summary stays put. */
   finalized: boolean;
+  /** Something has changed since the last draw that reached the chat. */
+  dirty: boolean;
+  /** A draw waiting out the edit throttle. */
+  drawTimer: ReturnType<typeof setTimeout> | null;
+  /** A send or edit is on its way to Telegram. */
+  inFlight: boolean;
+  /** What the message reads now, so a draw that changes nothing is skipped rather than refused as "not modified". */
+  lastDrawn: string;
 }
 
 /**
@@ -63,8 +101,9 @@ export class ActionLogger {
 
   /**
    * Initialize action logging for a session. Creates the state but doesn't send a message yet.
+   * `statusSource` is the turn's live status line, drawn at the bottom of the log while the turn runs.
    */
-  async initialize(ctx: Context, sessionKey: string): Promise<void> {
+  async initialize(ctx: Context, sessionKey: string, statusSource?: StatusSource): Promise<void> {
     const chatId = ctx.chat?.id;
     if (chatId === undefined) return;
 
@@ -77,13 +116,21 @@ export class ActionLogger {
 
     // Just create the state, don't send a message yet
     this.logStates.set(sessionKey, {
+      sessionKey,
+      api: ctx.api,
       chatId,
       threadId,
       messageId: null, // Will be created when first action is added
       entries: [],
       lastUpdate: Date.now(),
       rateLimitedUntil: 0,
+      statusSource,
+      ended: false,
       finalized: false,
+      dirty: false,
+      drawTimer: null,
+      inFlight: false,
+      lastDrawn: '',
     });
   }
 
@@ -91,7 +138,6 @@ export class ActionLogger {
    * Add a tool result to the action log
    */
   async addToolResult(
-    ctx: Context,
     sessionKey: string,
     event: ToolResultEvent,
     maxLines: number,
@@ -130,14 +176,13 @@ export class ActionLogger {
     };
 
     state.entries.push(entry);
-    await this.updateLogMessage(ctx, state);
+    await this.requestDraw(state);
   }
 
   /**
    * Add an edit diff to the action log
    */
   async addEditDiff(
-    ctx: Context,
     sessionKey: string,
     event: EditDiffEvent,
     maxLines: number
@@ -179,14 +224,13 @@ export class ActionLogger {
     };
 
     state.entries.push(entry);
-    await this.updateLogMessage(ctx, state);
+    await this.requestDraw(state);
   }
 
   /**
    * Add a monitor event to the action log
    */
   async addMonitorEvent(
-    ctx: Context,
     sessionKey: string,
     task: TaskState,
     eventText: string
@@ -210,14 +254,13 @@ export class ActionLogger {
     };
 
     state.entries.push(entry);
-    await this.updateLogMessage(ctx, state);
+    await this.requestDraw(state);
   }
 
   /**
    * Add a task completion to the action log
    */
   async addTaskCompletion(
-    ctx: Context,
     sessionKey: string,
     task: TaskState
   ): Promise<void> {
@@ -258,108 +301,140 @@ export class ActionLogger {
     };
 
     state.entries.push(entry);
-    await this.updateLogMessage(ctx, state);
+    await this.requestDraw(state);
   }
 
   /**
-   * Update the action log message with current entries
+   * Whether the turn's status line is showing at the bottom of the log: from
+   * the log's first post until its turn ends. MessageSender stops updating the
+   * status bubble meanwhile and points it at the log instead.
    */
-  private async updateLogMessage(ctx: Context, state: ActionLogState): Promise<void> {
-    // Once the turn has been collapsed into a Telegraph summary, leave the
-    // message alone. Stragglers (background-task completions arriving in the
-    // post-turn drain window) are still recorded in state.entries but they
-    // shouldn't blow away the user-visible summary.
+  showsStatus(sessionKey: string): boolean {
+    const state = this.logStates.get(sessionKey);
+    return state !== undefined && this.isShowingStatus(state);
+  }
+
+  /**
+   * Redraw the log for a new status line. Waits behind the edit throttle like
+   * any other change, unless `immediate` — a question waiting on the user
+   * shouldn't go unannounced until the next slot.
+   */
+  async refreshStatus(sessionKey: string, immediate = false): Promise<void> {
+    const state = this.logStates.get(sessionKey);
+    if (!state || !this.isShowingStatus(state)) return;
+    await this.requestDraw(state, immediate);
+  }
+
+  private isShowingStatus(state: ActionLogState): boolean {
+    return state.statusSource !== undefined && state.messageId !== null && !state.ended;
+  }
+
+  /**
+   * Draw the log now if the edit throttle allows, or as soon as it does.
+   *
+   * The first draw posts the message straight away; the edits after it are at
+   * least MIN_EDIT_INTERVAL_MS apart, and `immediate` skips that wait. A change
+   * that comes too soon waits for its slot instead of being dropped. Dropped,
+   * the newest actions stayed off the log until another one came in, which
+   * during a long build after a burst of quick reads was minutes.
+   */
+  private async requestDraw(state: ActionLogState, immediate = false): Promise<void> {
     if (state.finalized) return;
+    state.dirty = true;
+    // The draw in flight goes again when it lands, and picks this change up.
+    if (state.inFlight) return;
 
-    // If no message exists yet, create it now that we have content
-    if (!state.messageId) {
-      const sendOpts = state.threadId !== undefined ? { message_thread_id: state.threadId } : {};
-      const shown = this.entriesThatFit(state.entries);
-
-      try {
-        const content = this.renderActionLog(state.entries, shown);
-        const message = await ctx.api.sendMessage(state.chatId, content, {
-          parse_mode: 'MarkdownV2',
-          ...sendOpts
-        });
-
-        state.messageId = message.message_id;
-        state.lastUpdate = Date.now();
-        return;
-      } catch (error) {
-        console.error('[ActionLogger] Failed to create initial message:', error);
-        // Try plain text fallback
-        try {
-          const plainContent = this.renderActionLogPlain(state.entries, shown);
-          const message = await ctx.api.sendMessage(state.chatId, plainContent, {
-            parse_mode: undefined,
-            ...sendOpts
-          });
-          state.messageId = message.message_id;
-          state.lastUpdate = Date.now();
-          return;
-        } catch (plainError) {
-          console.error('[ActionLogger] Plain text fallback also failed:', plainError);
-          return;
-        }
-      }
-    }
-
-    // Respect Telegram's retry_after backoff on 429
     const now = Date.now();
-    if (now < state.rateLimitedUntil) return;
+    const due = Math.max(
+      state.messageId === null || immediate ? now : state.lastUpdate + MIN_EDIT_INTERVAL_MS,
+      // Respect Telegram's retry_after backoff on 429
+      state.rateLimitedUntil,
+    );
+    if (due <= now) {
+      this.cancelDraw(state);
+      await this.draw(state);
+    } else if (!state.drawTimer) {
+      state.drawTimer = setTimeout(() => {
+        state.drawTimer = null;
+        void this.requestDraw(state);
+      }, due - now);
+      // Never hold the process open for a cosmetic edit.
+      state.drawTimer.unref?.();
+    }
+  }
 
-    // Throttle edits to avoid rate limits
-    const timeSinceLastUpdate = now - state.lastUpdate;
-    if (timeSinceLastUpdate < MIN_EDIT_INTERVAL_MS) return;
+  private cancelDraw(state: ActionLogState): void {
+    if (state.drawTimer) {
+      clearTimeout(state.drawTimer);
+      state.drawTimer = null;
+    }
+  }
 
-    const shown = this.entriesThatFit(state.entries);
-    const content = this.renderActionLog(state.entries, shown);
+  private async draw(state: ActionLogState): Promise<void> {
+    if (state.finalized || state.inFlight || !state.dirty || state.entries.length === 0) return;
+    state.inFlight = true;
+    state.dirty = false;
 
+    let drawn = '';
     try {
-      await ctx.api.editMessageText(
-        state.chatId,
-        state.messageId,
-        content,
-        { parse_mode: 'MarkdownV2' }
-      );
+      const { text, entities } = this.renderLive(state);
+      drawn = JSON.stringify({ text, entities });
+      if (state.messageId === null) {
+        const sendOpts = state.threadId !== undefined ? { message_thread_id: state.threadId } : {};
+        const message = await state.api.sendMessage(state.chatId, text, { entities, ...sendOpts });
+        state.messageId = message.message_id;
+      } else if (drawn !== state.lastDrawn) {
+        await state.api.editMessageText(state.chatId, state.messageId, text, { entities });
+      } else {
+        return;
+      }
       state.lastUpdate = Date.now();
+      state.lastDrawn = drawn;
     } catch (error: unknown) {
-      if (error instanceof GrammyError) {
-        if (error.error_code === 429) {
-          const retryAfter = error.parameters.retry_after ?? 60;
-          state.rateLimitedUntil = Date.now() + retryAfter * 1000;
-          console.warn(`[ActionLogger] Rate limited, backing off for ${retryAfter}s`);
-          return;
-        }
+      this.handleDrawError(state, error, drawn);
+    } finally {
+      state.inFlight = false;
+      if (state.dirty) void this.requestDraw(state);
+    }
+  }
 
-        const msg = error.message.toLowerCase();
-        if (msg.includes('message is not modified')) {
-          return; // Content unchanged, ignore
-        }
-        if (msg.includes('message_id_invalid')) {
-          // Message was deleted, cleanup state
-          this.logStates.delete(this.getSessionKeyFromState(state));
-          return;
-        }
+  private handleDrawError(state: ActionLogState, error: unknown, drawn: string): void {
+    if (error instanceof GrammyError) {
+      if (error.error_code === 429) {
+        const retryAfter = error.parameters.retry_after ?? 60;
+        state.rateLimitedUntil = Date.now() + retryAfter * 1000;
+        // Draw it again once the backoff is over.
+        state.dirty = true;
+        console.warn(`[ActionLogger] Rate limited, backing off for ${retryAfter}s`);
+        return;
       }
 
-      console.error('[ActionLogger] Failed to update message:', error);
-
-      // Fallback to plain text if MarkdownV2 parsing fails
-      try {
-        const plainContent = this.renderActionLogPlain(state.entries, shown);
-        await ctx.api.editMessageText(
-          state.chatId,
-          state.messageId,
-          plainContent,
-          { parse_mode: undefined }
-        );
-        state.lastUpdate = Date.now();
-      } catch (plainError) {
-        console.error('[ActionLogger] Plain text fallback failed:', plainError);
+      const msg = error.message.toLowerCase();
+      if (msg.includes('message is not modified')) {
+        state.lastDrawn = drawn;
+        return;
+      }
+      if (msg.includes('message_id_invalid') || msg.includes('message to edit not found')) {
+        // Message was deleted: let the log go, so the next action opens a new one.
+        state.finalized = true;
+        this.cancelDraw(state);
+        if (this.logStates.get(state.sessionKey) === state) this.logStates.delete(state.sessionKey);
+        return;
       }
     }
+
+    console.error('[ActionLogger] Failed to draw the log:', error);
+  }
+
+  /** The log as it reads now: the newest entries that fit, under them the status line while the turn runs. */
+  private renderLive(state: ActionLogState): EntityMessage {
+    const view: LogView = {
+      live: !state.ended,
+      // Rendered once per draw. The thinking verb in it is picked at random,
+      // so a second call could come out longer than the fit was measured on.
+      status: state.ended ? undefined : state.statusSource?.(),
+    };
+    return this.renderActionLog(state.entries, this.entriesThatFit(state.entries, view), view);
   }
 
   /**
@@ -368,30 +443,35 @@ export class ActionLogger {
    *
    * Ten entries with a command and a couple of hundred characters of output
    * each come to more than a Telegram message holds. An edit that long fails
-   * with MESSAGE_TOO_LONG, and so did the plain-text fallback, which is hardly
-   * shorter — so a busy turn's live log froze partway through. Measured on the
-   * MarkdownV2 source, which is never shorter than the text Telegram counts
-   * once it has parsed the markup, nor than the plain-text render.
+   * with MESSAGE_TOO_LONG — so a busy turn's live log froze partway through.
+   * Measured on the text as sent: the formatting goes out as entities rather
+   * than markup, so its length is what Telegram counts.
    */
-  private entriesThatFit(entries: ActionEntry[]): number {
+  private entriesThatFit(entries: ActionEntry[], view: LogView): number {
     let shown = Math.min(entries.length, LIVE_LOG_ENTRIES);
-    while (shown > 1 && this.renderActionLog(entries, shown).length > MAX_MESSAGE_CHARS) shown--;
+    while (shown > 1 && this.renderActionLog(entries, shown, view).text.length > MAX_MESSAGE_CHARS) shown--;
     return shown;
   }
 
   /**
-   * Render the newest `shown` action log entries as MarkdownV2
+   * Render the newest `shown` action log entries.
+   *
+   * Entities rather than MarkdownV2: commands and their output are the model's
+   * and the shell's own text, so they go out verbatim with nothing to escape.
+   *
+   * The header starts with ⏳ while the turn runs. The chat list previews a
+   * chat by the start of its newest message, which mid-turn is usually this
+   * one — so that's where the list shows the agent is still at it.
    */
-  private renderActionLog(entries: ActionEntry[], shown: number): string {
-    if (entries.length === 0) {
-      return '📋 **Action Log**\n\n_No actions yet\\.\\.\\._';
+  private renderActionLog(entries: ActionEntry[], shown: number, view: LogView): EntityMessage {
+    const b = new EntityText();
+    b.add(view.live ? '⏳ ' : '📋 ').bold('Action Log');
+
+    if (entries.length > shown) {
+      b.newline(2).italic(`Showing last ${shown} of ${entries.length} actions`);
     }
 
-    const lines = ['📋 **Action Log**', ''];
-
-    const recentEntries = entries.slice(-shown);
-
-    recentEntries.forEach((entry, index) => {
+    for (const entry of entries.slice(-shown)) {
       const statusEmoji = entry.status === 'completed' ? '✅' :
                          entry.status === 'error' ? '❌' : '⏳';
 
@@ -401,84 +481,14 @@ export class ActionLogger {
         minute: '2-digit'
       });
 
-      lines.push(`${entry.icon} ${statusEmoji} \\[${escapeMarkdownV2(time)}\\] ${escapeMarkdownV2(entry.title)}`);
-
-      if (entry.subtitle) {
-        const trimmedSubtitle = entry.subtitle.length > 200
-          ? entry.subtitle.substring(0, 197) + '...'
-          : entry.subtitle;
-        lines.push(`\`${escapeMarkdownV2(trimmedSubtitle)}\``);
-      }
-
-      if (entry.content) {
-        const truncatedContent = entry.content.length > 200
-          ? entry.content.substring(0, 197) + '...'
-          : entry.content;
-
-        lines.push(`\`\`\`\n${escapeMarkdownV2(truncatedContent)}\n\`\`\``);
-      }
-
-      if (index < recentEntries.length - 1) {
-        lines.push('');
-      }
-    });
-
-    if (entries.length > shown) {
-      lines.unshift(`_Showing last ${shown} of ${entries.length} actions_`, '');
+      b.newline(2).add(`${entry.icon} ${statusEmoji} [${time}] ${entry.title}`);
+      if (entry.subtitle) b.newline().code(cutForLiveLog(entry.subtitle));
+      if (entry.content) b.newline().pre(cutForLiveLog(entry.content));
     }
 
-    return lines.join('\n');
-  }
+    if (view.status) b.newline(2).append(view.status);
 
-  /**
-   * Render the newest `shown` action log entries as plain text (fallback)
-   */
-  private renderActionLogPlain(entries: ActionEntry[], shown: number): string {
-    if (entries.length === 0) {
-      return '📋 Action Log\n\nNo actions yet...';
-    }
-
-    const lines = ['📋 Action Log', ''];
-
-    const recentEntries = entries.slice(-shown);
-
-    recentEntries.forEach((entry, index) => {
-      const statusEmoji = entry.status === 'completed' ? '✅' :
-                         entry.status === 'error' ? '❌' : '⏳';
-
-      const time = new Date(entry.timestamp).toLocaleTimeString('en-US', {
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-
-      lines.push(`${entry.icon} ${statusEmoji} [${time}] ${entry.title}`);
-
-      if (entry.subtitle) {
-        const trimmedSubtitle = entry.subtitle.length > 200
-          ? entry.subtitle.substring(0, 197) + '...'
-          : entry.subtitle;
-        lines.push(`  ${trimmedSubtitle}`);
-      }
-
-      if (entry.content) {
-        const truncatedContent = entry.content.length > 200
-          ? entry.content.substring(0, 197) + '...'
-          : entry.content;
-
-        lines.push(`  ${truncatedContent}`);
-      }
-
-      if (index < recentEntries.length - 1) {
-        lines.push('');
-      }
-    });
-
-    if (entries.length > shown) {
-      lines.unshift(`Showing last ${shown} of ${entries.length} actions`, '');
-    }
-
-    return lines.join('\n');
+    return b.build();
   }
 
   /**
@@ -490,13 +500,17 @@ export class ActionLogger {
    * well inside the delay — looked up by key, the timer collapsed the new
    * turn's log mid-turn, or threw it away while it was still empty, and never
    * collapsed this one.
+   *
+   * The live marker and status line go at once, so a draw in the meantime —
+   * for a result still landing — doesn't show the finished turn as running.
    */
-  endTurn(ctx: Context, sessionKey: string): void {
+  endTurn(sessionKey: string): void {
     const state = this.logStates.get(sessionKey);
     if (!state) return;
+    state.ended = true;
     setTimeout(async () => {
       try {
-        await this.finalize(ctx, sessionKey, state);
+        await this.finalize(state);
       } finally {
         // Unless a newer turn's log has taken the session over since.
         if (this.logStates.get(sessionKey) === state) this.logStates.delete(sessionKey);
@@ -508,31 +522,36 @@ export class ActionLogger {
    * Collapse the in-chat action log into a Telegraph link at the end of a turn.
    * Renders all entries (no 10-entry cap) onto a Telegraph page, then edits
    * the existing action-log message into a brief "📋 N actions · view full
-   * log" summary. If Telegraph is disabled or fails, the message is left as-is
-   * (callers still get the live-streamed view).
+   * log" summary. If Telegraph is disabled or fails, the log is drawn one last
+   * time as it stands, without the live marker and status line.
    */
-  private async finalize(ctx: Context, sessionKey: string, state: ActionLogState): Promise<void> {
+  private async finalize(state: ActionLogState): Promise<void> {
     if (state.finalized) return;
-    if (!state.messageId || state.entries.length === 0) return;
-    if (!isTelegraphEnabled(sessionKey)) return;
-
+    // No more live draws: whatever is drawn from here on is final.
     state.finalized = true;
+    this.cancelDraw(state);
+    if (!state.messageId || state.entries.length === 0) return;
 
-    const markdown = this.renderTelegraphPage(state.entries);
-    const pageUrl = await createTelegraphPage('Action log', markdown);
-    if (!pageUrl) {
-      // Telegraph creation failed (rate limit, network); leave the live log
-      // visible so the user still has something to inspect.
-      state.finalized = false;
-      return;
-    }
+    // Telegraph creation can fail (rate limit, network); the full log then
+    // stays in the chat instead.
+    const pageUrl = isTelegraphEnabled(state.sessionKey)
+      ? await createTelegraphPage('Action log', this.renderTelegraphPage(state.entries))
+      : null;
 
-    const summary = this.renderCollapsedSummary(state.entries, pageUrl);
     try {
-      await ctx.api.editMessageText(state.chatId, state.messageId, summary, {
-        parse_mode: 'MarkdownV2',
-        link_preview_options: { is_disabled: true },
-      });
+      if (pageUrl) {
+        const summary = this.renderCollapsedSummary(state.entries, pageUrl);
+        await state.api.editMessageText(state.chatId, state.messageId, summary, {
+          parse_mode: 'MarkdownV2',
+          link_preview_options: { is_disabled: true },
+        });
+        return;
+      }
+
+      const view: LogView = { live: false };
+      const { text, entities } = this.renderActionLog(state.entries, this.entriesThatFit(state.entries, view), view);
+      if (JSON.stringify({ text, entities }) === state.lastDrawn) return;
+      await state.api.editMessageText(state.chatId, state.messageId, text, { entities });
     } catch (error) {
       if (error instanceof GrammyError) {
         const msg = error.message.toLowerCase();
@@ -647,18 +666,6 @@ export class ActionLogger {
     const home = process.env.HOME;
     if (home && filePath.startsWith(home + '/')) return '~/' + filePath.slice(home.length + 1);
     return filePath;
-  }
-
-  /**
-   * Helper to extract session key from state (for cleanup)
-   */
-  private getSessionKeyFromState(state: ActionLogState): string {
-    // This is a hack since we don't store sessionKey in state
-    // In real usage, caller handles cleanup by sessionKey
-    for (const [key, value] of this.logStates) {
-      if (value === state) return key;
-    }
-    return '';
   }
 }
 
