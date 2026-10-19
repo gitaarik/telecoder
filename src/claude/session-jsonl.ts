@@ -12,7 +12,7 @@ export interface UserPrompt {
   text: string;
   /** ISO timestamp Claude Code recorded for the prompt, when the log carried one. */
   timestamp?: string;
-  /** True when no assistant turn follows: still being answered, or interrupted. */
+  /** True when no reply follows before the next prompt: still being answered, or interrupted. */
   pending: boolean;
 }
 
@@ -480,10 +480,28 @@ function readTurns(workingDirectory: string, sessionId: string): Turn[] {
 
 /** {@link readTurns} over a transcript already in hand rather than on disk. */
 function turnsIn(raw: string): Turn[] {
-  const lines = raw.split('\n');
   const turns: Turn[] = [];
 
-  for (const line of lines) {
+  for (const record of proseRecordsIn(raw)) {
+    const last = turns[turns.length - 1];
+    if (last && last.role === record.role) {
+      last.text += '\n\n' + record.text;
+    } else {
+      turns.push({ ...record });
+    }
+  }
+
+  return turns;
+}
+
+/**
+ * Every record in a transcript that carries prose, each as a turn of its own:
+ * what the user sent and what the assistant wrote back, in order.
+ */
+function proseRecordsIn(raw: string): Turn[] {
+  const records: Turn[] = [];
+
+  for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
     let rec: JsonlRecord;
     try {
@@ -503,15 +521,10 @@ function turnsIn(raw: string): Turn[] {
     const text = extractText(rec.message?.content);
     if (!text) continue; // pure tool_result / tool_use / thinking — skip
 
-    const last = turns[turns.length - 1];
-    if (last && last.role === role) {
-      last.text += '\n\n' + text;
-    } else {
-      turns.push({ role, text, timestamp: rec.timestamp });
-    }
+    records.push({ role, text, timestamp: rec.timestamp });
   }
 
-  return turns;
+  return records;
 }
 
 /**
@@ -550,31 +563,35 @@ function pairExchanges(turns: Turn[]): RecapExchange[] {
 }
 
 /**
- * The last `n` prompts the user typed, oldest first.
+ * Every prompt the user typed, oldest first.
  *
  * Unlike readRecentExchanges this keeps a trailing prompt that has no reply yet
  * and flags it `pending`. "What did I just ask?" while a long turn is still
  * running is the case /prompts exists for, so dropping the unanswered tail
  * would answer every question but that one.
+ *
+ * Each record is a prompt of its own, not merged into a turn the way
+ * readRecentExchanges merges them. A /compact writes three user records — the
+ * command, Claude Code's record of it, and what it printed — with no reply
+ * between them and the next prompt, so a turn would bury that prompt under all
+ * three. Which of the prompts were commands is for the caller to decide.
  */
-export function readRecentUserPrompts(
-  workingDirectory: string,
-  sessionId: string,
-  n: number,
-): UserPrompt[] {
-  const turns = readTurns(workingDirectory, sessionId);
+export function readUserPrompts(workingDirectory: string, sessionId: string): UserPrompt[] {
+  const filePath = sessionJsonlPath(workingDirectory, sessionId);
+  if (!fs.existsSync(filePath)) return [];
+  const records = proseRecordsIn(fs.readFileSync(filePath, 'utf-8'));
   const prompts: UserPrompt[] = [];
 
-  for (let i = 0; i < turns.length; i++) {
-    if (turns[i].role !== 'user') continue;
+  for (let i = 0; i < records.length; i++) {
+    if (records[i].role !== 'user') continue;
     prompts.push({
-      text: turns[i].text,
-      timestamp: turns[i].timestamp,
-      pending: turns[i + 1]?.role !== 'assistant',
+      text: records[i].text,
+      timestamp: records[i].timestamp,
+      pending: records[i + 1]?.role !== 'assistant',
     });
   }
 
-  return prompts.slice(-n);
+  return prompts;
 }
 
 /**

@@ -11,7 +11,7 @@ vi.mock('os', async (importOriginal) => {
   return { ...actual, default: actual, homedir: () => process.env.TELECODER_TEST_HOME ?? actual.homedir() };
 });
 
-const { readLastAssistantTurnText, readRecentExchanges, readRecentUserPrompts } = await import('../../src/claude/session-jsonl.js');
+const { readLastAssistantTurnText, readRecentExchanges, readUserPrompts } = await import('../../src/claude/session-jsonl.js');
 
 const CWD = '/home/someone/dev/telecoder';
 const SESSION = 'aaaaaaaa-bbbb-cccc-dddd-ffffffffffff';
@@ -31,6 +31,14 @@ const userPrompt = (uuid: string, text: string) => ({
 const assistant = (uuid: string, text: string) => ({
   type: 'assistant', uuid, timestamp: '2026-08-24T10:00:02.000Z',
   message: { role: 'assistant', content: [{ type: 'text', text }] },
+});
+/**
+ * A user record with no provenance fields: how Claude Code writes a note in the
+ * user's place, and its record of a slash command and of what one printed.
+ */
+const unflagged = (uuid: string, content: string) => ({
+  type: 'user', uuid, timestamp: '2026-08-24T10:00:01.000Z',
+  message: { role: 'user', content },
 });
 const toolResult = (uuid: string) => ({
   type: 'user', uuid, timestamp: '2026-08-24T10:00:01.000Z',
@@ -150,14 +158,14 @@ describe('readRecentExchanges', () => {
   });
 });
 
-describe('readRecentUserPrompts', () => {
+describe('readUserPrompts', () => {
   it('keeps the trailing prompt that has no reply yet and flags it pending', () => {
     writeLog([
       userPrompt('u1', 'first question'),
       assistant('a1', 'first answer'),
       userPrompt('u2', 'still running'),
     ]);
-    expect(readRecentUserPrompts(CWD, SESSION, 5)).toEqual([
+    expect(readUserPrompts(CWD, SESSION)).toEqual([
       { text: 'first question', timestamp: '2026-08-24T10:00:00.000Z', pending: false },
       { text: 'still running', timestamp: '2026-08-24T10:00:00.000Z', pending: true },
     ]);
@@ -171,21 +179,44 @@ describe('readRecentUserPrompts', () => {
       taskNotification('n1', 'Agent "Audit" completed'),
       assistant('a2', 'second half'),
     ]);
-    expect(readRecentUserPrompts(CWD, SESSION, 5)).toEqual([
+    expect(readUserPrompts(CWD, SESSION)).toEqual([
       { text: 'run the audit and summarise', timestamp: '2026-08-24T10:00:00.000Z', pending: false },
     ]);
   });
 
-  it('returns the newest n, oldest first', () => {
+  it('keeps a prompt apart from the records before it that got no reply', () => {
+    // What a /compact leaves: nothing answers these before the next prompt.
     writeLog([
       userPrompt('u1', 'one'), assistant('a1', 'r1'),
+      unflagged('c1', '/compact'),
+      unflagged('c2', '<command-name>/compact</command-name>'),
+      unflagged('c3', '<local-command-stdout>Compacted</local-command-stdout>'),
       userPrompt('u2', 'two'), assistant('a2', 'r2'),
-      userPrompt('u3', 'three'), assistant('a3', 'r3'),
     ]);
-    expect(readRecentUserPrompts(CWD, SESSION, 2).map((p) => p.text)).toEqual(['two', 'three']);
+    expect(readUserPrompts(CWD, SESSION).map((p) => [p.text, p.pending])).toEqual([
+      ['one', false],
+      ['/compact', true],
+      ['<command-name>/compact</command-name>', true],
+      ['<local-command-stdout>Compacted</local-command-stdout>', true],
+      ['two', false],
+    ]);
+  });
+
+  it('flags a prompt that was interrupted before any reply', () => {
+    writeLog([
+      userPrompt('u1', 'do it this way'),
+      toolResult('tr1'),
+      unflagged('n1', '[Request interrupted by user]'),
+      userPrompt('u2', 'no, the other way'), assistant('a1', 'Done.'),
+    ]);
+    expect(readUserPrompts(CWD, SESSION).map((p) => [p.text, p.pending])).toEqual([
+      ['do it this way', true],
+      ['[Request interrupted by user]', true],
+      ['no, the other way', false],
+    ]);
   });
 
   it('returns nothing when the session log is not on disk', () => {
-    expect(readRecentUserPrompts(CWD, 'no-such-session', 5)).toEqual([]);
+    expect(readUserPrompts(CWD, 'no-such-session')).toEqual([]);
   });
 });

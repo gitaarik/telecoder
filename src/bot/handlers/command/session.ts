@@ -18,7 +18,7 @@ import { messageSender } from '../../../telegram/message-sender.js';
 import { escapeMarkdownV2 as esc, processMessageForTelegram } from '../../../telegram/markdown.js';
 import {
   readRecentExchanges,
-  readRecentUserPrompts,
+  readUserPrompts,
   readLastAssistantTurnText,
   type RecapExchange,
   type UserPrompt,
@@ -335,7 +335,7 @@ export function promptLabel(raw: string): string | undefined {
   // A note Claude Code writes in the user's place, like [Request interrupted by user].
   if (/^\[[^\]]*\]$/.test(text)) return undefined;
 
-  const unwrapped = summarizeUserPrompt(text.replace(/<\/?pasted_content[^>]*>/g, '').trim());
+  const unwrapped = summarizeUserPrompt(unwrapPaste(text));
   const lines = unwrapped.split('\n');
   const own = lines.filter((line) => !/^\s*>/.test(line)).join(' ');
   const quoted = lines.map((line) => line.replace(/^\s*>\s?/, '')).join(' ');
@@ -347,8 +347,13 @@ export function promptLabel(raw: string): string | undefined {
   return label || undefined;
 }
 
+/** `text` without the tags Claude Code wraps a long or multi-line paste in. */
+function unwrapPaste(text: string): string {
+  return text.replace(/<\/?pasted_content[^>]*>/g, '').trim();
+}
+
 function truncateUserPrompt(text: string, max: number = RECAP_USER_MAX_CHARS): string {
-  const collapsed = summarizeUserPrompt(text).replace(/\s+/g, ' ').trim();
+  const collapsed = summarizeUserPrompt(unwrapPaste(text)).replace(/\s+/g, ' ').trim();
   if (collapsed.length <= max) return collapsed;
   return collapsed.slice(0, max - 1).trimEnd() + '…';
 }
@@ -508,7 +513,11 @@ export async function handlePrompts(ctx: Context): Promise<void> {
     return;
   }
 
-  const prompts = readRecentUserPrompts(session.workingDirectory, session.claudeSessionId, n);
+  const prompts = readUserPrompts(session.workingDirectory, session.claudeSessionId)
+    // A /compact and the records it leaves aren't prompts, and would each
+    // take one of the n lines.
+    .filter((p) => promptLabel(p.text) !== undefined)
+    .slice(-n);
   if (prompts.length === 0) {
     await replyMd(ctx, 'ℹ️ No prompts found in this session yet\\.');
     return;

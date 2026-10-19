@@ -84,6 +84,18 @@ reasoning — the commit bodies are the long form, this is the index.
   instead of 140, about two and a half lines on a phone, since five of them
   now sit under every answer.
 
+- **`/prompts` gives the prompt after a `/compact` its own line** — a
+  `/compact` leaves three records in the session log: the command, Claude
+  Code's record of it, and what it printed. `/prompts` read them as part of
+  the next prompt, so that prompt's line opened with some 200 characters of
+  `<command-name>…</local-command-stdout>`, terminal escape codes included,
+  and only about 85 of its 300 were yours. Each prompt now gets a line of
+  its own. Commands and the notes Claude Code writes in your place, like
+  "[Request interrupted by user]", are left out and don't count toward N. A
+  prompt interrupted before any reply was folded into the next one; it now
+  gets its own line, marked ⏳. A paste shows without the `<pasted_content>`
+  tags around it, in `/recap` too.
+
 ### Sharing a bot
 
 - **Auto-approve windows** — `/autoapprove 30m` lets the permission gate approve
