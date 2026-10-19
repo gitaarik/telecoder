@@ -96,6 +96,17 @@ reasoning — the commit bodies are the long form, this is the index.
   gets its own line, marked ⏳. A paste shows without the `<pasted_content>`
   tags around it, in `/recap` too.
 
+- **`/recap` and `/handoff` show only what you sent** — the exchange after a
+  `/compact` opened with the command's three records, terminal escape codes
+  and all, and an interrupted prompt carried "[Request interrupted by user]"
+  into the next one. Both are left out now, there and wherever else
+  exchanges are read off the log: a fork's banner, a `/tree` point, and the
+  conversation carried over when you switch providers. A command that got a
+  reply, like a skill run with a slash command, keeps its exchange.
+  `/handoff` also writes a paste without the `<pasted_content>` tags around
+  it. Across 312 recent sessions, 26 of 1,430 exchanges had such records in
+  the prompt; the replies are unchanged.
+
 ### Sharing a bot
 
 - **Auto-approve windows** — `/autoapprove 30m` lets the permission gate approve

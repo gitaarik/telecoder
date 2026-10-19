@@ -87,6 +87,28 @@ export function isSyntheticUserRecord(rec: JsonlRecord): boolean {
     || rec.isCompactSummary === true;
 }
 
+/**
+ * Whether a user-role record that isSyntheticUserRecord lets through holds a
+ * prompt, a slash command, or a note. Claude Code writes its record of a slash
+ * command, what one printed, and notes in the user's place like [Request
+ * interrupted by user] as plain user records, with none of the fields that
+ * flag the others, so the text is all there is to tell them by.
+ *
+ * Not folded into isSyntheticUserRecord: the end-of-turn read uses that to find
+ * the turn's prompt, and for a turn that ran /compact the command's records are
+ * that prompt — without them it would find the prompt before and hand back its
+ * reply again.
+ */
+export function userTextKind(text: string): 'prompt' | 'command' | 'note' {
+  const t = text.trim();
+  // What a slash command printed, and a note written in the user's place.
+  if (/^<local-command-/.test(t) || /^\[[^\]]*\]$/.test(t)) return 'note';
+  // Claude Code's record of a slash command, and a command sent as the prompt:
+  // /compact, /model opus. A path is not one.
+  if (/^<(command-name|command-message)/.test(t) || /^\/[a-z][\w:-]*(\s|$)/i.test(t)) return 'command';
+  return 'prompt';
+}
+
 /** Build the path Claude Code uses to store a session's JSONL log. */
 export function sessionJsonlPath(workingDirectory: string, sessionId: string): string {
   const encoded = workingDirectory.replace(/\//g, '-');
@@ -480,16 +502,23 @@ function readTurns(workingDirectory: string, sessionId: string): Turn[] {
 
 /** {@link readTurns} over a transcript already in hand rather than on disk. */
 function turnsIn(raw: string): Turn[] {
+  const records = proseRecordsIn(raw);
   const turns: Turn[] = [];
 
-  for (const record of proseRecordsIn(raw)) {
+  records.forEach((record, i) => {
+    // A command nothing answered — a /compact, a /login — isn't a turn of the
+    // conversation. Merged in, it would open the next prompt's turn. One that
+    // was answered, like a skill, stays: it's what the reply answers.
+    if (record.role === 'user' && userTextKind(record.text) === 'command' && records[i + 1]?.role !== 'assistant') {
+      return;
+    }
     const last = turns[turns.length - 1];
     if (last && last.role === record.role) {
       last.text += '\n\n' + record.text;
     } else {
       turns.push({ ...record });
     }
-  }
+  });
 
   return turns;
 }
@@ -520,6 +549,9 @@ function proseRecordsIn(raw: string): Turn[] {
 
     const text = extractText(rec.message?.content);
     if (!text) continue; // pure tool_result / tool_use / thinking — skip
+    // What a command printed, or a note written in the user's place, isn't
+    // something the user said either.
+    if (role === 'user' && userTextKind(text) === 'note') continue;
 
     records.push({ role, text, timestamp: rec.timestamp });
   }
@@ -571,10 +603,10 @@ function pairExchanges(turns: Turn[]): RecapExchange[] {
  * would answer every question but that one.
  *
  * Each record is a prompt of its own, not merged into a turn the way
- * readRecentExchanges merges them. A /compact writes three user records — the
- * command, Claude Code's record of it, and what it printed — with no reply
- * between them and the next prompt, so a turn would bury that prompt under all
- * three. Which of the prompts were commands is for the caller to decide.
+ * readRecentExchanges merges them: a prompt interrupted before any reply stays
+ * apart from the one after it, and stays pending. Commands are returned with
+ * the rest, even the ones nothing answered, like a /compact; which of them to
+ * show is for the caller to decide.
  */
 export function readUserPrompts(workingDirectory: string, sessionId: string): UserPrompt[] {
   const filePath = sessionJsonlPath(workingDirectory, sessionId);

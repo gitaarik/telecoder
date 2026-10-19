@@ -20,6 +20,7 @@ import {
   readRecentExchanges,
   readUserPrompts,
   readLastAssistantTurnText,
+  userTextKind,
   type RecapExchange,
   type UserPrompt,
 } from '../../../claude/session-jsonl.js';
@@ -328,12 +329,7 @@ export function summarizeUserPrompt(text: string): string {
  */
 export function promptLabel(raw: string): string | undefined {
   const text = raw.trim();
-  // Claude Code's record of a slash command, and of what one printed.
-  if (/^<(command-name|command-message|local-command-)/.test(text)) return undefined;
-  // A slash command sent as the prompt: /compact, /model opus. A path is not one.
-  if (/^\/[a-z][\w:-]*(\s|$)/i.test(text)) return undefined;
-  // A note Claude Code writes in the user's place, like [Request interrupted by user].
-  if (/^\[[^\]]*\]$/.test(text)) return undefined;
+  if (userTextKind(text) !== 'prompt') return undefined;
 
   const unwrapped = summarizeUserPrompt(unwrapPaste(text));
   const lines = unwrapped.split('\n');
@@ -347,9 +343,13 @@ export function promptLabel(raw: string): string | undefined {
   return label || undefined;
 }
 
-/** `text` without the tags Claude Code wraps a long or multi-line paste in. */
+/**
+ * `text` without the tags Claude Code wraps a long or multi-line paste in,
+ * along with the line break it puts inside each, so a paste in the middle of a
+ * turn keeps the blank line around it and gains no extra one.
+ */
 function unwrapPaste(text: string): string {
-  return text.replace(/<\/?pasted_content[^>]*>/g, '').trim();
+  return text.replace(/<pasted_content[^>]*>\n?|\n?<\/pasted_content[^>]*>/g, '').trim();
 }
 
 function truncateUserPrompt(text: string, max: number = RECAP_USER_MAX_CHARS): string {
@@ -579,7 +579,7 @@ export async function handleHandoff(ctx: Context): Promise<void> {
     bodyLines.push('');
     bodyLines.push('### User');
     bodyLines.push('');
-    bodyLines.push(ex.user.trim());
+    bodyLines.push(unwrapPaste(ex.user));
     bodyLines.push('');
     bodyLines.push('### Assistant');
     bodyLines.push('');

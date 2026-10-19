@@ -156,6 +156,45 @@ describe('readRecentExchanges', () => {
       { user: 'run the audit and summarise', assistant: 'first half\n\nsecond half' },
     ]);
   });
+
+  it('leaves a /compact out of the exchange after it', () => {
+    writeLog([
+      userPrompt('u1', 'one'), assistant('a1', 'r1'),
+      unflagged('c1', '/compact'),
+      unflagged('c2', '<command-name>/compact</command-name>\n<command-message>compact</command-message>'),
+      unflagged('c3', '<local-command-stdout>Compacted</local-command-stdout>'),
+      userPrompt('u2', 'two'), assistant('a2', 'r2'),
+    ]);
+    expect(readRecentExchanges(CWD, SESSION, 3)).toEqual([
+      { user: 'one', assistant: 'r1' },
+      { user: 'two', assistant: 'r2' },
+    ]);
+  });
+
+  it('leaves out an interrupt note, keeping the interrupted prompt with the next', () => {
+    writeLog([
+      userPrompt('u1', 'do it this way'),
+      toolResult('tr1'),
+      unflagged('n1', '[Request interrupted by user for tool use]'),
+      userPrompt('u2', 'no, the other way'), assistant('a1', 'Done.'),
+    ]);
+    expect(readRecentExchanges(CWD, SESSION, 3)).toEqual([
+      { user: 'do it this way\n\nno, the other way', assistant: 'Done.' },
+    ]);
+  });
+
+  it('keeps a command that was answered, so its reply stays its own exchange', () => {
+    const review = '<command-name>/review</command-name>\n<command-args>high</command-args>';
+    writeLog([
+      userPrompt('u1', 'one'), assistant('a1', 'r1'),
+      unflagged('c1', review),
+      assistant('a2', 'Reviewed.'),
+    ]);
+    expect(readRecentExchanges(CWD, SESSION, 3)).toEqual([
+      { user: 'one', assistant: 'r1' },
+      { user: review, assistant: 'Reviewed.' },
+    ]);
+  });
 });
 
 describe('readUserPrompts', () => {
@@ -193,11 +232,11 @@ describe('readUserPrompts', () => {
       unflagged('c3', '<local-command-stdout>Compacted</local-command-stdout>'),
       userPrompt('u2', 'two'), assistant('a2', 'r2'),
     ]);
+    // What the command printed is gone already; the commands are the caller's to drop.
     expect(readUserPrompts(CWD, SESSION).map((p) => [p.text, p.pending])).toEqual([
       ['one', false],
       ['/compact', true],
       ['<command-name>/compact</command-name>', true],
-      ['<local-command-stdout>Compacted</local-command-stdout>', true],
       ['two', false],
     ]);
   });
@@ -211,7 +250,6 @@ describe('readUserPrompts', () => {
     ]);
     expect(readUserPrompts(CWD, SESSION).map((p) => [p.text, p.pending])).toEqual([
       ['do it this way', true],
-      ['[Request interrupted by user]', true],
       ['no, the other way', false],
     ]);
   });
