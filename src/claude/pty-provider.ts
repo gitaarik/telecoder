@@ -38,7 +38,9 @@ import { getModelsForBinary } from './model-catalog.js';
 import { scrapePromptSuggestion } from './prompt-suggestion-scraper.js';
 import { scrapeTip } from './tip-scraper.js';
 import {
+  clearPresses,
   hasInputBox,
+  inputBoxHolds,
   inputBoxPastePlaceholders,
   inputBoxText,
   isGenerating,
@@ -92,6 +94,14 @@ const CLAUDE_BIN = process.env.CLAUDE_BIN || resolveBin('claude');
 const STUCK_SCREEN_LINES = 12;
 const COLS = 120;
 const ROWS = 40;
+/**
+ * Characters claude fits on one row of the input box, after the `❯ ` glyph and
+ * its right margin. Measured against a live pty at COLS: a 115-character row
+ * fits, a 117-character one wraps.
+ */
+const INPUT_BOX_COLS = COLS - 5;
+/** Gap between the Ctrl+U presses of one clear, so claude takes them as keys and not as a paste. */
+const CLEAR_PRESS_GAP_MS = 20;
 const IDLE_MS = 1200;
 
 /**
@@ -227,9 +237,9 @@ export type OverlayResult =
 
 /**
  * The slice of a prompt we look for on the rendered screen: leading
- * non-whitespace of the first line, short enough to survive wrapping in the
- * 120-col input box, long enough to be distinctive. Undefined when the prompt
- * is too short to match meaningfully — callers treat that as "can't tell".
+ * non-whitespace of the first line, long enough to be distinctive. The box may
+ * wrap it across rows, which inputBoxHolds sees through. Undefined when the
+ * prompt is too short to match meaningfully — callers treat that as "can't tell".
  */
 function promptNeedle(prompt: string): string | undefined {
   const firstLine = prompt.replace(/^\s+/, '').split(/\r?\n/, 1)[0] ?? '';
@@ -812,7 +822,7 @@ export class PtyProvider implements Provider {
           // Empty the box first. A paste that landed too late to be seen is
           // still in the editor, and pasting on top of it would submit the
           // prompt twice over.
-          session.term.write('\x15');
+          await this._clearInputBox(session, prompt);
           await new Promise((r) => setTimeout(r, CLEAR_SETTLE_MS));
         }
         // Snapshot after the clear: echo-verify proves the prompt landed by
@@ -856,7 +866,7 @@ export class PtyProvider implements Provider {
         // Leave the editor as we found it. Anything the failed attempts did
         // land would otherwise sit in the box and ride along with whatever
         // the user sends next.
-        session.term.write('\x15');
+        await this._clearInputBox(session, prompt);
         throw new Error(
           "Claude Code's input box didn't take your message, so nothing was sent. "
           + 'Please send it again.',
@@ -1685,7 +1695,7 @@ export class PtyProvider implements Provider {
     // search reports "still unsent" forever and re-fires Enter into a session
     // that took the prompt long ago. No box at all reads as "don't" — an
     // overlay is up, and Enter is the keypress that answers one.
-    return inputBoxText(screenText)?.includes(needle) ?? false;
+    return inputBoxHolds(screenText, needle);
   }
 
   /**
@@ -1698,9 +1708,9 @@ export class PtyProvider implements Provider {
    * Two ways the prompt can prove it landed, because claude draws it two ways:
    *
    *   - Literally, in the input box, for a short prompt. The needle is the
-   *     leading non-whitespace slice of the first line — short enough to
-   *     survive line wrapping in the 120-col box, long enough to be
-   *     distinctive. Only the box is searched, never the whole screen: the box
+   *     leading non-whitespace slice of the first line, long enough to be
+   *     distinctive, and it is matched through any row break the box wraps
+   *     it across. Only the box is searched, never the whole screen: the box
    *     is the one region that holds unsent text and nothing else, so a hit
    *     there is proof on its own and needs no before/after comparison.
    *   - As a placeholder, once the paste runs past 800 characters or two
@@ -1751,12 +1761,25 @@ export class PtyProvider implements Provider {
     const deadline = Date.now() + capMs;
     while (Date.now() < deadline) {
       const screenText = this._getScreenText(session);
-      if (inputBoxText(screenText)?.includes(needle)) return { echoed: true };
+      if (inputBoxHolds(screenText, needle)) return { echoed: true };
       const mine = newPastePlaceholder(knownPasteIds, screenText);
       if (mine) return { echoed: true, pasteId: mine.id };
       await new Promise((r) => setTimeout(r, 25));
     }
     return { echoed: false };
+  }
+
+  /**
+   * Empty claude's input box of a prompt we pasted into it. One Ctrl+U clears
+   * only the row the cursor is on, so this sends as many as the prompt can
+   * need; clearPresses says why.
+   */
+  private async _clearInputBox(session: PtySession, prompt: string): Promise<void> {
+    const presses = clearPresses(prompt, INPUT_BOX_COLS);
+    for (let i = 0; i < presses; i++) {
+      session.term.write('\x15');
+      await new Promise((r) => setTimeout(r, CLEAR_PRESS_GAP_MS));
+    }
   }
 
   /**
