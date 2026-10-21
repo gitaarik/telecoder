@@ -111,7 +111,7 @@ export async function handleAgentReply(
   await runQueuedTurn(ctx, sessionKey, trimmedInput, `AgentReply:${mode}`, async () => {
     const startTime = Date.now();
 
-    await withStreamingTurn(ctx, sessionKey, async (abortController) => {
+    await withStreamingTurn(ctx, sessionKey, trimmedInput, async (abortController) => {
       let response;
       if (mode === 'loop') {
         response = await sendLoopToAgent(sessionKey, trimmedInput, {

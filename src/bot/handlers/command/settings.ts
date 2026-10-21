@@ -23,6 +23,7 @@ import { userPreferences } from '../../../providers/user-preferences.js';
 import { getActiveMethod, getPtyProvider } from '../../../providers/claude-provider.js';
 import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
 import { taskTracker } from '../../../telegram/task-tracker.js';
+import { promptLabel, cutLabel } from '../../../telegram/prompt-label.js';
 import { getTTSSettings, setTTSEnabled, setTTSVoice, setTTSAutoplay } from '../../../tts/tts-settings.js';
 import { getTerminalUISettings, setTerminalUIEnabled } from '../../../telegram/terminal-settings.js';
 import { getTelegraphSettings, setTelegraphEnabled } from '../../../telegram/telegraph-settings.js';
@@ -51,7 +52,6 @@ import {
   PTY_RESTART_NOTE,
 } from './shared.js';
 import { getSessionTopic } from './topic.js';
-import { promptLabel } from './session.js';
 import { getStreamingMode, setStreamingMode } from './streaming-mode.js';
 import { getBgProcesses } from './tasks.js';
 import {
@@ -579,14 +579,7 @@ export function formatRecentPrompts(prompts: string[]): string {
   return prompts
     .flatMap((prompt) => promptLabel(prompt) ?? [])
     .slice(-STATUS_LINE_PROMPTS)
-    .map((label) => {
-      // Cut by code point, so an emoji at the cut isn't split in half.
-      const chars = Array.from(label);
-      const shown = chars.length > STATUS_LINE_PROMPT_MAX
-        ? chars.slice(0, STATUS_LINE_PROMPT_MAX - 1).join('').trimEnd() + '…'
-        : label;
-      return `_▸ ${esc(shown)}_`;
-    })
+    .map((label) => `_▸ ${esc(cutLabel(label, STATUS_LINE_PROMPT_MAX))}_`)
     .join('\n');
 }
 

@@ -10,6 +10,9 @@
  *   by a long build was the whole build.
  * - It carries the turn's status line at its bottom, so a turn needs no
  *   "typing…" — which Telegram Desktop animates on the CPU — to show it's alive.
+ * - Under that it shows the prompt the turn is running. A tall log pushes the
+ *   message the prompt came in far up the chat, and with it what the turn is
+ *   for, which the user then scrolled back up to find.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -165,6 +168,43 @@ describe('ActionLogger live log', () => {
     status.set('⏸️ Waiting for your answer — see the question below ↓');
     await logger.refreshStatus(SESSION, true);
     expect(latest().text).toContain('⏸️ Waiting for your answer');
+  });
+
+  it('draws the prompt the turn is running under its status line, until the turn ends', async () => {
+    const logger = new ActionLogger();
+    const { ctx, latest } = fakeChat();
+    const status = statusLine('⏳ 💻 Running [12s]');
+    await logger.initialize(ctx, SESSION, status.source, 'run the\ntests and fix what fails');
+    await logger.addToolResult(SESSION, bash('ls', 'src'), 20, 2000);
+
+    expect(latest().text).toMatch(/\n\n⏳ 💻 Running \[12s\]\nnpm test\n\n▸ run the tests and fix what fails$/);
+    const italic = latest().entities.filter((e) => e.type === 'italic').map((e) => covered(latest(), e));
+    expect(italic).toEqual(['▸ run the tests and fix what fails']);
+
+    logger.endTurn(SESSION);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(latest().text).toMatch(/^📋 Action Log\n/);
+    expect(latest().text).not.toContain('▸');
+  });
+
+  it('shows the prompt as it was sent, with the terminal UI off too', async () => {
+    /** The bottom line of a log for a turn sent `prompt`, with the terminal UI off. */
+    const bottomLine = async (prompt: string) => {
+      const logger = new ActionLogger();
+      const { ctx, latest } = fakeChat();
+      await logger.initialize(ctx, SESSION, undefined, prompt);
+      await logger.addToolResult(SESSION, bash('ls', 'src'), 20, 2000);
+      return latest().text.split('\n').at(-1);
+    };
+
+    // A skill is what the turn is running, though /tree and the status line
+    // leave commands out of their lists.
+    expect(await bottomLine('/code-review high')).toBe('▸ /code-review high');
+    // An upload as what was uploaded, not the note it reached claude in.
+    expect(await bottomLine('User uploaded an image to the project.\nSaved at: /x.png\nCaption: "what is this"'))
+      .toBe('▸ 📷 Image — what is this');
+    // A long one cut by code point, so an emoji at the cut stays whole.
+    expect(await bottomLine(`${'x'.repeat(98)}🙂 and the rest`)).toBe(`▸ ${'x'.repeat(98)}🙂…`);
   });
 
   it("drops the live marker and status line as soon as the turn ends", async () => {

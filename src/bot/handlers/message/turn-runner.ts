@@ -117,7 +117,7 @@ async function handleStreamingResponse(
 ): Promise<void> {
   const startTime = Date.now();
 
-  await withStreamingTurn(ctx, sessionKey, async (abortController) => {
+  await withStreamingTurn(ctx, sessionKey, message, async (abortController) => {
     const response = await sendToAgent(sessionKey, message, {
       ...progressCallbacks(ctx),
       ...toolCallbacks(ctx, sessionKey),

@@ -111,7 +111,7 @@ async function handleSavedImage(
     if (getStreamingMode() === 'streaming') {
       const startTime = Date.now();
 
-      await withStreamingTurn(ctx, sessionKey, async (abortController) => {
+      await withStreamingTurn(ctx, sessionKey, agentPrompt, async (abortController) => {
         const response = await sendToAgent(sessionKey, agentPrompt, {
           ...progressCallbacks(ctx),
           abortController,
@@ -289,7 +289,7 @@ export async function handleTextDocument(ctx: Context): Promise<void> {
       if (getStreamingMode() === 'streaming') {
         const startTime = Date.now();
 
-        await withStreamingTurn(ctx, sessionKey, async (abortController) => {
+        await withStreamingTurn(ctx, sessionKey, agentPrompt, async (abortController) => {
           const response = await sendToAgent(sessionKey, agentPrompt, {
             ...progressCallbacks(ctx),
             abortController,

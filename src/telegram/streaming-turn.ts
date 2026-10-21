@@ -80,8 +80,10 @@ export function toolCallbacks(ctx: Context, sessionKey: string) {
 }
 
 /**
- * Open a streaming message, run `body` against a fresh abort controller, and
- * guarantee the stream is torn down if anything throws.
+ * Open a streaming message for a turn sent `prompt`, run `body` against a
+ * fresh abort controller, and guarantee the stream is torn down if anything
+ * throws. The prompt is shown again at the bottom of the action log, which
+ * pushes the message it came in off screen.
  *
  * Every caller previously repeated this preamble by hand. Two invariants are
  * easy to lose that way and are now structural: the session's abort controller
@@ -95,9 +97,10 @@ export function toolCallbacks(ctx: Context, sessionKey: string) {
 export async function withStreamingTurn(
   ctx: Context,
   sessionKey: string,
+  prompt: string,
   body: (abortController: AbortController) => Promise<void>,
 ): Promise<void> {
-  await messageSender.startStreaming(ctx);
+  await messageSender.startStreaming(ctx, prompt);
 
   const abortController = new AbortController();
   setAbortController(sessionKey, abortController);

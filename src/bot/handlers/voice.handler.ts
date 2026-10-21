@@ -138,7 +138,7 @@ export async function handleVoice(ctx: Context): Promise<void> {
     // Feed transcript into agent
     await queueRequest(sessionKey, transcript, async () => {
       if (getStreamingMode() === 'streaming') {
-        await withStreamingTurn(ctx, sessionKey, async (abortController) => {
+        await withStreamingTurn(ctx, sessionKey, transcript, async (abortController) => {
           const response = await sendToAgent(sessionKey, transcript, {
             ...progressCallbacks(ctx),
             abortController,
