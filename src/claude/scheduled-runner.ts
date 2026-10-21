@@ -88,7 +88,7 @@ async function fireSchedule(bot: Bot, schedule: Schedule): Promise<void> {
 async function runScheduledTurn(ctx: Context, sessionKey: string, prompt: string): Promise<void> {
   const startTime = Date.now();
 
-  await withStreamingTurn(ctx, sessionKey, async (abortController) => {
+  await withStreamingTurn(ctx, sessionKey, prompt, async (abortController) => {
     const response = await sendToAgent(sessionKey, prompt, {
       ...progressCallbacks(ctx),
       ...toolCallbacks(ctx, sessionKey),

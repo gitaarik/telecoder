@@ -4,14 +4,15 @@
  * UI-like experience where actions are accumulated and displayed together.
  *
  * While its turn runs, the log also carries the turn's live status line at its
- * bottom. The log is posted below the status bubble and is usually tall enough
- * to push the bubble off screen, so the bottom of the log is where the user is
- * looking.
+ * bottom, and under that the prompt the turn is running. The log is posted
+ * below the prompt and the status bubble, and is usually tall enough to push
+ * both off screen, so the bottom of the log is where the user is looking.
  */
 
 import { GrammyError, type Api, type Context } from 'grammy';
 import { escapeMarkdownV2 } from './markdown.js';
 import { EntityText, type EntityMessage } from './entities.js';
+import { promptLabel, cutLabel } from './prompt-label.js';
 import { getToolIcon, extractToolDetail, elideToolOutput, stripAnsi } from './terminal-renderer.js';
 import { createTelegraphPage, fitsTelegraphPage } from './telegraph.js';
 import { isTelegraphEnabled } from './telegraph-settings.js';
@@ -27,6 +28,9 @@ const MAX_MESSAGE_CHARS = 4096;
 const LIVE_LOG_ENTRIES = 10;
 // How much of an action's command and output the live log shows.
 const LIVE_ENTRY_CHARS = 200;
+// How much of the turn's prompt the live log shows: enough to recognise what
+// the turn is for, about two and a half lines on a phone.
+const LIVE_PROMPT_CHARS = 100;
 // How long a log stays open once its turn has ended, so tool results still in
 // flight land in it before it collapses.
 const COLLAPSE_DELAY_MS = 5000;
@@ -40,6 +44,16 @@ function stripMcpServerPrefix(toolName: string): string {
 
 function cutForLiveLog(text: string): string {
   return text.length > LIVE_ENTRY_CHARS ? text.substring(0, LIVE_ENTRY_CHARS - 3) + '...' : text;
+}
+
+/**
+ * The turn's prompt as the live log shows it. promptLabel leaves a slash
+ * command out, not being a turn of the conversation, but here a skill like
+ * /code-review is what the turn is running, so it shows as typed.
+ */
+function liveLogPrompt(prompt: string): string | undefined {
+  const label = promptLabel(prompt) ?? prompt.replace(/\s+/g, ' ').trim();
+  return label ? cutLabel(label, LIVE_PROMPT_CHARS) : undefined;
 }
 
 export interface ActionEntry {
@@ -60,10 +74,11 @@ export interface ActionEntry {
  */
 export type StatusSource = () => EntityMessage;
 
-/** How the log is drawn: still running, and with which status line under it. */
+/** How the log is drawn: still running, and with which status line and prompt under it. */
 interface LogView {
   live: boolean;
   status?: EntityMessage;
+  prompt?: string;
 }
 
 interface ActionLogState {
@@ -77,7 +92,9 @@ interface ActionLogState {
   rateLimitedUntil: number;
   /** Drawn under the newest entry until the turn ends. Absent when the turn has no status line. */
   statusSource?: StatusSource;
-  /** The turn is over: the log drops its live marker and status line. */
+  /** The prompt the turn is running, drawn at the very bottom until the turn ends. */
+  prompt?: string;
+  /** The turn is over: the log drops its live marker, status line and prompt. */
   ended: boolean;
   /** Once finalized, addX still records entries but skips message edits so the collapsed summary stays put. */
   finalized: boolean;
@@ -101,9 +118,10 @@ export class ActionLogger {
 
   /**
    * Initialize action logging for a session. Creates the state but doesn't send a message yet.
-   * `statusSource` is the turn's live status line, drawn at the bottom of the log while the turn runs.
+   * `statusSource` is the turn's live status line, drawn at the bottom of the log while the turn runs,
+   * and `prompt` what the turn was sent, drawn under it.
    */
-  async initialize(ctx: Context, sessionKey: string, statusSource?: StatusSource): Promise<void> {
+  async initialize(ctx: Context, sessionKey: string, statusSource?: StatusSource, prompt?: string): Promise<void> {
     const chatId = ctx.chat?.id;
     if (chatId === undefined) return;
 
@@ -125,6 +143,7 @@ export class ActionLogger {
       lastUpdate: Date.now(),
       rateLimitedUntil: 0,
       statusSource,
+      prompt: prompt === undefined ? undefined : liveLogPrompt(prompt),
       ended: false,
       finalized: false,
       dirty: false,
@@ -426,13 +445,14 @@ export class ActionLogger {
     console.error('[ActionLogger] Failed to draw the log:', error);
   }
 
-  /** The log as it reads now: the newest entries that fit, under them the status line while the turn runs. */
+  /** The log as it reads now: the newest entries that fit, under them the status line and prompt while the turn runs. */
   private renderLive(state: ActionLogState): EntityMessage {
     const view: LogView = {
       live: !state.ended,
       // Rendered once per draw. The thinking verb in it is picked at random,
       // so a second call could come out longer than the fit was measured on.
       status: state.ended ? undefined : state.statusSource?.(),
+      prompt: state.ended ? undefined : state.prompt,
     };
     return this.renderActionLog(state.entries, this.entriesThatFit(state.entries, view), view);
   }
@@ -462,6 +482,10 @@ export class ActionLogger {
    * The header starts with ⏳ while the turn runs. The chat list previews a
    * chat by the start of its newest message, which mid-turn is usually this
    * one — so that's where the list shows the agent is still at it.
+   *
+   * The prompt goes last, under the status line, so what the turn is for sits
+   * where the user is looking: by the time the log is this long, the message
+   * that started the turn is far above it.
    */
   private renderActionLog(entries: ActionEntry[], shown: number, view: LogView): EntityMessage {
     const b = new EntityText();
@@ -487,6 +511,7 @@ export class ActionLogger {
     }
 
     if (view.status) b.newline(2).append(view.status);
+    if (view.prompt) b.newline(2).italic(`▸ ${view.prompt}`);
 
     return b.build();
   }

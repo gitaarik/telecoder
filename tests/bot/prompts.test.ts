@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildPromptsMessage, promptLabel, summarizeUserPrompt } from '../../src/bot/handlers/command/session.js';
+import { buildPromptsMessage } from '../../src/bot/handlers/command/session.js';
+import { promptLabel, summarizeUserPrompt } from '../../src/telegram/prompt-label.js';
 import type { UserPrompt } from '../../src/claude/session-jsonl.js';
 
 const minsAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();

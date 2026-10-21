@@ -339,7 +339,7 @@ export async function handleRedditActionCallback(ctx: Context): Promise<void> {
         try {
           await queueRequest(sessionKey, prompt, async () => {
             if (getStreamingMode() === 'streaming') {
-              await withStreamingTurn(ctx, sessionKey, async (abortController) => {
+              await withStreamingTurn(ctx, sessionKey, prompt, async (abortController) => {
                 const response = await sendToAgent(sessionKey, prompt, {
                   ...progressCallbacks(ctx),
                   abortController,

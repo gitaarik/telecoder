@@ -64,9 +64,9 @@ import {
   letteredOptionLines,
   optionLetter,
 } from '../../telegram/lettered-options.js';
+import { promptLabel } from '../../telegram/prompt-label.js';
 import { restoreTopicAndRefreshBotName, getSessionTopic } from './command.handler.js';
 import { formatTimeAgo } from './command/shared.js';
-import { promptLabel } from './command/session.js';
 import { NO_PROJECT_MESSAGE } from './session-guard.js';
 import {
   LEFT_ABOVE,

@@ -140,6 +140,8 @@ interface StreamState {
   todoLastRendered: string;
   // Action logging for verbose mode
   actionLogEnabled: boolean;
+  // What the turn was sent, drawn at the bottom of the action log.
+  prompt: string;
 }
 
 interface TodoItem {
@@ -525,7 +527,7 @@ export class MessageSender {
     }
   }
 
-  async startStreaming(ctx: Context): Promise<void> {
+  async startStreaming(ctx: Context, prompt: string): Promise<void> {
     const keyInfo = getSessionKeyFromCtx(ctx);
     if (!keyInfo) return;
     const { chatId, threadId, sessionKey } = keyInfo;
@@ -567,6 +569,7 @@ export class MessageSender {
       todoMessageId: null,
       todoLastRendered: '',
       actionLogEnabled,
+      prompt,
     };
 
     // Register before anything else can throw. The typing indicator and the
@@ -580,7 +583,7 @@ export class MessageSender {
     // degrades to a turn without an action log rather than no turn at all.
     if (actionLogEnabled) {
       try {
-        await actionLogger.initialize(ctx, sessionKey, this.logStatusSource(state));
+        await actionLogger.initialize(ctx, sessionKey, this.logStatusSource(state), state.prompt);
       } catch (error) {
         console.error('[ActionLog] initialize failed, continuing without it:', error);
       }
@@ -868,7 +871,7 @@ export class MessageSender {
         console.debug(`[ActionLog] Straggler for ${sessionKey} after log cleanup — posting directly instead of opening a new log`);
         return false;
       }
-      await actionLogger.initialize(ctx, sessionKey, this.logStatusSource(stream));
+      await actionLogger.initialize(ctx, sessionKey, this.logStatusSource(stream), stream.prompt);
     }
     await forward(sessionKey);
     return true;

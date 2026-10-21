@@ -473,7 +473,7 @@ export async function handlePlan(ctx: Context): Promise<void> {
 
   try {
     await queueRequest(sessionKey, task, async () => {
-      await withStreamingTurn(ctx, sessionKey, async (abortController) => {
+      await withStreamingTurn(ctx, sessionKey, task, async (abortController) => {
         const response = await sendToAgent(sessionKey, task, {
           ...progressCallbacks(ctx),
           abortController,
@@ -521,7 +521,7 @@ export async function handleExplore(ctx: Context): Promise<void> {
 
   try {
     await queueRequest(sessionKey, question, async () => {
-      await withStreamingTurn(ctx, sessionKey, async (abortController) => {
+      await withStreamingTurn(ctx, sessionKey, question, async (abortController) => {
         const response = await sendToAgent(sessionKey, question, {
           ...progressCallbacks(ctx),
           abortController,
@@ -802,7 +802,7 @@ export async function handleLoop(ctx: Context): Promise<void> {
 
   try {
     await queueRequest(sessionKey, task, async () => {
-      await withStreamingTurn(ctx, sessionKey, async (abortController) => {
+      await withStreamingTurn(ctx, sessionKey, task, async (abortController) => {
         const response = await sendLoopToAgent(sessionKey, task, {
           ...progressCallbacks(ctx),
           abortController,

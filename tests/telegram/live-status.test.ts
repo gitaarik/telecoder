@@ -5,8 +5,9 @@
  * Telegram Desktop draws that animation on the CPU for as long as it shows —
  * so a long turn kept the client busy throughout. A turn with a live status
  * line no longer sends it. Once the action log is in the chat, the status line
- * moves to the bottom of the log: the log is posted below the status bubble
- * and is usually tall enough to push it off screen.
+ * moves to the bottom of the log, over the prompt the turn is running: the log
+ * is posted below the status bubble and the prompt, and is usually tall enough
+ * to push both off screen.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -85,7 +86,7 @@ const bash = (command: string, content: string): ToolResultEvent => ({
 async function turnWithLog(chatId: number) {
   const sender = new MessageSender();
   const chat = fakeChat(chatId);
-  await sender.startStreaming(chat.ctx);
+  await sender.startStreaming(chat.ctx, 'run the tests');
   sender.updateToolOperation(String(chatId), 'Bash', { command: 'npm test' }, chat.ctx);
   await sender.postToolResult(chat.ctx, bash('ls', 'src'), 20, 2000);
   return { sender, ...chat };
@@ -107,7 +108,7 @@ describe('a running turn', () => {
   it('sends no "typing…" when it has a live status line', async () => {
     const sender = new MessageSender();
     const { ctx, api } = fakeChat(7001);
-    await sender.startStreaming(ctx);
+    await sender.startStreaming(ctx, 'run the tests');
     await vi.advanceTimersByTimeAsync(30_000);
 
     expect(api.sendChatAction).not.toHaveBeenCalled();
@@ -118,7 +119,7 @@ describe('a running turn', () => {
     isTerminalUIEnabled.mockReturnValue(false);
     const sender = new MessageSender();
     const { ctx, api } = fakeChat(7002);
-    await sender.startStreaming(ctx);
+    await sender.startStreaming(ctx, 'run the tests');
     expect(api.sendChatAction).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(4000);
     expect(api.sendChatAction).toHaveBeenCalledTimes(2);
@@ -133,21 +134,22 @@ describe('a running turn', () => {
 
     const [, posted] = api.sendMessage.mock.calls[0];
     expect(posted).toMatch(/^⏳ Action Log\n/);
-    expect(posted).toMatch(/\n\n⏳ 💻 Running\nnpm test$/);
+    expect(posted).toMatch(/\n\n⏳ 💻 Running\nnpm test\n\n▸ run the tests$/);
 
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(edits(LOG).at(-1)).toMatch(/\n\n⏳ 💻 Running \[10s\]\nnpm test$/);
+    expect(edits(LOG).at(-1)).toMatch(/\n\n⏳ 💻 Running \[10s\]\nnpm test\n\n▸ run the tests$/);
 
     // The bubble is edited once, to the pointer, and left alone after that.
     await vi.advanceTimersByTimeAsync(20_000);
     expect(edits(BUBBLE)).toEqual([POINTER]);
-    expect(edits(LOG).at(-1)).toMatch(/\[30s\]\nnpm test$/);
+    expect(edits(LOG).at(-1)).toMatch(/\[30s\]\nnpm test\n\n▸ run the tests$/);
 
     // A finished turn's log no longer reads as running.
     await sender.cancelStreaming(ctx);
     await vi.advanceTimersByTimeAsync(5000);
     expect(edits(LOG).at(-1)).toMatch(/^📋 Action Log\n/);
     expect(edits(LOG).at(-1)).not.toContain('Running');
+    expect(edits(LOG).at(-1)).not.toContain('▸ run the tests');
   });
 
   it('announces a pending question at the bottom of the log straight away', async () => {
@@ -161,7 +163,7 @@ describe('a running turn', () => {
     await sender.noteQuestionPosted(ctx, '7004');
 
     expect(edits(LOG)).toHaveLength(before + 1);
-    expect(edits(LOG).at(-1)).toMatch(/\n\n⏸️ Waiting for your answer — see the question below ↓$/);
+    expect(edits(LOG).at(-1)).toMatch(/\n\n⏸️ Waiting for your answer — see the question below ↓\n\n▸ run the tests$/);
     await sender.cancelStreaming(ctx);
   });
 });

@@ -84,6 +84,15 @@ reasoning — the commit bodies are the long form, this is the index.
   instead of 140, about two and a half lines on a phone, since five of them
   now sit under every answer.
 
+- **The live action log says what the turn is for** — in verbose mode the
+  action log grows below your prompt until it pushes it off screen, so
+  remembering what a long turn was working on meant scrolling back up to
+  find it. The log now ends with that prompt, under the status line, as the
+  same italic ▸ line the status line uses. A paste shows its text and an
+  upload its caption; a skill run with a slash command shows as typed. It's
+  cut at 100 characters, and goes when the turn ends, with the answer posted
+  below the log by then.
+
 - **`/prompts` gives the prompt after a `/compact` its own line** — a
   `/compact` leaves three records in the session log: the command, Claude
   Code's record of it, and what it printed. `/prompts` read them as part of
