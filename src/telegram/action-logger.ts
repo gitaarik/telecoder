@@ -28,9 +28,9 @@ const MAX_MESSAGE_CHARS = 4096;
 const LIVE_LOG_ENTRIES = 10;
 // How much of an action's command and output the live log shows.
 const LIVE_ENTRY_CHARS = 200;
-// How much of the turn's prompt the live log shows: enough to recognise what
-// the turn is for, about two and a half lines on a phone.
-const LIVE_PROMPT_CHARS = 100;
+// How long the turn's prompt can be before the live log shows only its start
+// and its end: as long as the status line shows each of its prompts.
+const LIVE_PROMPT_CHARS = 300;
 // How long a log stays open once its turn has ended, so tool results still in
 // flight land in it before it collapses.
 const COLLAPSE_DELAY_MS = 5000;

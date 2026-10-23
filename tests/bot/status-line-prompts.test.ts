@@ -104,12 +104,13 @@ describe('formatRecentPrompts', () => {
     ]);
   });
 
-  it('cuts a long prompt to 100 characters', () => {
-    expect(formatRecentPrompts(['word '.repeat(60)])).toBe(`_▸ ${'word '.repeat(19)}word…_`);
+  it('shows a prompt whole up to 300 characters', () => {
+    expect(formatRecentPrompts(['word '.repeat(60)])).toBe(`_▸ ${'word '.repeat(59)}word_`);
   });
 
-  it('cuts by character, so an emoji at the cut stays whole', () => {
-    expect(formatRecentPrompts([`${'a'.repeat(98)}😀 and more`])).toBe(`_▸ ${'a'.repeat(98)}😀…_`);
+  it('shows a longer one by its start and its end, where the question usually is', () => {
+    expect(formatRecentPrompts([`${'word '.repeat(80)}what do you think?`]))
+      .toBe(`_▸ ${'word '.repeat(38)}word … ${'word '.repeat(16)}what do you think?_`);
   });
 
   it('escapes MarkdownV2 so a prompt full of punctuation still sends', () => {

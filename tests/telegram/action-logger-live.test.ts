@@ -203,8 +203,10 @@ describe('ActionLogger live log', () => {
     // An upload as what was uploaded, not the note it reached claude in.
     expect(await bottomLine('User uploaded an image to the project.\nSaved at: /x.png\nCaption: "what is this"'))
       .toBe('▸ 📷 Image — what is this');
-    // A long one cut by code point, so an emoji at the cut stays whole.
-    expect(await bottomLine(`${'x'.repeat(98)}🙂 and the rest`)).toBe(`▸ ${'x'.repeat(98)}🙂…`);
+    // A paragraph whole, and a longer prompt by its start and its end.
+    expect(await bottomLine('run the tests '.repeat(21))).toBe(`▸ ${'run the tests '.repeat(20)}run the tests`);
+    expect(await bottomLine(`${'word '.repeat(80)}what do you think?`))
+      .toBe(`▸ ${'word '.repeat(38)}word … ${'word '.repeat(16)}what do you think?`);
   });
 
   it("drops the live marker and status line as soon as the turn ends", async () => {

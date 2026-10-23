@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildPromptsMessage } from '../../src/bot/handlers/command/session.js';
-import { promptLabel, summarizeUserPrompt } from '../../src/telegram/prompt-label.js';
+import { promptLabel, summarizeUserPrompt, cutLabel } from '../../src/telegram/prompt-label.js';
 import type { UserPrompt } from '../../src/claude/session-jsonl.js';
 
 const minsAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
@@ -42,6 +42,11 @@ describe('buildPromptsMessage', () => {
     const out = buildPromptsMessage([prompt('x'.repeat(1000), 5)]);
     expect(out).toContain('…');
     expect(out.length).toBeLessThan(400);
+  });
+
+  it('keeps the end of a long prompt, where the question usually is', () => {
+    const out = buildPromptsMessage([prompt(`Plan the parser ${'and more detail '.repeat(30)}so what do you think?`, 5)]);
+    expect(out).toMatch(/— Plan the parser and more detail .+ … .+ so what do you think\?$/);
   });
 
   it('falls back to a vague time when the log recorded none', () => {
@@ -154,5 +159,26 @@ describe('promptLabel', () => {
     expect(promptLabel('[Request interrupted by user]')).toBeUndefined();
     // A path is not a command.
     expect(promptLabel('/home/me/notes.md has the plan')).toBe('/home/me/notes.md has the plan');
+  });
+});
+
+describe('cutLabel', () => {
+  it('leaves a label that fits as it is', () => {
+    expect(cutLabel('fix the login bug', 100)).toBe('fix the login bug');
+    expect(cutLabel('x'.repeat(100), 100)).toBe('x'.repeat(100));
+  });
+
+  it('shows a longer one by its start and its end, cut between words', () => {
+    const label = `Plan the parser first. ${'Then more detail. '.repeat(30)}So what do you think?`;
+    expect(cutLabel(label, 100)).toBe('Plan the parser first. Then more detail. Then more detail. Then … detail. So what do you think?');
+  });
+
+  it('cuts a word too long to keep whole where the cut falls', () => {
+    expect(cutLabel('x'.repeat(400), 100)).toBe(`${'x'.repeat(65)} … ${'x'.repeat(32)}`);
+  });
+
+  it('cuts by code point, so an emoji at either cut stays whole', () => {
+    expect(cutLabel(`${'a'.repeat(64)}😀${'b'.repeat(100)}`, 100)).toBe(`${'a'.repeat(64)}😀 … ${'b'.repeat(32)}`);
+    expect(cutLabel(`${'a'.repeat(100)}😀${'b'.repeat(31)}`, 100)).toBe(`${'a'.repeat(65)} … 😀${'b'.repeat(31)}`);
   });
 });

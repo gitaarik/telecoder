@@ -100,11 +100,43 @@ export function unwrapPaste(text: string): string {
   return text.replace(/<pasted_content[^>]*>\n?|\n?<\/pasted_content[^>]*>/g, '').trim();
 }
 
+// What stands in for the middle of a prompt too long to show whole.
+const ELISION = ' … ';
+// How far a cut moves to fall between words rather than inside one: about the
+// longest word. A path or a URL runs longer, and is cut where the cut falls.
+const WORD_SLACK = 15;
+
 /**
- * `label` cut to `max` characters, the cut marked with an ellipsis. Cut by
- * code point, so an emoji at the cut isn't split in half.
+ * `label` in at most `max` characters: whole when it fits, otherwise its start
+ * and its end with an ellipsis where the middle was. A long prompt usually
+ * closes on what it asks — "what do you think?" — so a cut that kept only the
+ * start dropped the question. The start gets two thirds, being what says what
+ * the prompt is about.
+ *
+ * Cut by code point, so an emoji at a cut isn't split in half, and between
+ * words when there's a space near, so neither side ends or starts mid-word.
  */
 export function cutLabel(label: string, max: number): string {
   const chars = Array.from(label);
-  return chars.length > max ? chars.slice(0, max - 1).join('').trimEnd() + '…' : label;
+  if (chars.length <= max) return label;
+  const room = max - ELISION.length;
+  const start = chars.slice(0, startEndsAt(chars, Math.ceil((room * 2) / 3))).join('');
+  const end = chars.slice(endStartsAt(chars, chars.length - Math.floor(room / 3))).join('');
+  return start.trimEnd() + ELISION + end.trimStart();
+}
+
+/** Where the start ends: at `cut`, or back at the space before the word `cut` falls in. */
+function startEndsAt(chars: string[], cut: number): number {
+  for (let i = cut; i > 0 && cut - i <= WORD_SLACK; i--) {
+    if (/\s/.test(chars[i]!)) return i;
+  }
+  return cut;
+}
+
+/** Where the end starts: at `cut`, or on past the word `cut` falls in. */
+function endStartsAt(chars: string[], cut: number): number {
+  for (let i = cut - 1; i < chars.length && i - cut < WORD_SLACK; i++) {
+    if (/\s/.test(chars[i]!)) return i + 1;
+  }
+  return cut;
 }

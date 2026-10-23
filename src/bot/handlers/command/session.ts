@@ -16,7 +16,7 @@ import { sessionHistory } from '../../../claude/session-history.js';
 import { clearConversation } from '../../../providers/provider-router.js';
 import { messageSender } from '../../../telegram/message-sender.js';
 import { escapeMarkdownV2 as esc, processMessageForTelegram } from '../../../telegram/markdown.js';
-import { promptLabel, summarizeUserPrompt, unwrapPaste } from '../../../telegram/prompt-label.js';
+import { promptLabel, summarizeUserPrompt, unwrapPaste, cutLabel } from '../../../telegram/prompt-label.js';
 import {
   readRecentExchanges,
   readUserPrompts,
@@ -268,9 +268,7 @@ const RECAP_DEFAULT_N = 3;
 const RECAP_MAX_N = 10;
 
 function truncateUserPrompt(text: string, max: number = RECAP_USER_MAX_CHARS): string {
-  const collapsed = summarizeUserPrompt(unwrapPaste(text)).replace(/\s+/g, ' ').trim();
-  if (collapsed.length <= max) return collapsed;
-  return collapsed.slice(0, max - 1).trimEnd() + '…';
+  return cutLabel(summarizeUserPrompt(unwrapPaste(text)).replace(/\s+/g, ' ').trim(), max);
 }
 
 /**

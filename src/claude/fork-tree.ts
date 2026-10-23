@@ -30,7 +30,7 @@ interface ChainRecord {
    */
   lineCount: number;
   timestamp?: string;
-  /** What the user typed, when this record is a prompt. Capped at PROMPT_KEEP_CHARS. */
+  /** What the user typed, when this record is a prompt. Kept to PROMPT_KEEP_CHARS from each end. */
   prompt?: string;
 }
 
@@ -77,11 +77,18 @@ export interface ForkedConversation {
 }
 
 /**
- * How much of a prompt to keep. A label needs a line; stripping a paste's tags
- * or skipping a quoted passage to find the user's own words needs more, and
- * past this the rest is never shown.
+ * How much of a prompt to keep from each end. A label needs a line; stripping
+ * a paste's tags or skipping a quoted passage to find the user's own words
+ * needs more, and a prompt too long to show whole shows its end as well as
+ * its start. Past this the middle is never shown.
  */
 const PROMPT_KEEP_CHARS = 4000;
+
+/** `text` with anything past PROMPT_KEEP_CHARS from either end left out. */
+function keepEnds(text: string): string {
+  if (text.length <= 2 * PROMPT_KEEP_CHARS) return text;
+  return `${text.slice(0, PROMPT_KEEP_CHARS)} … ${text.slice(-PROMPT_KEEP_CHARS)}`;
+}
 
 /**
  * Transcripts kept parsed between calls. A long transcript parses to a few
@@ -268,7 +275,7 @@ function readTranscript(projectPath: string, sessionId: string): Transcript | un
       // tool_result records are user records too, with no prose — extractText
       // leaves those empty, so only what the user typed gets through.
       const text = extractText(rec.message?.content);
-      if (text) record.prompt = text.slice(0, PROMPT_KEEP_CHARS);
+      if (text) record.prompt = keepEnds(text);
     }
     records.push(record);
   }

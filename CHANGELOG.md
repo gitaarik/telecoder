@@ -80,18 +80,26 @@ reasoning — the commit bodies are the long form, this is the index.
   from the session log, so they reach back past a restart. A `/compact` and
   the notes Claude Code writes in your place, like "[Request interrupted by
   user]", don't take one of the five; a paste shows its text and an upload its
-  caption, the way `/tree` labels a branch. Each is cut at 100 characters
-  instead of 140, about two and a half lines on a phone, since five of them
-  now sit under every answer.
+  caption, the way `/tree` labels a branch.
 
 - **The live action log says what the turn is for** — in verbose mode the
   action log grows below your prompt until it pushes it off screen, so
   remembering what a long turn was working on meant scrolling back up to
   find it. The log now ends with that prompt, under the status line, as the
   same italic ▸ line the status line uses. A paste shows its text and an
-  upload its caption; a skill run with a slash command shows as typed. It's
-  cut at 100 characters, and goes when the turn ends, with the answer posted
-  below the log by then.
+  upload its caption; a skill run with a slash command shows as typed. It
+  goes when the turn ends, with the answer posted below the log by then.
+
+- **A prompt shows whole, and a long one its start and its end** — the
+  status line and the bottom of the live action log cut every prompt at 100
+  characters. Across 100 recent sessions that caught a third of the prompts
+  written as one paragraph, and a cut that keeps only the start drops what a
+  long prompt usually ends on: the question. A prompt now shows whole up to
+  300 characters, enough for 93% of those; past that it shows its start and
+  its end with … between, cut between words. Five prompts under an answer
+  take a median of 15 rows on a phone instead of 11. `/prompts` and
+  `/recap` cut the same way, at the 300 and 500 characters they already
+  allowed.
 
 - **`/prompts` gives the prompt after a `/compact` its own line** — a
   `/compact` leaves three records in the session log: the command, Claude

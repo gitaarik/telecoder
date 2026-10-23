@@ -565,9 +565,11 @@ function shortenModelName(model: string): string {
 // The last few prompts rather than only the latest: a turn often starts from
 // an "ok" or a "yeah", which says nothing without the prompts before it.
 const STATUS_LINE_PROMPTS = 5;
-// Per prompt, about two and a half lines on a phone. Five of them sit under
-// every answer, and here a prompt only has to be recognised, not reread.
-const STATUS_LINE_PROMPT_MAX = 100;
+// Past this a prompt shows its start and its end. Most prompts are one
+// paragraph, and across 100 recent sessions 93% of those fit, where 100
+// characters cut a third of them. Five sit under every answer: at 40
+// characters a row they take a median of 15 rows, and at most 40.
+const STATUS_LINE_PROMPT_MAX = 300;
 
 /**
  * The status line's prompt lines, oldest first so they read in the same order

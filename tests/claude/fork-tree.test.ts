@@ -166,4 +166,11 @@ describe('finding trees', () => {
   it('reads the prompts a transcript holds', () => {
     expect(promptsIn(PROJECT, 'regex')).toEqual(['Plan the parser', 'Try a regex instead']);
   });
+
+  it('keeps both ends of a prompt too long to keep whole, since a long prompt shows its end', () => {
+    write('long-prompt', [rec('l1', 'user', `Read this log ${'x'.repeat(10_000)} what failed?`), rec('l2', 'assistant', 'The build.')]);
+    const [kept] = promptsIn(PROJECT, 'long-prompt');
+    expect(kept).toMatch(/^Read this log x+ … x+ what failed\?$/);
+    expect(kept!.length).toBe(4000 + ' … '.length + 4000);
+  });
 });
