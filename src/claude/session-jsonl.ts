@@ -54,6 +54,11 @@ export interface JsonlRecord {
   promptSource?: string;
   isMeta?: boolean;
   isCompactSummary?: boolean;
+  /**
+   * A system record's text, which it carries here rather than on `message` —
+   * a slash command's `<local-command-stdout>` among them.
+   */
+  content?: unknown;
 }
 
 /** True if this record is the synthetic "API Error" stop record Claude Code writes when an in-flight request dies. */
@@ -134,6 +139,73 @@ export function sessionJsonlMtimeMs(workingDirectory: string, sessionId: string)
   } catch {
     return 0;
   }
+}
+
+/** Size in bytes of the session's JSONL log, or 0 if it doesn't exist yet. */
+export function sessionJsonlSize(workingDirectory: string, sessionId: string): number {
+  try {
+    return fs.statSync(sessionJsonlPath(workingDirectory, sessionId)).size;
+  } catch {
+    return 0;
+  }
+}
+
+/** What a slash command printed, as its records carry it. */
+const LOCAL_COMMAND_OUTPUT = /<local-command-(stdout|stderr)>([\s\S]*?)<\/local-command-\1>/g;
+/** The colour codes a command's printed output can keep. */
+const ANSI_SGR = /\x1b\[[0-9;]*m/g;
+
+/**
+ * What a slash command answered with, from the records it appended to the log
+ * after `fromByte`, or undefined when it wrote nothing worth showing.
+ *
+ * A command that prompts the model (a custom command, a skill) is answered as
+ * a prompt is, and the model's prose is the reply. Most never reach the model.
+ * `/mcp` and the other menus print a line as they close — `Reconnected to
+ * sjs-dev.`, `MCP dialog dismissed` — and log it as `<local-command-stdout>`,
+ * on a user record or a system one depending on the line. Only the turn's own
+ * records are read, because the latest reply in the log is, for a command
+ * like that, the reply to whatever came before it.
+ */
+export function readCommandReply(
+  workingDirectory: string,
+  sessionId: string,
+  fromByte: number,
+): string | undefined {
+  let log: Buffer;
+  try {
+    log = fs.readFileSync(sessionJsonlPath(workingDirectory, sessionId));
+  } catch {
+    return undefined;
+  }
+  // A log shorter than it was at submit was rewritten, and none of it is the turn's.
+  if (log.length < fromByte) return undefined;
+  return commandReplyIn(log.subarray(fromByte).toString('utf-8'));
+}
+
+/** {@link readCommandReply} over a turn's records already in hand. */
+export function commandReplyIn(raw: string): string | undefined {
+  const prose: string[] = [];
+  const printed: string[] = [];
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    let rec: JsonlRecord;
+    try { rec = JSON.parse(line) as JsonlRecord; }
+    catch { continue; }
+    if (rec.type === 'assistant') {
+      if (isApiErrorRecord(rec)) continue;
+      const text = extractText(rec.message?.content);
+      if (text) prose.push(text);
+    } else if (rec.type === 'user' || rec.type === 'system') {
+      const text = typeof rec.content === 'string' ? rec.content : extractText(rec.message?.content);
+      for (const match of text.matchAll(LOCAL_COMMAND_OUTPUT)) {
+        const out = match[2].replace(ANSI_SGR, '').trim();
+        if (out) printed.push(out);
+      }
+    }
+  }
+  if (prose.length > 0) return prose.join('\n\n');
+  return printed.length > 0 ? printed.join('\n') : undefined;
 }
 
 export interface JsonlUsageSnapshot {

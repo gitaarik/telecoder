@@ -5,7 +5,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
-import { claudeSessionFileExists, readLastApiErrorFromJsonl, readLastAssistantTurnText, readLastCompactionFromJsonl, readLastUsageFromJsonl, readLastUserPromptMarker, sessionJsonlMtimeMs, type CompactionInfo, type UserPromptMarker } from './session-jsonl.js';
+import { claudeSessionFileExists, readCommandReply, readLastApiErrorFromJsonl, readLastAssistantTurnText, readLastCompactionFromJsonl, readLastUsageFromJsonl, readLastUserPromptMarker, sessionJsonlMtimeMs, sessionJsonlSize, type CompactionInfo, type UserPromptMarker } from './session-jsonl.js';
 import { clearDeliveredProse, getDeliveredProse, stripDeliveredPrefix } from './turn-prose.js';
 import { isNativeCompactCommand } from './command-parser.js';
 import { isCancelled } from './request-queue.js';
@@ -362,6 +362,11 @@ interface PtySession {
    */
   jsonlMtimeAtSubmit: number;
   /**
+   * Session-log size captured at the same moment: where this turn's records
+   * begin. A slash command is answered from those alone (see sendToAgent).
+   */
+  jsonlSizeAtSubmit: number;
+  /**
    * Identity of the last user prompt in the session log at submit time. If it
    * hasn't changed by end-of-turn, claude never took delivery of our prompt —
    * a moving mtime isn't proof it did, because `--resume` alone rewrites
@@ -535,7 +540,16 @@ export class PtyProvider implements Provider {
       );
     }
 
-    const fromJsonl = this._readAssistantResponseFromJsonl(sessionKey);
+    // A slash command is answered from the records it wrote, and nothing
+    // older. Most commands never reach the model: `/mcp` and the other menus
+    // print a line as they close and write no reply at all, so the reader for
+    // prompts — which goes back to the latest reply in the log — found the one
+    // before the command and sent it again, as though the menu had said it.
+    // Nor does the screen scrape below stand in for one: the last `●` on
+    // screen is that same reply. An empty answer reads as "Done".
+    const fromJsonl = turnSession?.submittedSlashCommand
+      ? this._readCommandReply(sessionKey, turnSession.jsonlSizeAtSubmit) ?? ''
+      : this._readAssistantResponseFromJsonl(sessionKey);
 
     // First-turn-in-fresh-cwd failure: claude's TUI is still rendering the
     // welcome banner when _waitForReady's ❯ check trips, our prompt+Enter
@@ -655,6 +669,13 @@ export class PtyProvider implements Provider {
     const botSession = sessionManager.getSession(sessionKey);
     if (!botSession?.claudeSessionId) return undefined;
     return readLastAssistantTurnText(botSession.workingDirectory, botSession.claudeSessionId);
+  }
+
+  /** What a slash command answered with, from the records it wrote after `fromByte`. */
+  private _readCommandReply(sessionKey: string, fromByte: number): string | undefined {
+    const botSession = sessionManager.getSession(sessionKey);
+    if (!botSession?.claudeSessionId) return undefined;
+    return readCommandReply(botSession.workingDirectory, botSession.claudeSessionId, fromByte);
   }
 
   /**
@@ -785,6 +806,7 @@ export class PtyProvider implements Provider {
       // safety net).
       session.submitTimeMs = Date.now();
       session.jsonlMtimeAtSubmit = this._currentJsonlMtimeMs(sessionKey);
+      session.jsonlSizeAtSubmit = this._currentJsonlSize(sessionKey);
       // Which turn the log ends on right now, so end-of-turn can prove our
       // prompt actually landed rather than trusting a bumped mtime.
       session.promptMarkerAtSubmit = this._currentPromptMarker(sessionKey);
@@ -1044,6 +1066,7 @@ export class PtyProvider implements Provider {
       inflightTools: 0,
       submitTimeMs: 0,
       jsonlMtimeAtSubmit: 0,
+      jsonlSizeAtSubmit: 0,
       promptMarkerAtSubmit: undefined,
       submittedSlashCommand: false,
       submittedPasteId: undefined,
@@ -1227,6 +1250,13 @@ export class PtyProvider implements Provider {
     const botSession = sessionManager.getSession(sessionKey);
     if (!botSession?.claudeSessionId) return 0;
     return sessionJsonlMtimeMs(botSession.workingDirectory, botSession.claudeSessionId);
+  }
+
+  /** Size in bytes of the active session's JSONL log; 0 if not on disk yet. */
+  private _currentJsonlSize(sessionKey: string): number {
+    const botSession = sessionManager.getSession(sessionKey);
+    if (!botSession?.claudeSessionId) return 0;
+    return sessionJsonlSize(botSession.workingDirectory, botSession.claudeSessionId);
   }
 
   private _lookupJsonlMtime(session: PtySession): number {

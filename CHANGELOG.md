@@ -191,6 +191,13 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **Closing a menu no longer sends your last answer again** — `/mcp` and the
+  other Claude Code menus write no reply of their own. When one closed,
+  TeleCoder went looking for the latest reply in the session log, found the one
+  before the command, and posted it again as the menu's answer. The chat now
+  gets what the command printed — "Reconnected to sjs-dev.", "MCP dialog
+  dismissed" — or ✅ Done when it printed nothing.
+
 - **Claude Code's menus can be walked from the chat** — picking a server in
   `/mcp` opens that server's own screen, but TeleCoder expected every tap to
   close the dialog it answered. The tap went in, the menu stayed open on the

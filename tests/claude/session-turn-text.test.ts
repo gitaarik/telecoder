@@ -11,7 +11,7 @@ vi.mock('os', async (importOriginal) => {
   return { ...actual, default: actual, homedir: () => process.env.TELECODER_TEST_HOME ?? actual.homedir() };
 });
 
-const { readLastAssistantTurnText, readRecentExchanges, readUserPrompts } = await import('../../src/claude/session-jsonl.js');
+const { readCommandReply, readLastAssistantTurnText, readRecentExchanges, readUserPrompts } = await import('../../src/claude/session-jsonl.js');
 
 const CWD = '/home/someone/dev/telecoder';
 const SESSION = 'aaaaaaaa-bbbb-cccc-dddd-ffffffffffff';
@@ -256,5 +256,72 @@ describe('readUserPrompts', () => {
 
   it('returns nothing when the session log is not on disk', () => {
     expect(readUserPrompts(CWD, 'no-such-session')).toEqual([]);
+  });
+});
+
+describe('readCommandReply', () => {
+  /** Write `before` as the log, then append `after`; returns the byte offset `after` starts at. */
+  function logAround(before: unknown[], after: unknown[]): number {
+    writeLog(before);
+    const file = path.join(home, '.claude', 'projects', CWD.replace(/\//g, '-'), `${SESSION}.jsonl`);
+    const offset = fs.statSync(file).size;
+    fs.appendFileSync(file, after.map((r) => JSON.stringify(r)).join('\n') + '\n');
+    return offset;
+  }
+
+  const earlier = [userPrompt('u1', 'build edit_profile'), assistant('a1', 'I built `edit_profile`.')];
+  /** How claude 2.1.310 logs a command whose output is display-only: `/mcp` closed with Esc. */
+  const localCommand = (content: string) => ({ type: 'system', subtype: 'local_command', content, isMeta: false });
+  const mcpCommand = '<command-name>/mcp</command-name>\n            <command-message>mcp</command-message>';
+
+  it('answers a closed menu with what it printed, not with the reply before it', () => {
+    const offset = logAround(earlier, [
+      localCommand(mcpCommand),
+      localCommand('<local-command-stdout>MCP dialog dismissed</local-command-stdout>'),
+    ]);
+    // The reader for prompts finds the reply before the command: the chat got
+    // "I built `edit_profile`." again as /mcp's answer.
+    expect(readLastAssistantTurnText(CWD, SESSION)).toBe('I built `edit_profile`.');
+    expect(readCommandReply(CWD, SESSION, offset)).toBe('MCP dialog dismissed');
+  });
+
+  it('reads the output a command logs on user records instead', () => {
+    // `/mcp`'s Reconnect, as logged by the same build.
+    const offset = logAround(earlier, [
+      { type: 'user', isMeta: true, message: { role: 'user', content: '<local-command-caveat>The command below…</local-command-caveat>' } },
+      unflagged('u2', mcpCommand),
+      unflagged('u3', '<local-command-stdout>Reconnected to sjs-dev.</local-command-stdout>'),
+    ]);
+    expect(readCommandReply(CWD, SESSION, offset)).toBe('Reconnected to sjs-dev.');
+  });
+
+  it('answers a command that prompts the model with what the model said', () => {
+    const offset = logAround(earlier, [
+      unflagged('u2', '<command-name>/review</command-name>'),
+      userPrompt('u3', 'Review the pending changes.'),
+      assistant('a2', 'Looks good.'),
+    ]);
+    expect(readCommandReply(CWD, SESSION, offset)).toBe('Looks good.');
+  });
+
+  it('drops the colour codes a command\'s output can carry', () => {
+    const offset = logAround(earlier, [
+      localCommand('<local-command-stdout>\x1b[1mSet model\x1b[22m to opus</local-command-stdout>'),
+    ]);
+    expect(readCommandReply(CWD, SESSION, offset)).toBe('Set model to opus');
+  });
+
+  it('is undefined when the command wrote nothing worth showing', () => {
+    const offset = logAround(earlier, [{ type: 'mode' }, { type: 'permission-mode' }]);
+    expect(readCommandReply(CWD, SESSION, offset)).toBeUndefined();
+  });
+
+  it('reads nothing from a log that is shorter than it was at submit', () => {
+    writeLog(earlier);
+    expect(readCommandReply(CWD, SESSION, 1_000_000)).toBeUndefined();
+  });
+
+  it('is undefined when the session log is not on disk', () => {
+    expect(readCommandReply(CWD, 'no-such-session', 0)).toBeUndefined();
   });
 });
