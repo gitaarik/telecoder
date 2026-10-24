@@ -1032,6 +1032,16 @@ export class PtyProvider implements Provider {
         // which has no clickable buttons in Telegram and just clutters the
         // chat — there's no real user at a TUI to respond.
         CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: '1',
+        // Keep claude on its classic renderer. Every reader of this screen —
+        // the input box, the spinner, the dialogs — is built for it, and
+        // 2.1.310 can switch a launch to its fullscreen one without being
+        // asked: an upsell trial, a fresh install or a remote feature gate
+        // all turn it on. Fullscreen draws on the alternate screen, puts a
+        // dialog in a pane of its own, and makes `/mcp`'s tool list taller
+        // than the dialog parser reads, so a probe pty that came up that way
+        // was offered "Enter — select" on a list whose cursor it couldn't
+        // see. Claude checks this ahead of every one of those switches.
+        CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN: '1',
         // Enable Claude Code's speculative next-prompt feature when the chat
         // has opted in. Suggestion is rendered as ghost text in the input box;
         // the scraper picks it up at end-of-turn (see prompt-suggestion-scraper).

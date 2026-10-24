@@ -191,6 +191,14 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **Claude Code stays on the screen layout TeleCoder can read** — Claude Code
+  2.1.310 can start in its new fullscreen layout without being asked: a trial,
+  a fresh install or a remote feature switch turns it on. Everything TeleCoder
+  reads off the screen — the input box, the spinner, the dialogs — is built for
+  the classic layout, and in a test run that came up fullscreen, `/mcp`'s tool
+  list offered "Enter — select" on a list whose cursor it couldn't see.
+  TeleCoder's Claude Code now always starts in the classic layout.
+
 - **Closing a menu no longer sends your last answer again** — `/mcp` and the
   other Claude Code menus write no reply of their own. When one closed,
   TeleCoder went looking for the latest reply in the session log, found the one
