@@ -2,7 +2,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Context } from 'grammy';
 import type { MessageEntity } from 'grammy/types';
 import {
-  blockingModal, buildChoices, buildModalMessage, openDialogError, relayModal, type ModalPty, type OpenDialog,
+  blockingModal, buildChoices, buildModalMessage, openDialogError, relayDialog, relayModal, type ModalPty,
+  type OpenDialog,
 } from '../../src/claude/modal-relay.js';
 import { parseModal } from '../../src/claude/tui-modal.js';
 import { resolvePendingQuestion } from '../../src/claude/ask-user.js';
@@ -69,6 +70,14 @@ function fakePty(screens: string[]): ModalPty & { written: string[] } {
   };
 }
 
+/** A message the fake Telegram was sent: its callback data, and the label on each button. */
+interface Sent {
+  text: string;
+  keyboard?: string[][];
+  buttons?: string[];
+  entities?: MessageEntity[];
+}
+
 /**
  * Captures what would be sent and edited. Messages are numbered from 1 in the
  * order they go out, which is what `edits` refers back to. `refuseEntities`
@@ -76,10 +85,10 @@ function fakePty(screens: string[]): ModalPty & { written: string[] } {
  */
 function fakeCtx({ refuseEntities = false } = {}): {
   ctx: Context;
-  sent: { text: string; keyboard?: string[][]; entities?: MessageEntity[] }[];
+  sent: Sent[];
   edits: { messageId: number; text: string; entities?: MessageEntity[] }[];
 } {
-  const sent: { text: string; keyboard?: string[][]; entities?: MessageEntity[] }[] = [];
+  const sent: Sent[] = [];
   const edits: { messageId: number; text: string; entities?: MessageEntity[] }[] = [];
   const ctx = {
     chat: { id: 42 },
@@ -87,11 +96,11 @@ function fakeCtx({ refuseEntities = false } = {}): {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       sendMessage: vi.fn(async (chat: number, text: string, opts?: any) => {
         if (refuseEntities && opts?.entities) throw new Error("Bad Request: can't parse entities");
+        const rows: { text: string; callback_data: string }[][] | undefined = opts?.reply_markup?.inline_keyboard;
         sent.push({
           text,
-          keyboard: opts?.reply_markup?.inline_keyboard?.map(
-            (row: { text: string; callback_data: string }[]) => row.map((b) => b.callback_data),
-          ),
+          keyboard: rows?.map((row) => row.map((b) => b.callback_data)),
+          buttons: rows?.map((row) => row[0].text),
           entities: opts?.entities,
         });
         return { message_id: sent.length, chat: { id: chat } };
@@ -110,6 +119,98 @@ function fakeCtx({ refuseEntities = false } = {}): {
 /** The pending-question id inside the first button's callback_data. */
 function questionId(sent: { keyboard?: string[][] }[]): string {
   return sent[0].keyboard![0][0].split(':')[1];
+}
+
+/** Tap the button reading `label` on message `n` (from 1), once that message has gone out. */
+async function tap(sent: Sent[], n: number, label: string): Promise<void> {
+  await vi.waitFor(() => expect(sent).toHaveLength(n), { timeout: 3000 });
+  const message = sent[n - 1];
+  const index = message.buttons!.indexOf(label);
+  expect(index, `"${label}" on message ${n}: ${message.buttons!.join(' | ')}`).toBeGreaterThanOrEqual(0);
+  resolvePendingQuestion(message.keyboard![index][0].split(':')[1], index);
+}
+
+/** Following a dialog with timings short enough for a test. */
+const QUICK = { clearMs: 400, settleMs: 10 };
+
+/**
+ * `/mcp` as a live 2.1.310 pty runs it. Arrows move the cursor round the
+ * list, wrapping at the ends; Enter opens the server under it, or runs the
+ * action on a server's screen — Reconnect closes the menu; Esc steps back up
+ * a level, to the top of the server list, and out of the menu from there.
+ */
+function fakeMcp(): ModalPty & { written: string[] } {
+  const servers = ['✘ broken', '✔ claudegram-tools   9 tools', '✔ sjs-dev            111 tools'];
+  const names = ['Broken', 'Claudegram-tools', 'Sjs-dev'];
+  const actions = ['View tools', 'Reconnect', 'Disable'];
+  let level: 'servers' | 'server' | 'closed' = 'servers';
+  let cursor = 0;
+  let server = 0;
+  const written: string[] = [];
+  const marked = (rows: string[]) => rows.map((row, i) => `${i === cursor ? '  ❯ ' : '    '}${row}`);
+  return {
+    written,
+    write(data: string) {
+      written.push(data);
+      const rows = level === 'servers' ? servers.length : actions.length;
+      if (data === '\x1b[B') cursor = (cursor + 1) % rows;
+      else if (data === '\x1b[A') cursor = (cursor + rows - 1) % rows;
+      else if (data === '\r' && level === 'servers') [level, server, cursor] = ['server', cursor, 0];
+      else if (data === '\r' && level === 'server' && cursor === 1) level = 'closed';
+      else if (data === '\x1b') [level, cursor] = [level === 'server' ? 'servers' : 'closed', 0];
+    },
+    screen() {
+      if (level === 'closed') return inputBox;
+      if (level === 'servers') {
+        return [
+          '❯ /mcp', '', SEP, '  Manage MCP servers', '  3 servers', '', '    Built-in MCPs (always available)',
+          ...marked(servers),
+          '', '  https://code.claude.com/docs/en/mcp for help', ' ↑/↓ to navigate · Enter to confirm · Esc to cancel',
+        ].join('\n');
+      }
+      return [
+        '❯ /mcp', '', SEP, `  ${names[server]} MCP Server`, '', '  Status:           ✔ connected', '',
+        ...marked(actions.map((a, i) => `${i + 1}. ${a}`)),
+        '', '  ↑/↓ to navigate · Enter to select · Esc to back',
+      ].join('\n');
+    },
+  };
+}
+
+/**
+ * `/mcp`'s tool list for a server with 111 tools, as a live 2.1.310 pty draws
+ * it with the cursor on tool `cursor` (0-based): the first nineteen while the
+ * cursor is among them, and past that the eighteen ending on the cursor, so
+ * every press beyond the first screen moves every row.
+ */
+function mcpTools(cursor: number): string {
+  const first = cursor < 19 ? 0 : cursor - 17;
+  const last = cursor < 19 ? 18 : cursor;
+  const tool = (i: number) => `tool_${String(i + 1).padStart(3, '0')}`;
+  return [
+    SEP, '  Tools for sjs-dev', '  111 tools', '',
+    ...(first > 0 ? [`    ↑ ${first} more`] : []),
+    ...Array.from({ length: last - first + 1 }, (_, k) => first + k)
+      .map((i) => `${i === cursor ? '  ❯ ' : '    '}${tool(i)}`),
+    ...(last < 110 ? [`    ↓ ${110 - last} more`] : []),
+    '', '  ↑/↓ to navigate · Enter to select · Esc to back',
+  ].join('\n');
+}
+
+/** That tool list in a pty: arrows move its cursor and stop at its ends. */
+function fakeTools(start: number): ModalPty & { written: string[]; cursor: () => number } {
+  let cursor = start;
+  const written: string[] = [];
+  return {
+    written,
+    cursor: () => cursor,
+    write(data: string) {
+      written.push(data);
+      if (data === '\x1b[B') cursor = Math.min(110, cursor + 1);
+      if (data === '\x1b[A') cursor = Math.max(0, cursor - 1);
+    },
+    screen: () => mcpTools(cursor),
+  };
 }
 
 /**
@@ -245,6 +346,16 @@ describe('buildChoices', () => {
     ].join('\n'))!;
     expect(buildChoices(modal).every((c) => !c.label.startsWith('↑'))).toBe(true);
   });
+
+  it('offers every row a long list draws, and a way on past each end of it', () => {
+    // Seven buttons was the cap, which reached as far as /mcp's seventh tool.
+    expect(buildChoices(parseModal(mcpTools(19))!).map((c) => c.label)).toEqual([
+      '↑ Scroll up (2 more)',
+      ...Array.from({ length: 18 }, (_, k) => `tool_${String(k + 3).padStart(3, '0')}`),
+      '↓ Scroll down (91 more)',
+      'Esc — back',
+    ]);
+  });
 });
 
 describe('relayModal', () => {
@@ -263,7 +374,7 @@ describe('relayModal', () => {
     expect(sent[0].keyboard).toHaveLength(4);
     resolvePendingQuestion(questionId(sent), 1); // "Yes, and don't ask again"
 
-    expect(await pending).toEqual({ kind: 'answered', label: "2. Yes, and don't ask again for example.com" });
+    expect(await pending).toMatchObject({ kind: 'answered', label: "2. Yes, and don't ask again for example.com" });
     expect(pty.written).toEqual(['\x1b[B', '\r']);
   });
 
@@ -275,7 +386,7 @@ describe('relayModal', () => {
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     resolvePendingQuestion(questionId(sent), 1); // "Yes, I trust this folder"
 
-    expect(await pending).toEqual({ kind: 'answered', label: 'Yes, I trust this folder' });
+    expect(await pending).toMatchObject({ kind: 'answered', label: 'Yes, I trust this folder' });
     expect(pty.written).toEqual(['\x1b[B', '\r']);
   });
 
@@ -287,8 +398,83 @@ describe('relayModal', () => {
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     resolvePendingQuestion(questionId(sent), 2); // "Esc — cancel"
 
-    expect(await pending).toEqual({ kind: 'answered', label: 'Esc — cancel' });
+    expect(await pending).toMatchObject({ kind: 'answered', label: 'Esc — cancel' });
     expect(pty.written).toEqual(['\x1b']);
+  });
+
+  it('presses nothing when the dialog has gone by the time the answer comes', async () => {
+    // A key means something else once its dialog has gone: at the input box a
+    // letter is typed into the next message, and Enter sends whatever is there.
+    let screen = trustDialog;
+    const written: string[] = [];
+    const pty: ModalPty = { write: (data) => { written.push(data); }, screen: () => screen };
+    const { ctx, sent } = fakeCtx();
+
+    const pending = relayModal(pty, '42', ctx, '/tmp/x', 'before-prompt');
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    screen = inputBox;
+    resolvePendingQuestion(questionId(sent), 2); // "Esc — cancel"
+
+    expect(await pending).toEqual({ kind: 'failed', why: 'the dialog changed before your answer reached it' });
+    expect(written).toEqual([]);
+  });
+
+  it('picks a row of a list that has scrolled, though its rows move under the cursor', async () => {
+    // Past its first screen /mcp's tool list keeps the cursor on its bottom
+    // row, so the row asked for is never at the index it was asked at. Checked
+    // by index, the walk reached tool_030 and then refused to press it.
+    const pty = fakeTools(36);
+    const { ctx, sent } = fakeCtx();
+
+    const pending = relayModal(pty, '42', ctx, '/tmp/x', 'mid-turn');
+    await tap(sent, 1, 'tool_030');
+
+    expect(await pending).toMatchObject({ kind: 'answered', label: 'tool_030' });
+    expect(pty.cursor()).toBe(29);
+    expect(pty.written).toEqual([...Array<string>(7).fill('\x1b[A'), '\r']);
+  });
+
+  it('still refuses a scrolled list\'s row when the cursor reached another', async () => {
+    // A list that moves two rows a press: the walk ends on tool_023.
+    const pty = fakeTools(36);
+    const write = pty.write.bind(pty);
+    pty.write = (data) => { write(data); if (data === '\x1b[A') write(data); };
+    const { ctx, sent } = fakeCtx();
+
+    const pending = relayModal(pty, '42', ctx, '/tmp/x', 'mid-turn');
+    await tap(sent, 1, 'tool_030');
+
+    expect(await pending).toEqual({ kind: 'failed', why: 'the cursor stopped on "tool_023", not "tool_030"' });
+    expect(pty.written).not.toContain('\r');
+  });
+
+  it('scrolls a long list on by a screenful, skipping none of it and committing nothing', async () => {
+    const pty = fakeTools(0);
+    const { ctx, sent } = fakeCtx();
+
+    const pending = relayModal(pty, '42', ctx, '/tmp/x', 'mid-turn');
+    await tap(sent, 1, '↓ Scroll down (92 more)');
+
+    expect(await pending).toMatchObject({ kind: 'answered', label: '↓ Scroll down (92 more)' });
+    // tool_019 ended the first screen, and tool_020 starts this one.
+    const now = parseModal(pty.screen())!;
+    expect(now.options[0].text).toBe('tool_020');
+    expect(now.more).toEqual({ above: 19, below: 74 });
+    expect(pty.written.every((key) => key === '\x1b[B')).toBe(true);
+  });
+
+  it('scrolls back up a screenful the same way', async () => {
+    const pty = fakeTools(36);
+    const { ctx, sent } = fakeCtx();
+
+    const pending = relayModal(pty, '42', ctx, '/tmp/x', 'mid-turn');
+    await tap(sent, 1, '↑ Scroll up (19 more)');
+
+    expect(await pending).toMatchObject({ kind: 'answered' });
+    // tool_020 started the screen it left, and ends this one.
+    const now = parseModal(pty.screen())!;
+    expect(now.options.at(-1)!.text).toBe('tool_020');
+    expect(now.more.above).toBe(2);
   });
 
   it('refuses to commit when the cursor does not land where it was sent', async () => {
@@ -388,6 +574,62 @@ describe('relayModal', () => {
 
     resolvePendingQuestion(questionId(sent), 3);
     await pending;
+  });
+});
+
+describe('relayDialog', () => {
+  it('follows /mcp from its server list into a server\'s screen and back out', async () => {
+    // The first tap used to open the server's screen and end the turn there,
+    // calling the menu still open: it could be opened from the chat, never used.
+    const pty = fakeMcp();
+    const { ctx, sent } = fakeCtx();
+
+    const pending = relayDialog(pty, '42', ctx, '/tmp/x', 'mid-turn', QUICK);
+    await tap(sent, 1, '✔ sjs-dev 111 tools');
+    await tap(sent, 2, 'Esc — back');
+    await tap(sent, 3, 'Esc — cancel');
+
+    expect(await pending).toEqual({ kind: 'closed', label: 'Esc — cancel' });
+    expect(sent[1].text).toContain('Sjs-dev MCP Server');
+    expect(sent[2].text).toContain('Manage MCP servers');
+    expect(pty.written).toEqual(['\x1b[B', '\x1b[B', '\r', '\x1b', '\x1b']);
+  });
+
+  it('ends on whichever press closes the menu, however deep in it that is', async () => {
+    const pty = fakeMcp();
+    const { ctx, sent } = fakeCtx();
+
+    const pending = relayDialog(pty, '42', ctx, '/tmp/x', 'mid-turn', QUICK);
+    await tap(sent, 1, '✔ sjs-dev 111 tools');
+    await tap(sent, 2, '2. Reconnect');
+
+    expect(await pending).toEqual({ kind: 'closed', label: '2. Reconnect' });
+    expect(sent).toHaveLength(2);
+  });
+
+  it('stops where the user leaves it alone, pressing nothing there', async () => {
+    const pty = fakeMcp();
+    const { ctx, sent } = fakeCtx();
+
+    const pending = relayDialog(pty, '42', ctx, '/tmp/x', 'mid-turn', QUICK);
+    await tap(sent, 1, '✔ sjs-dev 111 tools');
+    await tap(sent, 2, '✋ Leave it alone');
+
+    expect(await pending).toEqual({ kind: 'declined', why: 'you chose to leave it alone' });
+    expect(pty.written).toEqual(['\x1b[B', '\x1b[B', '\r']);
+  });
+
+  it('counts the dialog still open only when a press changed nothing', async () => {
+    // The cursor moves, but Enter does nothing: the screen stays exactly as it
+    // was when Enter went in, and there is no next screen to offer.
+    const pty = fakePty([trustDialog, trustDialogOnSecond]);
+    const { ctx, sent } = fakeCtx();
+
+    const pending = relayDialog(pty, '42', ctx, '/tmp/x', 'before-prompt', QUICK);
+    await tap(sent, 1, 'Yes, I trust this folder');
+
+    expect(await pending).toEqual({ kind: 'still-open', label: 'Yes, I trust this folder' });
+    expect(sent).toHaveLength(1);
   });
 });
 
@@ -508,6 +750,12 @@ describe('buildModalMessage', () => {
     // Unnumbered rows get a bullet instead, so they still read as choices.
     expect(buildModalMessage(parseModal(trustDialog)!, '/tmp/x', 'mid-turn').text)
       .toContain('• No, exit\n• Yes, I trust this folder');
+  });
+
+  it('says how much of a long list is out of sight, at the end it is out past', () => {
+    const { text } = buildModalMessage(parseModal(mcpTools(19))!, '/tmp/x', 'mid-turn');
+    expect(text).toContain('↑ 2 more\n• tool_003');
+    expect(text).toContain('• tool_020\n↓ 91 more');
   });
 
   it('says what the tap leads to: the message it is holding, or the turn carrying on', () => {

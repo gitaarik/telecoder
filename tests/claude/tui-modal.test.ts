@@ -461,6 +461,119 @@ describe('parseModal with chrome below the footer', () => {
   });
 });
 
+/**
+ * `/mcp`'s server list off a live 120x40 pty running claude 2.1.310, with the
+ * cursor on row `at`. The servers sit under a heading drawn in their own
+ * column, which claude's cursor skips.
+ */
+function mcpServers(at: number): string {
+  const rows = ['✘ broken', '✔ claudegram-tools   9 tools', '✔ sjs-dev            111 tools'];
+  return [
+    '❯ /mcp',
+    '',
+    SEP,
+    '  Manage MCP servers',
+    '  3 servers',
+    '',
+    '    Built-in MCPs (always available)',
+    ...rows.map((row, i) => `${i === at ? '  ❯ ' : '    '}${row}`),
+    '',
+    '  ※ Run claude --debug to see error logs',
+    '  https://code.claude.com/docs/en/mcp for help',
+    ' ↑/↓ to navigate · Enter to confirm · Esc to cancel',
+  ].join('\n');
+}
+
+/**
+ * `/mcp`'s tool list for a server with 111 tools, the same pty, as it draws
+ * with the cursor on tool `cursor` (0-based): the first nineteen while the
+ * cursor is among them, and past that eighteen ending on the cursor, with a
+ * marker at each end the list runs on beyond.
+ */
+function mcpTools(cursor: number): string {
+  const total = 111;
+  const first = cursor < 19 ? 0 : cursor - 17;
+  const last = cursor < 19 ? 18 : cursor;
+  const tool = (i: number) => `tool_${String(i + 1).padStart(3, '0')}`;
+  return [
+    SEP,
+    '  Tools for sjs-dev',
+    '  111 tools',
+    '',
+    ...(first > 0 ? [`    ↑ ${first} more`] : []),
+    ...Array.from({ length: last - first + 1 }, (_, k) => first + k)
+      .map((i) => `${i === cursor ? '  ❯ ' : '    '}${tool(i)}`),
+    ...(last < total - 1 ? [`    ↓ ${total - 1 - last} more`] : []),
+    '',
+    '  ↑/↓ to navigate · Enter to select · Esc to back',
+  ].join('\n');
+}
+
+describe('parseModal on /mcp', () => {
+  it('reads the server list without its group heading, which the cursor never lands on', () => {
+    // As a row the heading was a button that could only fail, and it put the
+    // cursor one row further down the list than it was.
+    const modal = parseModal(mcpServers(2))!;
+    expect(modal.title).toBe('Manage MCP servers');
+    expect(modal.options.map((o) => o.text)).toEqual(['✘ broken', '✔ claudegram-tools', '✔ sjs-dev']);
+    expect(modal.highlighted).toBe(2);
+  });
+
+  it('leaves a heading between two groups out of the arrow walk', () => {
+    // Claude's list skips headings, so the walk from a row in one group to a
+    // row in the next counts rows only. The second group is laid out the way
+    // the 2.1.310 list builds one: a spacer row, its heading, its servers.
+    const twoGroups = mcpServers(0).replace(
+      '    ✔ sjs-dev            111 tools',
+      '    ✔ sjs-dev            111 tools\n\n    User MCPs (/home/rik/.claude.json)\n    ✔ notes              4 tools',
+    );
+    const modal = parseModal(twoGroups)!;
+    expect(modal.options.map((o) => o.text)).toEqual(['✘ broken', '✔ claudegram-tools', '✔ sjs-dev', '✔ notes']);
+    // Nor does the heading hang under the row above it as that row's detail.
+    expect(modal.options[2].detail).toBe('111 tools');
+    expect(arrowsTo(modal, 3)).toHaveLength(3);
+  });
+
+  it('reads a server\'s own screen, whose Esc steps back rather than out', () => {
+    const modal = parseModal([
+      SEP,
+      '  Sjs-dev MCP Server',
+      '',
+      '  Status:           ✔ connected',
+      '  Config location:  Dynamically configured',
+      '  Capabilities: tools',
+      '  Tools: 111 tools',
+      '',
+      '  ❯ 1. View tools',
+      '    2. Reconnect',
+      '    3. Disable',
+      '',
+      '  ↑/↓ to navigate · Enter to select · Esc to back',
+    ].join('\n'))!;
+    expect(modal.title).toBe('Sjs-dev MCP Server');
+    expect(modal.options.map((o) => o.label)).toEqual(['View tools', 'Reconnect', 'Disable']);
+    expect(modal.hints).toContainEqual({ key: 'Esc', action: 'back' });
+  });
+
+  it('reads a list too long for the screen as the rows it draws, and how many it doesn\'t', () => {
+    const modal = parseModal(mcpTools(0))!;
+    expect(modal.options).toHaveLength(19);
+    expect(modal.options.at(-1)).toEqual({ label: 'tool_019', text: 'tool_019', index: 18 });
+    expect(modal.more).toEqual({ above: 0, below: 92 });
+  });
+
+  it('places the cursor among the rows drawn once the list has scrolled', () => {
+    const modal = parseModal(mcpTools(19))!;
+    expect(modal.options[0].text).toBe('tool_003');
+    expect(modal.highlighted).toBe(17);
+    expect(modal.more).toEqual({ above: 2, below: 91 });
+  });
+
+  it('says a list that fits has nothing more to it', () => {
+    expect(parseModal(trustDialog)!.more).toEqual({ above: 0, below: 0 });
+  });
+});
+
 describe('parseKeyHints', () => {
   it('splits a footer into its affordances', () => {
     expect(parseKeyHints('Enter to set as default · s to use this session only · Esc to cancel'))

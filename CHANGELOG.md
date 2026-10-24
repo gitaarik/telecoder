@@ -191,6 +191,18 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **Claude Code's menus can be walked from the chat** — picking a server in
+  `/mcp` opens that server's own screen, but TeleCoder expected every tap to
+  close the dialog it answered. The tap went in, the menu stayed open on the
+  server's screen, and the turn ended calling the dialog "still open": the menu
+  could be opened from the chat but never used. Each screen a tap leads to now
+  comes to the chat in turn — a server's actions, its tool list, the list Esc
+  steps back to — until Claude Code is back at its input box. A list too long
+  for the screen, like a server's 111 tools, offers every row it shows instead
+  of its first seven, with buttons to scroll it, and the `↓ 92 more` under it
+  and the group headings between `/mcp`'s servers are no longer offered as
+  rows.
+
 - **A message that starts with a long link gets through** — Claude Code wraps
   its input box at word boundaries. In a message like "I'm about to submit
   https://…long link…", the link moved down a row, which split the opening

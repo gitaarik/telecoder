@@ -82,6 +82,11 @@ export interface TuiModal {
   options: ModalOption[];
   /** Index of the row the cursor sits on, or -1 when nothing is marked. */
   highlighted: number;
+  /**
+   * Rows the list holds beyond the ones it draws, zero when it fits. `/mcp`
+   * shows 19 of a server's 111 tools and says `↓ 92 more` under them.
+   */
+  more: { above: number; below: number };
   /** Affordances parsed from the footer, in the order claude listed them. */
   hints: ModalKeyHint[];
   /** The body as rendered, for relaying a dialog we could not fully parse. */
@@ -113,6 +118,21 @@ const WRAP_SLACK = 4;
 const CURSOR_ROW = /^(\s*)❯(\s+)(\S.*)$/u;
 /** A leading `1. `, when the dialog numbers its rows. Many do not. */
 const ROW_NUMBER = /^(\d{1,2})\.\s+(\S.*)$/u;
+/**
+ * What a list too long for the screen draws past the rows it shows: `↑ 2 more`
+ * above them, `↓ 92 more` below. It sits in the rows' own column, so without
+ * this the walk out from the cursor took it for one more row.
+ */
+const MORE_ROWS = /^\s*([↑↓])\s+(\d+)\s+more\s*$/u;
+/**
+ * The group headings `/mcp` draws between its servers, in the rows' own
+ * column: `Built-in MCPs (always available)`, `User MCPs (~/.claude.json)`,
+ * `claude.ai` — the labels Claude Code 2.1.310's list gives its groups. Its
+ * cursor skips them. Read as rows, the server list's heading became a button
+ * that could only fail, and a second group's heading would put every row
+ * below it one arrow further off than it is.
+ */
+const LIST_HEADING = /^\s*(?:[\w.-]+(?: [\w.-]+)* MCPs(?: \(.*\))?|claude\.ai)\s*$/u;
 /**
  * A footer hint. Claude writes these as `Enter to confirm`, `Esc to cancel`,
  * `↑/↓ to select`, `s to use this session only` — a key, the word "to", and a
@@ -277,7 +297,7 @@ export function parseModal(screenText: string): TuiModal | null {
   }
   if (body.length === 0) return null;
 
-  const { options, highlighted, rows, list } = extractOptions(body, width);
+  const { options, highlighted, more, rows, list } = extractOptions(body, width);
   // A cursor we could not resolve into rows is the one state that must not
   // produce buttons. The footer's `Enter to confirm` would then be the only
   // thing on offer, and Enter commits whatever the cursor is on — which is
@@ -293,6 +313,7 @@ export function parseModal(screenText: string): TuiModal | null {
     title: title ? clip(title, 120) : clip(body[0], 120),
     options,
     highlighted,
+    more,
     hints,
     body: body.join('\n'),
     parts: readParts(body, gaps.slice(seam + 1, footerIndex), list, width),
@@ -316,13 +337,17 @@ function lastRuleBefore(lines: string[], before: number): number {
  * underneath, and a walk that stopped at the first of those found one option
  * where there were five. A rule can sit inside a list too, so it is stepped
  * over rather than treated as the end. Anything starting *shallower* is the
- * title, the blurb or prose, and that really is the end of the list.
+ * title, the blurb or prose, and that really is the end of the list. Two
+ * things are drawn in the rows' column without being rows, and are told
+ * apart by what they say: the `↓ 92 more` of a list that scrolls, and the
+ * headings of one in groups.
  */
-function rowRole(line: string, col: number): 'row' | 'skip' | 'end' {
+function rowRole(line: string, col: number): 'row' | 'more' | 'skip' | 'end' {
   if (RULE.test(line)) return 'skip';
   const at = line.search(/\S/);
   if (at < 0) return 'skip';
-  if (at === col) return 'row';
+  if (MORE_ROWS.test(line)) return 'more';
+  if (at === col) return LIST_HEADING.test(line) ? 'skip' : 'row';
   return at > col ? 'skip' : 'end';
 }
 
@@ -340,8 +365,15 @@ function rowRole(line: string, col: number): 'row' | 'skip' | 'end' {
 function extractOptions(
   body: string[],
   width: number,
-): { options: ModalOption[]; highlighted: number; rows: Set<number>; list: BodySpan | null } {
-  const none = { options: [], highlighted: -1, rows: new Set<number>(), list: null };
+): {
+  options: ModalOption[];
+  highlighted: number;
+  more: TuiModal['more'];
+  rows: Set<number>;
+  list: BodySpan | null;
+} {
+  const more = { above: 0, below: 0 };
+  const none = { options: [], highlighted: -1, more, rows: new Set<number>(), list: null };
 
   const cursor = body.findIndex((l) => CURSOR_ROW.test(l));
   if (cursor < 0) return none;
@@ -349,10 +381,14 @@ function extractOptions(
   const labelCol = match[1].length + 1 + match[2].length;
 
   const indexes: number[] = [];
+  // The list's first line, which is its `↑ 2 more` when it has one.
+  let start = cursor;
   for (let i = cursor - 1; i >= 0; i--) {
     const role = rowRole(body[i], labelCol);
     if (role === 'end') break;
     if (role === 'row') indexes.unshift(i);
+    if (role === 'more') more.above = Number(MORE_ROWS.exec(body[i])![2]);
+    if (role !== 'skip') start = i;
   }
   // However many rows sit above it is where the cursor is — the arrow walk
   // counts rows, not screen lines, and the two differ wherever a description
@@ -366,6 +402,7 @@ function extractOptions(
     const role = rowRole(body[stop], labelCol);
     if (role === 'end') break;
     if (role === 'row') indexes.push(stop);
+    if (role === 'more') more.below = Number(MORE_ROWS.exec(body[stop])![2]);
   }
 
   const options: ModalOption[] = [];
@@ -375,7 +412,8 @@ function extractOptions(
     const text = i === cursor ? match[3] : body[i].slice(labelCol);
     const numbered = ROW_NUMBER.exec(text);
     const own = numbered ? numbered[2] : text;
-    const under = body.slice(i + 1, indexes[k + 1] ?? stop).filter((l) => !RULE.test(l));
+    const under = body.slice(i + 1, indexes[k + 1] ?? stop)
+      .filter((l) => !RULE.test(l) && !MORE_ROWS.test(l) && !LIST_HEADING.test(l));
     options.push({
       ...(numbered ? { number: Number(numbered[1]) } : {}),
       label: clip(own, MAX_LABEL),
@@ -383,7 +421,7 @@ function extractOptions(
       index: options.length,
     });
   });
-  return { options, highlighted, rows, list: { start: indexes[0], end: stop - 1 } };
+  return { options, highlighted, more, rows, list: { start, end: stop - 1 } };
 }
 
 /** A run of body rows, first and last inclusive. */

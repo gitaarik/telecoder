@@ -52,7 +52,7 @@ import {
 } from './tui-state.js';
 import { stageImagesForPty } from './stage-images.js';
 import {
-  blockingModal, openDialogError, relayModal, waitForDialogToClear, type ModalPty, type RelayStage,
+  blockingModal, openDialogError, relayDialog, type ModalPty, type RelayStage,
 } from './modal-relay.js';
 import { questionTimeoutMs } from './ask-user.js';
 import {
@@ -161,12 +161,20 @@ const BUSY_READY_CEILING_MS = 30 * 60_000;
 /** Poll interval for the readiness wait. */
 const READY_POLL_MS = 50;
 /**
- * How long a dialog gets to tear itself down after we answer it. Generous
- * because the key that answers one can start work — a trust dialog releases
- * a session that then loads its project — and the alternative to waiting is
- * telling the chat the message failed when it is about to succeed.
+ * How long a press gets to close the dialog it answered, or move it on to
+ * another screen, before the dialog counts as still open. Generous because
+ * the key that answers one can start work — a trust dialog releases a session
+ * that then loads its project — and the alternative to waiting is telling the
+ * chat the message failed when it is about to succeed.
  */
 const DIALOG_CLEAR_MS = 20_000;
+/**
+ * How long the screen a press led to must stand still before it is relayed
+ * as the dialog's next one: `/mcp`'s server screen after a server was picked,
+ * the list it steps back to on Esc. Claude draws those in well under this, so
+ * it only costs a beat per screen; reading sooner risks a half-drawn frame.
+ */
+const DIALOG_SETTLE_MS = 500;
 /**
  * How often the end-of-turn check re-reads the screen while claude is plainly
  * still generating. The default re-arm is a 50ms tick meant to catch a turn
@@ -1404,9 +1412,11 @@ export class PtyProvider implements Provider {
       ? [RESUME_SETTLE_IDLE_MS, RESUME_STARTUP_MAX_MS, RESUME_READY_CEILING_MS]
       : [IDLE_MS, STARTUP_MAX_MS, STARTUP_READY_CEILING_MS];
 
-    // One relay per prompt. Answering a dialog can reveal another behind it,
-    // and a session that keeps producing them wants a person at a terminal,
-    // not a bot working through a stack of them on someone's behalf.
+    // One relay per prompt. A dialog with several screens — a menu, or one
+    // dialog straight behind another — is followed inside that relay until
+    // the input box is back. A dialog that opens after that, once claude has
+    // already returned to its input box, wants a person at a terminal, not a
+    // bot working through a stack of them on someone's behalf.
     let relayed = false;
     for (;;) {
       const verdict = await this._waitForReady(session, sessionKey, idleMs, capMs, ceilingMs, abortSignal);
@@ -1530,12 +1540,13 @@ export class PtyProvider implements Provider {
   }
 
   /**
-   * Put claude's dialog in the chat and press what comes back.
+   * Put claude's dialog in the chat and press what comes back, screen after
+   * screen for a dialog that has more than one.
    *
-   * Returns only when a key was written and the dialog cleared. Every other
-   * outcome throws, saying what it means for `stage` (see openDialogError) —
-   * that beats a silent retry. Nothing is pressed on a timeout: see
-   * modal-relay.ts for why an unanswered dialog is left exactly as it is.
+   * Returns only once the dialog has closed. Every other outcome throws,
+   * saying what it means for `stage` (see openDialogError) — that beats a
+   * silent retry. Nothing is pressed on a timeout: see modal-relay.ts for why
+   * an unanswered dialog is left exactly as it is.
    */
   private async _relayModal(
     session: PtySession, sessionKey: string, options: AgentOptions | undefined, stage: RelayStage,
@@ -1555,13 +1566,13 @@ export class PtyProvider implements Provider {
       write: (data) => session.term.write(data),
       screen: () => this._getScreenText(session),
     };
-    const outcome = await relayModal(pty, sessionKey, ctx, session.cwd, stage);
+    const outcome = await relayDialog(pty, sessionKey, ctx, session.cwd, stage, {
+      clearMs: DIALOG_CLEAR_MS,
+      settleMs: DIALOG_SETTLE_MS,
+    });
     console.warn(`[PtyProvider] ${sessionKey}: claude opened a dialog — relay ${outcome.kind}`);
 
-    if (outcome.kind !== 'answered') throw new Error(openDialogError(outcome, stage));
-    if (!await waitForDialogToClear(pty, DIALOG_CLEAR_MS)) {
-      throw new Error(openDialogError({ kind: 'still-open', label: outcome.label }, stage));
-    }
+    if (outcome.kind !== 'closed') throw new Error(openDialogError(outcome, stage));
     // Marked only now, with the dialog gone: from here the screen looks like a
     // finished turn until claude resumes, and _checkEndOfTurn needs to know
     // not to believe it.
