@@ -211,6 +211,12 @@ reasoning — the commit bodies are the long form, this is the index.
   reply, which adds the system prompt and tools back, reads a few percent
   higher.
 
+- **`/status` reads the context the footer does** — its 📐 Context line added
+  up the reply and the input sent fresh, and left out what came from the
+  prompt cache, which once a conversation is under way is nearly all of it:
+  0% (322/1.0M) where the footer read 54%. It now counts cache reads too, the
+  same sum as the footer.
+
 - **Claude Code stays on the screen layout TeleCoder can read** — Claude Code
   2.1.310 can start in its new fullscreen layout without being asked: a trial,
   a fresh install or a remote feature switch turns it on. Everything TeleCoder

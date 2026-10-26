@@ -319,10 +319,13 @@ export async function handleStatus(ctx: Context): Promise<void> {
 📡 *Mode:* ${esc(config.STREAMING_MODE)}
 ${isDangerousMode() ? '⚠️' : '🛡️'} *Dangerous Mode:* ${esc(dangerousMode)}`;
     if (cached) {
+      // Cache reads are most of the context once the prompt cache is warm, and
+      // without them this read about 0%. Same sum as the usage footer's.
+      const used = cached.inputTokens + cached.outputTokens + cached.cacheReadTokens;
       const pct = cached.contextWindow > 0
-        ? Math.round(((cached.inputTokens + cached.outputTokens) / cached.contextWindow) * 100)
+        ? Math.round((used / cached.contextWindow) * 100)
         : 0;
-      status += `\n📐 *Context:* ${esc(String(pct))}% \\(${esc(fmtTokens(cached.inputTokens + cached.outputTokens))}/${esc(fmtTokens(cached.contextWindow))}\\)`;
+      status += `\n📐 *Context:* ${esc(String(pct))}% \\(${esc(fmtTokens(used))}/${esc(fmtTokens(cached.contextWindow))}\\)`;
       // Only when something has actually been tallied: PTY mode never receives
       // a cost figure, and a flat $0.0000 there reads as a free conversation
       // rather than as an unanswerable question.
