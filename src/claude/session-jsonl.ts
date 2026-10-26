@@ -226,6 +226,13 @@ export interface JsonlUsageSnapshot {
  * message (`message.usage = {input_tokens, cache_read_input_tokens, ...}`).
  * We scan newest-first to find the last usage block — that represents the
  * cumulative token state after the last turn.
+ *
+ * A compaction after that block outdates it. `/compact` writes its boundary
+ * and summary with no usage on either, so the last block still sizes the
+ * conversation the summary replaced: the footer under "Context compacted —
+ * 536.4k → 13.7k tokens" read 54%, until the next reply put it right. The
+ * boundary's `postTokens` is the size of what's left, so it stands as the
+ * context until a reply reports one.
  */
 export function readLastUsageFromJsonl(workingDirectory: string, sessionId: string): JsonlUsageSnapshot | undefined {
   const filePath = sessionJsonlPath(workingDirectory, sessionId);
@@ -249,6 +256,23 @@ export function readLastUsageFromJsonl(workingDirectory: string, sessionId: stri
     // wipe out the legitimate cumulative totals from the real assistant turn
     // that ran just before it.
     if (isApiErrorRecord(rec)) continue;
+
+    const compaction = compactionInfo(rec);
+    if (compaction) {
+      // Older builds record no postTokens; the last block is all there is then.
+      if (compaction.postTokens > 0) {
+        lastUsage = {
+          // None of the summary is cached yet, so all of it counts as input.
+          inputTokens: compaction.postTokens,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          model: lastUsage?.model ?? '',
+          numTurns: 0,
+        };
+      }
+      continue;
+    }
 
     const msg = rec.message as Record<string, unknown> | undefined;
     const usage = msg?.usage as Record<string, unknown> | undefined;
@@ -287,6 +311,19 @@ function numField(obj: Record<string, unknown> | undefined, ...keys: string[]): 
   return 0;
 }
 
+/** The compaction a `compact_boundary` record describes, or undefined for any other record. */
+function compactionInfo(rec: Record<string, unknown>): CompactionInfo | undefined {
+  if (rec.type !== 'system' || rec.subtype !== 'compact_boundary') return undefined;
+  const meta = (rec.compactMetadata ?? rec.compact_metadata) as Record<string, unknown> | undefined;
+  const ts = typeof rec.timestamp === 'string' ? Date.parse(rec.timestamp) : NaN;
+  return {
+    trigger: meta?.trigger === 'auto' ? 'auto' : 'manual',
+    preTokens: numField(meta, 'preTokens', 'pre_tokens'),
+    postTokens: numField(meta, 'postTokens', 'post_tokens'),
+    timestampMs: Number.isNaN(ts) ? 0 : ts,
+  };
+}
+
 /**
  * Return the most recent `compact_boundary` record from a session log, or
  * undefined if the log has none. Claude Code appends one of these whenever the
@@ -319,16 +356,7 @@ export function readLastCompactionFromJsonl(
     let rec: Record<string, unknown>;
     try { rec = JSON.parse(line) as Record<string, unknown>; }
     catch { continue; }
-    if (rec.type !== 'system' || rec.subtype !== 'compact_boundary') continue;
-
-    const meta = (rec.compactMetadata ?? rec.compact_metadata) as Record<string, unknown> | undefined;
-    const ts = typeof rec.timestamp === 'string' ? Date.parse(rec.timestamp) : NaN;
-    last = {
-      trigger: meta?.trigger === 'auto' ? 'auto' : 'manual',
-      preTokens: numField(meta, 'preTokens', 'pre_tokens'),
-      postTokens: numField(meta, 'postTokens', 'post_tokens'),
-      timestampMs: Number.isNaN(ts) ? 0 : ts,
-    };
+    last = compactionInfo(rec) ?? last;
   }
   return last;
 }

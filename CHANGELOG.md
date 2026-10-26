@@ -201,6 +201,16 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **The context reading after a `/compact` shows what it left** — under
+  "🗜️ Context compacted — 536.4k → 13.7k tokens" the usage footer still read
+  54%, the context from before, and only the next reply brought it down. A
+  compaction writes no usage of its own, so the newest figure in the session
+  log was the one for the conversation it had just replaced. The reading now
+  drops to what the compaction left, 1% there, in the footer, the status line
+  and `/context` alike. That figure counts the conversation only, so the next
+  reply, which adds the system prompt and tools back, reads a few percent
+  higher.
+
 - **Claude Code stays on the screen layout TeleCoder can read** — Claude Code
   2.1.310 can start in its new fullscreen layout without being asked: a trial,
   a fresh install or a remote feature switch turns it on. Everything TeleCoder
