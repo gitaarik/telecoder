@@ -7,6 +7,16 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Sessions
 
+- **A restart carries on instead of asking** — a chat quiet for between an hour
+  and a week came back from a restart with "Continue where you left off, or
+  start fresh?", and a `/rebuildbot all` left that choice waiting in every bot
+  you hadn't used in the last hour. Every chat used in the past week now
+  carries straight on in its conversation, as it would have with no restart at
+  all; `/clear` is there when you'd rather start fresh. A project you'd picked
+  but not talked in yet comes back with your next message too, where an hour
+  on it used to answer "No project set". A "Start fresh" still standing on an
+  old prompt now runs `/clear`.
+
 - **A fork stands out where it starts** — loading a fork left one plain line,
   "✅ Fork loaded from …" or "✅ Branched into a new conversation", between two
   conversations that otherwise read as one thread when you scroll back. A

@@ -333,8 +333,7 @@ export function renderTreeList(projectPath: string, intro?: string): View {
  * that and nothing has brought it back, the one it left off in (`live` false).
  *
  * Only ever read. Drawing a tree mustn't load a conversation behind the
- * chat's back: after a restart, a standing "Start fresh" counts on nothing
- * being loaded, and the next message would otherwise land in whatever was.
+ * chat's back: the next message would land in whatever it loaded.
  */
 function whereChatIs(sessionKey: string): { projectPath: string; sessionId?: string; live: boolean } | undefined {
   const session = sessionManager.getSession(sessionKey);

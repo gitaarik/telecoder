@@ -18,8 +18,7 @@ import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
 import { sanitizeError } from '../../../utils/sanitize.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 import { replyMd, botctlExists, PROJECT_ROOT, BOTCTL_PATH } from './shared.js';
-import { handleResume, handleContinue } from './session.js';
-import { sessionHistory } from '../../../claude/session-history.js';
+import { handleResume, handleContinue, handleClear } from './session.js';
 import { requestRestart, requestRestartAll, requestSiblingRestart, launcherIsStale } from '../../../worker-restart.js';
 import {
   isSystemdService,
@@ -605,6 +604,11 @@ export async function handleRestartCallback(ctx: Context): Promise<void> {
   }
 }
 
+/**
+ * Taps on a "Continue where you left off, or start fresh?" prompt. Startup
+ * doesn't ask any more — a restart just carries on — but the prompts it already
+ * posted still sit in chats with live buttons.
+ */
 export async function handleStartupCallback(ctx: Context): Promise<void> {
   const data = ctx.callbackQuery?.data;
   if (!data) return;
@@ -618,23 +622,15 @@ export async function handleStartupCallback(ctx: Context): Promise<void> {
     // ignore — message may have been edited or deleted
   }
 
-  const keyInfo = getSessionKeyFromCtx(ctx);
-
   if (data === 'startup:continue') {
-    // Continuing counts as engaging with the session: refresh its activity so a
-    // subsequent restart silently restores it (and stays quiet) instead of
-    // re-prompting about an hours-stale session.
-    if (keyInfo) sessionHistory.touchActivity(keyInfo.sessionKey);
     await handleContinue(ctx);
     return;
   }
 
   if (data === 'startup:fresh') {
-    // Mark the prompt resolved so a later restart stays quiet rather than
-    // re-asking about a session the user has chosen to abandon. No session is in
-    // memory — the next user message naturally starts a new conversation.
-    if (keyInfo) sessionHistory.resolveStartupPrompt(keyInfo.sessionKey);
-    await replyMd(ctx, '🆕 Starting fresh\\. Send a message to begin a new session\\.');
+    // Startup has put the old conversation back by now, so leaving it alone no
+    // longer starts anything fresh — clear it the way /clear does.
+    await handleClear(ctx);
     return;
   }
 }

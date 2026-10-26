@@ -3,6 +3,13 @@ import * as os from 'os';
 import { sessionHistory, SessionHistoryEntry } from './session-history.js';
 
 /**
+ * How long a chat can go quiet and still be put back in its conversation after
+ * a restart — eagerly at startup, or by its next message. Inside it a restart
+ * changes nothing; whoever wants a clean slate sends /clear.
+ */
+export const RESTORE_MAX_IDLE_MS = 7 * 24 * 60 * 60 * 1000; // 7d
+
+/**
  * Resolve a stored working directory to a valid path on this system.
  * Handles cross-OS portability (e.g. /Users/x saved on macOS, running on Linux).
  */
@@ -169,7 +176,7 @@ class SessionManager {
    * from unplanned restarts without forcing the user to type /continue. */
   getOrRestoreSession(
     sessionKey: string,
-    maxAgeMs: number = 60 * 60 * 1000,
+    maxAgeMs: number = RESTORE_MAX_IDLE_MS,
   ): { session: Session | undefined; restored: boolean } {
     const existing = this.sessions.get(sessionKey);
     if (existing) return { session: existing, restored: false };

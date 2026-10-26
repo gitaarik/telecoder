@@ -62,17 +62,17 @@ export async function notifyInterruptedSessions(bot: Bot, notified: Set<string>)
 /**
  * Confirm a user-initiated restart in Telegram.
  *
- * Only the session-driven paths speak on startup, and each has its own
- * cutoff — nothing fresh enough to resume, a session already prompted for the
- * same activity timestamp, or one older than the 7d prompt window all leave the
- * chat silent. After an explicit /rebuildbot or /restartbot that reads as "did
- * my restart even land?", especially for `all`, where five sibling instances
+ * Apart from this, only the resume recap and the interrupted-task warning speak
+ * on startup, and the recap only for a session idle under an hour — a chat that
+ * carries on silently, or one quiet for longer than the restore window, hears
+ * nothing. After an explicit /rebuildbot or /restartbot that reads as "did my
+ * restart even land?", especially for `all`, where five sibling instances
  * restart with no visible sign either way.
  *
  * Sends to the most recently active chat this instance serves, and only when
  * that chat heard nothing else this startup — so a chat that already got the
- * resume recap, the interrupted-task warning, or the continue/fresh prompt
- * doesn't get a redundant second message.
+ * resume recap or the interrupted-task warning doesn't get a redundant second
+ * message.
  *
  * Gated on the caller having seen a fresh reload marker, so crash-loop
  * respawns and plain pm2 restarts stay quiet.

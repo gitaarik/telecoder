@@ -147,14 +147,13 @@ async function main() {
     console.error('[InFlight] Failed:', err);
   }
 
-  // Cold-start auto-continue. Runs even after a reload marker was consumed:
-  // auto-resume only restores sessions idle < 1h, so on a /rebuildbot with
-  // nothing fresh enough to restore this is the only path that says anything
-  // at all. Chats that DID get the "Reloaded and session restored" recap are
-  // live in memory by then and skip themselves via the alreadyLive guard, so
-  // no chat can receive both.
+  // Cold-start auto-continue: every other chat used within the past week
+  // carries straight on in its conversation, without a word. Runs even after
+  // a reload marker was consumed, since auto-resume only restores sessions
+  // idle < 1h. Chats that DID get the "Reloaded and session restored" recap
+  // are live in memory by then and skip themselves via the alreadyLive guard.
   try {
-    await autoContinueOnStartup(bot, notified);
+    autoContinueOnStartup();
   } catch (err) {
     console.error('[AutoContinue] Failed:', err);
   }

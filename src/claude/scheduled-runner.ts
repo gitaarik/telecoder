@@ -34,12 +34,12 @@ async function fireSchedule(bot: Bot, schedule: Schedule): Promise<void> {
 
   // Resolve the session — restore from disk if the PTY isn't live anymore.
   // The scheduler doesn't capture a long-lived ctx, so cold-restore is
-  // expected after bot restart or >1h idle.
+  // expected after a bot restart.
   let { session } = sessionManager.getOrRestoreSession(sessionKey);
   if (!session) {
     // Fall back to the most recent persisted entry regardless of age — a
     // user who explicitly scheduled a task wants it to fire even if the
-    // session has been idle for a day.
+    // session has been idle for weeks.
     if (sessionHistory.getLastSession(sessionKey)) {
       session = sessionManager.resumeLastSession(sessionKey) ?? undefined;
     }

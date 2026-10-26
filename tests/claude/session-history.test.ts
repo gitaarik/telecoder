@@ -1,7 +1,7 @@
 /**
  * Session history is kept most-recently-used first: whatever conversation a
- * chat is in sits at index 0, because that is where the topic, the startup
- * prompt and the restore after a restart all look for it.
+ * chat is in sits at index 0, because that is where the topic and the restore
+ * after a restart both look for it.
  *
  * Drives the real session manager and history store, with home redirected to
  * a scratch dir so nothing here touches the real ~/.claudegram.
