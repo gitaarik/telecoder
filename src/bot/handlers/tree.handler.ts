@@ -74,6 +74,7 @@ import {
   loadFork,
   plainMarker,
   postMarker,
+  promptLine,
   replyQuote,
 } from './fork.handler.js';
 
@@ -143,11 +144,6 @@ function nodeLabel(node: ForkNode): string {
 /** Turns taken in a point's own stretch — prompts, not commands. */
 function turnsIn(node: ForkNode): number {
   return node.prompts.filter((prompt) => promptLabel(prompt) !== undefined).length;
-}
-
-/** The prompt an exchange starts from, on one line: as a label, or as sent when it was a command. */
-function exchangePrompt(user: string): string {
-  return promptLabel(user) ?? user.replace(/\s+/g, ' ').trim();
 }
 
 // ── The tree ─────────────────────────────────────────────────────────────
@@ -337,7 +333,7 @@ export function renderNode(tree: ForkTree, node: ForkNode, sessionKey: string, h
     ...(exchange
       ? [
           '',
-          `*You:* ${esc(cutLabel(exchangePrompt(exchange.user), PROMPT_MAX))}`,
+          `*You:* ${esc(promptLine(exchange.user, PROMPT_MAX))}`,
           // Cut without pointing at /recap: that shows the chat's conversation,
           // which this point may not be on.
           ...replyQuote(exchange.assistant, NODE_REPLY_LEN, null),

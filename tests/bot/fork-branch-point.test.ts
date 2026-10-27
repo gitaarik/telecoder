@@ -47,7 +47,7 @@ process.env.TELECODER_TEST_HOME = home;
 const PROJECT = path.join(home, 'project');
 fs.mkdirSync(PROJECT);
 
-const { handleForkCallback, handleAcceptCommand, buildForkMarker, oneLine, replyQuote } = await import('../../src/bot/handlers/fork.handler.js');
+const { handleForkCallback, handleAcceptCommand, buildForkMarker, replyQuote } = await import('../../src/bot/handlers/fork.handler.js');
 const { putPendingFork, getPendingFork } = await import('../../src/claude/pending-forks.js');
 const { messageOffsets } = await import('../../src/claude/message-offsets.js');
 const { sessionManager } = await import('../../src/claude/session-manager.js');
@@ -291,11 +291,27 @@ describe('buildForkMarker', () => {
     expect(marker.replace(/\\(.)/g, '$1').length).toBeLessThanOrEqual(4096);
   });
 
-  it('keeps the prompt to one line', () => {
-    const marker = buildForkMarker(forkOf('First line\nsecond line ' + 'word '.repeat(50), 'Ok.'));
-    const you = marker.split('\n').find((line) => line.startsWith('*You:*'))!;
-    expect(you.startsWith('*You:* First line second line word')).toBe(true);
-    expect(you.endsWith('…')).toBe(true);
+  /** The banner's line for the prompt it picks up after. */
+  const youIn = (marker: string) => marker.split('\n').find((line) => line.startsWith('*You:*'));
+
+  it('keeps the prompt to one line, whole up to 300 characters', () => {
+    const marker = buildForkMarker(forkOf('First line\nsecond line ' + 'word '.repeat(55), 'Ok.'));
+    expect(youIn(marker)).toBe(`*You:* First line second line ${'word '.repeat(54)}word`);
+  });
+
+  it('shows a longer prompt by its start and its end, where the question usually is', () => {
+    const prompt = `Plan the parser ${'and more detail '.repeat(30)}so what do you think?`;
+    const marker = buildForkMarker(forkOf(prompt, 'All good here. '.repeat(400)));
+    expect(youIn(marker)).toMatch(/^\*You:\* Plan the parser and more detail .+ … .+ so what do you think\?$/);
+    // With the longest reply a banner holds, it still fits one message.
+    expect(marker.replace(/\\(.)/g, '$1').length).toBeLessThanOrEqual(4096);
+  });
+
+  it('shows a paste by its text and a reply by the words under the quote, as /tree does', () => {
+    expect(youIn(buildForkMarker(forkOf('<pasted_content id="a43f">\nBuild log:\nall green\n</pasted_content id="a43f">', 'Ok.'))))
+      .toBe('*You:* Build log: all green');
+    expect(youIn(buildForkMarker(forkOf('> Use a regex here\n\nWhy not a parser?', 'Ok.'))))
+      .toBe('*You:* Why not a parser?');
   });
 
   it('escapes what it shows', () => {
@@ -309,13 +325,6 @@ describe('buildForkMarker', () => {
 describe('cutting text short', () => {
   /** Half of a surrogate pair: not valid text, and Telegram rejects a message carrying one. */
   const brokenEmoji = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
-
-  it('never cuts an emoji in half on one line', () => {
-    // The cut at 9 characters would land between the two halves of 😀.
-    const cut = oneLine('abcdefgh😀 and the rest', 10);
-    expect(cut).toBe('abcdefgh…');
-    expect(cut).not.toMatch(brokenEmoji);
-  });
 
   it('never cuts an emoji in half in a reply with no space to cut at', () => {
     const [quote] = replyQuote('日本語'.repeat(3) + '😀'.repeat(10), 10);

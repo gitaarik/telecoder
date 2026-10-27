@@ -124,6 +124,16 @@ reasoning — the commit bodies are the long form, this is the index.
   instead of 160, and the list of forked conversations its prompts up to 300
   instead of 80.
 
+- **A fork's banner shows your prompt the way `/tree` does** — the banner
+  where a fork or a branch starts showed the prompt it picks up after cut at
+  120 characters, keeping only its start, and as the session log has it: a
+  paste in its `<pasted_content>` tags, an upload as the note it reached
+  Claude in, a reply under the quote it answers. It now shows whole up to
+  300 characters, past that by its start and its end, a paste by its text,
+  an upload by its caption and a reply by the words written under the quote,
+  the same as the point's view in `/tree`. With the longest reply a banner
+  holds, it still fits in one message.
+
 - **`/prompts` gives the prompt after a `/compact` its own line** — a
   `/compact` leaves three records in the session log: the command, Claude
   Code's record of it, and what it printed. `/prompts` read them as part of

@@ -53,6 +53,7 @@ import { sessionManager } from '../../claude/session-manager.js';
 import { clearConversation } from '../../providers/provider-router.js';
 import { isAllowedUser } from '../../utils/user-roster.js';
 import { escapeMarkdownV2 as esc, buildExpandableSyntax } from '../../telegram/markdown.js';
+import { cutLabel, promptLabel } from '../../telegram/prompt-label.js';
 import { restoreTopicAndRefreshBotName } from './command.handler.js';
 import { getSessionTopic } from './command.handler.js';
 import { sessionDisplayName } from './command/shared.js';
@@ -617,8 +618,12 @@ export async function postMarker(
 /** A line heavy enough to read as a break in the chat, short enough for a phone. */
 const MARKER_RULE = '━'.repeat(16);
 
-/** How far the prompt a fork picks up after may run on its one line. */
-const MARKER_PROMPT_LEN = 120;
+/**
+ * How long the prompt a fork picks up after can run before the banner shows
+ * only its start and its end: as long as /prompts and the status line let one
+ * run. The longest reply a banner holds still fits in the message with it.
+ */
+const MARKER_PROMPT_LEN = 300;
 
 /**
  * How much of the reply a fork picks up after its marker holds. Telegram caps
@@ -696,7 +701,7 @@ function buildMarker(parts: {
     ...(exchange
       ? [
           esc(`${lead} ${after}`),
-          `*You:* ${esc(oneLine(exchange.user, MARKER_PROMPT_LEN))}`,
+          `*You:* ${esc(promptLine(exchange.user, MARKER_PROMPT_LEN))}`,
           ...replyQuote(exchange.assistant),
         ]
       : [esc(lead)]),
@@ -705,10 +710,14 @@ function buildMarker(parts: {
   ].join('\n');
 }
 
-/** `text` flattened onto one line and cut at `max` characters. */
-export function oneLine(text: string, max: number): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
-  return flat.length > max ? `${sliceWhole(flat, max - 1).trimEnd()}…` : flat;
+/**
+ * The prompt of an exchange, on one line: cleaned the way promptLabel cleans
+ * one — a paste's text without its tags, an upload's caption, the words
+ * written under a quote — or as the log has it when it was a command. Whole
+ * up to `max` characters, past that by its start and its end.
+ */
+export function promptLine(user: string, max: number): string {
+  return cutLabel(promptLabel(user) ?? user.replace(/\s+/g, ' ').trim(), max);
 }
 
 /**
