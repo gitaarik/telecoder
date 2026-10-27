@@ -93,7 +93,6 @@ export {
   handleResumeCallback,
   handleContinue,
   handleRecap,
-  handlePrompts,
   handleHandoff,
   handleSync,
   handleSessions,

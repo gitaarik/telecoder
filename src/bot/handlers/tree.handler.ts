@@ -39,8 +39,7 @@ import { getSessionKeyFromCtx } from '../../utils/session-key.js';
 import { sanitizeError } from '../../utils/sanitize.js';
 import { findBotById } from '../../utils/instances.js';
 import { sessionManager } from '../../claude/session-manager.js';
-import { findHistoryOwners, sessionHistory, type HistoryOwner } from '../../claude/session-history.js';
-import { isProcessing } from '../../claude/request-queue.js';
+import { findHistoryOwners, type HistoryOwner } from '../../claude/session-history.js';
 import { countJsonlLines } from '../../claude/message-offsets.js';
 import { lastAssistantTurnText, lastExchangeIn, sessionJsonlPath } from '../../claude/session-jsonl.js';
 import type { PendingFork } from '../../claude/pending-forks.js';
@@ -67,23 +66,16 @@ import {
 import { cutLabel, promptLabel } from '../../telegram/prompt-label.js';
 import { restoreTopicAndRefreshBotName, getSessionTopic } from './command.handler.js';
 import { formatTimeAgo } from './command/shared.js';
-import { NO_PROJECT_MESSAGE } from './session-guard.js';
+import { NO_PROJECT_MESSAGE, whereChatIs } from './session-guard.js';
+import { refuseWhileBusy, sendView, type Keyboard, type View } from './view.js';
 import {
   LEFT_ABOVE,
   buildBackOnBranchMarker,
   loadFork,
-  plainMarker,
   postMarker,
   promptLine,
   replyQuote,
 } from './fork.handler.js';
-
-type Keyboard = { text: string; callback_data: string }[][];
-
-interface View {
-  text: string;
-  keyboard: Keyboard;
-}
 
 /**
  * How far a line of the drawn tree may run. It sits in a code block so the
@@ -386,20 +378,6 @@ export function renderTreeList(projectPath: string, intro?: string): View {
   };
 }
 
-/**
- * Where the chat is: the conversation it's on — or, when a restart dropped
- * that and nothing has brought it back, the one it left off in (`live` false).
- *
- * Only ever read. Drawing a tree mustn't load a conversation behind the
- * chat's back: the next message would land in whatever it loaded.
- */
-function whereChatIs(sessionKey: string): { projectPath: string; sessionId?: string; live: boolean } | undefined {
-  const session = sessionManager.getSession(sessionKey);
-  if (session) return { projectPath: session.workingDirectory, sessionId: session.claudeSessionId, live: true };
-  const last = sessionHistory.getLastSession(sessionKey);
-  return last ? { projectPath: last.projectPath, sessionId: last.claudeSessionId, live: false } : undefined;
-}
-
 /** The tree the chat is in, or the list of trees when it isn't in one. */
 function currentView(sessionKey: string): View | undefined {
   const where = whereChatIs(sessionKey);
@@ -412,6 +390,11 @@ function currentView(sessionKey: string): View | undefined {
       ? "This conversation hasn't been forked yet."
       : "The conversation this chat left off in hasn't been forked.";
   return renderTreeList(where.projectPath, intro);
+}
+
+/** A button that draws `tree` in place of the message it's on: the way into it from another view. */
+export function showTreeButton(tree: ForkTree): Keyboard[number][number] {
+  return { text: '🌳 Show the tree', callback_data: `tree:f:${tree.rootId}` };
 }
 
 // ── Commands and taps ────────────────────────────────────────────────────
@@ -485,44 +468,6 @@ export async function handleTreeCallback(ctx: Context): Promise<void> {
       await ctx.answerCallbackQuery({ text: 'That failed — see bot logs.' });
     } catch { /* already answered */ }
   }
-}
-
-/**
- * Send `view` as a reply, or put it in place of the tapped message. A view
- * Telegram won't parse goes out as plain text instead, so a formatting slip
- * costs the formatting and not the tree.
- */
-async function sendView(ctx: Context, view: View, how: 'reply' | 'edit'): Promise<void> {
-  const reply_markup = { inline_keyboard: view.keyboard };
-  const send = (text: string, parse_mode?: 'MarkdownV2') => how === 'edit'
-    ? ctx.editMessageText(text, { parse_mode, reply_markup })
-    : ctx.reply(text, { parse_mode, reply_markup });
-  try {
-    await send(view.text, 'MarkdownV2');
-  } catch (err) {
-    // "message is not modified": the same view, tapped again. Nothing to do.
-    if (err instanceof Error && err.message.includes('not modified')) return;
-    console.error('[Tree] MarkdownV2 send failed, falling back to plain text:', sanitizeError(err));
-    await send(plainView(view.text));
-  }
-}
-
-/** A view as plain text: the tree's code fences dropped, then unmarked like a banner. */
-function plainView(text: string): string {
-  return plainMarker(text.split('\n').filter((line) => line !== '```').join('\n'));
-}
-
-/**
- * Switching conversations under a running reply would cut it off, so the
- * switches wait for it. Says so on the button and returns true when busy.
- */
-async function refuseWhileBusy(ctx: Context, sessionKey: string): Promise<boolean> {
-  if (!isProcessing(sessionKey)) return false;
-  await ctx.answerCallbackQuery({
-    text: 'A reply is still running here — wait for it to finish, or /cancel it, then tap again.',
-    show_alert: true,
-  });
-  return true;
 }
 
 async function onCarryOn(

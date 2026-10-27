@@ -51,7 +51,6 @@ import {
   handleResumeCallback,
   handleContinue,
   handleRecap,
-  handlePrompts,
   handleSync,
   handleHandoff,
   handlePermissions,
@@ -95,6 +94,7 @@ import { handleMessage, handleCcrThrottleCallback } from './handlers/message.han
 import { handleSchedule, handleSchedules, handleUnschedule } from './handlers/schedule.handler.js';
 import { handleForkCallback, handleAcceptCommand, handleDeclineCommand, handleForkCommand } from './handlers/fork.handler.js';
 import { handleTreeCommand, handleTreeCallback } from './handlers/tree.handler.js';
+import { handlePromptsCommand, handlePromptsCallback } from './handlers/prompts.handler.js';
 import {
   handleAllow,
   handleDeny,
@@ -298,7 +298,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'accept', description: '📦 Accept a pending fork from another bot' },
     { command: 'decline', description: '🚫 Discard a pending fork' },
     { command: 'recap', description: '📋 Recap last messages of current session' },
-    { command: 'prompts', description: '💬 List just the prompts you sent, no replies' },
+    { command: 'prompts', description: '💬 List the prompts you sent, and branch from any of them' },
     { command: 'sync', description: '📨 Resend any missed reply from the session log' },
     { command: 'handoff', description: '📦 Export the session as a markdown handoff document' },
     { command: 'schedule', description: '🔔 Schedule a recurring prompt (e.g. every 1h, daily 9am)' },
@@ -405,9 +405,11 @@ export async function createBot(): Promise<Bot> {
   // would queue it behind the very turn the user wants to inspect.
   cmd('sync', handleSync);
   cmd('handoff', handleHandoff);
-  // /tree is read-only until a button is tapped, so it answers mid-turn; the
+  // /tree and /prompts are read-only until a button is tapped, so they answer
+  // mid-turn — "what did I just ask?" comes up while a long turn runs — and the
   // buttons that switch conversations refuse while a reply is running.
   cmd('tree', handleTreeCommand);
+  cmd('prompts', handlePromptsCommand);
   // Schedule commands bypass sequentialize so they remain responsive even
   // when a scheduled-fire turn is already running (the cap-enforcing create,
   // the list, and the remove all need to work mid-stream).
@@ -434,6 +436,9 @@ export async function createBot(): Promise<Bot> {
   // carrying on a branch or branching from a point checks for a running reply
   // itself, so a tap mid-turn gets an answer instead of waiting in line.
   bot.callbackQuery(/^tree:/, handleTreeCallback);
+  // /prompts' buttons for the same reasons: opening a prompt only redraws the
+  // message, and branching from one checks for a running reply itself.
+  bot.callbackQuery(/^prompts:/, handlePromptsCallback);
   // Menu buttons for /restartbot and /rebuildbot must bypass sequentialize
   // for the same reason their parent commands do: users tap these precisely
   // when the bot is hung, so the callback can't be queued behind the stuck
@@ -502,7 +507,6 @@ export async function createBot(): Promise<Bot> {
   cmd('continue', handleContinue);
   cmd('sessions', handleSessions);
   cmd('recap', handleRecap);
-  cmd('prompts', handlePrompts);
 
   // Fork: /fork forks from current state; /accept and /decline are the
   // slash-command equivalents of the target-side inline buttons.

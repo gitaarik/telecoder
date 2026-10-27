@@ -1,70 +1,111 @@
 import { describe, it, expect } from 'vitest';
-import { buildPromptsMessage } from '../../src/bot/handlers/command/session.js';
+import { renderPrompts, type Conversation } from '../../src/bot/handlers/prompts.handler.js';
 import { promptLabel, summarizeUserPrompt, cutLabel } from '../../src/telegram/prompt-label.js';
-import type { UserPrompt } from '../../src/claude/session-jsonl.js';
 
 const minsAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
 
-const prompt = (text: string, mins: number, pending = false): UserPrompt => ({
-  text,
-  timestamp: minsAgo(mins),
-  pending,
+let line = 0;
+/** A prompt the way readConversation hands one over: a turn, with its place in the transcript. */
+const prompt = (text: string, mins?: number, pending = false): Conversation['prompts'][number] => {
+  line += 2;
+  return {
+    text,
+    timestamp: mins === undefined ? undefined : minsAgo(mins),
+    pending,
+    uuid: `u${line}`,
+    line,
+    endLine: line + 1,
+    label: promptLabel(text)!,
+    branched: false,
+  };
+};
+
+const conversation = (...prompts: Conversation['prompts']): Conversation => ({
+  projectPath: '/home/me/dev/parser',
+  sessionId: '0f1e2d3c-1111-2222-3333-444455556666',
+  raw: '',
+  prompts,
 });
 
-describe('buildPromptsMessage', () => {
-  it('lists one line per prompt, oldest first', () => {
-    const out = buildPromptsMessage([prompt('older one', 90), prompt('newer one', 30)]);
-    expect(out.split('\n')).toEqual([
-      '💬 *Prompts* — last 2',
+/** The list's lines, a prompt each. */
+const listLines = (text: string) => text.split('\n').filter((l) => /^\*[A-Z]\* · /.test(l));
+
+describe('renderPrompts', () => {
+  it('keys each prompt by a letter, oldest first, with a button per letter', () => {
+    const older = prompt('older one', 90);
+    const newer = prompt('newer one', 30);
+    const view = renderPrompts(conversation(older, newer), 15);
+    expect(view.text.split('\n')).toEqual([
+      '💬 *parser* — 2 prompts',
       '',
-      '• _1h ago_ — older one',
-      '• _30m ago_ — newer one',
+      '*A* · _1h ago_ — older one',
+      '*B* · _30m ago_ — newer one',
+      '',
+      'Tap a letter to open that prompt\\.',
     ]);
+    expect(view.keyboard).toEqual([[
+      { text: 'A', callback_data: `prompts:o:0f1e2d3c:15:${older.uuid}` },
+      { text: 'B', callback_data: `prompts:o:0f1e2d3c:15:${newer.uuid}` },
+    ]]);
   });
 
-  it('marks a prompt with no reply yet', () => {
-    const out = buildPromptsMessage([prompt('still running', 0, true)]);
-    expect(out).toContain('• _just now_ ⏳ — still running');
+  it('says it shows the last few when the conversation has more', () => {
+    const view = renderPrompts(conversation(prompt('one', 3), prompt('two', 2), prompt('three', 1)), 2);
+    expect(view.text).toMatch(/^💬 \*parser\* — last 2 prompts$/m);
+    expect(listLines(view.text).map((l) => l.split(' — ')[1])).toEqual(['two', 'three']);
+  });
+
+  it('marks a prompt with no reply yet, and says what the mark means', () => {
+    const view = renderPrompts(conversation(prompt('still running', 0, true)), 15);
+    expect(view.text).toContain('*A* · _just now_ ⏳ — still running');
+    expect(view.text).toContain('_⏳ no reply_');
+  });
+
+  it('marks a prompt another branch splits off at', () => {
+    const split = { ...prompt('Split it', 5), branched: true };
+    const view = renderPrompts(conversation(prompt('Plan the parser', 9), split), 15);
+    expect(view.text).toContain('*B* · _5m ago_ 🌿 — Split it');
+    expect(view.text).toContain('_🌿 a branch splits off here_');
   });
 
   it('escapes MarkdownV2 so a prompt full of punctuation still sends', () => {
-    const out = buildPromptsMessage([prompt('fix src/a-b.ts (the *bold* one!)', 5)]);
-    expect(out).toContain('fix src/a\\-b\\.ts \\(the \\*bold\\* one\\!\\)');
+    const view = renderPrompts(conversation(prompt('fix src/a-b.ts (the *bold* one!)', 5)), 15);
+    expect(view.text).toContain('fix src/a\\-b\\.ts \\(the \\*bold\\* one\\!\\)');
   });
 
   it('collapses newlines so a multi-line prompt stays on one line', () => {
-    const out = buildPromptsMessage([prompt('first line\n\nsecond line', 5)]);
-    expect(out.split('\n').filter((l) => l.startsWith('•'))).toHaveLength(1);
-    expect(out).toContain('first line second line');
+    const view = renderPrompts(conversation(prompt('first line\n\nsecond line', 5)), 15);
+    expect(listLines(view.text)).toEqual(['*A* · _5m ago_ — first line second line']);
   });
 
   it('truncates a long prompt instead of dumping the paste', () => {
-    const out = buildPromptsMessage([prompt('x'.repeat(1000), 5)]);
-    expect(out).toContain('…');
-    expect(out.length).toBeLessThan(400);
+    const view = renderPrompts(conversation(prompt('x'.repeat(1000), 5)), 15);
+    expect(view.text).toContain('…');
+    expect(view.text.length).toBeLessThan(450);
   });
 
   it('keeps the end of a long prompt, where the question usually is', () => {
-    const out = buildPromptsMessage([prompt(`Plan the parser ${'and more detail '.repeat(30)}so what do you think?`, 5)]);
-    expect(out).toMatch(/— Plan the parser and more detail .+ … .+ so what do you think\?$/);
+    const view = renderPrompts(conversation(prompt(`Plan the parser ${'and more detail '.repeat(30)}so what do you think?`, 5)), 15);
+    expect(listLines(view.text)[0]).toMatch(/— Plan the parser and more detail .+ … .+ so what do you think\?$/);
   });
 
   it('falls back to a vague time when the log recorded none', () => {
-    const out = buildPromptsMessage([{ text: 'no timestamp', pending: false }]);
-    expect(out).toContain('• _earlier_ — no timestamp');
+    const view = renderPrompts(conversation(prompt('no timestamp')), 15);
+    expect(view.text).toContain('*A* · _earlier_ — no timestamp');
   });
 
   it('drops the oldest prompts to fit one Telegram message and says so', () => {
-    const many = Array.from({ length: 20 }, (_, i) =>
-      prompt(`prompt ${i} `.padEnd(300, 'x'), 20 - i),
-    );
-    const out = buildPromptsMessage(many);
+    const many = Array.from({ length: 20 }, (_, i) => prompt(`prompt ${i} `.padEnd(300, 'x'), 20 - i));
+    const view = renderPrompts(conversation(...many), 25);
 
-    expect(out.length).toBeLessThan(4096);
+    expect(view.text.length).toBeLessThan(4096);
     // The one you just sent survives; the oldest is what gets cut.
-    expect(out).toContain('prompt 19');
-    expect(out).not.toContain('prompt 0 ');
-    expect(out).toMatch(/^💬 \*Prompts\* — last \d+ \\\(\d+ older trimmed to fit\\\)$/m);
+    expect(view.text).toContain('prompt 19');
+    expect(view.text).not.toContain('prompt 0 ');
+    expect(view.text).toMatch(/^💬 \*parser\* — last \d+ prompts \\\(\d+ older trimmed to fit\\\)$/m);
+    // Lettered from the oldest that fit, with a button for each.
+    expect(listLines(view.text)[0]).toMatch(/^\*A\* · /);
+    expect(view.keyboard.flat()).toHaveLength(listLines(view.text).length);
   });
 });
 
@@ -129,7 +170,7 @@ describe('summarizeUserPrompt', () => {
   });
 
   it('shows the summary in the prompts list, not the scaffold', () => {
-    const out = buildPromptsMessage([prompt(recordedImageNote, 5)]);
+    const out = renderPrompts(conversation(prompt(recordedImageNote, 5)), 15).text;
     expect(out).toContain('📷 Image — This is my last invoice from Groq');
     expect(out).not.toContain('vision input');
     expect(out).not.toContain('Saved at');

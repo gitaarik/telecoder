@@ -426,6 +426,21 @@ export function nodeWhereEnds(tree: ForkTree, sessionId: string): ForkNode | und
 }
 
 /**
+ * The points along `sessionId`'s transcript where another branch leaves it —
+ * goes its own way from there, or was copied there and ends — in the order the
+ * transcript reaches them, each with the line of the transcript it falls on.
+ */
+export function splitsAlong(tree: ForkTree, sessionId: string): { node: ForkNode; line: number }[] {
+  const records = tree.transcripts.get(sessionId)?.records;
+  if (!records) return [];
+  return preorder(tree)
+    .filter((node) => node.sessionIds.includes(sessionId))
+    .filter((node) => node.endsHere.some((id) => id !== sessionId)
+      || node.children.some((child) => !child.sessionIds.includes(sessionId)))
+    .map((node) => ({ node, line: records[node.end - 1]!.lineCount }));
+}
+
+/**
  * The transcript cut at `node`: everything up to and including its last
  * record, read from one of the transcripts running through it. That is what a
  * branch from this point starts with. Undefined if the file has gone.

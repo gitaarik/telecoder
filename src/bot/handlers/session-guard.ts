@@ -11,11 +11,27 @@
 import { Context } from 'grammy';
 import * as path from 'path';
 import { sessionManager, type Session } from '../../claude/session-manager.js';
+import { sessionHistory } from '../../claude/session-history.js';
 import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
 
 /** Shown when a handler needs a working directory and no session supplies one. */
 export const NO_PROJECT_MESSAGE =
   '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.';
+
+/**
+ * Where the chat is: the conversation it's on — or, when a restart dropped
+ * that and nothing has brought it back, the one it left off in (`live` false).
+ *
+ * Only ever read. Drawing /tree or listing /prompts mustn't load a
+ * conversation behind the chat's back: the next message would land in
+ * whatever it loaded.
+ */
+export function whereChatIs(sessionKey: string): { projectPath: string; sessionId?: string; live: boolean } | undefined {
+  const session = sessionManager.getSession(sessionKey);
+  if (session) return { projectPath: session.workingDirectory, sessionId: session.claudeSessionId, live: true };
+  const last = sessionHistory.getLastSession(sessionKey);
+  return last ? { projectPath: last.projectPath, sessionId: last.claudeSessionId, live: false } : undefined;
+}
 
 /**
  * Require a session that is already live in memory.

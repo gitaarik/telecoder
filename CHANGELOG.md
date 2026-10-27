@@ -134,6 +134,23 @@ reasoning — the commit bodies are the long form, this is the index.
   the same as the point's view in `/tree`. With the longest reply a banner
   holds, it still fits in one message.
 
+- **`/prompts` goes back to any prompt** — the list was something to read and
+  nothing more: going back to an earlier point meant scrolling up past every
+  reply since to that one's 🍴 Fork button. Each prompt is now keyed A/B/C
+  the way `/tree` keys its points, with a button per letter. A letter opens
+  the prompt — its reply in a collapsed quote — with 🌱 New branch from
+  here, which carries on just after that reply in a new conversation and
+  leaves this one in `/resume`: the same banner and the same branch the
+  reply's own 🍴 makes. Anything sent after that reply stays out of the
+  branch, a `/compact` included. A prompt where a branch already splits off
+  is marked 🌿, and 🌳 shows the tree, where that branch can be carried on.
+  Prompts read the way `/tree` and the status line show them, a reply under
+  a quote by the words written under it. `/prompts` also answers while a
+  turn runs, where it used to wait for the turn to finish, and after a
+  restart lists where the chat left off, as `/tree` does. Built from the
+  transcripts on disk, 180 lists and 494 prompt views fit in a message, the
+  longest at 3,325 characters.
+
 - **`/prompts` gives the prompt after a `/compact` its own line** — a
   `/compact` leaves three records in the session log: the command, Claude
   Code's record of it, and what it printed. `/prompts` read them as part of

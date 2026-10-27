@@ -14,6 +14,16 @@ export interface UserPrompt {
   timestamp?: string;
   /** True when no reply follows before the next prompt: still being answered, or interrupted. */
   pending: boolean;
+  /** Claude Code's id for the prompt's record, when the log carried one. */
+  uuid?: string;
+  /** The prompt's line in the file, counting from 1. */
+  line: number;
+  /**
+   * The line its exchange ends on: the last record before whatever the user
+   * sent next, or the file's last record. Keeping the file up to here cuts the
+   * conversation just after this prompt's reply.
+   */
+  endLine: number;
 }
 
 export interface ContentBlock {
@@ -602,7 +612,7 @@ function readTurns(workingDirectory: string, sessionId: string): Turn[] {
 
 /** {@link readTurns} over a transcript already in hand rather than on disk. */
 function turnsIn(raw: string): Turn[] {
-  const records = proseRecordsIn(raw);
+  const { records } = proseRecordsIn(raw);
   const turns: Turn[] = [];
 
   records.forEach((record, i) => {
@@ -616,21 +626,39 @@ function turnsIn(raw: string): Turn[] {
     if (last && last.role === record.role) {
       last.text += '\n\n' + record.text;
     } else {
-      turns.push({ ...record });
+      turns.push({ role: record.role, text: record.text, timestamp: record.timestamp });
     }
   });
 
   return turns;
 }
 
+/** A record that carries prose, and where it sits in the file. */
+interface ProseRecord extends Turn {
+  uuid?: string;
+  /** Its line in the file, counting from 1. */
+  line: number;
+  /**
+   * The line of the last record before it that Claude Code gave an id. Cut
+   * there, the file leaves this record out, and the bookkeeping written ahead
+   * of it — a file snapshot, a title — with it, the way /tree cuts a branch.
+   */
+  cutBefore: number;
+}
+
 /**
  * Every record in a transcript that carries prose, each as a turn of its own:
- * what the user sent and what the assistant wrote back, in order.
+ * what the user sent and what the assistant wrote back, in order. With them,
+ * the line of the file's last record that has an id: where its conversation
+ * stands.
  */
-function proseRecordsIn(raw: string): Turn[] {
-  const records: Turn[] = [];
+function proseRecordsIn(raw: string): { records: ProseRecord[]; lastRecordLine: number } {
+  const records: ProseRecord[] = [];
+  let lastRecordLine = 0;
 
-  for (const line of raw.split('\n')) {
+  const lines = raw.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
     if (!line.trim()) continue;
     let rec: JsonlRecord;
     try {
@@ -638,6 +666,9 @@ function proseRecordsIn(raw: string): Turn[] {
     } catch {
       continue;
     }
+    const cutBefore = lastRecordLine;
+    const uuid = typeof rec.uuid === 'string' ? rec.uuid : undefined;
+    if (uuid) lastRecordLine = i + 1;
     const role = rec.type === 'user' ? 'user' : rec.type === 'assistant' ? 'assistant' : null;
     if (!role) continue;
     if (isApiErrorRecord(rec)) continue;
@@ -653,10 +684,10 @@ function proseRecordsIn(raw: string): Turn[] {
     // something the user said either.
     if (role === 'user' && userTextKind(text) === 'note') continue;
 
-    records.push({ role, text, timestamp: rec.timestamp });
+    records.push({ role, text, timestamp: rec.timestamp, uuid, line: i + 1, cutBefore });
   }
 
-  return records;
+  return { records, lastRecordLine };
 }
 
 /**
@@ -707,23 +738,39 @@ function pairExchanges(turns: Turn[]): RecapExchange[] {
  * apart from the one after it, and stays pending. Commands are returned with
  * the rest, even the ones nothing answered, like a /compact; which of them to
  * show is for the caller to decide.
+ *
+ * A prompt's exchange ends where the next thing the user sent begins — a
+ * command as much as a prompt — so a branch cut after it leaves a /compact
+ * that came later out.
  */
 export function readUserPrompts(workingDirectory: string, sessionId: string): UserPrompt[] {
   const filePath = sessionJsonlPath(workingDirectory, sessionId);
   if (!fs.existsSync(filePath)) return [];
-  const records = proseRecordsIn(fs.readFileSync(filePath, 'utf-8'));
+  return userPromptsIn(fs.readFileSync(filePath, 'utf-8'));
+}
+
+/** {@link readUserPrompts} over a transcript already in hand rather than on disk. */
+export function userPromptsIn(raw: string): UserPrompt[] {
+  const { records, lastRecordLine } = proseRecordsIn(raw);
   const prompts: UserPrompt[] = [];
 
-  for (let i = 0; i < records.length; i++) {
-    if (records[i].role !== 'user') continue;
+  // Walked from the end, so each prompt knows where the one after it begins.
+  let endLine = lastRecordLine;
+  for (let i = records.length - 1; i >= 0; i--) {
+    const record = records[i]!;
+    if (record.role !== 'user') continue;
     prompts.push({
-      text: records[i].text,
-      timestamp: records[i].timestamp,
+      text: record.text,
+      timestamp: record.timestamp,
       pending: records[i + 1]?.role !== 'assistant',
+      uuid: record.uuid,
+      line: record.line,
+      endLine,
     });
+    endLine = record.cutBefore;
   }
 
-  return prompts;
+  return prompts.reverse();
 }
 
 /**

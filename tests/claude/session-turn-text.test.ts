@@ -205,8 +205,8 @@ describe('readUserPrompts', () => {
       userPrompt('u2', 'still running'),
     ]);
     expect(readUserPrompts(CWD, SESSION)).toEqual([
-      { text: 'first question', timestamp: '2026-08-24T10:00:00.000Z', pending: false },
-      { text: 'still running', timestamp: '2026-08-24T10:00:00.000Z', pending: true },
+      { text: 'first question', timestamp: '2026-08-24T10:00:00.000Z', pending: false, uuid: 'u1', line: 1, endLine: 2 },
+      { text: 'still running', timestamp: '2026-08-24T10:00:00.000Z', pending: true, uuid: 'u2', line: 3, endLine: 3 },
     ]);
   });
 
@@ -219,7 +219,7 @@ describe('readUserPrompts', () => {
       assistant('a2', 'second half'),
     ]);
     expect(readUserPrompts(CWD, SESSION)).toEqual([
-      { text: 'run the audit and summarise', timestamp: '2026-08-24T10:00:00.000Z', pending: false },
+      { text: 'run the audit and summarise', timestamp: '2026-08-24T10:00:00.000Z', pending: false, uuid: 'u1', line: 1, endLine: 5 },
     ]);
   });
 
@@ -251,6 +251,30 @@ describe('readUserPrompts', () => {
     expect(readUserPrompts(CWD, SESSION).map((p) => [p.text, p.pending])).toEqual([
       ['do it this way', true],
       ['no, the other way', false],
+    ]);
+  });
+
+  it("ends a prompt's exchange just before the next thing the user sent", () => {
+    writeLog([
+      userPrompt('u1', 'one'), assistant('a1', 'r1'),
+      { type: 'system', subtype: 'turn_duration', uuid: 's1' },
+      // Bookkeeping Claude Code writes ahead of the next prompt, with no id.
+      { type: 'file-history-snapshot', messageId: 'u2' },
+      userPrompt('u2', 'two'),
+      toolResult('tr1'),
+      unflagged('n1', '[Request interrupted by user]'),
+      unflagged('c1', '/compact'),
+      userPrompt('u3', 'three'), assistant('a3', 'r3'),
+      { type: 'last-prompt' },
+    ]);
+    expect(readUserPrompts(CWD, SESSION).map((p) => [p.text, p.line, p.endLine])).toEqual([
+      // Through the turn's last record, not the next prompt's snapshot.
+      ['one', 1, 3],
+      // The note it was interrupted with is part of its exchange; the /compact after isn't.
+      ['two', 5, 7],
+      ['/compact', 8, 8],
+      // The file's last record, not the bookkeeping after it.
+      ['three', 9, 10],
     ]);
   });
 
