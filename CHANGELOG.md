@@ -111,6 +111,19 @@ reasoning — the commit bodies are the long form, this is the index.
   `/recap` cut the same way, at the 300 and 500 characters they already
   allowed.
 
+- **`/tree` shows each point's prompt, not its first few words** — a line of
+  the tree had room for about 23 characters of the prompt a point starts
+  from, so on the forked conversations on disk 38 of 44 points showed cut,
+  most of them to a few words. The prompt now wraps onto lines of its own
+  inside the drawing, with the branches carried on down beside it, and shows
+  whole up to 300 characters; past that, its start and its end, the way
+  `/prompts` shows one. Those trees take a median of 17 lines now, at most
+  47, where they took a line per point. A tree too big for one message gives
+  every prompt the same shorter cut, so the longest give way first. Opening a
+  point shows the prompt it ends on the same way, up to 300 characters
+  instead of 160, and the list of forked conversations its prompts up to 300
+  instead of 80.
+
 - **`/prompts` gives the prompt after a `/compact` its own line** — a
   `/compact` leaves three records in the session log: the command, Claude
   Code's record of it, and what it printed. `/prompts` read them as part of

@@ -45,13 +45,14 @@ process.env.TELECODER_TEST_HOME = home;
 const PROJECT = path.join(home, 'project');
 fs.mkdirSync(PROJECT);
 
-const { handleTreeCommand, handleTreeCallback, renderTree } = await import('../../src/bot/handlers/tree.handler.js');
+const { handleTreeCommand, handleTreeCallback, renderTree, renderNode } = await import('../../src/bot/handlers/tree.handler.js');
 const { treeOf, preorder } = await import('../../src/claude/fork-tree.js');
 const { sessionManager } = await import('../../src/claude/session-manager.js');
 const { sessionHistory } = await import('../../src/claude/session-history.js');
 const { messageOffsets } = await import('../../src/claude/message-offsets.js');
 const { sessionJsonlPath } = await import('../../src/claude/session-jsonl.js');
 const { restoreTopicAndRefreshBotName } = await import('../../src/bot/handlers/command.handler.js');
+const { cutLabel } = await import('../../src/telegram/prompt-label.js');
 
 afterAll(() => {
   delete process.env.TELECODER_TEST_HOME;
@@ -137,6 +138,19 @@ function tap(chatId: number, data: string, messageId = 500) {
 }
 const asCtx = (fake: object) => fake as unknown as Context;
 const plain = (text: string) => text.replace(/\\(.)/g, '$1');
+/** The lines of the tree a view draws, in its code block. */
+const drawnLines = (text: string) => plain(text).split('```')[1]!.trim().split('\n');
+
+/** `files` written as transcripts for `body`, and gone again after it, so later tests see the trees they expect. */
+async function withTranscripts(files: Record<string, string>, body: () => unknown): Promise<void> {
+  for (const [sessionId, content] of Object.entries(files)) write(sessionId, content);
+  try {
+    await body();
+  } finally {
+    for (const sessionId of Object.keys(files)) fs.rmSync(sessionJsonlPath(PROJECT, sessionId));
+  }
+}
+
 const BRANCH_MARKER_KEYBOARD = {
   inline_keyboard: [[
     { text: '🍴 Fork', callback_data: 'fork:pick' },
@@ -175,6 +189,77 @@ describe('renderTree', () => {
     }
     fs.rmSync(sessionJsonlPath(PROJECT, 'wide-a'));
     fs.rmSync(sessionJsonlPath(PROJECT, 'wide-b'));
+  });
+
+  it('wraps a long prompt onto lines of its own, with the branches drawn on down beside it', async () => {
+    const d1 = rec('d1', 'user', 'Plan the parser in two stages, so the tokenizer can be tested on its own. Good idea?');
+    const d2 = rec('d2', 'assistant', 'Yes.');
+    const d3 = rec('d3', 'user', 'Split the tokenizer out into its own file and give it tests of its own');
+    const d4 = rec('d4', 'assistant', 'Done.');
+    await withTranscripts({
+      'deep-c': lines(d1, d2, d3, d4, rec('d5', 'user', 'Now cover the error paths in the tokenizer as well'), rec('d6', 'assistant', 'Covered.')),
+      'deep-d': lines(d1, d2, d3, d4, rec('d7', 'user', 'Document how the tokenizer reports a bad character'), rec('d8', 'assistant', 'Documented.')),
+      'deep-e': lines(d1, d2, rec('d9', 'user', 'Or try a single regex for the whole thing instead'), rec('d10', 'assistant', 'Regex.')),
+    }, () => {
+      expect(drawnLines(renderTree(treeOf(PROJECT, 'deep-d')!, 'deep-d').text)).toEqual([
+        'A Plan the parser in two stages,',
+        '│ so the tokenizer can be tested',
+        '│ on its own. Good idea? ·1',
+        '├B Split the tokenizer out into',
+        '││ its own file and give it',
+        '││ tests of its own ·1',
+        '│├C Now cover the error paths in',
+        '││  the tokenizer as well ·1 ▸',
+        '│└D Document how the tokenizer',
+        '│   reports a bad character ·1 📍',
+        '└E Or try a single regex for the',
+        '   whole thing instead ·1 ▸',
+      ]);
+    });
+  });
+
+  it('shows a prompt past 300 characters by its start and its end, where the question usually is', async () => {
+    const long = `Read this log and tell me ${'what went wrong and when, '.repeat(20)}so what failed first?`;
+    const l1 = rec('l1', 'user', long);
+    const l2 = rec('l2', 'assistant', 'The build.');
+    await withTranscripts({
+      'long-a': lines(l1, l2, rec('l3', 'user', 'Fix it'), rec('l4', 'assistant', 'Fixed.')),
+      'long-b': lines(l1, l2, rec('l5', 'user', 'Explain it'), rec('l6', 'assistant', 'Explained.')),
+    }, () => {
+      const tree = treeOf(PROJECT, 'long-a')!;
+      const root = drawnLines(renderTree(tree).text).filter((line) => /^[A│] /.test(line));
+      expect(root.map((line) => line.slice(2)).join(' ')).toBe(`${cutLabel(long, 300)} ·1`);
+      expect(root.at(-1)).toMatch(/so what failed first\? ·1$/);
+
+      // Its point's view cuts it the same way, the title shorter.
+      const view = plain(renderNode(tree, tree.root, '299').text);
+      expect(view).toContain(`*A* · ${cutLabel(long, 60)}\n`);
+      expect(view).toContain(`*You:* ${cutLabel(long, 300)}\n`);
+    });
+  });
+
+  it('cuts every prompt shorter when the whole tree is too big for one message, and no shorter than it must', async () => {
+    const question = (n: number) => `Branch ${n}: ${'and then some more detail, '.repeat(16)}so which is it?`;
+    const files: Record<string, string> = {};
+    const m1 = rec('m1', 'user', 'Start here');
+    const m2 = rec('m2', 'assistant', 'Ok.');
+    for (let n = 1; n <= 30; n++) {
+      files[`many-${n}`] = lines(m1, m2, rec(`m${n}-u`, 'user', question(n)), rec(`m${n}-a`, 'assistant', 'Done.'));
+    }
+    await withTranscripts(files, () => {
+      const view = renderTree(treeOf(PROJECT, 'many-1')!);
+      // Within what Telegram takes, and close to it rather than cut to a word each.
+      expect(view.text.length).toBeLessThanOrEqual(4096);
+      expect(view.text.length).toBeGreaterThan(3500);
+      expect(view.keyboard.flat()).toHaveLength(31);
+      for (const line of drawnLines(view.text)) expect(Array.from(line).length).toBeLessThanOrEqual(32);
+
+      // A branch is the line opening with its connector, and the lines under it.
+      const labels = drawnLines(view.text).slice(1).join('\n').split(/\n(?=[├└])/)
+        .map((point) => point.replace(/^[├└]\S+ /, '').split('\n').map((line) => line.replace(/^[│ ]+/, '')).join(' '));
+      expect(labels).toHaveLength(30);
+      labels.forEach((label, i) => expect(label).toMatch(new RegExp(`^Branch ${i + 1}: and then .+ … .+ so which is it\\? ·1 ▸$`)));
+    });
   });
 });
 

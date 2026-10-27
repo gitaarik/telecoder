@@ -64,7 +64,7 @@ import {
   letteredOptionLines,
   optionLetter,
 } from '../../telegram/lettered-options.js';
-import { promptLabel } from '../../telegram/prompt-label.js';
+import { cutLabel, promptLabel } from '../../telegram/prompt-label.js';
 import { restoreTopicAndRefreshBotName, getSessionTopic } from './command.handler.js';
 import { formatTimeAgo } from './command/shared.js';
 import { NO_PROJECT_MESSAGE } from './session-guard.js';
@@ -72,7 +72,6 @@ import {
   LEFT_ABOVE,
   buildBackOnBranchMarker,
   loadFork,
-  oneLine,
   plainMarker,
   postMarker,
   replyQuote,
@@ -88,21 +87,33 @@ interface View {
 /**
  * How far a line of the drawn tree may run. It sits in a code block so the
  * branches line up, and a phone wraps a code block's lines — which would break
- * them apart — somewhere past this.
+ * them apart — somewhere past this. So a point's prompt is wrapped here
+ * instead, onto lines of its own with the branches carried on down beside.
  */
 const TREE_LINE_WIDTH = 32;
 
-/** The fewest characters a label is cut to, however deep its point sits. */
-const MIN_LABEL_LEN = 8;
+/** The narrowest a point's prompt wraps to, however deep the point sits. */
+const MIN_LABEL_WIDTH = 8;
 
 /** Points one message draws. Past this the rest are counted, not drawn. */
 const MAX_TREE_NODES = 40;
 
+/**
+ * How long a prompt can run before /tree shows only its start and its end —
+ * as long as /prompts and the status line let one run. Across the forked
+ * conversations on disk, the prompt naming a point has a median of 95
+ * characters, where a line of the tree has room for about 23; 93% fit in this.
+ */
+const PROMPT_MAX = 300;
+
+/**
+ * What the drawn tree may take of its message. Telegram caps a message at
+ * 4096 characters, and the rest of the view takes a couple of hundred.
+ */
+const TREE_BUDGET_CHARS = 3800;
+
 /** How much of a point's label its own view spells out. */
 const NODE_TITLE_LEN = 60;
-
-/** How far the prompt a point ends on may run on its one line. */
-const NODE_PROMPT_LEN = 160;
 
 /**
  * How much of the reply a point ends on its view shows. Less than a banner
@@ -113,9 +124,6 @@ const NODE_REPLY_LEN = 1200;
 
 /** Forked conversations the list offers when there is no tree to show. */
 const MAX_LISTED_TREES = 8;
-
-/** How much of a conversation's name the list spells out. */
-const LIST_LABEL_LEN = 80;
 
 /** The first 8 characters of a tree's root: enough to find it among one project's trees. */
 const rootKey = (tree: ForkTree) => tree.rootId.slice(0, 8);
@@ -137,36 +145,79 @@ function turnsIn(node: ForkNode): number {
   return node.prompts.filter((prompt) => promptLabel(prompt) !== undefined).length;
 }
 
-/** `text` cut to `max` characters, counting an emoji as one. */
-function cut(text: string, max: number): string {
-  const chars = Array.from(text);
-  return chars.length <= max ? text : `${chars.slice(0, max - 1).join('').trimEnd()}…`;
+/** The prompt an exchange starts from, on one line: as a label, or as sent when it was a command. */
+function exchangePrompt(user: string): string {
+  return promptLabel(user) ?? user.replace(/\s+/g, ' ').trim();
 }
 
 // ── The tree ─────────────────────────────────────────────────────────────
 
+const isLastChild = (node: ForkNode) => node.parent?.children.at(-1) === node;
+
 /**
- * The branch lines leading to a point: a connector for the point itself, and
- * a rail for every ancestor between it and the root that has a sibling still
- * to come below.
+ * The rails running down past a point, beside its own lines and its
+ * descendants': one for it and for every ancestor that has a sibling still to
+ * come below.
  */
-function connectorsOf(node: ForkNode): string {
+function railsOf(node: ForkNode): string {
   let out = '';
-  let own = true;
-  for (let n = node; n.parent; n = n.parent) {
-    const last = n.parent.children.at(-1) === n;
-    out = (own ? (last ? '└' : '├') : (last ? ' ' : '│')) + out;
-    own = false;
-  }
+  for (let n = node; n.parent; n = n.parent) out = (isLastChild(n) ? ' ' : '│') + out;
   return out;
 }
 
-function treeLine(node: ForkNode, letter: string, isHere: boolean): string {
-  const prefix = `${connectorsOf(node)}${letter} `;
-  const mark = isHere ? ' 📍' : node.endsHere.length > 0 ? ' ▸' : '';
-  const suffix = ` ·${turnsIn(node)}${mark}`;
-  const room = Math.max(MIN_LABEL_LEN, TREE_LINE_WIDTH - Array.from(prefix + suffix).length);
-  return `${prefix}${cut(nodeLabel(node), room)}${suffix}`;
+/** The branch lines leading to a point: the rails down to its parent, and its own connector. */
+function connectorsOf(node: ForkNode): string {
+  return node.parent ? railsOf(node.parent) + (isLastChild(node) ? '└' : '├') : '';
+}
+
+/**
+ * `words` in rows of at most `width` characters. A word longer than a row — a
+ * path, a URL — starts a row of its own and is split where the row ends.
+ * Counted by code point, so an emoji isn't split in half.
+ */
+function wrap(words: string[], width: number): string[] {
+  const rows: string[][] = [];
+  for (const word of words) {
+    const chars = Array.from(word);
+    const row = rows.at(-1);
+    if (row && row.length + 1 + chars.length <= width) {
+      row.push(' ', ...chars);
+      continue;
+    }
+    for (let i = 0; i < chars.length; i += width) rows.push(chars.slice(i, i + width));
+  }
+  return rows.map((row) => row.join(''));
+}
+
+/**
+ * A point's lines: its letter, then `label` and `tail` wrapped to the width
+ * its branches leave, with the rails carried on down beside them — and one
+ * under the letter too when there are points below it.
+ */
+function treeLines(node: ForkNode, letter: string, label: string, tail: string): string[] {
+  const first = `${connectorsOf(node)}${letter} `;
+  const next = `${railsOf(node)}${node.children.length > 0 ? '│' : ' '}`.padEnd(first.length);
+  const width = Math.max(MIN_LABEL_WIDTH, TREE_LINE_WIDTH - first.length);
+  return wrap([...label.split(' '), tail], width).map((row, i) => (i === 0 ? first : next) + row);
+}
+
+/**
+ * The longest a prompt can run with the drawn tree fitting its message:
+ * PROMPT_MAX, unless the tree is too big for that, and then one cap for every
+ * point, so the longest prompts give way first.
+ */
+function capToFit(draw: (cap: number) => string[]): number {
+  const fits = (cap: number) => draw(cap).join('\n').length <= TREE_BUDGET_CHARS;
+  if (fits(PROMPT_MAX)) return PROMPT_MAX;
+  // The narrowest line's worth each, two lines at most, fits every point a message draws.
+  let lo = MIN_LABEL_WIDTH;
+  let hi = PROMPT_MAX - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (fits(mid)) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
 }
 
 /**
@@ -180,13 +231,24 @@ export function renderTree(tree: ForkTree, hereSessionId?: string, leftOff = fal
   const here = hereSessionId ? nodeWhereEnds(tree, hereSessionId) : undefined;
   const ends = nodes.filter((node) => node.endsHere.length > 0).length;
 
-  const drawn = shown.map((node, i) => treeLine(node, optionLetter(i), node === here));
+  // Worked out once, since capToFit may draw the tree a few times over. The
+  // turn count and its mark stay together, after the prompt's last word.
+  const points = shown.map((node, i) => ({
+    node,
+    letter: optionLetter(i),
+    label: nodeLabel(node),
+    tail: `·${turnsIn(node)}${node === here ? ' 📍' : node.endsHere.length > 0 ? ' ▸' : ''}`,
+  }));
+  const draw = (cap: number) => points
+    .flatMap((p) => treeLines(p.node, p.letter, cutLabel(p.label, cap), p.tail))
+    .map(escapeMarkdownV2Code);
+  const drawn = draw(capToFit(draw));
   const hidden = nodes.length - shown.length;
 
   const text = [
     `🌳 *${esc(path.basename(tree.projectPath))}* — ${ends} ${ends === 1 ? 'branch' : 'branches'}`,
     '```',
-    ...drawn.map(escapeMarkdownV2Code),
+    ...drawn,
     '```',
     ...(hidden > 0 ? [esc(`${hidden} more ${hidden === 1 ? 'point isn’t' : 'points aren’t'} drawn.`)] : []),
     `_${esc(`·N turns · ▸ branch end${here ? ` · 📍 ${leftOff ? 'where this chat left off' : 'you are here'}` : ''}`)}_`,
@@ -268,14 +330,14 @@ export function renderNode(tree: ForkTree, node: ForkNode, sessionKey: string, h
   const exchange = upTo ? lastExchangeIn(upTo) : undefined;
 
   const text = [
-    `🌳 *${esc(letterOf(node))}* · ${esc(cut(nodeLabel(node), NODE_TITLE_LEN))}`,
+    `🌳 *${esc(letterOf(node))}* · ${esc(cutLabel(nodeLabel(node), NODE_TITLE_LEN))}`,
     `_${esc(facts.join(' · '))}_`,
     ...(carry ? [esc(describeCarryOn(carry))] : []),
     ...(node.children.length > 0 ? [esc(`Splits into ${listLetters(node.children.map(letterOf))}.`)] : []),
     ...(exchange
       ? [
           '',
-          `*You:* ${esc(oneLine(promptLabel(exchange.user) ?? exchange.user, NODE_PROMPT_LEN))}`,
+          `*You:* ${esc(cutLabel(exchangePrompt(exchange.user), PROMPT_MAX))}`,
           // Cut without pointing at /recap: that shows the chat's conversation,
           // which this point may not be on.
           ...replyQuote(exchange.assistant, NODE_REPLY_LEN, null),
@@ -312,7 +374,7 @@ export function renderTreeList(projectPath: string, intro?: string): View {
   }
 
   const options = conversations.map((c) => ({
-    label: cut(promptsIn(projectPath, c.sessionIds[0]!).map(promptLabel).find(Boolean) ?? 'Untitled', LIST_LABEL_LEN),
+    label: cutLabel(promptsIn(projectPath, c.sessionIds[0]!).map(promptLabel).find(Boolean) ?? 'Untitled', PROMPT_MAX),
     description: `${c.sessionIds.length} branches · ${formatTimeAgo(new Date(c.lastActiveMs))}`,
   }));
   return {
