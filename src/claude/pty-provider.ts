@@ -1013,6 +1013,9 @@ export class PtyProvider implements Provider {
         : 'AskUserQuestion,CronCreate,ScheduleWakeup,RemoteTrigger',
     ];
 
+    // Five minutes past the question timeout, and never under the 15 min it
+    // has always been, so the bot's own question timer is the one that fires.
+    const mcpCallMs = String(Math.max(15 * 60 * 1000, questionTimeoutMs() + 5 * 60 * 1000));
     const term = spawn(CLAUDE_BIN, args, {
       name: 'xterm-256color',
       cols: COLS,
@@ -1030,9 +1033,14 @@ export class PtyProvider implements Provider {
         // button tap; without this override claude aborts the call at 60s,
         // fires postToolUseFailure with an empty tool_response (rendered as
         // "(no output)" in the action log), and the model gives up on the tool.
-        // Five minutes past the question timeout, and never under the 15 min it
-        // has always been, so the bot's own timer is the one that fires.
-        MCP_TOOL_TIMEOUT: String(Math.max(15 * 60 * 1000, questionTimeoutMs() + 5 * 60 * 1000)),
+        MCP_TOOL_TIMEOUT: mcpCallMs,
+        // And claude (2.1.311 at least) moves an MCP call still running after
+        // 120s to the background, and the turn goes on without it: a question
+        // left unanswered for two minutes ended its turn there, its answer to
+        // come back later as a task notification. Not before the call would
+        // time out. A time rather than 0, which would also stop claude moving
+        // a call aside when a message arrives mid-call, to let it through.
+        CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS: mcpCallMs,
         // Suppress claude's "How is Claude doing this session?" feedback
         // survey. It renders as plain text in the PTY ("1: Bad  2: Fine ..."),
         // which has no clickable buttons in Telegram and just clutters the

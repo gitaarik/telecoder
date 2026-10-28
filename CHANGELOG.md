@@ -253,6 +253,14 @@ reasoning — the commit bodies are the long form, this is the index.
   Claude writes after your answer lands below it. A tool with no chat to
   reach now says so in words.
 
+- **A question keeps its turn while it waits** — Claude Code 2.1.311 moves
+  an MCP call that is still running after two minutes to the background, and
+  the turn carries on without it. A question you took longer than that to
+  answer ended its turn, and your answer came back later as a background
+  task instead of in the reply. TeleCoder's Claude Code sessions now let a
+  call run until it would time out, which is past the question's own ten
+  minutes.
+
 - **The context reading after a `/compact` shows what it left** — under
   "🗜️ Context compacted — 536.4k → 13.7k tokens" the usage footer still read
   54%, the context from before, and only the next reply brought it down. A

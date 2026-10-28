@@ -39,15 +39,18 @@ const fake = vi.hoisted(() => {
   return {
     FakeTerm,
     terms: [] as InstanceType<typeof FakeTerm>[],
+    /** The environment each terminal was spawned with. */
+    envs: [] as Record<string, string>[],
     /** The IPC hook handlers the provider registers, by path. */
     hooks: new Map<string, (turn: unknown, body: Record<string, unknown>) => unknown>(),
   };
 });
 
 vi.mock('node-pty', () => ({
-  spawn: () => {
+  spawn: (_bin: string, _args: string[], opts: { env: Record<string, string> }) => {
     const term = new fake.FakeTerm();
     fake.terms.push(term);
+    fake.envs.push(opts.env);
     return term;
   },
 }));
@@ -159,6 +162,7 @@ afterAll(() => {
 afterEach(() => {
   teardown(KEY);
   fake.terms.length = 0;
+  fake.envs.length = 0;
 });
 
 describe('a Bash call claude moves to the background', () => {
@@ -233,5 +237,18 @@ describe('a claude that exits', () => {
 
     expect(taskTracker.getBackgroundedCount(KEY)).toBe(1);
     expect(provider.getSessionPid(KEY)).toBe(4242);
+  });
+});
+
+describe('an MCP call that runs long', () => {
+  it("isn't moved to the background before it would time out, so a question keeps its turn", async () => {
+    const { questionTimeoutMs } = await import('../../src/claude/ask-user.js');
+    spawnSession(new PtyProvider());
+    const env = fake.envs.at(-1)!;
+
+    // Claude moves a call aside after 120s unless told otherwise, and a
+    // question waits for up to its own timeout.
+    expect(Number(env.CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS)).toBeGreaterThan(questionTimeoutMs());
+    expect(env.CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS).toBe(env.MCP_TOOL_TIMEOUT);
   });
 });
