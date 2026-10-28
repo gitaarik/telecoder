@@ -22,6 +22,7 @@ import { listAdmitted } from './utils/user-roster.js';
 import { findOrphanedApprovers, getApproverIds } from './utils/admins.js';
 import { startScheduledRunner } from './claude/scheduled-runner.js';
 import { setMonitorRelayBot } from './claude/monitor-relay.js';
+import { getPtyProvider } from './providers/claude-provider.js';
 import { setUpdateBannerRelayBot } from './claude/update-banner-relay.js';
 import { startPendingForkWatcher } from './bot/handlers/fork.handler.js';
 import { initPrefsSync } from './providers/prefs-sync.js';
@@ -287,7 +288,10 @@ async function main() {
       process.exit(exitCode());
     }, SHUTDOWN_TIMEOUT_MS);
     exitWatchdog.unref();
-    await runner.stop();
+    // The claudes too: left to the exit, one goes on for as long as it takes
+    // to notice, while the bot that replaces this one may already have resumed
+    // its conversation in another.
+    await Promise.all([runner.stop(), getPtyProvider().closeAll()]);
     process.exit(exitCode());
   };
 

@@ -444,10 +444,19 @@ function transcriptSavingDisabled(screenText: string): boolean {
   return /transcript saving is off/i.test(screenText);
 }
 
+/**
+ * How long a shutdown waits for a hung-up claude to exit on its own before it
+ * is killed. Its own clean shutdown takes under a second when idle, and this
+ * stays inside the 5s the bot allows its whole shutdown.
+ */
+const CLOSE_WAIT_MS = 4_000;
+
 export class PtyProvider implements Provider {
   readonly name: ProviderName = 'claude';
 
   private sessions = new Map<string, PtySession>();
+  /** Set by closeAll: from then on no claude is started, and none that exits fails its turn. */
+  private closing = false;
   /**
    * Last-known usage per sessionKey, refreshed at end-of-turn from claude's
    * on-disk JSONL log. Surfaced via getCachedUsage so the status line and
@@ -927,6 +936,10 @@ export class PtyProvider implements Provider {
   }
 
   private _getOrCreateSession(sessionKey: string, options?: AgentOptions): PtySession {
+    // closeAll has ended every claude; one started now would outlive the bot.
+    if (this.closing) {
+      throw new Error("TeleCoder is shutting down, so this didn't reach Claude. Send it again once it's back.");
+    }
     const requiredCwd = resolveCwd(sessionKey);
     const existing = this.sessions.get(sessionKey);
     if (existing) {
@@ -1104,7 +1117,9 @@ export class PtyProvider implements Provider {
     term.onData((chunk: string) => this._onData(session, chunk));
 
     term.onExit(({ exitCode, signal }) => {
-      if (session.endOfTurnRejector) {
+      // Not when the bot is shutting down: the turn ends with it, as it always
+      // has, rather than as an error posted to the chat on the way out.
+      if (session.endOfTurnRejector && !this.closing) {
         session.endOfTurnRejector(new Error(`claude exited (code=${exitCode}, signal=${signal}) mid-turn`));
       }
       // Identity check: /clear or a workspace switch synchronously kills
@@ -1920,6 +1935,43 @@ export class PtyProvider implements Provider {
     // Stop any monitor relay tied to this session — the JSONL it was watching
     // belongs to a now-dead claudeSessionId; the next session gets a new one.
     teardownMonitorRelay(sessionKey);
+  }
+
+  /**
+   * End every claude this provider started, for a shutdown, and wait for them
+   * to go. Left to the bot's exit, a claude outlived it by as long as it took
+   * to notice: on 10-27 one wrote another reply into its transcript a second
+   * after the restarted bot had resumed that conversation in a new claude, so
+   * two processes had the one transcript open.
+   *
+   * Each is hung up the way /clear does it, which claude answers with its own
+   * clean shutdown, cleaning up what it started. One still running after
+   * `waitMs` is killed outright.
+   */
+  async closeAll(waitMs = CLOSE_WAIT_MS): Promise<void> {
+    this.closing = true;
+    const running = new Set<IPty>();
+    const exits = [...this.sessions.keys()].map((sessionKey) => {
+      const { term } = this.sessions.get(sessionKey)!;
+      running.add(term);
+      const exited = new Promise<void>((resolve) => {
+        term.onExit(() => {
+          running.delete(term);
+          resolve();
+        });
+      });
+      this._cleanupSession(sessionKey);
+      return exited;
+    });
+    if (exits.length === 0) return;
+
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([Promise.all(exits), new Promise<void>((resolve) => { timer = setTimeout(resolve, waitMs); })]);
+    clearTimeout(timer);
+    for (const term of running) {
+      console.warn(`[PtyProvider] claude (pid ${term.pid}) still running ${waitMs / 1000}s after hangup, killing it`);
+      try { term.kill('SIGKILL'); } catch { /* already gone */ }
+    }
   }
 
   async sendLoopToAgent(sessionKey: string, message: string, options: LoopOptions = {}): Promise<AgentResponse> {

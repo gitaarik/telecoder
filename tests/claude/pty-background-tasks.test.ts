@@ -32,7 +32,9 @@ const fake = vi.hoisted(() => {
     onExit(cb: ExitHandler) { this.exitHandlers.push(cb); return { dispose() {} }; }
     write() {}
     resize() {}
-    kill() {}
+    /** The signals the provider sent, a hangup for a bare kill() as node-pty does. */
+    signals: string[] = [];
+    kill(signal = 'SIGHUP') { this.signals.push(signal); }
     /** What node-pty does once the process is gone. */
     exit(exitCode = 137) { for (const cb of this.exitHandlers) cb({ exitCode }); }
   }
@@ -250,5 +252,46 @@ describe('an MCP call that runs long', () => {
     // question waits for up to its own timeout.
     expect(Number(env.CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS)).toBeGreaterThan(questionTimeoutMs());
     expect(env.CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS).toBe(env.MCP_TOOL_TIMEOUT);
+  });
+});
+
+describe('a shutdown', () => {
+  it('hangs up every claude and waits for it to go', async () => {
+    const provider = new PtyProvider();
+    const term = spawnSession(provider);
+    let closed = false;
+    const closing = provider.closeAll(1000).then(() => { closed = true; });
+
+    expect(term.signals).toEqual(['SIGHUP']);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(closed).toBe(false);
+
+    term.exit(129);
+    await closing;
+    expect(term.signals).toEqual(['SIGHUP']);
+    expect(provider.getSessionPid(KEY)).toBeUndefined();
+  });
+
+  it('kills a claude still running once the wait is up', async () => {
+    const provider = new PtyProvider();
+    const term = spawnSession(provider);
+    await provider.closeAll(20);
+    expect(term.signals).toEqual(['SIGHUP', 'SIGKILL']);
+  });
+
+  it("doesn't fail the turn it cuts short, and starts no claude after", async () => {
+    const provider = new PtyProvider();
+    const term = spawnSession(provider);
+    const failTurn = vi.fn();
+    const sessions = (provider as unknown as { sessions: Map<string, { endOfTurnRejector: unknown }> }).sessions;
+    sessions.get(KEY)!.endOfTurnRejector = failTurn;
+
+    const closing = provider.closeAll(1000);
+    term.exit(129);
+    await closing;
+
+    // A turn cut short by the shutdown ends with the bot, not as an error in the chat.
+    expect(failTurn).not.toHaveBeenCalled();
+    expect(() => spawnSession(provider)).toThrow(/shutting down/);
   });
 });

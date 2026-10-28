@@ -241,6 +241,16 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **A restart stops its Claude Code sessions before the new bot takes over**
+  — a restarted bot left every Claude Code session it had open to carry on
+  until that session noticed. On 10-27 one wrote another reply into its
+  conversation's log a second after the new bot had already resumed that
+  conversation in a session of its own, so two processes had one log open.
+  Shutting down now hangs each session up and waits for it to exit, which
+  takes under a second when it's idle, and kills one still running after
+  four seconds. A reply the restart cuts short isn't reported as an error on
+  the way out, and a message that arrives mid-shutdown is told to come again.
+
 - **A question asked after a background task reports back reaches you** —
   when a background task finished between your messages, Claude Code started
   a turn of its own to deal with it, and TeleCoder had no turn on record to
