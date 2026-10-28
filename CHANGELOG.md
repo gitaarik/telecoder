@@ -241,6 +241,18 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **A question asked after a background task reports back reaches you** —
+  when a background task finished between your messages, Claude Code started
+  a turn of its own to deal with it, and TeleCoder had no turn on record to
+  run its tools in. A question it asked with buttons failed within a second
+  with "MCP error -32602: Invalid tools/call result" and a schema dump, and
+  never reached the chat; sending a file, a poll or a schedule failed the
+  same way. The two weeks of logs on hand hold seven such calls across two
+  bots. Those tools now reach the chat the session belongs to. A question or
+  a file posted there seals the background card above it first, so what
+  Claude writes after your answer lands below it. A tool with no chat to
+  reach now says so in words.
+
 - **The context reading after a `/compact` shows what it left** — under
   "🗜️ Context compacted — 536.4k → 13.7k tokens" the usage footer still read
   54%, the context from before, and only the next reply brought it down. A

@@ -19,7 +19,9 @@ import {
   getIpcPort,
   registerActiveTurn,
   registerIpcHandler,
+  registerSessionChat,
   unregisterActiveTurn,
+  unregisterSessionChat,
   type ActiveTurn,
 } from './ipc-server.js';
 // Side-effect import: registers /mcp/* IPC handlers that bridge the standalone
@@ -752,6 +754,10 @@ export class PtyProvider implements Provider {
       },
     };
     registerActiveTurn(session.claudeSessionId, activeTurn);
+    // Kept past this turn: claude starts a turn of its own when a background
+    // task reports back, and a tool it calls there — ask_user, send_file —
+    // reaches the user in this chat.
+    if (options?.telegramCtx) registerSessionChat(session.claudeSessionId, sessionKey, options.telegramCtx);
     // Tell the monitor relay we're in a turn so it suppresses event posts
     // for assistant text that's being delivered through the normal pipeline.
     markTurnStart(sessionKey);
@@ -1099,6 +1105,7 @@ export class PtyProvider implements Provider {
       // fires, the replacement is the live session — don't wipe it out.
       if (this.sessions.get(sessionKey) === session) {
         this.sessions.delete(sessionKey);
+        unregisterSessionChat(session.claudeSessionId);
         // claude went down on its own — a crash, an OOM kill — so nothing has
         // been through _cleanupSession. Its background tasks went with it, and
         // the respawn reports them stopped by task id alone, which the relay
@@ -1900,6 +1907,7 @@ export class PtyProvider implements Provider {
       if(session.idleTimer) clearTimeout(session.idleTimer);
       if(session.hardTimer) clearTimeout(session.hardTimer);
       this.sessions.delete(sessionKey);
+      unregisterSessionChat(session.claudeSessionId);
     }
     // Stop any monitor relay tied to this session — the JSONL it was watching
     // belongs to a now-dead claudeSessionId; the next session gets a new one.

@@ -25,6 +25,7 @@ import { z } from 'zod';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
+import { toolResult, type IpcReply } from './tool-result.js';
 
 const workspaceRoot = process.env.TELECODER_WORKSPACE_ROOT || path.resolve(process.cwd());
 const ipcPort = process.env.TELECODER_IPC_PORT;
@@ -241,11 +242,8 @@ server.tool(
   },
   async ({ question, context, options }) => {
     try {
-      const result = await ipc<{ success: boolean; message: string }>('/mcp/ask_user', { question, context, options });
-      return {
-        content: [{ type: 'text' as const, text: result.message }],
-        isError: !result.success,
-      };
+      const result = await ipc<IpcReply>('/mcp/ask_user', { question, context, options });
+      return toolResult(result);
     } catch (error) {
       return {
         content: [{ type: 'text' as const, text: `Ask-user error: ${error instanceof Error ? error.message : String(error)}` }],
@@ -264,11 +262,8 @@ server.tool(
   },
   async ({ project_name }) => {
     try {
-      const result = await ipc<{ success: boolean; message: string }>('/mcp/switch_project', { project_name });
-      return {
-        content: [{ type: 'text' as const, text: result.message }],
-        isError: !result.success,
-      };
+      const result = await ipc<IpcReply>('/mcp/switch_project', { project_name });
+      return toolResult(result);
     } catch (error) {
       return {
         content: [{ type: 'text' as const, text: `Switch project error: ${error instanceof Error ? error.message : String(error)}` }],
@@ -289,11 +284,8 @@ if (process.env.TELECODER_EXTRACT_ENABLED === 'true') {
     },
     async ({ url, mode }) => {
       try {
-        const result = await ipc<{ success: boolean; message: string }>('/mcp/extract_media', { url, mode });
-        return {
-          content: [{ type: 'text' as const, text: result.message }],
-          isError: !result.success,
-        };
+        const result = await ipc<IpcReply>('/mcp/extract_media', { url, mode });
+        return toolResult(result);
       } catch (error) {
         return {
           content: [{ type: 'text' as const, text: `Extract media error: ${error instanceof Error ? error.message : String(error)}` }],
@@ -314,11 +306,8 @@ server.tool(
   },
   async ({ file_path, caption }) => {
     try {
-      const result = await ipc<{ success: boolean; message: string }>('/mcp/send_file', { file_path, caption });
-      return {
-        content: [{ type: 'text' as const, text: result.message }],
-        isError: !result.success,
-      };
+      const result = await ipc<IpcReply>('/mcp/send_file', { file_path, caption });
+      return toolResult(result);
     } catch (error) {
       return {
         content: [{ type: 'text' as const, text: `File send error: ${error instanceof Error ? error.message : String(error)}` }],
@@ -397,15 +386,12 @@ server.tool(
   },
   async ({ question, options, allows_multiple_answers }) => {
     try {
-      const result = await ipc<{ success: boolean; message: string }>('/mcp/poll_user', {
+      const result = await ipc<IpcReply>('/mcp/poll_user', {
         question,
         options,
         allows_multiple_answers: !!allows_multiple_answers,
       });
-      return {
-        content: [{ type: 'text' as const, text: result.message }],
-        isError: !result.success,
-      };
+      return toolResult(result);
     } catch (error) {
       return {
         content: [{ type: 'text' as const, text: `Poll error: ${error instanceof Error ? error.message : String(error)}` }],
@@ -427,16 +413,13 @@ server.tool(
   },
   async ({ prompt, interval_seconds, max_runs, label }) => {
     try {
-      const result = await ipc<{ success: boolean; message: string }>('/mcp/schedule_loop', {
+      const result = await ipc<IpcReply>('/mcp/schedule_loop', {
         prompt,
         interval_seconds,
         max_runs,
         label,
       });
-      return {
-        content: [{ type: 'text' as const, text: result.message }],
-        isError: !result.success,
-      };
+      return toolResult(result);
     } catch (error) {
       return {
         content: [{ type: 'text' as const, text: `Loop schedule error: ${error instanceof Error ? error.message : String(error)}` }],
@@ -458,16 +441,13 @@ server.tool(
   },
   async ({ prompt, cron_expression, max_runs, label }) => {
     try {
-      const result = await ipc<{ success: boolean; message: string }>('/mcp/schedule_cron', {
+      const result = await ipc<IpcReply>('/mcp/schedule_cron', {
         prompt,
         cron_expression,
         max_runs,
         label,
       });
-      return {
-        content: [{ type: 'text' as const, text: result.message }],
-        isError: !result.success,
-      };
+      return toolResult(result);
     } catch (error) {
       return {
         content: [{ type: 'text' as const, text: `Cron schedule error: ${error instanceof Error ? error.message : String(error)}` }],
@@ -484,11 +464,8 @@ server.tool(
   {},
   async () => {
     try {
-      const result = await ipc<{ success: boolean; message: string }>('/mcp/schedule_list', {});
-      return {
-        content: [{ type: 'text' as const, text: result.message }],
-        isError: !result.success,
-      };
+      const result = await ipc<IpcReply>('/mcp/schedule_list', {});
+      return toolResult(result);
     } catch (error) {
       return {
         content: [{ type: 'text' as const, text: `List schedules error: ${error instanceof Error ? error.message : String(error)}` }],
@@ -507,11 +484,8 @@ server.tool(
   },
   async ({ id }) => {
     try {
-      const result = await ipc<{ success: boolean; message: string }>('/mcp/schedule_cancel', { id });
-      return {
-        content: [{ type: 'text' as const, text: result.message }],
-        isError: !result.success,
-      };
+      const result = await ipc<IpcReply>('/mcp/schedule_cancel', { id });
+      return toolResult(result);
     } catch (error) {
       return {
         content: [{ type: 'text' as const, text: `Cancel schedule error: ${error instanceof Error ? error.message : String(error)}` }],

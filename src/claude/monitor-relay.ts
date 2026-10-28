@@ -333,6 +333,25 @@ export function markTurnEnd(sessionKey: string): void {
   sealCard(sessionKey);
 }
 
+/**
+ * Bring the card up to date and seal it, ahead of something a tool posts in a
+ * turn claude started itself — a question, a file. Nothing streams such a
+ * turn: what it writes reaches the chat on the card. Sealed, the card keeps
+ * what the turn wrote above the post, and what it writes after starts a fresh
+ * card below rather than landing on one the post has buried.
+ */
+export function settleBeforePost(sessionKey: string): void {
+  const state = states.get(sessionKey);
+  if (state && !state.inTurn) {
+    if (state.pendingRead) {
+      clearTimeout(state.pendingRead);
+      state.pendingRead = null;
+    }
+    handleChange(state);
+  }
+  sealCard(sessionKey);
+}
+
 export function teardown(sessionKey: string): void {
   const state = states.get(sessionKey);
   if (!state) return;

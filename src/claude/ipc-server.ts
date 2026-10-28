@@ -39,6 +39,12 @@ export interface ActiveTurn {
    */
   onToolStart?: () => void;
   onToolEnd?: () => void;
+  /**
+   * A turn claude started itself, to answer a background task that reported
+   * back after TeleCoder's turn ended. Nothing streams it: the monitor relay
+   * posts what it writes onto the background card.
+   */
+  selfStarted?: boolean;
 }
 
 const activeTurns = new Map<string, ActiveTurn>();
@@ -54,6 +60,33 @@ export function unregisterActiveTurn(claudeSessionId: string): void {
 export function getActiveTurn(claudeSessionId: string): ActiveTurn | undefined {
   return activeTurns.get(claudeSessionId);
 }
+
+/**
+ * The chat each claude session belongs to, for the MCP tools it calls between
+ * TeleCoder's turns. Claude Code starts a turn of its own when a background
+ * task reports back, and a tool called in it — a question for the user, a
+ * file to send — has no turn of TeleCoder's to run in. Kept for as long as the
+ * session's claude runs.
+ */
+const sessionChats = new Map<string, ActiveTurn>();
+
+/** Record `telegramCtx`'s chat as `sessionKey`'s, for its claude to reach between turns. */
+export function registerSessionChat(claudeSessionId: string, sessionKey: string, telegramCtx: unknown): void {
+  sessionChats.set(claudeSessionId, { sessionKey, options: { telegramCtx }, selfStarted: true });
+}
+
+export function unregisterSessionChat(claudeSessionId: string): void {
+  sessionChats.delete(claudeSessionId);
+}
+
+/**
+ * What an MCP tool is told when there is no chat to run it in. The bare ack a
+ * hook gets has no message, and a tool result made of it was an empty text
+ * block, which the MCP SDK rejects with a schema dump naming nothing.
+ */
+const NO_CHAT_MESSAGE =
+  "TeleCoder didn't do this: it has no Telegram chat on record for this Claude Code session. "
+  + 'Put what you needed from the user in your reply instead.';
 
 export type IpcHandler = (turn: ActiveTurn, body: Record<string, unknown>) => Promise<unknown> | unknown;
 
@@ -124,14 +157,20 @@ export async function startIpcServer(): Promise<{ port: number }> {
         return;
       }
 
+      // An MCP tool called outside TeleCoder's turns runs in the session's
+      // chat. A hook doesn't: hooks drive a turn's own UI and its permission
+      // gate, and outside one they go on being acked and ignored.
+      const isTool = path.startsWith('/mcp/');
       const sessionId = extractSessionId(payload, req);
-      const turn = sessionId ? activeTurns.get(sessionId) : undefined;
+      const turn = sessionId
+        ? activeTurns.get(sessionId) ?? (isTool ? sessionChats.get(sessionId) : undefined)
+        : undefined;
       if (!turn) {
-        // Don't surface as an error to the caller — hooks that fail noisily
-        // can block claude. Just log and ack.
+        // Don't fail a hook — hooks that fail noisily can block claude. Just
+        // log and ack. A tool is told what didn't happen.
         console.warn(`[IPC] ${path} received with no active turn (sessionId=${sessionId ?? 'missing'})`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: true, ignored: true }));
+        res.end(JSON.stringify(isTool ? { success: false, message: NO_CHAT_MESSAGE } : { ok: true, ignored: true }));
         return;
       }
 
