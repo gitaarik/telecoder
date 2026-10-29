@@ -124,10 +124,10 @@ describe('posting and consolidation', () => {
   });
 
   it('folds a burst of monitor events into one message', async () => {
-    noteMonitorEvent(SESSION_KEY, 'deploy step 1', 'log line 1', 'first', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'deploy step 1', 'log line 1', { notify: true });
     await settle();
-    noteMonitorEvent(SESSION_KEY, 'deploy step 2', 'log line 2', 'second', { notify: true });
-    noteMonitorEvent(SESSION_KEY, 'deploy step 3', 'log line 3', 'third', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'deploy step 2', 'log line 2', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'deploy step 3', 'log line 3', { notify: true });
     await tick();
 
     // Previously this was three separate Telegram messages.
@@ -148,12 +148,12 @@ describe('posting and consolidation', () => {
 
 describe('edit throttling', () => {
   it('holds edits back to the throttle interval but never drops the last one', async () => {
-    noteMonitorEvent(SESSION_KEY, 'first', '', '', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'first', '', { notify: true });
     await settle();
     expect(edits).toHaveLength(0);
 
     // Straight after the post, an edit is inside the throttle window.
-    noteMonitorEvent(SESSION_KEY, 'second', '', '', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'second', '', { notify: true });
     await settle();
     expect(edits).toHaveLength(0);
 
@@ -180,14 +180,14 @@ describe('edit throttling', () => {
 
 describe('re-anchoring', () => {
   it('starts a fresh card after a turn boundary seals the old one', async () => {
-    noteMonitorEvent(SESSION_KEY, 'before the turn', '', '', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'before the turn', '', { notify: true });
     await settle();
     expect(sends).toHaveLength(1);
 
     sealCard(SESSION_KEY);
     await settle();
 
-    noteMonitorEvent(SESSION_KEY, 'after the turn', '', '', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'after the turn', '', { notify: true });
     await settle();
 
     expect(sends).toHaveLength(2);
@@ -198,12 +198,12 @@ describe('re-anchoring', () => {
 
   it('carries running tasks onto the new card but not old events', async () => {
     noteTaskArmed(SESSION_KEY, 'subagent', 'long review', 'toolu_01');
-    noteMonitorEvent(SESSION_KEY, 'an event', '', '', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'an event', '', { notify: true });
     await settle();
 
     sealCard(SESSION_KEY);
     await settle();
-    noteMonitorEvent(SESSION_KEY, 'later event', '', '', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'later event', '', { notify: true });
     await settle();
 
     const card = _inspectCard(SESSION_KEY)!;
@@ -214,11 +214,11 @@ describe('re-anchoring', () => {
   });
 
   it('edits rather than re-posts while the card is inside the re-anchor floor', async () => {
-    noteMonitorEvent(SESSION_KEY, 'first', '', '', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'first', '', { notify: true });
     await settle();
 
     await tick(REANCHOR_FLOOR_MS - 1_000);
-    noteMonitorEvent(SESSION_KEY, 'second', '', '', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'second', '', { notify: true });
     await settle();
 
     expect(sends).toHaveLength(1);
@@ -226,11 +226,11 @@ describe('re-anchoring', () => {
   });
 
   it('re-posts once the card has been on screen past the floor', async () => {
-    noteMonitorEvent(SESSION_KEY, 'first', '', '', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'first', '', { notify: true });
     await settle();
 
     await tick(REANCHOR_FLOOR_MS + 1_000);
-    noteMonitorEvent(SESSION_KEY, 'second', '', '', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'second', '', { notify: true });
     await settle();
 
     // A fresh message is what raises a Telegram notification; an edit does not.
@@ -239,7 +239,7 @@ describe('re-anchoring', () => {
   });
 
   it('keeps a non-notifying entry on the existing card past the floor', async () => {
-    noteMonitorEvent(SESSION_KEY, 'first', '', '', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'first', '', { notify: true });
     await settle();
 
     await tick(REANCHOR_FLOOR_MS + 1_000);
@@ -305,7 +305,7 @@ describe('task lifecycle', () => {
     await settle();
 
     await tick(134_000);
-    noteMonitorEvent(SESSION_KEY, 'nudge', '', '', { notify: false });
+    noteMonitorEvent(SESSION_KEY, 'nudge', '', { notify: false });
     await settle();
 
     expect(_inspectCard(SESSION_KEY)!.text).toContain('running 2m 14s');
@@ -315,7 +315,7 @@ describe('task lifecycle', () => {
 describe('size limits', () => {
   it('keeps the card under the Telegram message ceiling', async () => {
     for (let i = 0; i < 12; i++) {
-      noteMonitorEvent(SESSION_KEY, `event ${i}`, 'x'.repeat(2_000), 'y'.repeat(4_000), { notify: false });
+      noteMonitorEvent(SESSION_KEY, `event ${i} ${'y'.repeat(300)}`, 'x'.repeat(2_000), { notify: false });
       await tick();
     }
 
@@ -327,7 +327,7 @@ describe('size limits', () => {
 
   it('drops the oldest events rather than growing without bound', async () => {
     for (let i = 0; i < 12; i++) {
-      noteMonitorEvent(SESSION_KEY, `event ${i}`, '', '', { notify: false });
+      noteMonitorEvent(SESSION_KEY, `event ${i}`, '', { notify: false });
       await tick();
     }
 
@@ -341,7 +341,7 @@ describe('size limits', () => {
 describe('Telegram failures', () => {
   it('falls back to plain text when MarkdownV2 is rejected', async () => {
     sendFailures = [grammyError('Bad Request: can\'t parse entities', 400)];
-    noteMonitorEvent(SESSION_KEY, 'weird *formatting*', '', '', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'weird *formatting*', '', { notify: true });
     await settle();
 
     expect(sends).toHaveLength(1);
@@ -350,11 +350,11 @@ describe('Telegram failures', () => {
   });
 
   it('backs off instead of hammering after a 429', async () => {
-    noteMonitorEvent(SESSION_KEY, 'first', '', '', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'first', '', { notify: true });
     await settle();
 
     editFailures = [grammyError('Too Many Requests', 429, { retry_after: 30 })];
-    noteMonitorEvent(SESSION_KEY, 'second', '', '', { notify: false });
+    noteMonitorEvent(SESSION_KEY, 'second', '', { notify: false });
     await tick();
     expect(edits).toHaveLength(0);
 
@@ -369,16 +369,16 @@ describe('Telegram failures', () => {
   });
 
   it('posts a new card when the old one was deleted out from under it', async () => {
-    noteMonitorEvent(SESSION_KEY, 'first', '', '', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'first', '', { notify: true });
     await settle();
     expect(sends).toHaveLength(1);
 
     editFailures = [grammyError('Bad Request: message to edit not found', 400)];
-    noteMonitorEvent(SESSION_KEY, 'second', '', '', { notify: false });
+    noteMonitorEvent(SESSION_KEY, 'second', '', { notify: false });
     await tick();
     expect(edits).toHaveLength(0);
 
-    noteMonitorEvent(SESSION_KEY, 'third', '', '', { notify: false });
+    noteMonitorEvent(SESSION_KEY, 'third', '', { notify: false });
     await tick();
     expect(sends).toHaveLength(2);
     expect(sends[1].text).toContain('third');
@@ -405,7 +405,7 @@ describe('teardown', () => {
   });
 
   it('stops editing a card sealed while its send was in flight', async () => {
-    noteMonitorEvent(SESSION_KEY, 'first', '', '', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'first', '', { notify: true });
     sealCard(SESSION_KEY);
     await settle();
 
@@ -418,12 +418,12 @@ describe('teardown', () => {
     let release!: () => void;
     sendGate = new Promise<void>((resolve) => { release = resolve; });
 
-    noteMonitorEvent(SESSION_KEY, 'first', '', '', { notify: true });
+    noteMonitorEvent(SESSION_KEY, 'first', '', { notify: true });
     await settle();
     expect(sends).toHaveLength(0); // parked inside sendMessage
 
     // A second event and a turn boundary both land while the send is open.
-    noteMonitorEvent(SESSION_KEY, 'second', '', '', { notify: false });
+    noteMonitorEvent(SESSION_KEY, 'second', '', { notify: false });
     sealCard(SESSION_KEY);
 
     release();

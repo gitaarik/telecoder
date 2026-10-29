@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import type { Bot } from 'grammy';
 import { sessionJsonlPath } from './session-jsonl.js';
 import { isSubagentTool } from './subagent-tools.js';
+import { buildSyntheticCtx } from './synthetic-ctx.js';
 import { parseSessionKey } from '../utils/session-key.js';
 import { convertToTelegramMarkdown } from '../telegram/markdown.js';
 import { taskTracker } from '../telegram/task-tracker.js';
@@ -23,10 +24,15 @@ import { config } from '../config.js';
  * while a turn is active.
  *
  * Mechanism: per-session JSONL watcher armed on the first Monitor PreToolUse.
- * Tracks byte position; on file change, reads new bytes, parses assistant text
- * blocks, posts each to Telegram. Suppresses relay while a user turn is
- * active so the turn's own response doesn't double-post — the turn pipeline
- * delivers that directly.
+ * Tracks byte position; on file change, reads new bytes and parses them.
+ * Suppresses relay while a user turn is active so the turn's own response
+ * doesn't double-post — the turn pipeline delivers that directly.
+ *
+ * Between those turns, claude answers a task that reports back by starting a
+ * turn of its own. Nothing streams that turn, so the relay collects its prose
+ * and, when claude closes the turn, sends it as the turn pipeline sends a
+ * reply: whole, in one go. That is usually the answer the background work was
+ * for, and often longer than a card can hold.
  *
  * State is per-sessionKey and torn down with the session. No persistence:
  * if the bot restarts, the user has to re-arm any monitors they want.
@@ -54,12 +60,16 @@ interface MonitorState {
   /** Coalesce rapid-fire change events into one read. */
   pendingRead: NodeJS.Timeout | null;
   /**
-   * The most recently seen task-notification user record that hasn't yet
-   * been paired with an assistant response. Lives across handleChange calls
-   * because the assistant response often appears in a later chunk than the
-   * notification that triggered it.
+   * The prose of a turn claude started itself, one entry per assistant text
+   * record, held until the turn closes. Lives across handleChange calls
+   * because a turn that runs tools spans many of them.
    */
-  pendingNotification: TaskNotification | null;
+  reply: string[];
+  /**
+   * The replies on their way to the chat, chained so one with a Telegraph
+   * page to publish first can't be overtaken by the next.
+   */
+  replySent: Promise<void>;
   /**
    * Armed-task bookkeeping keyed by tool_use_id. Populated by
    * onAsyncToolArmed when an async tool fires; consumed by handleChange
@@ -256,7 +266,8 @@ export function onAsyncToolArmed(
       watcher: null,
       inTurn: true,
       pendingRead: null,
-      pendingNotification: null,
+      reply: [],
+      replySent: Promise.resolve(),
       armedTasks: new Map(),
     };
     states.set(sessionKey, state);
@@ -301,7 +312,14 @@ export function onAsyncToolArmed(
 
 export function markTurnStart(sessionKey: string): void {
   const state = states.get(sessionKey);
-  if (state) state.inTurn = true;
+  if (state) {
+    // A turn claude started itself may not be read to the end yet, or not
+    // closed. What it wrote goes out now, ahead of this turn, instead of
+    // being skipped as this turn's.
+    drain(state);
+    void sendReply(state);
+    state.inTurn = true;
+  }
   // The user's own message has just buried any card left over from the
   // previous quiet window; start a fresh one rather than going on editing
   // where nobody is looking.
@@ -313,16 +331,11 @@ export function markTurnEnd(sessionKey: string): void {
   if (!state) return;
   // Drain any pending JSONL writes while inTurn is still true so terminal
   // task-notifications that landed during the turn get edit-in-place
-  // treatment before the cursor jumps forward. Cancel the coalesce timer so
-  // it doesn't fire later with the position already past the data.
-  if (state.pendingRead) {
-    clearTimeout(state.pendingRead);
-    state.pendingRead = null;
-  }
-  handleChange(state);
+  // treatment before the cursor jumps forward.
+  drain(state);
   state.inTurn = false;
   // Snap to current end so the user-turn's own assistant text doesn't get
-  // re-emitted as a monitor event — the turn pipeline already delivered it.
+  // sent again as a reply — the turn pipeline already delivered it.
   const filePath = sessionJsonlPath(state.cwd, state.claudeSessionId);
   try {
     state.jsonlPosition = fs.statSync(filePath).size;
@@ -334,20 +347,17 @@ export function markTurnEnd(sessionKey: string): void {
 }
 
 /**
- * Bring the card up to date and seal it, ahead of something a tool posts in a
- * turn claude started itself — a question, a file. Nothing streams such a
- * turn: what it writes reaches the chat on the card. Sealed, the card keeps
- * what the turn wrote above the post, and what it writes after starts a fresh
- * card below rather than landing on one the post has buried.
+ * Bring the chat up to date ahead of something a tool posts in a turn claude
+ * started itself — a question, a file. Nothing streams such a turn, so what
+ * it has written so far goes out first, and the card is sealed: both stay
+ * above the post, and what the turn writes after it lands below rather than
+ * on a card the post has buried.
  */
-export function settleBeforePost(sessionKey: string): void {
+export async function settleBeforePost(sessionKey: string): Promise<void> {
   const state = states.get(sessionKey);
   if (state && !state.inTurn) {
-    if (state.pendingRead) {
-      clearTimeout(state.pendingRead);
-      state.pendingRead = null;
-    }
-    handleChange(state);
+    drain(state);
+    await sendReply(state);
   }
   sealCard(sessionKey);
 }
@@ -356,10 +366,10 @@ export function teardown(sessionKey: string): void {
   const state = states.get(sessionKey);
   if (!state) return;
   stopWatcher(state);
-  if (state.pendingRead) {
-    clearTimeout(state.pendingRead);
-    state.pendingRead = null;
-  }
+  // A turn claude started itself and never got to close — it crashed, or was
+  // cleared or restarted mid-turn. What it wrote is still the user's to read.
+  drain(state);
+  void sendReply(state);
   states.delete(sessionKey);
   clearCard(sessionKey);
   // This relay owns the PTY-side tracker entries, and teardown is PTY-only
@@ -397,6 +407,19 @@ function stopWatcher(state: MonitorState): void {
   }
 }
 
+/**
+ * Read now whatever the watcher has been told about but not read yet.
+ * Cancels the coalesce timer so it doesn't fire later with the position
+ * already past the data.
+ */
+function drain(state: MonitorState): void {
+  if (state.pendingRead) {
+    clearTimeout(state.pendingRead);
+    state.pendingRead = null;
+  }
+  handleChange(state);
+}
+
 function handleChange(state: MonitorState): void {
   const filePath = sessionJsonlPath(state.cwd, state.claudeSessionId);
   let size: number;
@@ -428,6 +451,7 @@ function handleChange(state: MonitorState): void {
     if (!rec || typeof rec !== 'object') continue;
     const typed = rec as {
       type?: string;
+      subtype?: string;
       origin?: { kind?: string };
       message?: { content?: unknown; role?: string };
       attachment?: QueuedCommandAttachment;
@@ -450,12 +474,7 @@ function handleChange(state: MonitorState): void {
         // user-turn the turn pipeline owns the model's response, and the
         // watcher must not race it.
         if (state.inTurn) continue;
-        // Two notifications in a row without a paired response = orphan;
-        // flush the first one alone before tracking the new trigger.
-        if (state.pendingNotification) {
-          postMonitorMessage(state.sessionKey, state.pendingNotification, '');
-        }
-        state.pendingNotification = notif;
+        postMonitorEvent(state.sessionKey, notif);
       }
     } else if (typed.type === 'attachment') {
       // A task that finishes while claude is mid-turn never gets the user
@@ -471,10 +490,46 @@ function handleChange(state: MonitorState): void {
       // Assistant text during an active turn belongs to the turn pipeline.
       if (state.inTurn) continue;
       const text = extractAssistantText(typed.message?.content);
-      if (!text) continue;
-      postMonitorMessage(state.sessionKey, state.pendingNotification, text);
-      state.pendingNotification = null;
+      if (text) state.reply.push(text);
+    } else if (typed.type === 'system' && typed.subtype === 'turn_duration') {
+      // Claude Code closes every turn with this record — the ones it starts
+      // itself too, and one cut short by an API error as well.
+      if (!state.inTurn) void sendReply(state);
     }
+  }
+}
+
+/**
+ * Send what claude has written in a turn it started itself, the way the turn
+ * pipeline sends a reply: whole, split across messages only where Telegram
+ * needs it, with an Instant View link when it runs long. Joined as
+ * readLastAssistantTurnText joins a turn's text records.
+ *
+ * Resolves once the reply is in the chat, so a tool can post below it.
+ */
+function sendReply(state: MonitorState): Promise<void> {
+  if (state.reply.length === 0) return state.replySent;
+  const text = state.reply.join('\n\n');
+  state.reply = [];
+  // What the card shows happened before this reply. Sealed, the card stays
+  // above it, and whatever happens next starts a fresh card below.
+  sealCard(state.sessionKey);
+  const { sessionKey } = state;
+  state.replySent = state.replySent.then(() => postReply(sessionKey, text));
+  return state.replySent;
+}
+
+async function postReply(sessionKey: string, text: string): Promise<void> {
+  if (!botRef) return;
+  const ctx = buildSyntheticCtx({ api: botRef.api, sessionKey, syntheticText: '' });
+  try {
+    // Imported lazily, as mcp-bridge does: this module is loaded from
+    // pty-provider at module scope, where every eager edge is a chance to
+    // close a cycle back through it.
+    const { messageSender } = await import('../telegram/message-sender.js');
+    await messageSender.sendMessage(ctx, text);
+  } catch (err) {
+    console.error('[Monitor] reply send failed:', err instanceof Error ? err.message : err);
   }
 }
 
@@ -516,7 +571,7 @@ export function relayPushNotification(sessionKey: string, message: string): void
  * success just folds into the card silently.
  *
  * Returns true when the notification was consumed as a completion; the caller
- * then skips the event-payload pairing path so we don't double-report.
+ * then skips the monitor-event path so we don't double-report.
  */
 function handleTerminalNotification(
   state: MonitorState,
@@ -549,20 +604,18 @@ function stripSummaryPrefix(summary: string): string {
   return summary.replace(/^Monitor event:\s*/i, '').replace(/^"(.*)"$/, '$1').trim();
 }
 
-function postMonitorMessage(
-  sessionKey: string,
-  notif: TaskNotification | null,
-  response: string,
-): void {
-  if (!notif && !response) return;
+/**
+ * Put a monitor firing on the card as it lands. What claude says about it is
+ * its turn's reply, sent when the turn closes.
+ */
+function postMonitorEvent(sessionKey: string, notif: TaskNotification): void {
   // A monitor firing is the whole reason the user armed it, so it always
   // wants the user's attention — the card decides whether that means a fresh
   // message or a silent edit onto one it posted moments ago.
   noteMonitorEvent(
     sessionKey,
-    notif?.summary ? stripSummaryPrefix(notif.summary) : '',
-    notif?.event ?? '',
-    response,
+    notif.summary ? stripSummaryPrefix(notif.summary) : '',
+    notif.event,
     { notify: true },
   );
 }

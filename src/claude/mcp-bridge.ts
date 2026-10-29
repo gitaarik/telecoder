@@ -48,11 +48,12 @@ function getTelegramCtx(options: unknown): Context | undefined {
 
 /**
  * Ready the chat for something a tool is about to post. In a turn claude
- * started itself, that means bringing the background card up to date and
- * sealing it, so what the turn writes around the post stays in order.
+ * started itself, that means sending what the turn has written so far and
+ * sealing the background card, so what the turn writes around the post stays
+ * in order.
  */
-function beforePosting(turn: ActiveTurn): void {
-  if (turn.selfStarted) settleBeforePost(turn.sessionKey);
+async function beforePosting(turn: ActiveTurn): Promise<void> {
+  if (turn.selfStarted) await settleBeforePost(turn.sessionKey);
 }
 
 // ── /mcp/set_topic ───────────────────────────────────────────────────
@@ -148,10 +149,10 @@ registerIpcHandler('/mcp/ask_user', async (turn, body) => {
   // graph minimal — it is loaded from pty-provider at module scope, so every
   // eager edge here is a chance to close a cycle back through it.
   //
-  // A turn claude started itself holds nothing back: the relay has been
-  // putting its prose on the background card as it was written.
+  // A turn claude started itself has its prose sent by the monitor relay
+  // instead, which beforePosting has it do now.
   const { messageSender } = await import('../telegram/message-sender.js');
-  beforePosting(turn);
+  await beforePosting(turn);
   if (!turn.selfStarted) await flushTurnProse(turn.sessionKey, ctx, messageSender);
 
   const messageText = buildAskUserMessageText(question, options, context);
@@ -254,7 +255,7 @@ registerIpcHandler('/mcp/extract_media', async (turn, body) => {
 
     if (result.videoPath) {
       try {
-        beforePosting(turn);
+        await beforePosting(turn);
         await ctx.replyWithVideo(new InputFile(result.videoPath), { caption: `📹 ${result.title}` });
         parts.push('Video sent to user.');
       } catch (err) {
@@ -264,7 +265,7 @@ registerIpcHandler('/mcp/extract_media', async (turn, body) => {
 
     if (result.audioPath && (mode === 'audio' || mode === 'all')) {
       try {
-        beforePosting(turn);
+        await beforePosting(turn);
         await ctx.replyWithAudio(new InputFile(result.audioPath), { caption: `🎵 ${result.title}` });
         parts.push('Audio sent to user.');
       } catch (err) {
@@ -343,7 +344,7 @@ registerIpcHandler('/mcp/send_file', async (turn, body) => {
   try {
     const fileBuffer = fs.readFileSync(resolvedPath);
     const inputFile = new InputFile(fileBuffer, fileName);
-    beforePosting(turn);
+    await beforePosting(turn);
     await ctx.replyWithDocument(inputFile, caption ? { caption } : undefined);
   } catch (err) {
     return {
@@ -380,7 +381,7 @@ registerIpcHandler('/mcp/poll_user', async (turn, body) => {
 
   // Session key, not `ctx.message` — see the note in the ask_user handler.
   const threadId = parseSessionKey(turn.sessionKey).threadId;
-  beforePosting(turn);
+  await beforePosting(turn);
   const sent = await ctx.api.sendPoll(ctx.chat.id, question, options.map((o) => ({ text: o })), {
     is_anonymous: false,
     allows_multiple_answers: allowsMultiple,

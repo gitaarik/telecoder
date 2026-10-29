@@ -140,8 +140,8 @@ describe('ask_user in a turn claude started itself', () => {
     resolvePendingQuestion(id!, 0);
     expect(await answer).toEqual({ success: true, message: 'User selected: Snapshot now' });
 
-    // Its prose reached the chat on the background card, which is sealed
-    // under it, rather than being posted again above the question.
+    // Its prose is the monitor relay's to send, which settling has it do
+    // above the question, rather than the flush a submitted turn gets.
     expect(fx.settleBeforePost).toHaveBeenCalledWith('200:7');
     expect(fx.proseSent).not.toHaveBeenCalled();
   });

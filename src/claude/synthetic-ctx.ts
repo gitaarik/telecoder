@@ -5,7 +5,8 @@ import { parseSessionKey } from '../utils/session-key.js';
  * Build a Grammy `Context`-shaped object that targets a specific chat/thread
  * without an inbound Telegram update. Used by the scheduler so a scheduled
  * fire can reuse the same downstream pipeline (`sendToAgent`, `messageSender.*`)
- * that real user turns flow through.
+ * that real user turns flow through, and by the monitor relay to send the
+ * reply from a turn claude started on its own.
  *
  * Only the surface actually exercised by the streaming + tool-result paths is
  * wired up — `reply`, `replyWith*`, `api`, `chat`, `from`, `message`. Anything

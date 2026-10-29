@@ -241,6 +241,19 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **Claude's answer after a background task arrives whole** — when a
+  background task finished between your messages, what Claude wrote about it
+  went onto the background activity card, under a "📡 Monitor" line, cut at
+  1,200 characters, and the rest was only in `/recap`. That answer is often
+  what the background work was for, and in two weeks of session logs 50 of
+  the 119 Claude wrote ran past the cut. It now comes as a reply of its own
+  once Claude finishes, sent the way any reply is: whole, split over messages
+  only where Telegram needs it, and with a phone notification. The card keeps
+  the tasks — what's running, what finished. A monitor firing still lands on
+  the card at once, and what Claude says about it follows as a reply. If a
+  question or a file comes in the middle, what Claude wrote before it goes
+  out first, above it.
+
 - **A restart stops its Claude Code sessions before the new bot takes over**
   — a restarted bot left every Claude Code session it had open to carry on
   until that session noticed. On 10-27 one wrote another reply into its

@@ -24,7 +24,7 @@
  */
 
 import { GrammyError, type Bot } from 'grammy';
-import { escapeMarkdownV2, convertToTelegramMarkdown } from './markdown.js';
+import { escapeMarkdownV2 } from './markdown.js';
 import { parseSessionKey } from '../utils/session-key.js';
 
 export type BackgroundTaskKind = 'monitor' | 'bash_background' | 'subagent' | 'workflow';
@@ -50,7 +50,6 @@ const MAX_CARD_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_EVENTS = 8;
 
 const MAX_CARD_CHARS = 3800;
-const MAX_BODY_CHARS = 1200;
 const MAX_DETAIL_CHARS = 400;
 const MAX_TITLE_CHARS = 140;
 
@@ -66,8 +65,6 @@ interface CardEvent {
   title: string;
   /** Machine payload from the task notification; rendered as a code block. */
   detail?: string;
-  /** Claude's prose response to the event. */
-  body?: string;
 }
 
 interface CardState {
@@ -157,12 +154,15 @@ export function noteTaskFinished(
   }, opts);
 }
 
-/** Record a monitor firing, with whatever Claude said about it. */
+/**
+ * Record a monitor firing. What Claude says about it is not the card's: the
+ * monitor relay sends that as a reply of its own, which a card could only
+ * hold cut short.
+ */
 export function noteMonitorEvent(
   sessionKey: string,
   summary: string,
   detail: string,
-  body: string,
   opts: NoteOptions = {},
 ): void {
   const state = getOrCreate(sessionKey);
@@ -172,7 +172,6 @@ export function noteMonitorEvent(
     icon: '📡',
     title: summary ? `Monitor — ${summary}` : 'Monitor',
     detail: detail || undefined,
-    body: body || undefined,
   }, opts);
 }
 
@@ -446,9 +445,6 @@ function renderCardAt(state: CardState, eventLimit: number): string {
     if (event.detail) {
       lines.push(`\`\`\`\n${escapeMarkdownV2(truncate(event.detail, MAX_DETAIL_CHARS))}\n\`\`\``);
     }
-    if (event.body) {
-      lines.push(convertToTelegramMarkdown(truncate(event.body, MAX_BODY_CHARS)));
-    }
   }
 
   if (running.length === 0 && shown.length === 0 && dropped === 0) {
@@ -475,7 +471,6 @@ function renderCardPlain(state: CardState): string {
     lines.push('');
     lines.push(`${event.icon} ${clockTime(event.at)} ${truncate(event.title, MAX_TITLE_CHARS)}`);
     if (event.detail) lines.push(truncate(event.detail, MAX_DETAIL_CHARS));
-    if (event.body) lines.push(truncate(event.body, MAX_BODY_CHARS));
   }
 
   if (running.length === 0 && state.events.length === 0) {
