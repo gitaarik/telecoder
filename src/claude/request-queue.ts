@@ -52,6 +52,15 @@ export function isProcessing(sessionKey: string): boolean {
   return processingFlags.get(sessionKey) === true;
 }
 
+/** Sessions with a turn running or waiting in line for one. */
+export function busySessionCount(): number {
+  let busy = 0;
+  for (const key of new Set([...processingFlags.keys(), ...pendingQueues.keys()])) {
+    if (processingFlags.get(key) || (pendingQueues.get(key)?.length ?? 0) > 0) busy++;
+  }
+  return busy;
+}
+
 export function getQueuePosition(sessionKey: string): number {
   const queue = pendingQueues.get(sessionKey);
   return queue ? queue.length : 0;

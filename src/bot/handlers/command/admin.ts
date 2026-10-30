@@ -19,7 +19,14 @@ import { sanitizeError } from '../../../utils/sanitize.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 import { replyMd, botctlExists, PROJECT_ROOT, BOTCTL_PATH } from './shared.js';
 import { handleResume, handleContinue, handleClear } from './session.js';
-import { requestRestart, requestRestartAll, requestSiblingRestart, launcherIsStale } from '../../../worker-restart.js';
+import {
+  requestRestart,
+  requestRestartAll,
+  requestRestartAllWhenIdle,
+  controlIdleRestart,
+  requestSiblingRestart,
+  launcherIsStale,
+} from '../../../worker-restart.js';
 import {
   isSystemdService,
   getSystemdUnit,
@@ -428,7 +435,7 @@ export async function handleRestartBotCallback(ctx: Context): Promise<void> {
 }
 
 
-type RebuildScope = 'one' | 'all';
+type RebuildScope = 'one' | 'all' | 'idle';
 
 /** Run the build without blocking the event loop. execSync would freeze this
  * worker for the whole build, and a worker that stops sending heartbeats for
@@ -471,6 +478,13 @@ async function staleLauncherWarning(): Promise<string> {
 }
 
 async function performRebuild(ctx: Context, scope: RebuildScope): Promise<void> {
+  // Only a launcher can wait on other instances; checked before building, so
+  // the answer isn't a build nobody restarts onto.
+  if (scope === 'idle' && isMainThread) {
+    await ctx.reply('⚠️ "When idle" restarts the instances of a multi-instance setup — this bot runs on its own. Use /rebuildbot to rebuild and restart it now.');
+    return;
+  }
+
   // Step 1: Build
   await ctx.reply('🔨 Building...');
 
@@ -490,6 +504,10 @@ async function performRebuild(ctx: Context, scope: RebuildScope): Promise<void> 
     // a second message sent into that gap may never make it out.
     const warning = await staleLauncherWarning();
     const note = warning ? `\n\n${warning}` : '';
+    if (scope === 'idle') {
+      await restartAllWhenIdle(ctx, warning);
+      return;
+    }
     if (scope === 'all') {
       await ctx.reply(`✅ Build succeeded. Restarting all instances...${note}`);
       requestRestartAll(config.AUTO_RESTORE_SESSION);
@@ -519,6 +537,35 @@ async function performRebuild(ctx: Context, scope: RebuildScope): Promise<void> 
   executeRestart(planned.plan);
 }
 
+/**
+ * Hand the restart to the launcher, to make as each instance runs out of work.
+ * The message posted here is the one the launcher keeps up to date.
+ */
+async function restartAllWhenIdle(ctx: Context, warning: string): Promise<void> {
+  const chatId = ctx.chat?.id;
+  if (chatId === undefined) return;
+  const status = await ctx.reply('✅ Build succeeded. Restarting each instance once it has nothing left to finish...');
+
+  const names = await requestRestartAllWhenIdle({
+    autoResume: config.AUTO_RESTORE_SESSION,
+    chatId,
+    messageId: status.message_id,
+    note: warning || undefined,
+  });
+  if (names !== null) return;
+
+  // The launcher that never answers is the one that predates the request —
+  // which the stale check usually says outright.
+  const text = '✅ Build succeeded, but the launcher did not take the restart — it is running code from '
+    + `before "when idle" existed, so nothing is restarting. To pick it up, ${launcherRestartHint()}; that drops `
+    + 'every live session. /rebuildbot all restarts the instances now instead.';
+  try {
+    await ctx.api.editMessageText(chatId, status.message_id, text);
+  } catch {
+    await ctx.reply(text);
+  }
+}
+
 export async function handleRebuild(ctx: Context): Promise<void> {
   const args = ctx.message?.text?.split(/\s+/).slice(1).join(' ').trim();
 
@@ -529,6 +576,10 @@ export async function handleRebuild(ctx: Context): Promise<void> {
   }
   if (args?.toLowerCase() === 'one' || args?.toLowerCase() === 'this') {
     await performRebuild(ctx, 'one');
+    return;
+  }
+  if (args?.toLowerCase() === 'idle' || args?.toLowerCase() === 'all idle') {
+    await performRebuild(ctx, 'idle');
     return;
   }
 
@@ -554,6 +605,7 @@ export async function handleRebuild(ctx: Context): Promise<void> {
       inline_keyboard: [
         [{ text: '🔧 This instance only', callback_data: 'rebuild:one' }],
         [{ text: '🌐 All instances', callback_data: 'rebuild:all' }],
+        [{ text: '⏳ All instances, each once it is idle', callback_data: 'rebuild:idle' }],
         [{ text: '❌ Cancel', callback_data: 'rebuild:cancel' }],
       ],
     },
@@ -585,6 +637,20 @@ export async function handleRebuildCallback(ctx: Context): Promise<void> {
 
   if (data === 'rebuild:one') {
     await performRebuild(ctx, 'one');
+    return;
+  }
+
+  if (data === 'rebuild:idle') {
+    await performRebuild(ctx, 'idle');
+    return;
+  }
+
+  // The buttons on the "when idle" status message. The launcher redraws that
+  // message itself, buttons and all, so a tap only needs an answer when there
+  // was nothing left to act on.
+  if (data === 'rebuild:idle_force' || data === 'rebuild:idle_cancel') {
+    const found = await controlIdleRestart(data === 'rebuild:idle_force' ? 'force' : 'cancel');
+    if (!found) await ctx.reply('Nothing is waiting to restart any more.');
     return;
   }
 }

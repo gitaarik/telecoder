@@ -182,6 +182,13 @@ class TaskTracker {
     return this.getBackgroundedTasks(sessionKey).length;
   }
 
+  /** Background tasks still running across every session. */
+  getBackgroundedTotal(): number {
+    let total = 0;
+    for (const sessionKey of this.sessionTasks.keys()) total += this.getBackgroundedCount(sessionKey);
+    return total;
+  }
+
   /**
    * True when at least one Monitor task is currently running. Used to detect
    * SDK sub-turns that are triggered by monitor events so the bot can surface

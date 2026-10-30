@@ -57,6 +57,8 @@ const {
   markTurnEnd,
   settleBeforePost,
   teardown,
+  hasSelfStartedTurn,
+  whenRepliesSent,
 } = await import('../../src/claude/monitor-relay.js');
 const { _inspectCard } = await import('../../src/telegram/background-activity-card.js');
 
@@ -299,5 +301,48 @@ describe('a turn that has not closed', () => {
     teardown(SESSION_KEY);
     await vi.waitFor(() => expect(fx.replies).toHaveLength(1), WAIT);
     expect(fx.replies[0]!.text).toBe('Committing the fix.');
+  });
+});
+
+describe('whether a turn claude started itself is still going', () => {
+  it('is, from the record that starts it until the one that closes it', async () => {
+    armAndEndTurn();
+    expect(hasSelfStartedTurn()).toBe(false);
+
+    append(completion('toolu_01'), prose('The review is back.'));
+    await cardShows('review the diff');
+    await vi.waitFor(() => expect(hasSelfStartedTurn()).toBe(true), WAIT);
+
+    append(TURN_CLOSED);
+    await vi.waitFor(() => expect(hasSelfStartedTurn()).toBe(false), WAIT);
+  });
+
+  it("is not, once a turn of TeleCoder's takes over", async () => {
+    armAndEndTurn();
+    append(completion('toolu_01'));
+    await vi.waitFor(() => expect(hasSelfStartedTurn()).toBe(true), WAIT);
+
+    markTurnStart(SESSION_KEY);
+    expect(hasSelfStartedTurn()).toBe(false);
+    markTurnEnd(SESSION_KEY);
+  });
+
+  it('lets a caller wait until its reply is in the chat', async () => {
+    let release!: () => void;
+    fx.gate = new Promise<void>((resolve) => { release = resolve; });
+    armAndEndTurn();
+    append(completion('toolu_01'), prose(LONG_ANSWER), TURN_CLOSED);
+    // The sender has taken the reply and is parked on the gate.
+    await vi.waitFor(() => expect(fx.gate).toBeNull(), WAIT);
+    expect(hasSelfStartedTurn()).toBe(false);
+
+    let sent = false;
+    const waiting = whenRepliesSent().then(() => { sent = true; });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(sent).toBe(false);
+
+    release();
+    await waiting;
+    expect(fx.replies).toHaveLength(1);
   });
 });

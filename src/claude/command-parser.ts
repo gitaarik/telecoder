@@ -149,7 +149,7 @@ export function getAvailableCommands(): string {
       '• `/compact` \\- Compact the context window \\(reports the token reduction\\)',
       '• `/botstatus` \\- Show bot process status',
       `• \`/restartbot\` \\- Restart the bot process${adminTag}`,
-      `• \`/rebuildbot\` \\- Rebuild and restart with auto\\-resume${adminTag}`,
+      `• \`/rebuildbot\` \\- Rebuild and restart with auto\\-resume; \`/rebuildbot idle\` waits for each bot to finish first${adminTag}`,
       '• `/ping` \\- Check if bot is responsive',
       '• `/cancel` \\- Cancel current request',
       '• `/mode` \\- How much Claude asks before acting',

@@ -57,6 +57,11 @@ interface MonitorState {
   jsonlPosition: number;
   watcher: fs.FSWatcher | null;
   inTurn: boolean;
+  /**
+   * A turn claude started itself is underway: something arrived between our
+   * turns and claude hasn't closed the turn it started on it yet.
+   */
+  selfTurnOpen: boolean;
   /** Coalesce rapid-fire change events into one read. */
   pendingRead: NodeJS.Timeout | null;
   /**
@@ -265,6 +270,7 @@ export function onAsyncToolArmed(
       jsonlPosition: 0,
       watcher: null,
       inTurn: true,
+      selfTurnOpen: false,
       pendingRead: null,
       reply: [],
       replySent: Promise.resolve(),
@@ -319,6 +325,7 @@ export function markTurnStart(sessionKey: string): void {
     drain(state);
     void sendReply(state);
     state.inTurn = true;
+    state.selfTurnOpen = false;
   }
   // The user's own message has just buried any card left over from the
   // previous quiet window; start a fresh one rather than going on editing
@@ -360,6 +367,22 @@ export async function settleBeforePost(sessionKey: string): Promise<void> {
     await sendReply(state);
   }
   sealCard(sessionKey);
+}
+
+/**
+ * Whether a turn claude started itself is still going, or its reply hasn't
+ * been handed on yet. Nothing in the request queue knows about such a turn.
+ */
+export function hasSelfStartedTurn(): boolean {
+  for (const state of states.values()) {
+    if (state.selfTurnOpen || state.reply.length > 0) return true;
+  }
+  return false;
+}
+
+/** Resolves once every reply already handed on is in its chat. */
+export async function whenRepliesSent(): Promise<void> {
+  await Promise.all([...states.values()].map((state) => state.replySent));
 }
 
 export function teardown(sessionKey: string): void {
@@ -458,6 +481,7 @@ function handleChange(state: MonitorState): void {
     };
 
     if (typed.type === 'user') {
+      if (!state.inTurn) state.selfTurnOpen = true;
       const notif = parseTaskNotification(typed);
       if (notif) {
         // Terminal notifications (status set + matching armed entry) always
@@ -494,7 +518,10 @@ function handleChange(state: MonitorState): void {
     } else if (typed.type === 'system' && typed.subtype === 'turn_duration') {
       // Claude Code closes every turn with this record — the ones it starts
       // itself too, and one cut short by an API error as well.
-      if (!state.inTurn) void sendReply(state);
+      if (!state.inTurn) {
+        state.selfTurnOpen = false;
+        void sendReply(state);
+      }
     }
   }
 }

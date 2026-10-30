@@ -111,6 +111,7 @@ import {
   handleUnsupportedMediaDocument,
 } from './handlers/media-fallback.js';
 import { createBatchMiddleware } from './middleware/message-batcher.js';
+import { countUpdatesInFlight } from '../restart-when-idle.js';
 import {
   resolvePendingQuestion,
   getQuestionResponders,
@@ -345,6 +346,10 @@ export async function createBot(): Promise<Bot> {
   }).catch((err) => {
     console.warn('⚠️ Failed to register commands:', err.message);
   });
+
+  // Before everything else, so /rebuildbot's "when idle" sees an update from
+  // the moment it arrives until its reply has gone out.
+  bot.use(countUpdatesInFlight);
 
   // Apply auth middleware to all updates
   bot.use(authMiddleware);

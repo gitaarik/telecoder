@@ -2096,6 +2096,14 @@
             bot up.</p>
           </div>
           <div class="feature-card" data-category="reliability">
+            <div class="feature-icon"><svg><use href="#i-clock"/></svg></div>
+            <h3>Rebuild without waiting for a quiet moment</h3>
+            <p><code>/rebuildbot idle</code> builds once and restarts each bot as soon as it has
+            nothing left to finish — no turn running, no background task out, no reply still on
+            its way — instead of cutting a turn off or waiting on the busiest. One message keeps
+            the tally, with buttons to restart the rest now or call it off.</p>
+          </div>
+          <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-revive"/></svg></div>
             <h3>A crashed bot comes back</h3>
             <p>An unplanned exit respawns on a backoff, so one crash doesn't leave a chat silent.
@@ -3044,7 +3052,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/rebuildbot</code>
-              <span class="command-desc">Rebuild code and restart — inline menu picks this instance, all instances, or cancel. <strong>Admin-only</strong> when the bot has non-admin users.</span>
+              <span class="command-desc">Rebuild code and restart — inline menu picks this instance, all instances, all instances each once it is idle, or cancel. <code>/rebuildbot idle</code> picks the last directly. <strong>Admin-only</strong> when the bot has non-admin users.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/permissions</code>

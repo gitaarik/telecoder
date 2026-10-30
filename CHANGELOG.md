@@ -241,6 +241,18 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **`/rebuildbot` can wait for each bot to finish** — rebuilding while bots
+  were busy on other projects meant waiting for a moment when none of them
+  was, or cutting a turn off halfway. The `/rebuildbot` menu now has "All
+  instances, each once it is idle" (`/rebuildbot idle` for short): it builds
+  once, then restarts each bot the moment it has nothing left to finish — no
+  turn running or queued, no message still being handled, no background task
+  still going, and no reply still on its way — instead of waiting for the
+  busiest. One message in the chat you asked from keeps the tally, saying what
+  each bot still waiting is busy with, with buttons to restart the rest now or
+  call it off. The launcher has to be running this build before it can take
+  the request; until then the message says so and nothing restarts.
+
 - **Claude's answer after a background task arrives whole** — when a
   background task finished between your messages, what Claude wrote about it
   went onto the background activity card, under a "📡 Monitor" line, cut at

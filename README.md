@@ -439,7 +439,7 @@ Open your bot in Telegram → `/start`
 | `/deny` | Remove someone admitted with `/allow` — admin-only |
 | `/botstatus` | Bot process status |
 | `/restartbot` | Restart the bot — admin-only |
-| `/rebuildbot` | Rebuild code and restart — admin-only |
+| `/rebuildbot` | Rebuild code and restart — this instance, all, or all once each is idle (`/rebuildbot idle`) — admin-only |
 | `/update` | Update the Claude Code CLI — admin-only |
 | `/cancel` | Cancel current request (alias: `/stop`) |
 | `/commands` | Show all commands |

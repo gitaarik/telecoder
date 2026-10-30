@@ -21,6 +21,7 @@ import { planRespawn } from './utils/respawn-backoff.js';
 import { tickWasStalled, withinStallCooldown, shouldEscalateWedged } from './utils/host-stall.js';
 import { fingerprintModuleGraph, launcherHasChanged } from './utils/stale-launcher.js';
 import { PrefsRelay } from './utils/prefs-relay.js';
+import { IdleRestart } from './utils/idle-restart.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
@@ -268,6 +269,11 @@ interface WorkerMessage {
   status?: string;
   reason?: string;
   busy?: number;
+  /** restart_all_when_idle / drain_busy — see "Restarting when idle" below. */
+  detail?: string;
+  chatId?: number;
+  messageId?: number;
+  note?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -307,6 +313,89 @@ function writeReloadMarkerForToken(token: string, instanceName?: string): void {
   } catch (err) {
     console.error(`[Launcher] Failed to write reload marker for ${instanceName ?? (botId || '?')}:`, err);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Restarting when idle
+//
+// /rebuildbot's "when idle" option. Every live worker is told to drain; each
+// says what it is still finishing until it has nothing left, and is restarted
+// then, on its own schedule rather than the slowest one's. The tally goes back
+// to the bot that asked, as edits to one message. See src/restart-when-idle.ts
+// for the workers' end and utils/idle-restart.ts for the tally.
+// ---------------------------------------------------------------------------
+
+let idleRestart: IdleRestart | null = null;
+
+// Workers that have said they're listening. One still starting up has no
+// handler for these messages yet, so they wait in its outbox until it does —
+// and the status message is often edited by an incarnation of the asking bot
+// that didn't exist when the edit was made, because that bot restarted first.
+const readyWorkers = new Set<string>();
+const outboxes = new Map<string, object[]>();
+
+function sendWhenReady(name: string, msg: { type: string; messageId?: number }): void {
+  const worker = workers.get(name);
+  if (worker && readyWorkers.has(name)) {
+    try {
+      worker.postMessage(msg);
+      return;
+    } catch (err) {
+      console.warn(`[Launcher] Could not send ${msg.type} to ${name}: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  // Only the latest edit of a message is worth making.
+  const queued = (outboxes.get(name) ?? []).filter((m) => {
+    const q = m as { type?: string; messageId?: number };
+    return !(msg.type === 'drain_render' && q.type === 'drain_render' && q.messageId === msg.messageId);
+  });
+  queued.push(msg);
+  outboxes.set(name, queued);
+}
+
+function flushOutbox(name: string): void {
+  const queued = outboxes.get(name);
+  outboxes.delete(name);
+  for (const msg of queued ?? []) sendWhenReady(name, msg as { type: string });
+}
+
+// Instances report within a couple of seconds of each other, and each report
+// would be its own edit of the same message; Telegram rate-limits those.
+const IDLE_RESTART_RENDER_DELAY_MS = 1500;
+let renderTimer: NodeJS.Timeout | null = null;
+
+function renderIdleRestart(tally: IdleRestart, opts: { now?: boolean } = {}): void {
+  const deliver = (): void => {
+    const { text, buttons } = tally.render();
+    const { instance, chatId, messageId } = tally.origin;
+    sendWhenReady(instance, { type: 'drain_render', chatId, messageId, text, buttons } as { type: string; messageId: number });
+  };
+  if (opts.now) {
+    deliver();
+    return;
+  }
+  if (renderTimer) return;
+  renderTimer = setTimeout(() => {
+    renderTimer = null;
+    // The tally may have finished, or been replaced, since this was asked
+    // for — whatever it says now is what the message should say.
+    if (idleRestart) renderIdleRestart(idleRestart, { now: true });
+  }, IDLE_RESTART_RENDER_DELAY_MS);
+}
+
+function finishIdleRestartIfDone(tally: IdleRestart): void {
+  if (!tally.isFinished()) return;
+  if (idleRestart === tally) idleRestart = null;
+  renderIdleRestart(tally, { now: true });
+}
+
+// Whether the instances an idle restart restarts should restore their sessions.
+let idleRestartAutoResume = false;
+
+function restartForIdleRestart(name: string): void {
+  const inst = instances.find((i) => i.name === name);
+  if (idleRestartAutoResume && inst) writeReloadMarkerForToken(inst.token, inst.name);
+  restartWorker(name);
 }
 
 function buildWorkerEnv(inst: ResolvedInstance): Record<string, string> {
@@ -354,6 +443,7 @@ function spawnWorker(inst: ResolvedInstance): Worker {
 
   const worker = new Worker(workerEntry, workerOptions);
   const spawnedAt = Date.now();
+  readyWorkers.delete(inst.name);
   lastHeartbeat.set(inst.name, Date.now());
 
   let exited = false;
@@ -367,6 +457,9 @@ function spawnWorker(inst: ResolvedInstance): Worker {
     if (restartBegun || exited) return;
     restartBegun = true;
     pendingRestarts.add(inst.name);
+    // On its way out: an edit sent now could die with it, so it waits for
+    // the successor instead.
+    readyWorkers.delete(inst.name);
 
     try {
       worker.postMessage({ type: 'exit_for_restart' });
@@ -413,6 +506,63 @@ function spawnWorker(inst: ResolvedInstance): Worker {
   worker.on('message', (msg: WorkerMessage) => {
     if (msg?.type === 'heartbeat') {
       lastHeartbeat.set(inst.name, Date.now());
+    } else if (msg?.type === 'ready') {
+      readyWorkers.add(inst.name);
+      flushOutbox(inst.name);
+    } else if (msg?.type === 'restart_all_when_idle') {
+      if (msg.chatId === undefined || msg.messageId === undefined) return;
+      const names = [...workers.keys()];
+      console.log(`[Launcher] ${inst.name} requested a restart of ALL instances once each is idle${msg.autoResume ? ' (with auto-resume)' : ''} — ${names.length} live`);
+      // A newer build makes the older wait moot, but not its instances: the
+      // ones it was still waiting on are waiting on this one now, and so is
+      // everyone it already restarted, which is running the older build.
+      if (idleRestart) {
+        idleRestart.supersede();
+        renderIdleRestart(idleRestart, { now: true });
+      }
+      idleRestartAutoResume = !!msg.autoResume;
+      idleRestart = new IdleRestart(
+        { instance: inst.name, chatId: msg.chatId, messageId: msg.messageId, note: msg.note || undefined },
+        names,
+      );
+      for (const name of names) sendWhenReady(name, { type: 'drain' });
+      worker.postMessage({ type: 'restart_all_when_idle_result', names });
+      renderIdleRestart(idleRestart, { now: true });
+    } else if (msg?.type === 'drain_busy') {
+      if (idleRestart?.busy(inst.name, msg.detail ?? '')) renderIdleRestart(idleRestart);
+    } else if (msg?.type === 'drain_idle') {
+      const tally = idleRestart;
+      if (!tally?.isWaitingOn(inst.name)) {
+        // Cancelled, or superseded and already restarted, while this was on
+        // its way. Nothing is waiting for it any more.
+        worker.postMessage({ type: 'drain_cancel' });
+        return;
+      }
+      console.log(`[Launcher] ${inst.name} has nothing left to finish — restarting it`);
+      tally.restarting(inst.name);
+      restartForIdleRestart(inst.name);
+      renderIdleRestart(tally);
+      finishIdleRestartIfDone(tally);
+    } else if (msg?.type === 'idle_restart_force' || msg?.type === 'idle_restart_cancel') {
+      const tally = idleRestart;
+      worker.postMessage({ type: 'drain_control_result', found: !!tally });
+      if (!tally) return;
+      if (msg.type === 'idle_restart_force') {
+        const left = tally.waitingOn();
+        console.log(`[Launcher] ${inst.name} asked to restart the rest now: ${left.join(', ')}`);
+        let delay = 0;
+        for (const name of left) {
+          tally.restarting(name, { forced: true });
+          // Staggered for the same reason restart_all is.
+          setTimeout(() => restartForIdleRestart(name), delay);
+          delay += 200;
+        }
+      } else {
+        const left = tally.cancel();
+        console.log(`[Launcher] ${inst.name} cancelled the pending restart${left.length ? ` — still on the old build: ${left.join(', ')}` : ''}`);
+        for (const name of left) sendWhenReady(name, { type: 'drain_cancel' });
+      }
+      finishIdleRestartIfDone(tally);
     } else if (msg?.type === 'restart') {
       // Self-restart: this worker wants to be restarted
       console.log(`[Launcher] ${inst.name} requested self-restart`);
@@ -547,6 +697,18 @@ function spawnWorker(inst: ResolvedInstance): Worker {
     console.log(`[${inst.name}] Worker exited with code ${code}`);
     exited = true;
     lastHeartbeat.delete(inst.name);
+    readyWorkers.delete(inst.name);
+    // What was queued for this incarnation dies with it; an edit of the status
+    // message is still owed, and the next one can make it.
+    const owed = (outboxes.get(inst.name) ?? []).filter((m) => (m as { type?: string }).type === 'drain_render');
+    if (owed.length) outboxes.set(inst.name, owed);
+    else outboxes.delete(inst.name);
+    // An instance that went down on its own while it was being waited for
+    // comes back on the new build all the same.
+    if (idleRestart?.restarting(inst.name)) {
+      renderIdleRestart(idleRestart);
+      finishIdleRestartIfDone(idleRestart);
+    }
     restarters.delete(inst.name);
     // Drop it now, in every path: the heartbeat monitor keys off `workers`, and
     // leaving a dead entry there makes it chase an instance that no longer has

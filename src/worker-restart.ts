@@ -92,3 +92,58 @@ export function requestRestartAll(autoResume = false): boolean {
   }
   return false;
 }
+
+/**
+ * Ask the launcher to restart every worker once each has nothing left to
+ * finish, reporting progress by editing `messageId` in `chatId`. Resolves
+ * with the instances it is waiting on, or null when the launcher doesn't
+ * answer — one that predates this request never will.
+ */
+export function requestRestartAllWhenIdle(opts: {
+  autoResume: boolean;
+  chatId: number;
+  messageId: number;
+  note?: string;
+}): Promise<string[] | null> {
+  return new Promise((resolve) => {
+    if (isMainThread || !parentPort) return resolve(null);
+    const pp = parentPort;
+    const handler = (msg: { type?: string; names?: string[] }) => {
+      if (msg?.type === 'restart_all_when_idle_result') {
+        pp.off('message', handler);
+        clearTimeout(timer);
+        resolve(msg.names ?? []);
+      }
+    };
+    pp.on('message', handler);
+    pp.postMessage({ type: 'restart_all_when_idle', ...opts });
+    const timer = setTimeout(() => {
+      pp.off('message', handler);
+      resolve(null);
+    }, 3000);
+  });
+}
+
+/**
+ * Restart the instances a pending idle restart is still waiting on right
+ * away, or stop waiting for them. Resolves false when nothing was pending.
+ */
+export function controlIdleRestart(action: 'force' | 'cancel'): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (isMainThread || !parentPort) return resolve(false);
+    const pp = parentPort;
+    const handler = (msg: { type?: string; found?: boolean }) => {
+      if (msg?.type === 'drain_control_result') {
+        pp.off('message', handler);
+        clearTimeout(timer);
+        resolve(!!msg.found);
+      }
+    };
+    pp.on('message', handler);
+    pp.postMessage({ type: action === 'force' ? 'idle_restart_force' : 'idle_restart_cancel' });
+    const timer = setTimeout(() => {
+      pp.off('message', handler);
+      resolve(false);
+    }, 3000);
+  });
+}

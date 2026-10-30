@@ -26,6 +26,7 @@ import { getPtyProvider } from './providers/claude-provider.js';
 import { setUpdateBannerRelayBot } from './claude/update-banner-relay.js';
 import { startPendingForkWatcher } from './bot/handlers/fork.handler.js';
 import { initPrefsSync } from './providers/prefs-sync.js';
+import { initRestartWhenIdle } from './restart-when-idle.js';
 import { stripParentClaudeSession } from './utils/claude-env.js';
 import { syncBotNameOnStartup } from './telegram/botname-settings.js';
 import { autoResumeAfterReload } from './startup/auto-resume.js';
@@ -307,6 +308,10 @@ async function main() {
       // code would never die — and never be respawned.
       if (msg?.type === 'shutdown' || msg?.type === 'exit_for_restart') shutdown();
     });
+
+    // Tells the launcher this worker is listening, so only once it is: the
+    // bot is up and the shutdown above is wired to the restart it may ask for.
+    initRestartWhenIdle(bot.api);
 
     // Send periodic heartbeat so the launcher can detect stuck workers
     const pp = parentPort;
