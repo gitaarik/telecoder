@@ -33,6 +33,7 @@ import { autoResumeAfterReload } from './startup/auto-resume.js';
 import { autoContinueOnStartup } from './startup/auto-continue.js';
 import { notifyInterruptedSessions, notifyRestartComplete } from './startup/notices.js';
 import { tickWasStalled } from './utils/host-stall.js';
+import { describeRunningBuild } from './utils/build-info.js';
 
 export { requestRestart, requestSiblingRestart, requestRestartAll } from './worker-restart.js';
 
@@ -72,6 +73,8 @@ const SHUTDOWN_TIMEOUT_MS = 5_000;
 
 async function main() {
   console.log('🤖 Starting TeleCoder...');
+  const build = describeRunningBuild();
+  if (build) console.log(`🏷️ Version: ${build}`);
   console.log(`📋 Allowed users: ${config.ALLOWED_USER_IDS.join(', ')}`);
   // The roster is the other half of the allow-list, and the half that changed
   // while nobody was reading the log — worth naming at startup so "who can use

@@ -13,6 +13,7 @@ import { sessionManager } from '../claude/session-manager.js';
 import { sessionHistory } from '../claude/session-history.js';
 import { consumeAllInFlight } from '../claude/in-flight-tracker.js';
 import { parseSessionKey } from '../utils/session-key.js';
+import { describeRunningBuild } from '../utils/build-info.js';
 import { allowedChatIds, threadOpts, sendBlockWithPlainFallback } from './shared.js';
 
 /**
@@ -67,7 +68,8 @@ export async function notifyInterruptedSessions(bot: Bot, notified: Set<string>)
  * carries on silently, or one quiet for longer than the restore window, hears
  * nothing. After an explicit /rebuildbot or /restartbot that reads as "did my
  * restart even land?", especially for `all`, where five sibling instances
- * restart with no visible sign either way.
+ * restart with no visible sign either way. Like the recap, it says which build
+ * came back, since landing on the wrong one reads just the same.
  *
  * Sends to the most recently active chat this instance serves, and only when
  * that chat heard nothing else this startup — so a chat that already got the
@@ -105,10 +107,15 @@ export async function notifyRestartComplete(bot: Bot, notified: Set<string>): Pr
 
   const { chatId, threadId } = parseSessionKey(target);
   const opts = threadOpts(threadId);
+  const build = describeRunningBuild();
   try {
     // Plain text, no parse_mode: BOT_NAME is user-supplied and would otherwise
     // need escaping to survive the MarkdownV2 parser.
-    await bot.api.sendMessage(chatId, `✅ ${config.BOT_NAME} restarted and is ready.`, opts);
+    await bot.api.sendMessage(
+      chatId,
+      `✅ ${config.BOT_NAME} restarted and is ready.` + (build ? `\nVersion: ${build}` : ''),
+      opts,
+    );
     console.log(`[Restart] Confirmed restart to ${target}`);
   } catch (err) {
     console.error(`[Restart] Failed to confirm restart to ${target}:`, err);

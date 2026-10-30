@@ -2130,6 +2130,15 @@
             restart replies and <code>/botstatus</code> name the restart still owed.</p>
           </div>
           <div class="feature-card" data-category="reliability">
+            <div class="feature-icon"><svg><use href="#i-done"/></svg></div>
+            <h3>A restart says which version came back</h3>
+            <p>The message a restart ends with names the commit the bot is now running and how
+            long ago it was built, and says so when that build included uncommitted changes. The
+            name comes from the build itself, not from what's checked out, so a fix you committed
+            but never built isn't claimed as live. <code>/botstatus</code> says the same at any
+            time.</p>
+          </div>
+          <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-inbox"/></svg></div>
             <h3>Nothing gets dropped</h3>
             <p>After every turn TeleCoder checks what it sent against Claude Code's own session log
@@ -3044,7 +3053,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/botstatus</code>
-              <span class="command-desc">Show bot process status</span>
+              <span class="command-desc">Show bot process status and the version it's running</span>
             </div>
             <div class="command-row">
               <code class="command-code">/restartbot</code>

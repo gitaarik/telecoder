@@ -251,6 +251,17 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **A restart says which version came back** — `/rebuildbot` reported a build
+  and a restart but never what the bot came back on, so there was no telling
+  from the chat whether a fix had gone live. The message a restart ends with now
+  names it, as "Version: 63dcf45 feat: end /recap the way a turn ends (built 2m
+  ago)", with "plus uncommitted changes" when `src/` had some at build time, and
+  `/botstatus` says the same whenever you ask. It comes from a stamp
+  `npm run build` leaves in `dist/` rather than from what's checked out, so a
+  commit you haven't built yet isn't claimed as running. With
+  `AUTO_RESTORE_SESSION` off a restart posts nothing afterwards, so `/botstatus`
+  is the place to look there.
+
 - **The bypass warning stays accepted** — since Claude Code 2.1.314, every new
   session (after `/clear`, `/model`, a project switch or a restart) opened with
   "WARNING: Claude Code running in Bypass Permissions mode", even though you had

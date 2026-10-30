@@ -24,6 +24,7 @@ import { fitsOnButton } from '../../../telegram/button-text.js';
 import { userPreferences } from '../../../providers/user-preferences.js';
 import { getPtyProvider } from '../../../providers/claude-provider.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../../../utils/session-key.js';
+import { formatTimeAgo } from '../../../utils/format.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** Repo root — four levels up from `src/bot/handlers/command/`. */
@@ -119,19 +120,7 @@ export function truncateToBytes(s: string, maxBytes: number): string {
   return out;
 }
 
-export function formatTimeAgo(date: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-
-  if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
-}
+export { formatTimeAgo };
 
 /**
  * How much of a session's name a picker spells out.

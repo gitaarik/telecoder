@@ -15,6 +15,7 @@ import { sessionManager } from '../claude/session-manager.js';
 import { sessionHistory } from '../claude/session-history.js';
 import { clearConversation } from '../providers/provider-router.js';
 import { parseSessionKey } from '../utils/session-key.js';
+import { describeRunningBuild } from '../utils/build-info.js';
 import { setSessionTopic } from '../bot/handlers/command/topic-store.js';
 import { getEffortLabel } from '../bot/handlers/command.handler.js';
 import { isBotNameEnabled, rateLimitedSetMyName, notifyBotNameBlockToChat } from '../telegram/botname-settings.js';
@@ -138,6 +139,10 @@ export async function autoResumeAfterReload(bot: Bot, notified: Set<string>): Pr
       const effortLabel = getEffortLabel(chatId);
       if (effortLabel) {
         header += `\nEffort: ${escapeMarkdownV2(effortLabel)}`;
+      }
+      const build = describeRunningBuild();
+      if (build) {
+        header += `\nVersion: ${escapeMarkdownV2(build)}`;
       }
       try {
         await bot.api.sendMessage(chatId, header, { parse_mode: 'MarkdownV2', ...opts });

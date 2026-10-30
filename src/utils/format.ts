@@ -1,5 +1,5 @@
 /**
- * Pure display formatters for user-facing numbers.
+ * Pure display formatters for user-facing numbers and times.
  *
  * These live in `utils/` rather than next to their first caller because both
  * the bot handler layer and the provider layer need them, and the providers
@@ -38,4 +38,18 @@ export function formatCompactionConfirmation(c: { preTokens: number; postTokens?
   return c.postTokens && c.postTokens > 0
     ? `🗜️ Context compacted — ${before} → ${fmtTokens(c.postTokens)} tokens.`
     : `🗜️ Context compacted — was ${before} tokens.`;
+}
+
+export function formatTimeAgo(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
 }

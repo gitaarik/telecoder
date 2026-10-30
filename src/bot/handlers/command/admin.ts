@@ -37,6 +37,7 @@ import {
   type SystemdUnit,
 } from '../../../utils/systemd.js';
 import { launcherRestartHint } from '../../../utils/stale-launcher.js';
+import { describeRunningBuild } from '../../../utils/build-info.js';
 
 /** Write the reload marker so autoResumeAfterReload picks up sessions on restart. */
 export function writeReloadMarker(): void {
@@ -200,10 +201,12 @@ export async function handleBotStatus(ctx: Context): Promise<void> {
   // The uptime above is this worker's, and a worker that restarted an hour ago
   // says nothing about the process it restarted inside.
   const warning = await staleLauncherWarning();
+  const build = describeRunningBuild();
 
   const msg =
     `🟢 *${esc(config.BOT_NAME)} is running*\n\n` +
     `*Mode:* ${esc(mode)}\n` +
+    (build ? `*Version:* ${esc(build)}\n` : '') +
     `*Uptime:* ${esc(uptimeStr)}\n` +
     `*PID:* ${pid}\n` +
     `*Memory:* ${esc(memMB)} MB\n` +
