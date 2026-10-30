@@ -2081,8 +2081,14 @@ export class PtyProvider implements Provider {
     return undefined;
   }
 
+  /**
+   * The last turn's usage, or the session log's when no turn has reported one
+   * since the chat got here: a fork, a /tree jump, a /resume and a restart all
+   * start with nothing cached. The log sizes the point the chat is now at, which
+   * after a jump is not the figure it last saw.
+   */
   getCachedUsage(sessionKey: string): AgentUsage | undefined {
-    return this.usageCache.get(sessionKey);
+    return this.usageCache.get(sessionKey) ?? this._refreshUsageFromJsonl(sessionKey);
   }
 
   isDangerousMode(): boolean {

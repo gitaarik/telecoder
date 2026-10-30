@@ -373,7 +373,7 @@ Open your bot in Telegram → `/start`
 | `/sessions` | List saved sessions |
 | `/resume` | Pick from recent sessions |
 | `/continue` | Resume most recent session |
-| `/recap [N]` | Re-read the last N exchanges of the current session (default 3) |
+| `/recap [N]` | Re-read the last N exchanges of the current session (default 3), ending with the same context and status messages as a normal turn |
 | `/prompts [N]` | List just the last N prompts you sent, without the replies (default 15, max 25) |
 | `/sync` | Resend the latest assistant reply from the session log if Telegram missed any of it |
 | `/handoff` | Dump the conversation to markdown — Telegraph link plus downloadable file |

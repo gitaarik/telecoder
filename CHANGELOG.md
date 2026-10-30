@@ -7,6 +7,16 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Sessions
 
+- **`/recap` ends like a turn** — after a long reply, `/recap` left you on the
+  tail of an answer with the prompt it answers scrolled away, and it said
+  nothing about the context, which is what has changed when you've just gone
+  back to a fork or an earlier point. It now closes with the same context and
+  status messages as a normal turn: your last prompts, then the figure for the
+  point the chat is at. In PTY mode that figure comes from the session log when
+  no turn has cached one, so `/status` now shows its context line straight after
+  a jump or a restart too, and `/context` answers from the log at those moments
+  instead of starting a separate `claude` to ask.
+
 - **A restart carries on instead of asking** — a chat quiet for between an hour
   and a week came back from a restart with "Continue where you left off, or
   start fresh?", and a `/rebuildbot all` left that choice waiting in every bot

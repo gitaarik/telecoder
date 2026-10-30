@@ -14,7 +14,7 @@ import * as path from 'path';
 import { config } from '../../../config.js';
 import { sessionManager } from '../../../claude/session-manager.js';
 import { sessionHistory } from '../../../claude/session-history.js';
-import { clearConversation } from '../../../providers/provider-router.js';
+import { clearConversation, getCachedUsage } from '../../../providers/provider-router.js';
 import { messageSender } from '../../../telegram/message-sender.js';
 import { escapeMarkdownV2 as esc, processMessageForTelegram } from '../../../telegram/markdown.js';
 import { summarizeUserPrompt, unwrapPaste, cutLabel } from '../../../telegram/prompt-label.js';
@@ -42,6 +42,8 @@ import {
   clearTopicAndRefreshBotName,
   restoreTopicAndRefreshBotName,
 } from './topic.js';
+import { sendStatusLine } from './settings.js';
+import { sendTurnNotifications } from '../message/turn-notify.js';
 
 export async function handleClear(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
@@ -317,7 +319,7 @@ async function sendRecapHint(ctx: Context, sessionKey: string): Promise<void> {
 export async function handleRecap(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
+  const { chatId, sessionKey } = keyInfo;
 
   const text = ctx.message?.text || '';
   const arg = text.split(' ').slice(1).join(' ').trim();
@@ -349,6 +351,13 @@ export async function handleRecap(ctx: Context): Promise<void> {
   }
 
   await sendRecap(ctx, exchanges);
+
+  // End the way a turn ends. A long reply leaves the chat on its tail, with the
+  // prompt it answers scrolled away, and after a jump to a fork or an earlier
+  // point the context is no longer the figure last shown.
+  const usage = getCachedUsage(sessionKey);
+  await sendTurnNotifications(ctx, sessionKey, { usage });
+  await sendStatusLine(ctx, chatId, sessionKey, usage, exchanges[exchanges.length - 1]!.user);
 }
 
 /**

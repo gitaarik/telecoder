@@ -20,16 +20,18 @@ vi.mock('os', async (importOriginal) => {
 });
 
 let usage: AgentUsage | undefined;
-vi.mock('../../src/providers/provider-router.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/providers/provider-router.js')>()),
-  getCachedUsage: () => usage,
-}));
+vi.mock('../../src/providers/provider-router.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/providers/provider-router.js')>();
+  return { ...actual, getCachedUsage: (key: string) => usage ?? actual.getCachedUsage(key) };
+});
 
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'telecoder-status-'));
 process.env.TELECODER_TEST_HOME = home;
 
 const { handleStatus } = await import('../../src/bot/handlers/command.handler.js');
 const { sessionManager } = await import('../../src/claude/session-manager.js');
+const { sessionJsonlPath } = await import('../../src/claude/session-jsonl.js');
+const { userPreferences } = await import('../../src/providers/user-preferences.js');
 
 afterAll(() => {
   delete process.env.TELECODER_TEST_HOME;
@@ -63,5 +65,32 @@ describe('/status', () => {
 
     const [text] = reply.mock.calls[0]!;
     expect(text).toContain('📐 *Context:* 54% \\(535\\.5k/1\\.0M\\)');
+  });
+
+  it('reads it from the session log when no turn has cached one, as after a jump', async () => {
+    const chat = 401;
+    const project = path.join(home, 'project-401');
+    fs.mkdirSync(project, { recursive: true });
+    const file = sessionJsonlPath(project, 'branch');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        model: 'claude-opus-5-5',
+        content: [{ type: 'text', text: 'Two stages.' }],
+        usage: { input_tokens: 2, output_tokens: 320, cache_read_input_tokens: 299_678 },
+      },
+    }) + '\n');
+    sessionManager.createSession(String(chat), project);
+    sessionManager.setClaudeSessionId(String(chat), 'branch');
+    userPreferences.setMethod(chat, 'pty');
+    usage = undefined;
+
+    const reply = vi.fn(async (_text: string, _opts?: unknown) => ({}));
+    await handleStatus({ chat: { id: chat }, message: { text: '/status' }, reply } as unknown as Context);
+
+    const [text] = reply.mock.calls[0]!;
+    expect(text).toContain('📐 *Context:* 30% \\(300\\.0k/1\\.0M\\)');
   });
 });
