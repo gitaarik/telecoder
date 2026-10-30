@@ -994,7 +994,8 @@ export class PtyProvider implements Provider {
       // most importantly it drops `editorMode: "vim"` which makes \r insert
       // a newline instead of submitting (we saw prompts pile up in the
       // multi-line buffer and never reach the model). Project + local
-      // settings still load, as does our injected --settings JSON below.
+      // settings still load, as does our injected --settings JSON below,
+      // which also carries the one user setting a spawn can't do without.
       '--setting-sources', 'project,local',
       '--settings', settingsJson,
       // Spawn our standalone MCP server as a stdio subprocess. Strict mode

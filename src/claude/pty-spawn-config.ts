@@ -15,6 +15,7 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from '../config.js';
@@ -23,6 +24,33 @@ import { enabledPluginsSetting } from './enabled-plugins.js';
 
 const PROVIDER_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const MCP_SERVER_JS = path.resolve(PROVIDER_DIR, '../bin/mcp-server.js');
+
+/**
+ * Whether this account has accepted Claude Code's bypass-permissions warning.
+ *
+ * The pty needs --dangerously-skip-permissions (see _applyPermissionMode), which
+ * opens that warning unless the answer is already on record, and accepting it
+ * records the answer in ~/.claude/settings.json. Since 2.1.314 claude doesn't
+ * read that file on a launch that leaves user settings out, as ours does, so the
+ * warning opened on every new pty and "Yes, I accept" could never end it: it
+ * wrote a key that was already there to a file nothing was going to read.
+ *
+ * Copied across rather than always set, so the bot never accepts the warning for
+ * an account that hasn't, and read on every spawn, so a "Yes" counts from the
+ * next pty on. No file, a file that doesn't parse or anything but a plain `true`
+ * is not an acceptance: that costs a dialog in the chat, which explains itself.
+ */
+function hasAcceptedBypassWarning(): boolean {
+  try {
+    const settings: unknown = JSON.parse(
+      fs.readFileSync(path.join(os.homedir(), '.claude', 'settings.json'), 'utf8'),
+    );
+    return (settings as { skipDangerousModePermissionPrompt?: unknown } | null)
+      ?.skipDangerousModePermissionPrompt === true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Build the `--settings` JSON we inject at spawn time. Each registered hook
@@ -35,7 +63,8 @@ export const MCP_SERVER_JS = path.resolve(PROVIDER_DIR, '../bin/mcp-server.js');
  * CLAUDE_PLUGINS rides along in the same payload. The flag tier this lands in
  * outranks project and local settings and merges with them, so naming a plugin
  * here adds it to whatever the project already enables — see enabled-plugins.ts
- * for why the user's own settings.json cannot carry it instead.
+ * for why the user's own settings.json cannot carry it instead. The answer to
+ * the bypass warning comes the same way, for the same reason.
  */
 export function buildSettingsJson(ipcPort: number): string {
   const hookCommand = (eventName: string) =>
@@ -66,6 +95,7 @@ export function buildSettingsJson(ipcPort: number): string {
 
   return JSON.stringify({
     ...(enabledPlugins ? { enabledPlugins } : {}),
+    ...(hasAcceptedBypassWarning() ? { skipDangerousModePermissionPrompt: true } : {}),
     hooks: {
       PreToolUse: [{ hooks: [{ type: 'command', command: preToolUseCommand }] }],
       PostToolUse: [{ hooks: [{ type: 'command', command: hookCommand('postToolUse') }] }],

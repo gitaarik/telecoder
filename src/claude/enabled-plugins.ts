@@ -15,7 +15,9 @@
  * tier — `--settings` for the pty, `settings:` for the SDK — which sits above
  * project and local in Claude Code's precedence order and merges with them
  * key-by-key, so a project that enables its own plugins keeps them and picks
- * these up as well. Nothing else from ~/.claude/settings.json comes with it.
+ * these up as well. Nothing else from ~/.claude/settings.json comes with it,
+ * except the answer to the bypass warning, which the pty carries for itself (see
+ * buildSettingsJson).
  */
 
 import { config } from '../config.js';

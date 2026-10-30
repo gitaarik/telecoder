@@ -241,6 +241,15 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **The bypass warning stays accepted** — since Claude Code 2.1.314, every new
+  session (after `/clear`, `/model`, a project switch or a restart) opened with
+  "WARNING: Claude Code running in Bypass Permissions mode", even though you had
+  accepted it, and "Yes, I accept" didn't last past that session. The bot's
+  launch leaves your user settings out, which is where that answer is kept, and
+  that version stopped reading it there. The bot now passes the answer along
+  when your settings already have it. An account that hasn't accepted still
+  gets asked, once.
+
 - **`/rebuildbot` can wait for each bot to finish** — rebuilding while bots
   were busy on other projects meant waiting for a moment when none of them
   was, or cutting a turn off halfway. The `/rebuildbot` menu now has "All
