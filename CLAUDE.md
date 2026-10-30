@@ -62,3 +62,7 @@ Before committing changes that handle external input:
 - [ ] Error sanitization using `sanitizeError()` before logging
 - [ ] File content validation using `isValidImageFile()` for images
 - [ ] No tokens or secrets in process arguments (use stdin for curl)
+
+## Git Workflow
+
+Commit directly to `main`. There's no need for feature branches while one person is working on this project, which is the case for the moment — revisit this if someone else joins.
