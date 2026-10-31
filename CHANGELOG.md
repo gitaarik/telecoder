@@ -251,6 +251,13 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **A cancelled message stays cancelled** — a message you stopped with `/cancel`
+  before Claude had written anything came back. Claude Code put it back in its
+  input box, and it went out stuck to the front of your next message as one
+  prompt, while a `/cost` or `/tasks` would have submitted it by itself. The box
+  is now emptied before anything else is typed into it, and a `/cancel` that lands
+  while a message is still being typed in stops it from being submitted at all.
+
 - **A restart says which version came back** — `/rebuildbot` reported a build
   and a restart but never what the bot came back on, so there was no telling
   from the chat whether a fix had gone live. The message a restart ends with now

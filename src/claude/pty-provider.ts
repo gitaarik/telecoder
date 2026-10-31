@@ -104,6 +104,8 @@ const ROWS = 40;
 const INPUT_BOX_COLS = COLS - 5;
 /** Gap between the Ctrl+U presses of one clear, so claude takes them as keys and not as a paste. */
 const CLEAR_PRESS_GAP_MS = 20;
+/** How long the TUI gets to redraw an emptied box before it's read or typed into. */
+const CLEAR_SETTLE_MS = 150;
 const IDLE_MS = 1200;
 
 /**
@@ -393,6 +395,18 @@ interface PtySession {
    * itself never rendered, the placeholder's id is the only handle on it.
    */
   submittedPasteId: number | undefined;
+  /** The prompt last typed into the input box, which sizes a clear of it. */
+  lastTypedPrompt: string | undefined;
+  /**
+   * That prompt, once an Esc to interrupt has been pressed since it was typed.
+   * An Esc that lands before a turn has any output puts its prompt back in the
+   * input box, where whatever is typed next joins onto it and goes out with it.
+   * Measured against a live pty: a prompt /cancel had stopped reached claude
+   * stuck to the front of the next message. The box can't be read to find out,
+   * because a suggestion's ghost text looks just the same there, but clearing an
+   * empty box does nothing. So this says to clear before typing anything else.
+   */
+  boxMayHold: string | undefined;
   /**
    * True between spawning this pty with `--resume` and its first submitted
    * prompt. While set, readiness uses RESUME_SETTLE_IDLE_MS/RESUME_STARTUP_MAX_MS
@@ -785,7 +799,7 @@ export class PtyProvider implements Provider {
     const abortSignal = options?.abortController?.signal;
     let abortKillTimer: NodeJS.Timeout | null = null;
     const abortHandler = () => {
-      try { session.term.write('\x1b'); } catch { /* pty already gone */ }
+      try { this._pressEscToInterrupt(session); } catch { /* pty already gone */ }
       abortKillTimer = setTimeout(() => {
         if (session.endOfTurnRejector) {
           console.warn('[PtyProvider] Esc did not interrupt within 2s, killing pty');
@@ -808,6 +822,7 @@ export class PtyProvider implements Provider {
       }
       this._maybeRelayUpdateBanner(session, sessionKey);
       await this._applyPermissionMode(session, sessionKey);
+      await this._clearAfterEsc(session);
 
       // Snapshot the screen before submitting so the progress diff and the
       // end-of-turn extraction only see content produced by this turn — the
@@ -857,9 +872,9 @@ export class PtyProvider implements Provider {
       const ECHO_CAP_MS = 2_000;
       const MAX_ATTEMPTS = 3;
       const RETRY_BACKOFF_MS = 750;
-      const CLEAR_SETTLE_MS = 150;
       let echoed = false;
       let pasteId: number | undefined;
+      session.lastTypedPrompt = prompt;
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
         if (attempt > 0) {
           console.warn(`[PtyProvider] echo-verify miss on attempt ${attempt}/${MAX_ATTEMPTS}, retrying write`);
@@ -878,7 +893,14 @@ export class PtyProvider implements Provider {
         ({ echoed, pasteId } = await this._waitForPromptEcho(
           session, prompt, ECHO_CAP_MS, screenBefore,
         ));
-        if (echoed) break;
+        if (echoed || abortSignal?.aborted) break;
+      }
+      // /cancel landed while the text was going in. It hasn't been submitted, so
+      // it needn't be: Enter would hand claude the very prompt just cancelled.
+      if (abortSignal?.aborted) {
+        session.boxMayHold = undefined;
+        await this._clearInputBox(session, prompt);
+        return this._getScreenText(session);
       }
       // Enter only once the text is provably in the editor. Writing it anyway
       // was how a swallowed paste turned into a keypress: whatever had focus
@@ -1108,6 +1130,8 @@ export class PtyProvider implements Provider {
       promptMarkerAtSubmit: undefined,
       submittedSlashCommand: false,
       submittedPasteId: undefined,
+      lastTypedPrompt: undefined,
+      boxMayHold: undefined,
       awaitingResumeReplay: resuming,
       updateBannerChecked: false,
       turnRelay: null,
@@ -1682,6 +1706,8 @@ export class PtyProvider implements Provider {
     if (!this._hasInputBox(session)) return { ok: false, reason: 'not-ready' };
 
     try {
+      // Whatever Enter is about to run, a prompt left in the box would run too.
+      await this._clearAfterEsc(session);
       // Same submission path as a prompt: bracketed paste so the TUI takes the
       // text verbatim, then \r to run it.
       session.term.write(`\x1b[200~${command}\x1b[201~`);
@@ -1862,6 +1888,21 @@ export class PtyProvider implements Provider {
       session.term.write('\x15');
       await new Promise((r) => setTimeout(r, CLEAR_PRESS_GAP_MS));
     }
+  }
+
+  /** Stop claude generating, and note what that may have put back in the input box. */
+  private _pressEscToInterrupt(session: PtySession): void {
+    session.term.write('\x1b');
+    session.boxMayHold = session.lastTypedPrompt;
+  }
+
+  /** Empty the box if an Esc may have left a prompt in it. See `boxMayHold`. */
+  private async _clearAfterEsc(session: PtySession): Promise<void> {
+    if (session.boxMayHold === undefined) return;
+    const prompt = session.boxMayHold;
+    session.boxMayHold = undefined;
+    await this._clearInputBox(session, prompt);
+    await new Promise((r) => setTimeout(r, CLEAR_SETTLE_MS));
   }
 
   /**
