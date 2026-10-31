@@ -251,6 +251,22 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **A message you sent too soon can be taken back** — a message sent while the
+  bot was busy got no answer at all, so a bot that was only still working looked
+  idle, and you found out when the reply to the last message landed. Deleting it
+  didn't help, because Telegram doesn't tell a bot about a delete: Claude got it
+  anyway. A message that has to wait now says so within half a second, as
+  `⏳ Queued behind the running turn`, with a **Take back** button that drops it
+  before it reaches Claude and leaves the turn running. Text, voice notes, photos
+  and files are all covered, and a bot command gets the same notice while it
+  waits. That includes the turn you can't see, one Claude started itself on a
+  background task's result: your message waits for it without a "thinking" bubble
+  going up, and that turn's reply still arrives whole. `/cancel` and `/stop` now
+  clear the queue. They used to stop the running turn and thereby start the
+  message waiting behind it, and now they also reach a turn Claude started
+  itself. `CANCEL_ON_NEW_MESSAGE`, which never took effect behind a normal turn,
+  now does what `.env.example` says.
+
 - **A cancelled message stays cancelled** — a message you stopped with `/cancel`
   before Claude had written anything came back. Claude Code put it back in its
   input box, and it went out stuck to the front of your next message as one

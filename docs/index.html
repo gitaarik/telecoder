@@ -2096,6 +2096,16 @@
             bot up.</p>
           </div>
           <div class="feature-card" data-category="reliability">
+            <div class="feature-icon"><svg><use href="#i-back"/></svg></div>
+            <h3>Take back a message you sent too soon</h3>
+            <p>Message a bot that's still busy and it says so right away: <code>⏳ Queued</code>,
+            with a button that takes the message back before Claude ever sees it, and leaves the
+            running turn alone. That includes the turns nothing in the chat shows, like one Claude
+            started itself when a background task reported back. Telegram never tells a bot about a
+            deleted message, so this button is how you recall one. <code>/cancel</code> clears
+            everything waiting along with the running turn.</p>
+          </div>
+          <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-clock"/></svg></div>
             <h3>Rebuild without waiting for a quiet moment</h3>
             <p><code>/rebuildbot idle</code> builds once and restarts each bot as soon as it has
@@ -3041,7 +3051,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/cancel</code>
-              <span class="command-desc">Cancel current request (alias: /stop)</span>
+              <span class="command-desc">Stop the running turn, including one Claude started itself, and drop every message waiting behind it (alias: /stop). To recall one message and leave the turn running, tap Take back on its <code>⏳ Queued</code> notice instead.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/commands</code>

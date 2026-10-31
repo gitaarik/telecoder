@@ -16,7 +16,8 @@ import * as path from 'path';
 import { execFile } from 'child_process';
 import { getWorkspaceRoot, isPathWithinRoot } from '../../utils/workspace-guard.js';
 import { resolveClaudeExecutableForMethod } from '../../utils/resolve-claude-bin.js';
-import { getActiveMethod } from '../../providers/claude-provider.js';
+import { getActiveMethod, getPtyProvider } from '../../providers/claude-provider.js';
+import { takeBackAllQueued } from '../middleware/queued-messages.js';
 import { groupAvailableCommands, type AvailableCommands } from '../../claude/available-commands.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
 import { replyMd, getEffortLabel, withBackToPrevious } from './command/shared.js';
@@ -429,8 +430,11 @@ export async function handleCancel(ctx: Context): Promise<void> {
   const { sessionKey } = keyInfo;
 
   const wasProcessing = isProcessing(sessionKey);
-  const cancelled = await cancelRequest(sessionKey);
-  const clearedCount = clearQueue(sessionKey);
+  // First, because the turn ending is what would let them through.
+  const takenBackCount = takeBackAllQueued(ctx.api, sessionKey);
+  // A turn claude started itself has no handle for cancelRequest to find.
+  const cancelled = await cancelRequest(sessionKey) || getPtyProvider().interruptOwnTurn(sessionKey);
+  const clearedCount = takenBackCount + clearQueue(sessionKey);
 
   if (cancelled || clearedCount > 0) {
     let message = '🛑 Cancelled\\.';

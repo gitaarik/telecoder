@@ -27,7 +27,7 @@ import {
 // Side-effect import: registers /mcp/* IPC handlers that bridge the standalone
 // MCP subprocess back to bot-side state (Telegram API, session topic, …).
 import './mcp-bridge.js';
-import { onAsyncToolArmed, markTurnStart, markTurnEnd, teardown as teardownMonitorRelay, relayPushNotification, classifyAsyncTool, movedToBackground, type AsyncToolKind } from './monitor-relay.js';
+import { onAsyncToolArmed, markTurnStart, markTurnEnd, markSelfTurnInterrupted, teardown as teardownMonitorRelay, relayPushNotification, classifyAsyncTool, movedToBackground, type AsyncToolKind } from './monitor-relay.js';
 import { relayUpdateBanner, scrapeUpdateBanner } from './update-banner-relay.js';
 import { evaluateToolCall, isPermissionGateEnabled, DENY_MARKER_START, DENY_MARKER_END } from './permission-gate.js';
 import {
@@ -489,6 +489,33 @@ export class PtyProvider implements Provider {
    */
   listSessionKeysForChat(chatId: number): string[] {
     return [...this.sessions.keys()].filter((key) => parseSessionKey(key).chatId === chatId);
+  }
+
+  /**
+   * Whether claude is generating in this session right now, whoever started the
+   * turn. The bot's own bookkeeping can't answer that for a turn claude started
+   * itself; the TUI's footer can.
+   */
+  isSessionGenerating(sessionKey: string): boolean {
+    const session = this.sessions.get(sessionKey);
+    return session !== undefined && isGenerating(this._getScreenText(session));
+  }
+
+  /**
+   * Stop a turn the bot holds no handle on, which is one claude started itself.
+   * A turn the bot started goes through its abort controller instead. Returns
+   * whether there was a generation to interrupt.
+   */
+  interruptOwnTurn(sessionKey: string): boolean {
+    const session = this.sessions.get(sessionKey);
+    if (!session || !isGenerating(this._getScreenText(session))) return false;
+    try {
+      this._pressEscToInterrupt(session);
+    } catch {
+      return false; // pty already gone
+    }
+    markSelfTurnInterrupted(sessionKey);
+    return true;
   }
 
   async sendToAgent(sessionKey: string, message: string, options?: AgentOptions): Promise<AgentResponse> {

@@ -55,6 +55,7 @@ const {
   onAsyncToolArmed,
   markTurnStart,
   markTurnEnd,
+  markSelfTurnInterrupted,
   settleBeforePost,
   teardown,
   hasSelfStartedTurn,
@@ -315,6 +316,78 @@ describe('whether a turn claude started itself is still going', () => {
 
     append(TURN_CLOSED);
     await vi.waitFor(() => expect(hasSelfStartedTurn()).toBe(false), WAIT);
+  });
+
+  it('is not, once it has been interrupted, and what it had written still goes out', async () => {
+    // An Esc leaves this record and no turn_duration. It is filed as a user
+    // record, the very thing that opens a self-started turn.
+    armAndEndTurn();
+    append(completion('toolu_01'), prose('Halfway through the review.'));
+    await vi.waitFor(() => expect(hasSelfStartedTurn()).toBe(true), WAIT);
+
+    append({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user]' }] } });
+
+    await vi.waitFor(() => expect(hasSelfStartedTurn()).toBe(false), WAIT);
+    await vi.waitFor(() => expect(fx.replies.map((r) => r.text)).toEqual(['Halfway through the review.']), WAIT);
+  });
+
+  it('is not, once told it was interrupted, when the log says nothing about it', async () => {
+    // An Esc before any output writes no record: not this one, not turn_duration.
+    armAndEndTurn();
+    append(completion('toolu_01'));
+    await vi.waitFor(() => expect(hasSelfStartedTurn()).toBe(true), WAIT);
+
+    markSelfTurnInterrupted(SESSION_KEY);
+
+    expect(hasSelfStartedTurn()).toBe(false);
+  });
+
+  it('sends what it had written when told it was interrupted, even if not yet read', async () => {
+    armAndEndTurn();
+    append(completion('toolu_01'));
+    await vi.waitFor(() => expect(hasSelfStartedTurn()).toBe(true), WAIT);
+
+    append(prose('Halfway through the review.'));
+    markSelfTurnInterrupted(SESSION_KEY);
+
+    expect(hasSelfStartedTurn()).toBe(false);
+    await vi.waitFor(() => expect(fx.replies.map((r) => r.text)).toEqual(['Halfway through the review.']), WAIT);
+  });
+
+  it("isn't touched by an interrupt meant for a turn of TeleCoder's", async () => {
+    armAndEndTurn();
+    markTurnStart(SESSION_KEY);
+    append(prose('This belongs to the running turn.'));
+
+    markSelfTurnInterrupted(SESSION_KEY);
+    await whenRepliesSent();
+
+    expect(fx.replies).toEqual([]);
+    markTurnEnd(SESSION_KEY);
+  });
+
+  it('is not opened by an interrupt on its own', async () => {
+    const { taskTracker } = await import('../../src/telegram/task-tracker.js');
+    armAndEndTurn();
+    const running = taskTracker.getBackgroundedTotal();
+
+    append(
+      { type: 'user', message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }] } },
+      // A completion folded into a turn opens nothing and retires the task, so
+      // once the task has gone, the interrupt ahead of it has been read.
+      {
+        type: 'attachment',
+        attachment: {
+          type: 'queued_command',
+          origin: { kind: 'task-notification' },
+          prompt: '<task-notification><tool-use-id>toolu_01</tool-use-id><status>completed</status></task-notification>',
+        },
+      },
+    );
+
+    await vi.waitFor(() => expect(taskTracker.getBackgroundedTotal()).toBe(running - 1), WAIT);
+    expect(hasSelfStartedTurn()).toBe(false);
+    expect(fx.replies).toEqual([]);
   });
 
   it("is not, once a turn of TeleCoder's takes over", async () => {

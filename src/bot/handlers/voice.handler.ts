@@ -10,8 +10,6 @@ import { isDuplicate, markProcessed } from '../../telegram/deduplication.js';
 import { isStaleMessage } from '../middleware/stale-filter.js';
 import {
   queueRequest,
-  isProcessing,
-  getQueuePosition,
   setAbortController,
 } from '../../claude/request-queue.js';
 import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
@@ -127,12 +125,6 @@ export async function handleVoice(ctx: Context): Promise<void> {
       } catch (e) {
         console.debug('[Voice] Failed to delete ack message:', e instanceof Error ? e.message : e);
       }
-    }
-
-    // Check if already processing - show queue position
-    if (isProcessing(sessionKey)) {
-      const position = getQueuePosition(sessionKey) + 1;
-      await ctx.reply(`⏳ Queued \\(position ${position}\\)`, { parse_mode: 'MarkdownV2' });
     }
 
     // Feed transcript into agent

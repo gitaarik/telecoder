@@ -62,6 +62,7 @@ interface Rig {
   runTurn: (prompt: string, controller?: AbortController) => Promise<void>;
   /** Run this while the next paste is waiting to echo. */
   duringEcho: { fn: (() => void) | null };
+  setScreen: (screen: string) => void;
 }
 
 /** The real _runPtyTurn and overlay path, with only their waits on a real TUI cut out. */
@@ -74,10 +75,11 @@ function makeRig(): Rig {
   internals._getOrCreateSession(KEY);
   const term = fake.terms[fake.terms.length - 1]!;
 
+  let screen = '';
   const duringEcho: Rig['duringEcho'] = { fn: null };
   let controllerForTurn: AbortController | undefined;
 
-  internals._getScreenText = () => '';
+  internals._getScreenText = () => screen;
   internals._hasInputBox = () => true;
   internals._waitQuiet = async () => true;
   internals._awaitReady = async () => 'ready';
@@ -99,6 +101,7 @@ function makeRig(): Rig {
     provider,
     term,
     duringEcho,
+    setScreen: (s) => { screen = s; },
     runTurn: async (prompt, controller) => {
       controllerForTurn = controller;
       await internals._runPtyTurn(KEY, prompt, { abortController: controller ?? new AbortController() });
@@ -204,5 +207,34 @@ describe('with no Esc pressed', () => {
     await provider.runOverlayCommand(KEY, '/cost');
 
     expect(keysBefore(term, '/cost')).toEqual([]);
+  });
+});
+
+describe('interrupting a turn claude started itself', () => {
+  const WORKING = 'output\n✶ Percolating… (29s)\n❯ \n  esc to interrupt\n';
+
+  it('also clears before the next prompt: a turn we lost track of may have been ours', async () => {
+    const { term, provider, runTurn, setScreen } = makeRig();
+    await runTurn('first');
+    setScreen(WORKING);
+
+    expect(provider.interruptOwnTurn(KEY)).toBe(true);
+    setScreen('');
+    term.writes.length = 0;
+    await runTurn('second');
+
+    expect(new Set(keysBefore(term, 'second'))).toEqual(new Set([CLEAR]));
+  });
+
+  it('has nothing to clear when nothing was ever typed', async () => {
+    const { term, provider, runTurn, setScreen } = makeRig();
+    setScreen(WORKING);
+    provider.interruptOwnTurn(KEY);
+    setScreen('');
+    term.writes.length = 0;
+
+    await runTurn('first');
+
+    expect(keysBefore(term, 'first')).toEqual([]);
   });
 });

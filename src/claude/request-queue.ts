@@ -61,11 +61,6 @@ export function busySessionCount(): number {
   return busy;
 }
 
-export function getQueuePosition(sessionKey: string): number {
-  const queue = pendingQueues.get(sessionKey);
-  return queue ? queue.length : 0;
-}
-
 export async function queueRequest<T>(
   sessionKey: string,
   message: string,

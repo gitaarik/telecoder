@@ -441,7 +441,7 @@ Open your bot in Telegram → `/start`
 | `/restartbot` | Restart the bot — admin-only |
 | `/rebuildbot` | Rebuild code and restart — this instance, all, or all once each is idle (`/rebuildbot idle`) — admin-only |
 | `/update` | Update the Claude Code CLI — admin-only |
-| `/cancel` | Cancel current request (alias: `/stop`) |
+| `/cancel` | Stop the running turn and drop every message waiting behind it (alias: `/stop`) |
 | `/commands` | Show all commands |
 
 ### Group Access
@@ -668,6 +668,7 @@ src/
 │   └── middleware/
 │       ├── auth.middleware.ts      # User whitelist + group chat auth
 │       ├── group-role.middleware.ts # Contributor/spectator gate
+│       ├── queued-messages.ts     # Queued notice, Take back, holds messages while Claude is busy
 │       └── stale-filter.ts        # Ignore stale messages on restart
 ├── claude/
 │   ├── agent.ts                   # Claude Agent SDK, session resume, system prompt

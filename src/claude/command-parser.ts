@@ -151,7 +151,7 @@ export function getAvailableCommands(): string {
       `• \`/restartbot\` \\- Restart the bot process${adminTag}`,
       `• \`/rebuildbot\` \\- Rebuild and restart with auto\\-resume; \`/rebuildbot idle\` waits for each bot to finish first${adminTag}`,
       '• `/ping` \\- Check if bot is responsive',
-      '• `/cancel` \\- Cancel current request',
+      '• `/cancel` \\- Stop the current request and drop anything queued',
       '• `/mode` \\- How much Claude asks before acting',
       `• \`/autoapprove [30m|off|status]\` \\- Let the gate approve instead of asking, for a while${approverTag}`,
       '• `/streaming` \\- Toggle streaming / wait replies',

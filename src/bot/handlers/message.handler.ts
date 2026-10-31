@@ -21,7 +21,6 @@ import { Context } from 'grammy';
 import { config } from '../../config.js';
 import { isDuplicate, markProcessed } from '../../telegram/deduplication.js';
 import { isStaleMessage } from '../middleware/stale-filter.js';
-import { isProcessing, getQueuePosition, cancelRequest, clearQueue } from '../../claude/request-queue.js';
 import { isClaudeCommand, stripCommandBotMention } from '../../claude/command-parser.js';
 import { executeRedditFetch, executeMediumFetch, showExtractMenu } from './command.handler.js';
 import { executeVReddit } from '../../reddit/vreddit.js';
@@ -212,18 +211,6 @@ export async function handleMessage(ctx: Context): Promise<void> {
 
   // Check for active session — falls back to disk if the bot restarted recently.
   if (!await requireSession(ctx, sessionKey)) return;
-
-  // If CANCEL_ON_NEW_MESSAGE is enabled, auto-cancel the running query;
-  // otherwise queue the new message behind it and show the queue position.
-  if (isProcessing(sessionKey)) {
-    if (config.CANCEL_ON_NEW_MESSAGE) {
-      await cancelRequest(sessionKey);
-      clearQueue(sessionKey);
-    } else {
-      const position = getQueuePosition(sessionKey) + 1;
-      await ctx.reply(`⏳ Queued \\(position ${position}\\)`, { parse_mode: 'MarkdownV2' });
-    }
-  }
 
   fireAutoTopic(ctx, sessionKey, text);
 

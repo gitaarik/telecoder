@@ -137,6 +137,20 @@ function parseTaskNotification(rec: { origin?: { kind?: string }; message?: { co
   };
 }
 
+/**
+ * Claude Code's record of an Esc that landed once a turn had output. A turn that's
+ * interrupted doesn't get the `turn_duration` record that closes every other
+ * turn, and left unrecognised this one would look like a turn opening.
+ */
+function isInterruptRecord(rec: { message?: { content?: unknown } }): boolean {
+  const content = rec.message?.content;
+  const blocks: unknown[] = Array.isArray(content) ? content : [content];
+  return blocks.some((block) => {
+    const text = typeof block === 'string' ? block : (block as { text?: unknown } | null | undefined)?.text;
+    return typeof text === 'string' && text.startsWith('[Request interrupted by user');
+  });
+}
+
 interface QueuedCommandAttachment {
   type?: string;
   prompt?: unknown;
@@ -370,6 +384,19 @@ export async function settleBeforePost(sessionKey: string): Promise<void> {
 }
 
 /**
+ * A turn claude started itself has just been interrupted. The log can't be left
+ * to say so: an Esc that lands before any output writes no record at all, so
+ * going by the log alone would leave the turn open until the next one of ours.
+ */
+export function markSelfTurnInterrupted(sessionKey: string): void {
+  const state = states.get(sessionKey);
+  if (!state || state.inTurn) return;
+  drain(state);
+  state.selfTurnOpen = false;
+  void sendReply(state);
+}
+
+/**
  * Whether a turn claude started itself is still going, or its reply hasn't
  * been handed on yet. Nothing in the request queue knows about such a turn.
  */
@@ -481,6 +508,14 @@ function handleChange(state: MonitorState): void {
     };
 
     if (typed.type === 'user') {
+      // Filed as a user record, but it ends a turn rather than starting one.
+      if (isInterruptRecord(typed)) {
+        if (!state.inTurn) {
+          state.selfTurnOpen = false;
+          void sendReply(state);
+        }
+        continue;
+      }
       if (!state.inTurn) state.selfTurnOpen = true;
       const notif = parseTaskNotification(typed);
       if (notif) {

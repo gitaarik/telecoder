@@ -10,8 +10,6 @@ import { isDuplicate, markProcessed } from '../../telegram/deduplication.js';
 import { isStaleMessage } from '../middleware/stale-filter.js';
 import {
   queueRequest,
-  isProcessing,
-  getQueuePosition,
   setAbortController,
 } from '../../claude/request-queue.js';
 import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
@@ -101,11 +99,6 @@ async function handleSavedImage(
   // what makes claude attach it in pty mode — so hand the provider that same
   // path rather than letting it stage a duplicate copy of the same picture.
   const images = [{ data: imageBase64, mediaType, path: savedPath }];
-
-  if (isProcessing(sessionKey)) {
-    const position = getQueuePosition(sessionKey) + 1;
-    await ctx.reply(`⏳ Queued \(position ${position}\)`, { parse_mode: 'MarkdownV2' });
-  }
 
   await queueRequest(sessionKey, agentPrompt, async () => {
     if (getStreamingMode() === 'streaming') {
@@ -279,11 +272,6 @@ export async function handleTextDocument(ctx: Context): Promise<void> {
       'If the caption asks a question, answer it based on the file. Otherwise summarize the contents and ask if they want a specific analysis.',
     ];
     const agentPrompt = noteLines.join('\n');
-
-    if (isProcessing(sessionKey)) {
-      const position = getQueuePosition(sessionKey) + 1;
-      await ctx.reply(`⏳ Queued \\(position ${position}\\)`, { parse_mode: 'MarkdownV2' });
-    }
 
     await queueRequest(sessionKey, agentPrompt, async () => {
       if (getStreamingMode() === 'streaming') {

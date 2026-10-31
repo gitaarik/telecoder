@@ -8,6 +8,7 @@ import { config } from '../config.js';
 import { buildSessionKey } from '../utils/session-key.js';
 import { authMiddleware } from './middleware/auth.middleware.js';
 import { adminOnly, adminOrApproverOnly } from './middleware/admin-only.js';
+import { trackQueuedMessage, holdQueuedMessage, handleQueuedCallback } from './middleware/queued-messages.js';
 import {
   handleStart,
   handleClear,
@@ -280,7 +281,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'newproject', description: '📁 Create a new project' },
     { command: 'status', description: '📊 Show current session status' },
     { command: 'clear', description: '🗑️ Clear conversation history' },
-    { command: 'cancel', description: '⏹️ Cancel current request' },
+    { command: 'cancel', description: '⏹️ Stop the current request and drop anything queued' },
     { command: 'resume', description: '▶️ Resume a session' },
     { command: 'continue', description: '▶️ Continue last session' },
     { command: 'botstatus', description: '🩺 Show bot process status' },
@@ -444,6 +445,9 @@ export async function createBot(): Promise<Bot> {
   // /prompts' buttons for the same reasons: opening a prompt only redraws the
   // message, and branching from one checks for a running reply itself.
   bot.callbackQuery(/^prompts:/, handlePromptsCallback);
+  // "Take back" on a queued message: the turn it's waiting behind is exactly
+  // what this has to get past.
+  bot.callbackQuery(/^queued:/, handleQueuedCallback);
   // Menu buttons for /restartbot and /rebuildbot must bypass sequentialize
   // for the same reason their parent commands do: users tap these precisely
   // when the bot is hung, so the callback can't be queued behind the stuck
@@ -462,7 +466,13 @@ export async function createBot(): Promise<Bot> {
 
   // Sequentialize: same-chat updates are processed in order.
   // This runs AFTER /cancel so cancel bypasses it.
+  //
+  // It's also where a message waits while a turn runs, so the two either side
+  // of it tell the sender so and let them take the message back. They have to
+  // stay wrapped around it: see middleware/queued-messages.ts.
+  bot.use(trackQueuedMessage);
   bot.use(sequentialize(getSequentializeKey));
+  bot.use(holdQueuedMessage);
 
   // Bot command handlers (sequentialized per chat)
   cmd('start', handleStart);
