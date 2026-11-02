@@ -263,6 +263,12 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **Messages get through while a subagent is running** — the panel under the
+  input box shows each running subagent with a live timer and token count, and
+  the bot took those updates to mean the screen hadn't settled. Every message
+  then failed after a minute with "Claude Code's input box never appeared", for
+  as long as the subagent ran, though the box was open the whole time. The bot
+  now ignores those rows when it checks whether the screen has settled.
 - **`/allow` and `/deny` apply to the bot you send them to** — all the bots kept
   their guests in one file. A guest let into one bot reached the others at their
   next restart, along with the guardrails a first guest switches on, whatever

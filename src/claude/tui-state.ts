@@ -56,18 +56,30 @@ export function isGenerating(screenText: string): boolean {
 }
 
 /**
+ * A running subagent's row in the panel under the input box:
+ *
+ *     ◯ fork  Applying refinements to messages.test.ts   21m 57s · ↓ 486.9k tokens
+ *
+ * Its timer, token count and description all change while the main session
+ * sits idle at its prompt. It starts as a bare `0s`, with no token count yet.
+ */
+const SUBAGENT_ROW = /^\s*◯\s.*\d+[smh](?:\s+·\s+[↑↓]\s*[\d.,]+[kKmM]?\s*tokens)?\s*$/u;
+
+/**
  * The screen reduced to what changing actually means something.
  *
  * A TUI still coming up rewrites whole rows; one sitting at the prompt rewrites
- * nothing. Between those two is the spinner, which ticks its timer once a
- * second forever — comparing raw screens would read that as a session that
- * never settles, which is the mistake byte-silence already makes. Dropping the
- * spinner's own row is enough: it is the only element that redraws on a clock.
+ * nothing. Between those two are the rows that redraw on a clock: the spinner,
+ * and a running subagent's row. Comparing raw screens would read either as a
+ * session that never settles, which is the mistake byte-silence already makes.
+ * With a subagent running that refused every message for as long as it ran,
+ * though the input box was open and accepting them. Dropping those rows is
+ * enough.
  */
 export function screenSignature(screenText: string): string {
   return screenText
     .split('\n')
-    .filter((line) => !LIVE_SPINNER.test(line))
+    .filter((line) => !LIVE_SPINNER.test(line) && !SUBAGENT_ROW.test(line))
     .map((line) => line.trimEnd())
     .join('\n');
 }

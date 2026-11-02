@@ -113,6 +113,31 @@ describe('screenSignature', () => {
     expect(screenSignature(at(29))).toBe(screenSignature(at(30)));
   });
 
+  // Rows as a live 120x40 pty draws them, from the moment a subagent starts.
+  it.each([
+    ['  ◯ general-purpose  Run the checks                 0s', '  ◯ general-purpose  Run the checks                 1s'],
+    ['  ◯ general-purpose  Run the checks                 0s', '  ◯ general-purpose  Run the checks                 0s · ↑ 5 tokens'],
+    ['  ◯ general-purpose  Run the checks                 3s · ↓ 23.1k tokens', '  ◯ general-purpose  Run the checks                 3s · ↓ 23.3k tokens'],
+    ['  ◯ fork  Applying refinements to messages.test.ts  21m 57s · ↓ 486.9k tokens', '  ◯ fork  Comparing fixture against version 5 trace  23m 13s · ↓ 487.1k tokens'],
+  ])('is unchanged when a running subagent\'s row updates: %s', (before, after) => {
+    const at = (row: string) => [
+      '✻ Waiting for 1 background agent to finish',
+      SEP,
+      '❯ ',
+      SEP,
+      '  ⏵⏵ auto mode on · 1 shell · ↓ to manage',
+      '  ● main',
+      row,
+    ].join('\n');
+    expect(screenSignature(at(before))).toBe(screenSignature(at(after)));
+  });
+
+  it('still sees transcript rows that end in a duration', () => {
+    const before = ['● Reading file…', '❯ '].join('\n');
+    const after = ['● Reading file…', '● Agent "Run the checks" finished · 4s', '❯ '].join('\n');
+    expect(screenSignature(before)).not.toBe(screenSignature(after));
+  });
+
   it('changes when the transcript does', () => {
     const before = ['● Reading file…', '✶ Percolating… (29s)', '❯ '].join('\n');
     const after = ['● Reading file…', '● Writing file…', '✶ Percolating… (29s)', '❯ '].join('\n');
