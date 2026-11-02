@@ -453,6 +453,41 @@ export function lastAssistantTurnText(raw: string): string | undefined {
   return assistantTexts.join('\n\n');
 }
 
+/**
+ * The shape of the last `count` conversation records, one line each, for a log
+ * line. Holds record and block types and never their text, because this ends up
+ * in the bot's logs and the text is the user's conversation.
+ */
+export function describeLogTail(
+  workingDirectory: string,
+  sessionId: string,
+  count: number,
+): string[] {
+  let raw: string;
+  try { raw = fs.readFileSync(sessionJsonlPath(workingDirectory, sessionId), 'utf-8'); }
+  catch { return []; }
+
+  const described: string[] = [];
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    let rec: JsonlRecord;
+    try { rec = JSON.parse(line) as JsonlRecord; }
+    catch { continue; }
+    if (rec.type !== 'user' && rec.type !== 'assistant') continue;
+    const content = rec.message?.content;
+    const blocks = Array.isArray(content)
+      ? content.map((block) => block?.type ?? 'unknown').join(',')
+      : 'string';
+    const flags = [
+      isSyntheticUserRecord(rec) ? 'synthetic' : '',
+      rec.origin?.kind ? `origin=${rec.origin.kind}` : '',
+      rec.isApiErrorMessage ? 'api-error' : '',
+    ].filter(Boolean).join(' ');
+    described.push(`${rec.timestamp ?? 'no-time'} ${rec.type} ${blocks}${flags ? ` ${flags}` : ''}`);
+  }
+  return described.slice(-count);
+}
+
 /** Identity of a user prompt record in the log. */
 export interface UserPromptMarker {
   /** Record uuid, or a timestamp+text digest when Claude Code wrote none. */

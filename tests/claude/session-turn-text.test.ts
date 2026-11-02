@@ -11,7 +11,7 @@ vi.mock('os', async (importOriginal) => {
   return { ...actual, default: actual, homedir: () => process.env.TELECODER_TEST_HOME ?? actual.homedir() };
 });
 
-const { readCommandReply, readLastAssistantTurnText, readRecentExchanges, readUserPrompts } = await import('../../src/claude/session-jsonl.js');
+const { describeLogTail, readCommandReply, readLastAssistantTurnText, readRecentExchanges, readUserPrompts } = await import('../../src/claude/session-jsonl.js');
 
 const CWD = '/home/someone/dev/telecoder';
 const SESSION = 'aaaaaaaa-bbbb-cccc-dddd-ffffffffffff';
@@ -347,5 +347,24 @@ describe('readCommandReply', () => {
 
   it('is undefined when the session log is not on disk', () => {
     expect(readCommandReply(CWD, 'no-such-session', 0)).toBeUndefined();
+  });
+});
+
+describe('describeLogTail', () => {
+  it('describes the last records without any of their text', () => {
+    writeLog([
+      userPrompt('u1', 'my secret question'),
+      assistant('a1', 'my secret answer'),
+      toolResult('tr1'),
+    ]);
+    const tail = describeLogTail(CWD, SESSION, 2);
+    expect(tail).toHaveLength(2);
+    expect(tail[0]).toContain('assistant text');
+    expect(tail[1]).toContain('user tool_result');
+    expect(tail.join('\n')).not.toContain('secret');
+  });
+
+  it('is empty when the session log is not on disk', () => {
+    expect(describeLogTail(CWD, 'no-such-session', 8)).toEqual([]);
   });
 });

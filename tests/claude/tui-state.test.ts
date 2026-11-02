@@ -7,6 +7,7 @@ import {
   newPastePlaceholder,
   pastePlaceholderIds,
   pastePlaceholders,
+  replyFromScreen,
   screenSignature,
 } from '../../src/claude/tui-state.js';
 
@@ -99,6 +100,50 @@ describe('isGenerating', () => {
       '  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents                                /rc',
     ].join('\n');
     expect(isGenerating(scrolled)).toBe(false);
+  });
+});
+
+describe('replyFromScreen', () => {
+  // Screen shape from a live 120x40 pty with a background agent running.
+  const box = [SEP, '❯ ', SEP, '  ⏵⏵ auto mode on (shift+tab to cycle) · ↓ to manage'];
+  const panel = ['  ● main', '  ◯ general-purpose  Run the checks                 3s · ↓ 23.1k tokens'];
+
+  it('does not take the subagent panel for the reply', () => {
+    const screen = ['● launched.', '✻ Waiting for 1 background agent to finish', ...box, ...panel].join('\n');
+    expect(replyFromScreen(screen)).toBe('launched.');
+  });
+
+  it('returns nothing when only the panel has a bullet', () => {
+    const screen = ['❯ start it', ...box, ...panel].join('\n');
+    expect(replyFromScreen(screen)).toBe('');
+  });
+
+  it('keeps every row of a multi-line reply', () => {
+    const screen = ['● First row', '  second row', '', '  third row', '✻ Brewed for 3s', ...box].join('\n');
+    expect(replyFromScreen(screen)).toBe('First row\n  second row\n\n  third row');
+  });
+
+  it.each([
+    ['a tool call', '● Bash(true)'],
+    ['a tool call cut off by wrapping', '● Bash(python3 -c "import time; time.sl'],
+    ['an agent notice', '● Agent "Run the checks" finished · 4s'],
+  ])('returns nothing when the turn ended on %s', (_name, row) => {
+    const screen = ['● An earlier answer.', '❯ next question', row, '  ⎿  (No content)', '✻ Brewed for 3s', ...box].join('\n');
+    expect(replyFromScreen(screen)).toBe('');
+  });
+
+  it('does not return an earlier reply when the latest prompt has no answer', () => {
+    const screen = ['● An earlier answer.', '❯ next question', ...box].join('\n');
+    expect(replyFromScreen(screen)).toBe('');
+  });
+
+  it('keeps a reply that merely mentions a call', () => {
+    const screen = ['● Bash(true) exited cleanly.', ...box].join('\n');
+    expect(replyFromScreen(screen)).toBe('Bash(true) exited cleanly.');
+  });
+
+  it('keeps a one-word reply', () => {
+    expect(replyFromScreen(['● pineapple', ...box, ...panel].join('\n'))).toBe('pineapple');
   });
 });
 

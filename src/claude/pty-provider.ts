@@ -5,7 +5,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
-import { claudeSessionFileExists, readCommandReply, readLastApiErrorFromJsonl, readLastAssistantTurnText, readLastCompactionFromJsonl, readLastUsageFromJsonl, readLastUserPromptMarker, sessionJsonlMtimeMs, sessionJsonlSize, type CompactionInfo, type UserPromptMarker } from './session-jsonl.js';
+import { claudeSessionFileExists, describeLogTail, readCommandReply, readLastApiErrorFromJsonl, readLastAssistantTurnText, readLastCompactionFromJsonl, readLastUsageFromJsonl, readLastUserPromptMarker, sessionJsonlMtimeMs, sessionJsonlSize, type CompactionInfo, type UserPromptMarker } from './session-jsonl.js';
 import { clearDeliveredProse, getDeliveredProse, stripDeliveredPrefix } from './turn-prose.js';
 import { isNativeCompactCommand } from './command-parser.js';
 import { isCancelled } from './request-queue.js';
@@ -49,6 +49,7 @@ import {
   newPastePlaceholder,
   pastePlaceholderIds,
   pastePlaceholders,
+  replyFromScreen,
   screenSignature,
   tailLines,
 } from './tui-state.js';
@@ -94,6 +95,8 @@ const CLAUDE_BIN = process.env.CLAUDE_BIN || resolveBin('claude');
  * and its footer — the shape that says why the input box never came back.
  */
 const STUCK_SCREEN_LINES = 12;
+/** How many log records to describe when a finished turn has no reply text. */
+const NO_REPLY_LOG_RECORDS = 8;
 const COLS = 120;
 const ROWS = 40;
 /**
@@ -554,11 +557,11 @@ export class PtyProvider implements Provider {
     }
     // Prefer the JSONL session log over screen scraping. A single turn can
     // emit multiple `●` text blocks separated by tool calls (e.g. "let me
-    // check X" → Bash → "found it, here's the answer"); _extractAssistantResponse
-    // only sees the last bullet because it scrapes the final screen. The JSONL
-    // log has every text block as a structured record, so joining them gives
-    // the user the full reply. Falls back to screen scrape if the log isn't
-    // available (very rare — Stop hook fires after claude flushes records).
+    // check X" → Bash → "found it, here's the answer"); replyFromScreen only
+    // sees the last bullet because it reads the final screen. The JSONL log has
+    // every text block as a structured record, so joining them gives the user
+    // the full reply. The screen is only used when the log has no record of the
+    // prompt at all — see below.
     // Before reading anything out of the log, prove claude actually took
     // delivery of this prompt. A pty respawned against a large session spends
     // its first seconds replaying the transcript, and the Enter that submits
@@ -620,8 +623,17 @@ export class PtyProvider implements Provider {
     // its own set-up text above the buttons) would otherwise be repeated here,
     // since the JSONL read returns every text record of the turn. Strip it and
     // retire the marker — see turn-prose.ts.
+    //
+    // A log that holds this prompt but no text after it has already answered:
+    // there's nothing to send yet, and the screen can't do better. All it has
+    // is older output and chrome, which once went out as the reply. An empty
+    // answer reads as "Done". The screen is for a log with no record of the
+    // prompt, where it's the only source there is.
+    if (fromJsonl === undefined) {
+      this._logNoReplyInLog(sessionKey, turnSession, !!markerNow, finalScreenText);
+    }
     const assistantResponse = stripDeliveredPrefix(
-      fromJsonl ?? this._extractAssistantResponse(finalScreenText),
+      fromJsonl ?? (markerNow ? '' : replyFromScreen(finalScreenText)),
       getDeliveredProse(sessionKey),
     );
     clearDeliveredProse(sessionKey);
@@ -721,6 +733,35 @@ export class PtyProvider implements Provider {
     const botSession = sessionManager.getSession(sessionKey);
     if (!botSession?.claudeSessionId) return undefined;
     return readLastAssistantTurnText(botSession.workingDirectory, botSession.claudeSessionId);
+  }
+
+  /**
+   * Record why a finished turn had no reply text in the log. This can't be
+   * worked out afterwards: whether Stop had arrived separates a turn that
+   * ended without text from one the bot ended before the text was written,
+   * and the log and screen have both moved on by the next look.
+   */
+  private _logNoReplyInLog(
+    sessionKey: string, session: PtySession | undefined, logHasPrompt: boolean, screenText: string,
+  ): void {
+    const botSession = sessionManager.getSession(sessionKey);
+    const logTail = botSession?.claudeSessionId
+      ? describeLogTail(botSession.workingDirectory, botSession.claudeSessionId, NO_REPLY_LOG_RECORDS)
+      : [];
+    const elapsed = session ? `${Math.round((Date.now() - session.submitTimeMs) / 1000)}s` : 'unknown';
+    console.warn(
+      `[PtyProvider] ${sessionKey}: no reply text in the log ${elapsed} after submitting `
+      + `(stop received: ${session?.stopReceived ?? 'unknown'}, tools in flight: ${session?.inflightTools ?? 'unknown'}, `
+      + `log has this prompt: ${logHasPrompt}) — ${logHasPrompt ? 'sending an empty reply' : 'reading the reply off the screen'}`,
+    );
+    console.warn(
+      `[PtyProvider] ${sessionKey}: last log records:\n`
+      + (logTail.length ? logTail.map((l) => `  | ${l}`).join('\n') : '  | (none)'),
+    );
+    console.warn(
+      `[PtyProvider] ${sessionKey}: last screen lines:\n`
+      + tailLines(screenText, STUCK_SCREEN_LINES).map((l) => `  | ${l.trimEnd()}`).join('\n'),
+    );
   }
 
   /** What a slash command answered with, from the records it wrote after `fromByte`. */
@@ -1955,37 +1996,6 @@ export class PtyProvider implements Provider {
       text += buffer.getLine(i)?.translateToString(true) + '\n';
     }
     return text.replace(/\n+$/, ''); // Trim trailing newlines
-  }
-
-  private _extractAssistantResponse(screenText: string): string {
-    const lines = screenText.split('\n');
-    const lastAssistantLine = lines.map((line, i) => [line, i] as const).filter(([line]) => line.includes('●')).pop();
-    if (!lastAssistantLine) {
-      const promptIndex = lines.findIndex(line => line.includes('❯'));
-      if (promptIndex > 0) return lines.slice(0, promptIndex).join('\n').trim();
-      return screenText.trim();
-    }
-
-    const responseLines = lines.slice(lastAssistantLine[1]);
-    const stopIndex = responseLines.findIndex((line, i) => i > 0 && this._isChromeLine(line));
-    const contentLines = stopIndex !== -1 ? responseLines.slice(0, stopIndex) : responseLines;
-
-    return contentLines
-      .map(line => line.replace(/^●\s*/, ''))
-      .join('\n')
-      .trim();
-  }
-
-  // A line is considered TUI chrome (footer, input box, separator, prompt) and
-  // marks the end of the assistant's response region.
-  private _isChromeLine(line: string): boolean {
-    const trimmed = line.trim();
-    if (!trimmed) return false;
-    if (trimmed.startsWith('✻')) return true;                  // "Brewed for Xs" timer
-    if (/^[╭╰╮╯]/.test(trimmed)) return true;                  // input-box corners
-    if (/^│\s/.test(trimmed) || trimmed.includes('❯')) return true; // input box body / prompt glyph
-    if (/^[─━═]{3,}$/.test(trimmed)) return true;              // horizontal separators
-    return false;
   }
 
   private _cleanupSession(sessionKey: string) {

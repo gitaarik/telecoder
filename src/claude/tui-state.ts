@@ -132,6 +132,62 @@ export function hasInputBox(screenText: string): boolean {
     || (INPUT_ROW.test(line) && RULE.test(lines[i - 1] ?? '') && RULE.test(lines[i + 1] ?? '')));
 }
 
+/** A tool call's row in the transcript: `● Bash(npm test)`, cut off if it wraps. */
+const TOOL_CALL_ROW = /^\s*●\s+[A-Za-z][\w:-]*\((?:[^)]*|.*\))\s*$/u;
+/** A background agent reporting in: `● Agent "Run the checks" finished · 4s`. */
+const AGENT_NOTICE_ROW = /^\s*●\s+Agent\s+".*"\s+\w+\s+·/u;
+/** A prompt already submitted, as the transcript shows it. */
+const SUBMITTED_PROMPT_ROW = /^\s*❯\s+\S/u;
+
+/** Does this row end the assistant's text: a timer, an input box part or a rule? */
+function endsReply(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed.startsWith('✻')
+    || /^[╭╰╮╯]/u.test(trimmed)
+    || /^│\s/u.test(trimmed)
+    || trimmed.includes('❯')
+    || /^[─━═]{3,}$/u.test(trimmed);
+}
+
+/** The screen's rows above the input box. Below it is only chrome. */
+function rowsAboveInputBox(lines: string[]): string[] {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (SIDE_BORDERED_INPUT.test(lines[i])) return lines.slice(0, i);
+    if (i > 0 && INPUT_ROW.test(lines[i]) && RULE.test(lines[i - 1])) return lines.slice(0, i - 1);
+  }
+  return lines;
+}
+
+/**
+ * The turn's reply as the screen shows it, for when the session log has no
+ * record of the prompt.
+ *
+ * That's the last `●` above the input box, and only if it's text. Below the box
+ * the subagent panel draws its own `● main`, which once went out as the reply.
+ * A tool call, an agent's notice or a later prompt in that position means the
+ * turn has written no text, and anything further up belongs to an earlier turn.
+ */
+export function replyFromScreen(screenText: string): string {
+  const rows = rowsAboveInputBox(screenText.split('\n'));
+  const bullet = rows.reduce((last, line, i) => (ASSISTANT_BULLET.test(line) ? i : last), -1);
+  if (bullet === -1) {
+    const promptIndex = rows.findIndex((line) => line.includes('❯'));
+    return (promptIndex === -1 ? rows : rows.slice(0, promptIndex)).join('\n').trim();
+  }
+
+  const below = rows.slice(bullet + 1);
+  if (TOOL_CALL_ROW.test(rows[bullet]) || AGENT_NOTICE_ROW.test(rows[bullet])
+    || below.some((line) => SUBMITTED_PROMPT_ROW.test(line))) {
+    return '';
+  }
+
+  const end = below.findIndex(endsReply);
+  return [rows[bullet], ...(end === -1 ? below : below.slice(0, end))]
+    .join('\n')
+    .replace(/^\s*●\s*/u, '')
+    .trim();
+}
+
 /**
  * Claude Code's collapsed-paste placeholder.
  *

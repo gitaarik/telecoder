@@ -263,6 +263,13 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **The subagent panel can't go out as a reply** — when the session log had no
+  reply text for a turn, the bot read one off the screen, and with a subagent
+  running it could send the panel under the input box instead. A log that holds
+  your message but no reply now gives the usual "Done". The screen is only read
+  when the log has no record of the message, and it skips the panel, tool calls
+  and older replies. Each time the log has no reply text, the bot logs enough to
+  show why.
 - **Messages get through while a subagent is running** — the panel under the
   input box shows each running subagent with a live timer and token count, and
   the bot took those updates to mean the screen hadn't settled. Every message
