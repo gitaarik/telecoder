@@ -87,7 +87,7 @@ function makeCallbackCtx(data: string, from = ADMIN) {
 const said = (reply: ReturnType<typeof vi.fn>): string => reply.mock.calls[0][0] as string;
 
 beforeEach(() => {
-  fs.rmSync(path.join(testHome, '.claudegram', 'user-roster.json'), { force: true });
+  fs.rmSync(path.join(testHome, '.claudegram', 'user-roster-123456789.json'), { force: true });
   fs.rmSync(path.join(testHome, '.claudegram'), { recursive: true, force: true });
   resetRosterCache();
   configureGroupAccessStore(fs.mkdtempSync(path.join(realOs.tmpdir(), 'telecoder-ga-')));

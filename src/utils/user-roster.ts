@@ -25,13 +25,22 @@
  * Telegram usernames can be dropped and re-claimed by someone else, so a
  * username is re-resolved on every use and never stored as the thing being
  * allowed.
+ *
+ * ## Why each bot has its own
+ *
+ * `/allow` answers who can use this bot. Bots on one machine can differ in who
+ * their `.env` lets in and in the workspace they open, and a first guest is what
+ * switches on a bot's guardrails, so a guest let into one must not reach the
+ * others. Each bot is also its own process, and sharing a file meant each one
+ * rewrote it from the copy it loaded at startup: a `/deny` on one bot was undone
+ * by the next save on another.
  */
 
 import * as path from 'path';
 import type { User } from 'grammy/types';
 import { z } from 'zod';
-import { config } from '../config.js';
-import { ensureStateDir, getStateDir, readJsonFile, writeJsonFile } from './json-store.js';
+import { BOT_ID, config } from '../config.js';
+import { ensureStateDir, getStateDir, readSeededJsonFile, writeJsonFile } from './json-store.js';
 
 /**
  * How many observed-but-not-admitted people to remember. Enough that a name
@@ -80,6 +89,11 @@ const LABEL = 'UserRoster';
  * side effect nothing asked for.
  */
 function rosterFile(): string {
+  return path.join(getStateDir(), `user-roster-${BOT_ID}.json`);
+}
+
+/** The single file every bot shared before rosters were per-bot. */
+function sharedRosterFile(): string {
   return path.join(getStateDir(), 'user-roster.json');
 }
 
@@ -90,7 +104,7 @@ let loaded = false;
 function load(): void {
   if (loaded) return;
   ensureStateDir(getStateDir(), LABEL);
-  const data = readJsonFile(rosterFile(), rosterSchema, LABEL);
+  const data = readSeededJsonFile(rosterFile(), sharedRosterFile(), rosterSchema, LABEL);
   admitted = data?.admitted ?? [];
   seen = data?.seen ?? [];
   loaded = true;

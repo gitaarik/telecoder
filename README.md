@@ -340,7 +340,9 @@ edit and a restart. `/allow` is the runtime half of the same list:
 | `/allow` | Admit someone as a **guest** — reply to their message, or `/allow @user` / `/allow 12345` |
 | `/deny` | Remove someone `/allow` admitted |
 
-All three are admin-only, and take effect immediately.
+All three are admin-only, and take effect immediately. With several bots, each
+keeps its own list: `/allow` lets someone into the bot you sent it to and no other,
+and `/deny` takes them out of that one.
 
 **Reply to their message rather than typing a handle.** Telegram gives bots no
 way to resolve a `@username` — there is no such API call, `getChatAdministrators`
@@ -630,9 +632,9 @@ along and talk to everyone, and the bot only answers them with a (rate-limited)
 note if they address it directly, alongside a card an admin can tap to let them
 in.
 
-This layers on the global roster rather than replacing it: anyone in
+This layers on the bot's roster rather than replacing it: anyone in
 `ALLOWED_USER_IDS`, or admitted with `/allow` in a DM, is a contributor in every
-group without a per-group grant. `/users` reads back that global list;
+group without a per-group grant. `/users` reads back that bot-wide list;
 `/members` reads back one group.
 
 `GROUP_MEMBERS_DEFAULT` picks which of the last two an ungranted member lands

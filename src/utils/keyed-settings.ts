@@ -12,11 +12,10 @@
  * a private chat's key is the user's id, the same for every bot they talk to.
  */
 
-import * as fs from 'fs';
 import * as path from 'path';
 import { z, type ZodType } from 'zod';
 import { BOT_ID } from '../config.js';
-import { ensureStateDir, getStateDir, readJsonFile, writeJsonFile } from './json-store.js';
+import { ensureStateDir, getStateDir, readSeededJsonFile, writeJsonFile } from './json-store.js';
 
 export interface KeyedSettingsStore<T> {
   /** Settings for `key`, with defaults filled in for anything unset. */
@@ -55,24 +54,13 @@ export function createKeyedSettings<T extends object>(
 
   ensureStateDir(dir, opts.label);
 
-  // First start after the split: inherit whatever the shared file holds, so
-  // nobody's settings reset. The shared file is read, never removed — sibling
-  // bots still on their first start need to seed from it too, and a downgrade
-  // should still find it.
-  const seeding = !fs.existsSync(filePath);
-  const loaded = readJsonFile(seeding ? sharedPath : filePath, fileSchema, opts.label);
+  // A seed is copied as it was on disk rather than normalized: a field nobody
+  // chose has to keep following its env-level default, see get().
+  const loaded = readSeededJsonFile(filePath, sharedPath, fileSchema, opts.label);
   if (loaded) {
     for (const [key, stored] of Object.entries(loaded.settings)) {
       entries.set(key, opts.normalize(stored));
     }
-  }
-
-  // Claim the file straight away, so the shared one is no longer needed. Copied
-  // as it was on disk rather than normalized: a field nobody chose has to keep
-  // following its env-level default, see get().
-  if (seeding && entries.size > 0) {
-    console.log(`[${opts.label}] Seeded ${path.basename(filePath)} from ${opts.file} (${entries.size} chat(s))`);
-    writeJsonFile(filePath, loaded, opts.label);
   }
 
   function assertKey(key: string): void {

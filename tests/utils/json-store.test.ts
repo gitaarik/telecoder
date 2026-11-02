@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { z } from 'zod';
-import { ensureStateDir, readJsonFile, writeJsonFile } from '../../src/utils/json-store.js';
+import { ensureStateDir, readJsonFile, readSeededJsonFile, writeJsonFile } from '../../src/utils/json-store.js';
 
 const schema = z.object({ items: z.record(z.string(), z.number()) });
 
@@ -100,6 +100,59 @@ describe('json-store', () => {
       fs.mkdirSync(file);
       expect(() => writeJsonFile(file, { items: {} }, 'Test')).not.toThrow();
       expect(error).toHaveBeenCalled();
+    });
+  });
+
+  describe('readSeededJsonFile', () => {
+    const own = () => path.join(dir, 'state-bot.json');
+    const shared = () => path.join(dir, 'state.json');
+    const write = (file: string, items: unknown) => fs.writeFileSync(file, JSON.stringify({ items }));
+    const read = () => readSeededJsonFile(own(), shared(), schema, 'Test');
+
+    beforeEach(() => {
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+    });
+
+    it("reads the bot's own file when it has one, and ignores the shared one", () => {
+      write(own(), { mine: 1 });
+      write(shared(), { theirs: 2 });
+      expect(read()).toEqual({ items: { mine: 1 } });
+    });
+
+    it('inherits the shared file on a first start and claims a copy straight away', () => {
+      write(shared(), { theirs: 2 });
+      const before = fs.readFileSync(shared(), 'utf-8');
+
+      expect(read()).toEqual({ items: { theirs: 2 } });
+
+      expect(JSON.parse(fs.readFileSync(own(), 'utf-8'))).toEqual({ items: { theirs: 2 } });
+      expect(fs.readFileSync(shared(), 'utf-8')).toBe(before);
+    });
+
+    it('only inherits once', () => {
+      write(shared(), { theirs: 2 });
+      read();
+      write(shared(), { later: 3 });
+      expect(read()).toEqual({ items: { theirs: 2 } });
+    });
+
+    it('writes nothing when neither file exists', () => {
+      expect(read()).toBeUndefined();
+      expect(fs.readdirSync(dir)).toEqual([]);
+    });
+
+    it("claims nothing from a shared file that can't be read", () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      fs.writeFileSync(shared(), 'not json');
+      expect(read()).toBeUndefined();
+      expect(fs.existsSync(own())).toBe(false);
+    });
+
+    it("doesn't fall back to the shared file when the bot's own can't be read", () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      fs.writeFileSync(own(), 'not json');
+      write(shared(), { theirs: 2 });
+      expect(read()).toBeUndefined();
     });
   });
 });

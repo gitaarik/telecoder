@@ -169,7 +169,7 @@ describe('supervision follows the runtime roster', () => {
   }
 
   beforeEach(() => {
-    fs.rmSync(path.join(testHome, '.claudegram', 'user-roster.json'), { force: true });
+    fs.rmSync(path.join(testHome, '.claudegram', 'user-roster-123456789.json'), { force: true });
     vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
@@ -353,7 +353,7 @@ describe('approver config checks', () => {
  */
 describe('orphaned approver ids', () => {
   beforeEach(() => {
-    fs.rmSync(path.join(testHome, '.claudegram', 'user-roster.json'), { force: true });
+    fs.rmSync(path.join(testHome, '.claudegram', 'user-roster-123456789.json'), { force: true });
     vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 

@@ -201,11 +201,5 @@ describe('createKeyedSettings', () => {
       write(ownFile(), { 'chat:7': { enabled: 'yes please' } });
       expect(make().get('chat:7').voice).toBe('fallback');
     });
-
-    it('writes nothing when there is nothing to inherit', () => {
-      write(sharedFile(), {});
-      make();
-      expect(fs.readdirSync(dir)).toEqual(['demo.json']);
-    });
   });
 });

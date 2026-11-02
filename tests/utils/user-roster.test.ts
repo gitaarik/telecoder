@@ -39,7 +39,7 @@ const {
 } = await import('../../src/utils/user-roster.js');
 
 const ADMIN = 1;
-const ROSTER_FILE = () => path.join(home, '.claudegram', 'user-roster.json');
+const ROSTER_FILE = () => path.join(home, '.claudegram', 'user-roster-123456789.json');
 
 beforeEach(() => {
   fs.rmSync(ROSTER_FILE(), { force: true });

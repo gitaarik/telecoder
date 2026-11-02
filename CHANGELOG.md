@@ -263,6 +263,16 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **`/allow` and `/deny` apply to the bot you send them to** — all the bots kept
+  their guests in one file. A guest let into one bot reached the others at their
+  next restart, along with the guardrails a first guest switches on, whatever
+  those bots' `.env` said about who could use them. A `/deny` could also come
+  undone: the other bots kept allowing the guest until they restarted, and the
+  next save from any of them wrote the guest back for everyone. Each bot now has
+  its own roster. On its first start it copies the shared one, so nobody loses
+  access, which means a guest admitted before this stays on every bot until you
+  `/deny` them on each.
+
 - **A setting stays with the bot you set it on** — `/tts`, `/terminalui`,
   `/telegraph`, `/suggestions` and `/botname` kept their settings in files all
   the bots shared, and each bot rewrote a file from the copy it loaded at

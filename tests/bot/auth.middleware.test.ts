@@ -203,7 +203,7 @@ describe('authMiddleware and the runtime roster', () => {
   beforeEach(() => {
     next = vi.fn().mockResolvedValue(undefined) as unknown as NextFunction & ReturnType<typeof vi.fn>;
     vi.spyOn(console, 'log').mockImplementation(() => {});
-    fs.rmSync(path.join(testHome, '.claudegram', 'user-roster.json'), { force: true });
+    fs.rmSync(path.join(testHome, '.claudegram', 'user-roster-123456789.json'), { force: true });
     resetRosterCache();
     resetAccessCooldowns();
   });
@@ -319,7 +319,7 @@ describe('a stranger who keeps talking', () => {
   beforeEach(() => {
     next = vi.fn().mockResolvedValue(undefined) as unknown as NextFunction & ReturnType<typeof vi.fn>;
     vi.spyOn(console, 'log').mockImplementation(() => {});
-    fs.rmSync(path.join(testHome, '.claudegram', 'user-roster.json'), { force: true });
+    fs.rmSync(path.join(testHome, '.claudegram', 'user-roster-123456789.json'), { force: true });
     resetRosterCache();
     resetAccessCooldowns();
   });

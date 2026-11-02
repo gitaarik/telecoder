@@ -98,3 +98,28 @@ export function writeJsonFile(
     console.error(`[${label}] Failed to save ${path.basename(filePath)}:`, error);
   }
 }
+
+/**
+ * Read a bot's own state file, for state all the bots used to share in one file.
+ *
+ * A bot's first start finds no file of its own, so it inherits whatever the
+ * shared file holds and nothing resets. It claims its own file straight away, so
+ * the shared one is no longer needed. That one is read, never removed: sibling
+ * bots still on their first start need to seed from it too, and a downgrade
+ * should still find it.
+ */
+export function readSeededJsonFile<T>(
+  filePath: string,
+  sharedPath: string,
+  schema: ZodType<T>,
+  label: string,
+): T | undefined {
+  if (fs.existsSync(filePath)) return readJsonFile(filePath, schema, label);
+
+  const seed = readJsonFile(sharedPath, schema, label);
+  if (seed) {
+    console.log(`[${label}] Seeded ${path.basename(filePath)} from ${path.basename(sharedPath)}`);
+    writeJsonFile(filePath, seed, label);
+  }
+  return seed;
+}
