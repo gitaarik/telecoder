@@ -42,89 +42,49 @@ export function isBotNameEnabled(sessionKey: string): boolean {
 // ---------------------------------------------------------------------------
 
 const MIN_NAME_UPDATE_INTERVAL_MS = 60_000; // 1 minute soft cooldown
-const COOLDOWN_FILE = path.join(SETTINGS_DIR, 'setmyname-cooldowns.json');
-const LAST_SENT_FILE = path.join(SETTINGS_DIR, 'setmyname-lastsent.json');
+// One file per bot, like the rest of the per-bot state. Each bot is its own
+// process, and when they shared a file each one rewrote it from the copy it
+// loaded at startup, undoing what the others had saved since. A wrong last-sent
+// name makes a real rename look like no change, and a lost block sends a call
+// Telegram has already refused. The old shared setmyname-cooldowns.json and
+// setmyname-lastsent.json are deliberately not read: their entries can't be
+// trusted, and starting without them costs at most one extra call per bot.
+const COOLDOWN_FILE = path.join(SETTINGS_DIR, `setmyname-cooldown-${BOT_ID}.json`);
+const LAST_SENT_FILE = path.join(SETTINGS_DIR, `setmyname-lastsent-${BOT_ID}.json`);
 
-const cooldownsSchema = z.object({
-  cooldowns: z.record(z.string(), z.object({ blockedUntil: z.number() })),
-});
+const cooldownSchema = z.object({ blockedUntil: z.number() });
+const lastSentSchema = z.object({ name: z.string() });
 
-const lastSentSchema = z.object({
-  names: z.record(z.string(), z.string()),
-});
-
-// Per-bot persistent 429 cooldowns. Telegram's setMyName limit is much
-// stricter than our soft local interval, and the local state is reset on
-// every restart — so we honor any retry_after Telegram returns and persist
-// the "do not call before" timestamp to disk.
-const blockedUntilByBot: Map<string, number> = new Map();
-
-function loadCooldowns(): void {
-  ensureStateDir(SETTINGS_DIR, 'BotName');
-  const loaded = readJsonFile(COOLDOWN_FILE, cooldownsSchema, 'BotName');
-  if (!loaded) return;
-  for (const [botId, { blockedUntil }] of Object.entries(loaded.cooldowns)) {
-    blockedUntilByBot.set(botId, blockedUntil);
-  }
-}
-
-function saveCooldowns(): void {
-  ensureStateDir(SETTINGS_DIR, 'BotName');
-  const cooldowns: Record<string, { blockedUntil: number }> = {};
-  const now = Date.now();
-  for (const [botId, blockedUntil] of blockedUntilByBot.entries()) {
-    if (blockedUntil > now) cooldowns[botId] = { blockedUntil };
-  }
-  writeJsonFile(COOLDOWN_FILE, { cooldowns }, 'BotName');
-}
-
-loadCooldowns();
+// Persistent 429 cooldown. Telegram's setMyName limit is much stricter than our
+// soft local interval, and the local state is reset on every restart — so we
+// honor any retry_after Telegram returns and persist the "do not call before"
+// timestamp to disk.
+ensureStateDir(SETTINGS_DIR, 'BotName');
+let cooldownUntil = readJsonFile(COOLDOWN_FILE, cooldownSchema, 'BotName')?.blockedUntil ?? 0;
 
 function getBlockedUntil(): number {
-  return blockedUntilByBot.get(BOT_ID) ?? 0;
+  return cooldownUntil;
 }
 
 function setBlockedUntil(blockedUntil: number): void {
-  blockedUntilByBot.set(BOT_ID, blockedUntil);
-  saveCooldowns();
+  cooldownUntil = blockedUntil;
+  ensureStateDir(SETTINGS_DIR, 'BotName');
+  writeJsonFile(COOLDOWN_FILE, { blockedUntil }, 'BotName');
 }
 
-// Per-bot last successfully-sent display name, persisted to disk. The in-memory
+// The last successfully-sent display name, persisted to disk. The in-memory
 // dedup (`state.lastSentName`) is reset on every restart, so without this the
 // first name push after a restart always hits Telegram even when the name is
 // unchanged — and since the topic moved to the status line the name is now
 // effectively static, making nearly every post-restart push a wasted quota
 // slot. Persisting it lets the `no_change` short-circuit survive restarts.
-const lastSentNameByBot: Map<string, string> = new Map();
-
-function loadLastSentNames(): void {
-  ensureStateDir(SETTINGS_DIR, 'BotName');
-  const loaded = readJsonFile(LAST_SENT_FILE, lastSentSchema, 'BotName');
-  if (!loaded) return;
-  for (const [botId, name] of Object.entries(loaded.names)) {
-    lastSentNameByBot.set(botId, name);
-  }
-}
-
-function saveLastSentNames(): void {
-  ensureStateDir(SETTINGS_DIR, 'BotName');
-  const names: Record<string, string> = {};
-  for (const [botId, name] of lastSentNameByBot.entries()) {
-    names[botId] = name;
-  }
-  writeJsonFile(LAST_SENT_FILE, { names }, 'BotName');
-}
-
-loadLastSentNames();
-
 function getPersistedLastSentName(): string | null {
-  return lastSentNameByBot.get(BOT_ID) ?? null;
+  return readJsonFile(LAST_SENT_FILE, lastSentSchema, 'BotName')?.name ?? null;
 }
 
 function setPersistedLastSentName(name: string): void {
-  if (lastSentNameByBot.get(BOT_ID) === name) return;
-  lastSentNameByBot.set(BOT_ID, name);
-  saveLastSentNames();
+  ensureStateDir(SETTINGS_DIR, 'BotName');
+  writeJsonFile(LAST_SENT_FILE, { name }, 'BotName');
 }
 
 /** Parse Telegram's retry_after (seconds) from a Grammy/HTTP error. */

@@ -263,6 +263,15 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **One bot can't undo what another remembers about its name** — the bots shared
+  a file of the display name each last sent, and each rewrote it from the copy it
+  loaded at startup, putting back the others' old entries. After a restart, a bot
+  could take a real rename for no change and keep showing the old project, with
+  no notice, until the next switch. The file of Telegram's rate-limit blocks had
+  the same flaw, so a bot could forget a block and call again. Each bot now keeps
+  its own files. The old shared ones are no longer read, which costs at most one
+  extra call per bot the first time it renames.
+
 - **`/version` says whether you're on the latest** — the version a restart names
   tells you what came back, but not whether anything newer has landed since. A
   fix you'd committed and never built looked just like one that was live.
