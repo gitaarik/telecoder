@@ -273,6 +273,11 @@ reasoning — the commit bodies are the long form, this is the index.
   access, which means a guest admitted before this stays on every bot until you
   `/deny` them on each.
 
+- **Favorites stay in step across your bots** — each bot read the shared list at
+  startup and saved from that copy, so a favorite added on one bot didn't show on
+  the others until they restarted, and could vanish, or a removed one come back,
+  when another bot saved. Each bot now reads the list whenever it needs it.
+
 - **A setting stays with the bot you set it on** — `/tts`, `/terminalui`,
   `/telegraph`, `/suggestions` and `/botname` kept their settings in files all
   the bots shared, and each bot rewrote a file from the copy it loaded at
