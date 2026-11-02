@@ -263,6 +263,17 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **Decide on a follow-up after you've read the answer** — a message sent during
+  a turn went out as soon as that turn ended unless you took it back, so you had
+  to decide before you'd seen the answer it depended on. The `⏳ Queued` notice
+  now also has **Ask me after**. The message won't go out by itself, and nothing
+  behind it waits for it. Once nothing is running or waiting, the bot asks below
+  the reply whether you still want to send it, with **Send** and **Drop**, and
+  that question notifies you, unlike the notice. It stays until you answer it,
+  through `/cancel` and restarts. Send puts the message through as if it had just
+  arrived, so a voice note is only transcribed then, and it waits its turn if
+  another one has started. An edit made while a message waits, set aside or not,
+  is now what goes out; Claude used to get the text as first sent.
 - **The subagent panel can't go out as a reply** — when the session log had no
   reply text for a turn, the bot read one off the screen, and with a subagent
   running it could send the panel under the input box instead. A log that holds

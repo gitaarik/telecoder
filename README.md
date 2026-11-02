@@ -93,7 +93,7 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 ### Reliability
 - Agent watchdog that detects silent or stuck tools, with `/cancel` working during hangs
 - Rapid split pastes combined into one prompt
-- Messages that have to wait say so, and can be taken back
+- Messages that have to wait say so, and can be taken back or set aside to decide on after the answer
 
 </td>
 <td width="50%" valign="top">

@@ -14,6 +14,7 @@
 import { run } from '@grammyjs/runner';
 import { isMainThread, parentPort } from 'worker_threads';
 import { createBot } from './bot/bot.js';
+import { armReminders } from './bot/middleware/queued-messages.js';
 import { config, BOT_ID } from './config.js';
 import { preventSleep, allowSleep } from './utils/caffeinate.js';
 import { stopCleanup } from './telegram/deduplication.js';
@@ -192,6 +193,10 @@ async function main() {
   } catch (err) {
     console.error('[Scheduler] Failed to start:', err);
   }
+
+  // Ask about anything set aside before the restart. Runs after the resume paths
+  // above so the question lands below whatever they post.
+  armReminders();
 
   // Register the bot reference for the PTY-mode Monitor relay so Monitor
   // events that fire between user turns can be posted to Telegram.

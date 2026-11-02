@@ -23,6 +23,15 @@ interface PendingBatch {
 
 const batches: Map<string, PendingBatch> = new Map();
 
+/**
+ * Whether this message carries the text of several. An edit to one of them can't
+ * be applied, since it would replace the text of the lot. The mark is on the
+ * message itself so it stays with a message saved to disk.
+ */
+export function wasBatched(message: object): boolean {
+  return (message as { batched?: boolean }).batched === true;
+}
+
 export function createBatchMiddleware(): MiddlewareFn<Context> {
   return async (ctx, next) => {
     const timeoutMs = config.MESSAGE_BATCH_TIMEOUT_MS;
@@ -75,7 +84,7 @@ export function createBatchMiddleware(): MiddlewareFn<Context> {
     // Timer fired — inject combined text into context
     if (batchTexts.length > 1) {
       console.log(`[Batcher] Combined ${batchTexts.length} messages for ${sessionKey}`);
-      (ctx.message as { text: string }).text = batchTexts.join('\n');
+      Object.assign(ctx.message, { text: batchTexts.join('\n'), batched: true });
     }
 
     return next();

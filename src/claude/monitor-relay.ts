@@ -396,20 +396,24 @@ export function markSelfTurnInterrupted(sessionKey: string): void {
   void sendReply(state);
 }
 
+/** The sessions to look at: the one asked about, or all of them. */
+function statesFor(sessionKey?: string): MonitorState[] {
+  if (sessionKey === undefined) return [...states.values()];
+  const state = states.get(sessionKey);
+  return state ? [state] : [];
+}
+
 /**
  * Whether a turn claude started itself is still going, or its reply hasn't
  * been handed on yet. Nothing in the request queue knows about such a turn.
  */
-export function hasSelfStartedTurn(): boolean {
-  for (const state of states.values()) {
-    if (state.selfTurnOpen || state.reply.length > 0) return true;
-  }
-  return false;
+export function hasSelfStartedTurn(sessionKey?: string): boolean {
+  return statesFor(sessionKey).some((state) => state.selfTurnOpen || state.reply.length > 0);
 }
 
 /** Resolves once every reply already handed on is in its chat. */
-export async function whenRepliesSent(): Promise<void> {
-  await Promise.all([...states.values()].map((state) => state.replySent));
+export async function whenRepliesSent(sessionKey?: string): Promise<void> {
+  await Promise.all(statesFor(sessionKey).map((state) => state.replySent));
 }
 
 export function teardown(sessionKey: string): void {

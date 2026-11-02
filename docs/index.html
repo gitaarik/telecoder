@@ -1805,6 +1805,7 @@
   <symbol id="i-tree" viewBox="0 0 24 24"><circle cx="12" cy="19.5" r="2.2"/><circle cx="5" cy="5" r="2.2"/><circle cx="12" cy="4.5" r="2.2"/><circle cx="19" cy="5" r="2.2"/><path d="M12 17.3V6.7"/><path d="M12 13c-4.2 0-7-1.6-7-5.8"/><path d="M12 13c4.2 0 7-1.6 7-5.8"/></symbol>
   <symbol id="i-prompts" viewBox="0 0 24 24"><circle cx="4.5" cy="5.5" r="1.3"/><path d="M8.5 5.5h11"/><circle cx="4.5" cy="12" r="1.3"/><path d="M8.5 12h3.5"/><circle cx="4.5" cy="18.5" r="1.3"/><path d="M8.5 18.5h11"/><path d="M12 12c2.6 0 3.6 3 6.5 3"/><path d="M16.6 13.1 18.5 15l-1.9 1.9"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 6.8V12l3.4 2.1"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16.8V11a6 6 0 0 1 12 0v5.8l1.6 1.7H4.4z"/><path d="M10 21.2a2.2 2.2 0 0 0 4 0"/></symbol>
   <symbol id="i-relay" viewBox="0 0 24 24"><path d="M12 10.5v10"/><path d="M8.6 20.5h6.8"/><circle cx="12" cy="8" r="1.9"/><path d="M7.9 4.2a5.9 5.9 0 0 0 0 7.6"/><path d="M16.1 4.2a5.9 5.9 0 0 1 0 7.6"/></symbol>
   <symbol id="i-sendfile" viewBox="0 0 24 24"><path d="M5 4.5a2 2 0 0 1 2-2h6.7L18.5 7v12.5a2 2 0 0 1-2 2h-4.5"/><path d="M13.7 2.6V7h4.8"/><path d="M6.5 21v-8.5"/><path d="M3.6 15.4 6.5 12.5l2.9 2.9"/></symbol>
   <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M8.6 15.6a6 6 0 1 1 6.8 0v2.8H8.6z"/><path d="M10.3 21.2h3.4"/></symbol>
@@ -2104,6 +2105,15 @@
             started itself when a background task reported back. Telegram never tells a bot about a
             deleted message, so this button is how you recall one. <code>/cancel</code> clears
             everything waiting along with the running turn.</p>
+          </div>
+          <div class="feature-card" data-category="reliability">
+            <div class="feature-icon"><svg><use href="#i-bell"/></svg></div>
+            <h3>Decide after you've read the answer</h3>
+            <p>Not sure a follow-up will still apply? Tap <code>🔔 Ask me after</code> on its
+            <code>⏳ Queued</code> notice and it won't go out by itself. When Claude is done, the
+            bot asks below the reply whether you still want to send it, with Send and Drop
+            buttons. The question waits for as long as you need, restarts included. Edit the
+            message in the meantime and the edit is what goes out.</p>
           </div>
           <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-clock"/></svg></div>
@@ -3060,7 +3070,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/cancel, /stop</code>
-              <span class="command-desc">Stop the running turn, including one Claude started itself, and drop every message waiting behind it (alias: /stop). To recall one message and leave the turn running, tap Take back on its <code>⏳ Queued</code> notice instead.</span>
+              <span class="command-desc">Stop the running turn, including one Claude started itself, and drop every message waiting behind it (alias: /stop). To recall one message and leave the turn running, tap Take back on its <code>⏳ Queued</code> notice instead. A message set aside with Ask me after stays set aside.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/commands</code>

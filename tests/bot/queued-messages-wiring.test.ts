@@ -56,53 +56,92 @@ vi.mock('../../src/claude/ipc-server.js', async (importOriginal) => {
 
 const { createBot } = await import('../../src/bot/bot.js');
 const { sessionManager } = await import('../../src/claude/session-manager.js');
+const { armReminders, forgetParkedMessages, initParkedMessages } = await import('../../src/bot/middleware/queued-messages.js');
+const { config } = await import('../../src/config.js');
 
 const CHAT = 1; // In the suite's ALLOWED_USER_IDS.
+const GROUP = -1009990001; // In the suite's ALLOWED_GROUP_IDS.
 const WAIT = { timeout: 5_000, interval: 20 };
+const REMINDER = '🔔 You set this aside. Still want to send it?';
 
 let bot: Bot;
 let pending: Promise<void>[];
 let nextUpdateId = 1;
 let nextMessageId = 100;
 
-function send(text: string): number {
-  const messageId = nextMessageId++;
+function chatFor(chatId: number) {
+  return chatId === GROUP
+    ? { id: GROUP, type: 'supergroup', title: 'g' }
+    : { id: chatId, type: 'private', first_name: 'u' };
+}
+
+/** The entities Telegram would attach: a command at the start, and a mention per @handle. */
+function entitiesFor(text: string) {
   const command = text.match(/^\/\w+/);
+  return [
+    ...(command ? [{ type: 'bot_command', offset: 0, length: command[0].length }] : []),
+    ...[...text.matchAll(/@\w+/g)].map((m) => ({ type: 'mention', offset: m.index, length: m[0].length })),
+  ];
+}
+
+function send(text: string, chatId = CHAT): number {
+  const messageId = nextMessageId++;
   pending.push(bot.handleUpdate({
     update_id: nextUpdateId++,
     message: {
       message_id: messageId,
       date: Math.floor(Date.now() / 1000),
-      chat: { id: CHAT, type: 'private', first_name: 'u' },
+      chat: chatFor(chatId),
       from: { id: CHAT, is_bot: false, first_name: 'u' },
       text,
-      ...(command ? { entities: [{ type: 'bot_command', offset: 0, length: command[0].length }] } : {}),
+      entities: entitiesFor(text),
     },
   } as never));
   return messageId;
 }
 
+function edit(messageId: number, text: string, chatId = CHAT): Promise<void> {
+  return bot.handleUpdate({
+    update_id: nextUpdateId++,
+    edited_message: {
+      message_id: messageId,
+      date: Math.floor(Date.now() / 1000),
+      edit_date: Math.floor(Date.now() / 1000),
+      chat: chatFor(chatId),
+      from: { id: CHAT, is_bot: false, first_name: 'u' },
+      text,
+      entities: entitiesFor(text),
+    },
+  } as never);
+}
+
 const callsTo = (method: string) => fx.calls.filter((c) => c.method === method);
 const ackFor = (messageId: number) => callsTo('sendMessage').find((c) =>
   (c.payload.reply_parameters as { message_id?: number } | undefined)?.message_id === messageId);
+const reminderFor = (messageId: number) => callsTo('sendMessage').find((c) => c.payload.text === REMINDER
+  && (c.payload.reply_parameters as { message_id?: number } | undefined)?.message_id === messageId);
 
-function tapTakeBack(messageId: number): Promise<void> {
+function tapButton(data: string, chatId = CHAT): Promise<void> {
   return bot.handleUpdate({
     update_id: nextUpdateId++,
     callback_query: {
       id: `cb${nextUpdateId}`,
       from: { id: CHAT, is_bot: false, first_name: 'u' },
       chat_instance: 'x',
-      data: `queued:${messageId}`,
+      data,
       message: {
         message_id: 4000,
         date: 0,
-        chat: { id: CHAT, type: 'private', first_name: 'u' },
+        chat: chatFor(chatId),
         from: { id: 123456789, is_bot: true, first_name: 'probe' },
         text: '⏳',
       },
     },
   } as never);
+}
+
+function tapTakeBack(messageId: number): Promise<void> {
+  return tapButton(`queued:${messageId}`);
 }
 
 beforeAll(async () => {
@@ -133,6 +172,7 @@ beforeAll(async () => {
     return { ok: true, result: true } as never;
   });
   sessionManager.createSession(String(CHAT), fs.mkdtempSync(`${process.env.TELECODER_TEST_HOME}/project-`));
+  sessionManager.createSession(String(GROUP), fs.mkdtempSync(`${process.env.TELECODER_TEST_HOME}/project-`));
 });
 
 afterAll(() => {
@@ -215,5 +255,134 @@ describe('the bot as assembled', () => {
     await tapTakeBack(second);
     expect(fx.finish.has('first')).toBe(true);
     expect(callsTo('answerCallbackQuery')).toHaveLength(1);
+  });
+
+  it('asks about a message set aside once the turn is over, and delivers it on Send', async () => {
+    send('first');
+    await vi.waitFor(() => expect(fx.prompts).toEqual(['first']), WAIT);
+    const second = send('second');
+    await vi.waitFor(() => expect(ackFor(second)).toBeDefined(), WAIT);
+
+    await tapButton(`queued:park:${second}`);
+    expect(reminderFor(second)).toBeUndefined();
+
+    fx.finish.get('first')!();
+    await vi.waitFor(() => expect(reminderFor(second)).toBeDefined(), WAIT);
+    // Below the reply, which is the point of waiting for the turn to be over.
+    const reminderAt = callsTo('sendMessage').indexOf(reminderFor(second)!);
+    expect(callsTo('sendMessage').findIndex((c) => String(c.payload.text).includes('answer to first'))).toBeLessThan(reminderAt);
+    expect(fx.prompts).toEqual(['first']);
+
+    await tapButton(`queued:send:${second}`);
+    await vi.waitFor(() => expect(fx.prompts).toEqual(['first', 'second']), WAIT);
+  });
+
+  it('leaves the chat free while a message is set aside', async () => {
+    send('first');
+    await vi.waitFor(() => expect(fx.prompts).toEqual(['first']), WAIT);
+    const second = send('second');
+    await vi.waitFor(() => expect(ackFor(second)).toBeDefined(), WAIT);
+    await tapButton(`queued:park:${second}`);
+    fx.finish.get('first')!();
+    await vi.waitFor(() => expect(reminderFor(second)).toBeDefined(), WAIT);
+
+    send('third');
+    await vi.waitFor(() => expect(fx.prompts).toEqual(['first', 'third']), WAIT);
+  });
+
+  it("sends a message the handlers would otherwise call stale, after a restart", async () => {
+    // Saved by an earlier process: the handlers ignore anything dated before this
+    // one started, and every message saved to disk ends up that old.
+    const stale = nextMessageId++;
+    const file = `${process.env.TELECODER_TEST_HOME}/.claudegram/parked-messages-123456789.json`;
+    fs.mkdirSync(`${process.env.TELECODER_TEST_HOME}/.claudegram`, { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({
+      messages: [{
+        chatId: CHAT,
+        sessionKey: String(CHAT),
+        messageId: stale,
+        senderId: CHAT,
+        update: {
+          update_id: 1,
+          message: {
+            message_id: stale,
+            date: 1_000,
+            chat: chatFor(CHAT),
+            from: { id: CHAT, is_bot: false, first_name: 'u' },
+            text: 'from before the restart',
+          },
+        },
+      }],
+    }));
+
+    forgetParkedMessages();
+    initParkedMessages(bot);
+    armReminders();
+    await vi.waitFor(() => expect(reminderFor(stale)).toBeDefined(), WAIT);
+
+    await tapButton(`queued:send:${stale}`);
+    await vi.waitFor(() => expect(fx.prompts).toEqual(['from before the restart']), WAIT);
+  });
+
+  it('gets a message sent in a group back past the mention gate, without the mention', async () => {
+    send('@probe_bot first', GROUP);
+    await vi.waitFor(() => expect(fx.prompts).toEqual(['first']), WAIT);
+    const second = send('@probe_bot second', GROUP);
+    await vi.waitFor(() => expect(ackFor(second)).toBeDefined(), WAIT);
+    await tapButton(`queued:park:${second}`, GROUP);
+
+    fx.finish.get('first')!();
+    await vi.waitFor(() => expect(reminderFor(second)).toBeDefined(), WAIT);
+    await tapButton(`queued:send:${second}`, GROUP);
+
+    await vi.waitFor(() => expect(fx.prompts).toEqual(['first', 'second']), WAIT);
+  });
+
+  it('takes the mention out of an edit too, which the gate passes untouched', async () => {
+    send('@probe_bot first', GROUP);
+    await vi.waitFor(() => expect(fx.prompts).toEqual(['first']), WAIT);
+    const second = send('@probe_bot second', GROUP);
+    await vi.waitFor(() => expect(ackFor(second)).toBeDefined(), WAIT);
+    await tapButton(`queued:park:${second}`, GROUP);
+
+    await edit(second, '@probe_bot second, fixed', GROUP);
+    fx.finish.get('first')!();
+    await vi.waitFor(() => expect(reminderFor(second)).toBeDefined(), WAIT);
+    await tapButton(`queued:send:${second}`, GROUP);
+
+    await vi.waitFor(() => expect(fx.prompts).toEqual(['first', 'second, fixed']), WAIT);
+  });
+
+  describe('with messages merged by the batcher', () => {
+    beforeEach(() => { config.MESSAGE_BATCH_TIMEOUT_MS = 30; });
+    afterEach(() => { config.MESSAGE_BATCH_TIMEOUT_MS = 0; });
+
+    it('sends the whole of a merged message set aside', async () => {
+      send('first');
+      await vi.waitFor(() => expect(fx.prompts).toEqual(['first']), WAIT);
+      const merged = send('part one');
+      send('part two');
+      await vi.waitFor(() => expect(ackFor(merged)).toBeDefined(), WAIT);
+      await tapButton(`queued:park:${merged}`);
+
+      fx.finish.get('first')!();
+      await vi.waitFor(() => expect(reminderFor(merged)).toBeDefined(), WAIT);
+      await tapButton(`queued:send:${merged}`);
+
+      await vi.waitFor(() => expect(fx.prompts).toEqual(['first', 'part one\npart two']), WAIT);
+    });
+
+    it("doesn't let an edit to one part replace the whole of a merged message", async () => {
+      send('first');
+      await vi.waitFor(() => expect(fx.prompts).toEqual(['first']), WAIT);
+      const merged = send('part one');
+      send('part two');
+      await vi.waitFor(() => expect(ackFor(merged)).toBeDefined(), WAIT);
+
+      await edit(merged, 'part one, fixed');
+      fx.finish.get('first')!();
+
+      await vi.waitFor(() => expect(fx.prompts).toEqual(['first', 'part one\npart two']), WAIT);
+    });
   });
 });

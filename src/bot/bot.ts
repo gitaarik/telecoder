@@ -8,7 +8,13 @@ import { config } from '../config.js';
 import { buildSessionKey } from '../utils/session-key.js';
 import { authMiddleware } from './middleware/auth.middleware.js';
 import { adminOnly, adminOrApproverOnly } from './middleware/admin-only.js';
-import { trackQueuedMessage, holdQueuedMessage, handleQueuedCallback } from './middleware/queued-messages.js';
+import {
+  trackQueuedMessage,
+  holdQueuedMessage,
+  handleQueuedCallback,
+  handleEditedMessage,
+  initParkedMessages,
+} from './middleware/queued-messages.js';
 import {
   handleStart,
   handleClear,
@@ -448,9 +454,13 @@ export async function createBot(): Promise<Bot> {
   // /prompts' buttons for the same reasons: opening a prompt only redraws the
   // message, and branching from one checks for a running reply itself.
   bot.callbackQuery(/^prompts:/, handlePromptsCallback);
-  // "Take back" on a queued message: the turn it's waiting behind is exactly
-  // what this has to get past.
+  // "Take back" and "Ask me after" on a queued message: the turn it's waiting
+  // behind is exactly what these have to get past.
   bot.callbackQuery(/^queued:/, handleQueuedCallback);
+  // An edit to a message that's still waiting has to land before the wait ends,
+  // so it can't wait in line itself.
+  bot.on('edited_message', handleEditedMessage);
+  initParkedMessages(bot);
   // Menu buttons for /restartbot and /rebuildbot must bypass sequentialize
   // for the same reason their parent commands do: users tap these precisely
   // when the bot is hung, so the callback can't be queued behind the stuck

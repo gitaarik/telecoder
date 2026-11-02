@@ -22,11 +22,22 @@
  */
 
 import { type Context, type MiddlewareFn } from 'grammy';
-import type { MessageEntity, UserFromGetMe } from 'grammy/types';
+import type { MessageEntity, Update, UserFromGetMe } from 'grammy/types';
 import { config } from '../../config.js';
 import { isForceReplyPrompt } from '../../telegram/force-reply-tracker.js';
 
 type TextAndEntities = { text: string; entities: MessageEntity[] };
+
+/**
+ * Updates this gate has already let through, going round again: a message set
+ * aside and then sent. It can't judge one a second time, because stripBotMention
+ * has taken out the very mention it would look for.
+ */
+const alreadyAddressed = new WeakSet<Update>();
+
+export function markAlreadyAddressed(update: Update): void {
+  alreadyAddressed.add(update);
+}
 
 /** A message's text or its media caption, whichever carries the words. */
 function textAndEntities(msg: NonNullable<Context['message']>): TextAndEntities {
@@ -97,7 +108,7 @@ export function isAddressedToBot(ctx: Context): boolean {
  * place is safe; a message that is *only* a mention keeps its text, since an
  * empty prompt is worse than a redundant one.
  */
-function stripBotMention(msg: NonNullable<Context['message']>, me: UserFromGetMe): void {
+export function stripBotMention(msg: NonNullable<Context['message']>, me: UserFromGetMe): void {
   const { text, entities } = textAndEntities(msg);
   if (!text) return;
 
@@ -125,7 +136,7 @@ function stripBotMention(msg: NonNullable<Context['message']>, me: UserFromGetMe
  * or logging a line per message.
  */
 export const groupMentionMiddleware: MiddlewareFn<Context> = async (ctx, next) => {
-  if (!config.GROUP_REQUIRE_MENTION) return next();
+  if (!config.GROUP_REQUIRE_MENTION || alreadyAddressed.has(ctx.update)) return next();
   if (!isAddressedToBot(ctx)) return;
   if (ctx.message) stripBotMention(ctx.message, ctx.me);
   return next();
