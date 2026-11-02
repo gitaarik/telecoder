@@ -1,10 +1,20 @@
 import { defineConfig } from 'vitest/config';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+
+// Modules read and write ~/.claudegram as they load, so the whole suite gets a
+// scratch home. On the real one a run reads the developer's settings and leaves
+// copies of them behind under the test bot's id.
+const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'telecoder-test-home-'));
+process.on('exit', () => fs.rmSync(testHome, { recursive: true, force: true }));
 
 export default defineConfig({
   test: {
     // config.ts validates these at import time and process.exit(1)s if missing.
     // Provide harmless dummies so modules that transitively import config load.
     env: {
+      HOME: testHome,
       // Point at a non-existent env file so tests are isolated from the dev .env.
       TELECODER_ENV_PATH: '/nonexistent/telecoder-test.env',
       TELEGRAM_BOT_TOKEN: '123456789:TEST_TOKEN',

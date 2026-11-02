@@ -5,10 +5,17 @@
  * all the same thing: a `sessionKey → settings` map, persisted as
  * `{ settings: { [key]: entry } }`, where any field absent from disk falls back
  * to an env-level default. This factory is that shape, once.
+ *
+ * Each bot has its own file. Each bot is its own process with its own copy of
+ * the entries, so when they shared one, every save put back whatever the others
+ * had changed since that copy was loaded. Merging by key wouldn't have helped:
+ * a private chat's key is the user's id, the same for every bot they talk to.
  */
 
+import * as fs from 'fs';
 import * as path from 'path';
 import { z, type ZodType } from 'zod';
+import { BOT_ID } from '../config.js';
 import { ensureStateDir, getStateDir, readJsonFile, writeJsonFile } from './json-store.js';
 
 export interface KeyedSettingsStore<T> {
@@ -19,7 +26,11 @@ export interface KeyedSettingsStore<T> {
 }
 
 export interface KeyedSettingsOptions<T> {
-  /** Basename of the JSON file inside the state directory. */
+  /**
+   * Basename of the file all bots shared before settings were per-bot, like
+   * `tts-settings.json`. Now only a first start reads it. Each bot's own file
+   * is named after it: `tts-settings-<botId>.json`.
+   */
   file: string;
   /** Prefix used in log lines, e.g. `TTS`. */
   label: string;
@@ -29,22 +40,39 @@ export interface KeyedSettingsOptions<T> {
   normalize(stored?: Partial<T>): T;
   /** Override the state directory. For tests. */
   dir?: string;
+  /** Override the bot the file belongs to. For tests. */
+  botId?: string;
 }
 
 export function createKeyedSettings<T extends object>(
   opts: KeyedSettingsOptions<T>,
 ): KeyedSettingsStore<T> {
   const dir = opts.dir ?? getStateDir();
-  const filePath = path.join(dir, opts.file);
+  const filePath = path.join(dir, `${path.basename(opts.file, '.json')}-${opts.botId ?? BOT_ID}.json`);
+  const sharedPath = path.join(dir, opts.file);
   const fileSchema = z.object({ settings: z.record(z.string(), opts.entrySchema) });
   const entries = new Map<string, T>();
 
   ensureStateDir(dir, opts.label);
-  const loaded = readJsonFile(filePath, fileSchema, opts.label);
+
+  // First start after the split: inherit whatever the shared file holds, so
+  // nobody's settings reset. The shared file is read, never removed — sibling
+  // bots still on their first start need to seed from it too, and a downgrade
+  // should still find it.
+  const seeding = !fs.existsSync(filePath);
+  const loaded = readJsonFile(seeding ? sharedPath : filePath, fileSchema, opts.label);
   if (loaded) {
     for (const [key, stored] of Object.entries(loaded.settings)) {
       entries.set(key, opts.normalize(stored));
     }
+  }
+
+  // Claim the file straight away, so the shared one is no longer needed. Copied
+  // as it was on disk rather than normalized: a field nobody chose has to keep
+  // following its env-level default, see get().
+  if (seeding && entries.size > 0) {
+    console.log(`[${opts.label}] Seeded ${path.basename(filePath)} from ${opts.file} (${entries.size} chat(s))`);
+    writeJsonFile(filePath, loaded, opts.label);
   }
 
   function assertKey(key: string): void {

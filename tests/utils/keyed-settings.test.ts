@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { z } from 'zod';
 import { createKeyedSettings } from '../../src/utils/keyed-settings.js';
+import { BOT_ID } from '../../src/config.js';
 
 interface Demo {
   enabled: boolean;
@@ -19,11 +20,13 @@ describe('createKeyedSettings', () => {
     voice: z.string().optional(),
   });
 
-  const make = () =>
+  /** Each store stands in for one bot's process: its own copy of the entries, on a shared state dir. */
+  const make = (botId = 'bot-1') =>
     createKeyedSettings<Demo>({
       file: 'demo.json',
       label: 'Demo',
       dir,
+      botId,
       entrySchema,
       normalize: (stored) => ({
         enabled: typeof stored?.enabled === 'boolean' ? stored.enabled : defaultEnabled,
@@ -31,8 +34,11 @@ describe('createKeyedSettings', () => {
       }),
     });
 
-  const fileContents = () =>
-    JSON.parse(fs.readFileSync(path.join(dir, 'demo.json'), 'utf-8'));
+  const ownFile = (botId = 'bot-1') => path.join(dir, `demo-${botId}.json`);
+  const sharedFile = () => path.join(dir, 'demo.json');
+  const contents = (file: string) => JSON.parse(fs.readFileSync(file, 'utf-8'));
+  const fileContents = () => contents(ownFile());
+  const write = (file: string, settings: unknown) => fs.writeFileSync(file, JSON.stringify({ settings }));
 
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'telecoder-ks-'));
@@ -50,7 +56,7 @@ describe('createKeyedSettings', () => {
 
   it('does not write anything just for reading', () => {
     make().get('chat:1');
-    expect(fs.existsSync(path.join(dir, 'demo.json'))).toBe(false);
+    expect(fs.readdirSync(dir)).toEqual([]);
   });
 
   it('keeps tracking the env default until the key is explicitly set', () => {
@@ -94,27 +100,18 @@ describe('createKeyedSettings', () => {
   });
 
   it('reads a file written by the previous hand-rolled implementation', () => {
-    fs.writeFileSync(
-      path.join(dir, 'demo.json'),
-      JSON.stringify({ settings: { 'chat:7': { enabled: true, voice: 'shimmer' } } }),
-    );
+    write(ownFile(), { 'chat:7': { enabled: true, voice: 'shimmer' } });
     expect(make().get('chat:7')).toEqual({ enabled: true, voice: 'shimmer' });
   });
 
   it('normalizes partial entries loaded from disk', () => {
-    fs.writeFileSync(
-      path.join(dir, 'demo.json'),
-      JSON.stringify({ settings: { 'chat:7': { enabled: true } } }),
-    );
+    write(ownFile(), { 'chat:7': { enabled: true } });
     expect(make().get('chat:7')).toEqual({ enabled: true, voice: 'fallback' });
   });
 
   it('starts fresh when the file fails validation', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    fs.writeFileSync(
-      path.join(dir, 'demo.json'),
-      JSON.stringify({ settings: { 'chat:7': { enabled: 'yes please' } } }),
-    );
+    write(ownFile(), { 'chat:7': { enabled: 'yes please' } });
     expect(make().get('chat:7')).toEqual({ enabled: false, voice: 'fallback' });
   });
 
@@ -133,6 +130,82 @@ describe('createKeyedSettings', () => {
       normalize: () => ({ enabled: false, voice: 'fallback' }),
     });
     store.update('chat:1', { enabled: true });
-    expect(fs.existsSync(path.join(nested, 'demo.json'))).toBe(true);
+    expect(fs.existsSync(path.join(nested, `demo-${BOT_ID}.json`))).toBe(true);
+  });
+
+  describe('with several bots on one state directory', () => {
+    it("keeps a setting when another bot saves a different one for the same chat", () => {
+      const first = make('bot-1');
+      const second = make('bot-2');
+      first.update('chat:1', { voice: 'nova' });
+      second.update('chat:1', { enabled: true });
+      expect(make('bot-1').get('chat:1').voice).toBe('nova');
+    });
+
+    it('keeps a setting when another bot saves one for a different chat', () => {
+      const first = make('bot-1');
+      const second = make('bot-2');
+      first.update('chat:1', { voice: 'nova' });
+      second.update('chat:2', { voice: 'echo' });
+      expect(make('bot-1').get('chat:1').voice).toBe('nova');
+    });
+
+    it('leaves a setting with the bot it was set on', () => {
+      make('bot-1').update('chat:1', { voice: 'nova' });
+      expect(make('bot-2').get('chat:1').voice).toBe('fallback');
+    });
+  });
+
+  describe('on the first start after settings became per-bot', () => {
+    it('inherits what the shared file holds, so nothing resets', () => {
+      write(sharedFile(), { 'chat:7': { enabled: true, voice: 'shimmer' } });
+      expect(make().get('chat:7')).toEqual({ enabled: true, voice: 'shimmer' });
+    });
+
+    it('gives every bot its own copy and leaves the shared file as it was', () => {
+      write(sharedFile(), { 'chat:7': { voice: 'shimmer' } });
+      const before = fs.readFileSync(sharedFile(), 'utf-8');
+
+      make('bot-1');
+      make('bot-2');
+
+      expect(contents(ownFile('bot-1'))).toEqual({ settings: { 'chat:7': { voice: 'shimmer' } } });
+      expect(contents(ownFile('bot-2'))).toEqual({ settings: { 'chat:7': { voice: 'shimmer' } } });
+      expect(fs.readFileSync(sharedFile(), 'utf-8')).toBe(before);
+    });
+
+    it('no longer needs the shared file afterwards', () => {
+      write(sharedFile(), { 'chat:7': { voice: 'shimmer' } });
+      make();
+      fs.rmSync(sharedFile());
+      expect(make().get('chat:7').voice).toBe('shimmer');
+    });
+
+    it('keeps a field nobody chose following its default', () => {
+      write(sharedFile(), { 'chat:7': { voice: 'shimmer' } });
+      make();
+      defaultEnabled = true;
+      expect(make().get('chat:7')).toEqual({ enabled: true, voice: 'shimmer' });
+    });
+
+    it("doesn't go back to the shared file once the bot has its own", () => {
+      write(sharedFile(), { 'chat:7': { voice: 'shimmer' } });
+      make();
+      write(sharedFile(), { 'chat:7': { voice: 'echo' } });
+      expect(make().get('chat:7').voice).toBe('shimmer');
+    });
+
+    it("doesn't fall back to the shared file when the bot's own is unreadable", () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      write(sharedFile(), { 'chat:7': { voice: 'shimmer' } });
+      write(ownFile(), { 'chat:7': { enabled: 'yes please' } });
+      expect(make().get('chat:7').voice).toBe('fallback');
+    });
+
+    it('writes nothing when there is nothing to inherit', () => {
+      write(sharedFile(), {});
+      make();
+      expect(fs.readdirSync(dir)).toEqual(['demo.json']);
+    });
   });
 });

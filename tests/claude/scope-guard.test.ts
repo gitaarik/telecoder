@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import * as os from 'os';
 import * as path from 'path';
 import {
   checkToolScope,
@@ -15,7 +14,12 @@ import {
 const ROOT = '/srv/shared';
 const CWD = '/srv/shared/project';
 const ROOTS = [ROOT, '/tmp'];
-const HOME = os.homedir();
+// The suite's scratch home lives under /tmp too, and nothing inside a root is
+// ever out of scope, so these tests need a home outside it.
+const HOME = '/home/someone';
+beforeEach(() => {
+  vi.stubEnv('HOME', HOME);
+});
 
 describe('resolvePath', () => {
   it('takes absolute paths as they are', () => {

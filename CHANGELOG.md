@@ -263,6 +263,14 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **A setting stays with the bot you set it on** — `/tts`, `/terminalui`,
+  `/telegraph`, `/suggestions` and `/botname` kept their settings in files all
+  the bots shared, and each bot rewrote a file from the copy it loaded at
+  startup. A change on one bot could be undone by a save on another, and one
+  that survived reached the other bots at their next restart. Each bot now has
+  its own files, so changing a setting everywhere means setting it on each bot.
+  On its first start a bot copies what the shared files hold, so nothing resets.
+
 - **One bot can't undo what another remembers about its name** — the bots shared
   a file of the display name each last sent, and each rewrote it from the copy it
   loaded at startup, putting back the others' old entries. After a restart, a bot
