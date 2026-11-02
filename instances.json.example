@@ -13,9 +13,9 @@
     {
       "name": "TeleCoder {n}",
       "tokens": [
-        "110201543:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw",
-        "220201543:BBIdqTcvCH1vGWJxfSeofSAs0K5PALDsaw",
-        "330201543:CCJdqTcvCH1vGWJxfSeofSAs0K5PALDsaw"
+        "<bot-token-1>",
+        "<bot-token-2>",
+        "<bot-token-3>"
       ],
       "overrides": {
         "WORKSPACE_DIR": "/home/user/projects"
@@ -25,7 +25,7 @@
     // Single token → individual instance with custom settings
     {
       "name": "Admin Bot",
-      "token": "440201543:DDKdqTcvCH1vGWJxfSeofSAs0K5PALDsaw",
+      "token": "<bot-token-4>",
       "overrides": {
         "ALLOWED_USER_IDS": "987654321",
         "DANGEROUS_MODE": "true"

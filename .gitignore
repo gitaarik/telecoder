@@ -15,7 +15,6 @@ output/
 .playwright-mcp/
 
 # Local-only dev docs (not for public repos)
-CLAUDE.md
 AGENTS.md
 CLAUDE_AGENT_SDK_MIGRATION_MASTER_PLAN.md
 MEDIUM_*.md
