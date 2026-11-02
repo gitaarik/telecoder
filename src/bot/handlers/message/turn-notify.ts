@@ -1,20 +1,20 @@
 /**
  * Everything posted to the chat *after* a turn's main response: the catch-up
  * relay that recovers prose the extractors dropped, and the context-visibility
- * notices (usage footer, compaction, new-agent-session).
+ * notices (compaction, new-agent-session). The usage footer isn't one of them:
+ * it goes out with the status line, see `sendStatusLine`.
  *
  * Each notice consults the chat's verbosity settings itself, so callers fire
  * them unconditionally via `sendTurnNotifications`.
  */
 
 import { Context } from 'grammy';
-import type { AgentUsage } from '../../../providers/provider-router.js';
 import { sessionManager } from '../../../claude/session-manager.js';
 import { readLastAssistantTurnText } from '../../../claude/session-jsonl.js';
 import { messageSender } from '../../../telegram/message-sender.js';
 import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
 import { resolveVerbosityFlags } from '../../../utils/verbosity.js';
-import { fmtTokens, getProgressBar } from '../../../utils/format.js';
+import { fmtTokens } from '../../../utils/format.js';
 
 /**
  * After a turn's main response has been sent to Telegram, compare what we
@@ -73,23 +73,6 @@ export async function relayCatchUpIfMissed(
   }
 }
 
-async function sendUsageFooter(
-  ctx: Context,
-  usage: AgentUsage | undefined,
-): Promise<void> {
-  if (!usage) return;
-  const chatId = ctx.chat?.id;
-  if (chatId === undefined) return;
-  if (!resolveVerbosityFlags(chatId).showUsageFooter) return;
-  const u = usage;
-  const pct = u.contextWindow > 0
-    ? Math.round(((u.inputTokens + u.outputTokens + u.cacheReadTokens) / u.contextWindow) * 100)
-    : 0;
-  const bar = getProgressBar(pct);
-  const footer = `${bar} ${pct}% context · ${fmtTokens(u.inputTokens + u.outputTokens + u.cacheReadTokens)}/${fmtTokens(u.contextWindow)} · $${u.totalCostUsd.toFixed(4)} · ${u.numTurns} turns`;
-  await ctx.reply(footer, { parse_mode: undefined });
-}
-
 async function sendCompactionNotification(
   ctx: Context,
   compaction: { trigger: 'manual' | 'auto'; preTokens: number } | undefined,
@@ -146,18 +129,16 @@ async function sendSessionInitNotification(
 /**
  * The context-visibility notices every finished turn posts, in the order the
  * user expects to read them. Each one decides for itself whether the chat's
- * verbosity settings want it, so callers just fire all three.
+ * verbosity settings want it, so callers just fire both.
  */
 export async function sendTurnNotifications(
   ctx: Context,
   sessionKey: string,
   response: {
-    usage?: AgentUsage;
     compaction?: { trigger: 'manual' | 'auto'; preTokens: number };
     sessionInit?: { model: string; sessionId: string };
   },
 ): Promise<void> {
-  await sendUsageFooter(ctx, response.usage);
   await sendCompactionNotification(ctx, response.compaction);
   await sendSessionInitNotification(ctx, sessionKey, response.sessionInit);
 }

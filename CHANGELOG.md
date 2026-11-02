@@ -7,13 +7,19 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Sessions
 
+- **A turn ends in one message** — with the status line on under `/verbosity
+  verbose`, a turn closed with two messages that both gave the context and the
+  cost, and each one notified you. The context bar now sits at the bottom of the
+  status line, whose own 📊 and 💰 make way for it. With the status line off, the
+  bar still comes on its own.
+
 - **`/recap` ends like a turn** — after a long reply, `/recap` left you on the
   tail of an answer with the prompt it answers scrolled away, and it said
   nothing about the context, which is what has changed when you've just gone
-  back to a fork or an earlier point. It now closes with the same context and
-  status messages as a normal turn: your last prompts, then the figure for the
-  point the chat is at. In PTY mode that figure comes from the session log when
-  no turn has cached one, so `/status` now shows its context line straight after
+  back to a fork or an earlier point. It now closes with the same status message
+  as a normal turn: your last prompts, then the figure for the point the chat is
+  at. In PTY mode that figure comes from the session log when no turn has cached
+  one, so `/status` now shows its context line straight after
   a jump or a restart too, and `/context` answers from the log at those moments
   instead of starting a separate `claude` to ask.
 

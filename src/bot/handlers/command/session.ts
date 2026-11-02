@@ -43,7 +43,6 @@ import {
   restoreTopicAndRefreshBotName,
 } from './topic.js';
 import { sendStatusLine } from './settings.js';
-import { sendTurnNotifications } from '../message/turn-notify.js';
 
 export async function handleClear(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
@@ -356,7 +355,6 @@ export async function handleRecap(ctx: Context): Promise<void> {
   // prompt it answers scrolled away, and after a jump to a fork or an earlier
   // point the context is no longer the figure last shown.
   const usage = getCachedUsage(sessionKey);
-  await sendTurnNotifications(ctx, sessionKey, { usage });
   await sendStatusLine(ctx, chatId, sessionKey, usage, exchanges[exchanges.length - 1]!.user);
 }
 

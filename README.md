@@ -43,7 +43,7 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 | Tests | Vitest |
 | Optional | `yt-dlp` and `ffmpeg` for media; Groq and OpenAI for speech |
 
-**Project status:** in active development, and used every day for my own development work, including building TeleCoder itself. The latest tagged release is v1.1.0, with newer work under "Unreleased" in the [changelog](CHANGELOG.md). The code is about 45k lines of TypeScript, plus 18k lines of tests (116 test files, 1,412 tests). See the [roadmap](ROADMAP.md) for what's next.
+**Project status:** in active development, and used every day for my own development work, including building TeleCoder itself. The latest tagged release is v1.1.0, with newer work under "Unreleased" in the [changelog](CHANGELOG.md). The code is about 45k lines of TypeScript, plus 18k lines of tests (117 test files, 1,418 tests). See the [roadmap](ROADMAP.md) for what's next.
 
 > [!NOTE]
 > TeleCoder began as a fork of [Claudegram by @NachoSEO](https://github.com/NachoSEO/claudegram),
@@ -415,7 +415,7 @@ your secrets, which is the only form of that answer worth trusting.
 | `/sessions` | List saved sessions |
 | `/resume` | Pick from recent sessions |
 | `/continue` | Resume most recent session |
-| `/recap [N]` | Re-read the last N exchanges of the current session (default 3), ending with the same context and status messages as a normal turn |
+| `/recap [N]` | Re-read the last N exchanges of the current session (default 3), ending with the same status message as a normal turn |
 | `/prompts [N]` | List just the last N prompts you sent, without the replies (default 15, max 25) |
 | `/sync` | Resend the latest assistant reply from the session log if Telegram missed any of it |
 | `/handoff` | Dump the conversation to markdown — Telegraph link plus downloadable file |

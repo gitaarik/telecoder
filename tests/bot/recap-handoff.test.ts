@@ -120,18 +120,17 @@ describe('/recap', () => {
       userPreferences.setShowPromptInStatusLine(chat, true);
     }
 
-    it('with the context and then the status line, after the last reply', async () => {
+    it('with the status line and the context in it, after the last reply', async () => {
       const { ctx, reply, chat } = chatWithTranscript('/recap', CONVERSATION);
       showAll(chat);
       await handleRecap(ctx);
 
       const sent = reply.mock.calls.map(([text]) => text);
       const lastReply = sent.findIndex((text) => text.includes('Shipped'));
-      const [footer, statusLine] = sent.slice(lastReply + 1);
-      expect(sent).toHaveLength(lastReply + 3);
-      expect(footer).toContain('54% context');
+      const [statusLine] = sent.slice(lastReply + 1);
+      expect(sent).toHaveLength(lastReply + 2);
       expect(statusLine).toContain('_▸ Plan the parser_\n_▸ Ship it_');
-      expect(statusLine).toContain('📊 54%');
+      expect(statusLine).toContain('54% context');
     });
 
     it('with the figure of the point a jump landed on, not the one last shown', async () => {
@@ -147,10 +146,9 @@ describe('/recap', () => {
       await handleRecap(ctx);
 
       const sent = reply.mock.calls.map(([text]) => text);
-      expect(sent.at(-2)).toContain('30% context');
       expect(sent.at(-1)).toContain('_▸ Plan the parser_');
       expect(sent.at(-1)).not.toContain('Ship it');
-      expect(sent.at(-1)).toContain('📊 30%');
+      expect(sent.at(-1)).toContain('30% context');
     });
 
     it('with nothing more when the chat turned both off', async () => {

@@ -32,8 +32,10 @@ import {
   VERBOSITY_INFO,
   isValidVerbosityLevel,
   getVerbosityLevel,
+  resolveVerbosityFlags,
   type VerbosityLevel,
 } from '../../../utils/verbosity.js';
+import { fmtTokens, getProgressBar } from '../../../utils/format.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 import {
   PERMISSION_MODES,
@@ -599,6 +601,18 @@ function recentPrompts(sessionKey: string | undefined, lastPrompt: string): stri
 }
 
 /**
+ * The usage footer, if there's a figure to show and /verbosity wants it shown.
+ * Plain text: sent alone it goes out as it is, and under the status line it
+ * goes through esc() like the rest of that message.
+ */
+function usageFooter(chatId: number, usage: AgentUsage | undefined): string | undefined {
+  if (!usage || !resolveVerbosityFlags(chatId).showUsageFooter) return undefined;
+  const used = usage.inputTokens + usage.outputTokens + usage.cacheReadTokens;
+  const pct = usage.contextWindow > 0 ? Math.round((used / usage.contextWindow) * 100) : 0;
+  return `${getProgressBar(pct)} ${pct}% context · ${fmtTokens(used)}/${fmtTokens(usage.contextWindow)} · $${usage.totalCostUsd.toFixed(4)} · ${usage.numTurns} turns`;
+}
+
+/**
  * Build the status-line message body in MarkdownV2.
  * Each enabled line picks its own formatting (italic for topic/stats,
  * mono code span for the resume command so it's easy to copy).
@@ -606,6 +620,8 @@ function recentPrompts(sessionKey: string | undefined, lastPrompt: string): stri
  * Sections are joined with blank lines so the first line (typically the
  * topic) stands alone in Telegram's chat-list preview — that's the only
  * line visible when distinguishing multiple bots in the same project.
+ *
+ * The usage footer, when the chat shows one, closes the message.
  */
 function buildStatusLineMarkdown(
   chatId: number,
@@ -638,6 +654,7 @@ function buildStatusLineMarkdown(
   const label = getEffortLabel(chatId);
   stats.push(label || '🧠 Auto');
 
+  const footer = usageFooter(chatId, usage);
   const provider = getActiveProviderName(chatId);
   if (usage) {
     if (usage.model) {
@@ -645,12 +662,15 @@ function buildStatusLineMarkdown(
       // The SDK alias doesn't reflect CCR's actual backend; tag accordingly.
       stats.push(provider === 'ccr' ? `🤖 ${shortened} · CCR` : `🤖 ${shortened}`);
     }
-    if (usage.contextWindow > 0) {
-      const used = usage.inputTokens + usage.outputTokens + usage.cacheReadTokens;
-      const pct = Math.round((used / usage.contextWindow) * 100);
-      stats.push(`📊 ${pct}%`);
+    // The footer gives these two right below, in more detail.
+    if (!footer) {
+      if (usage.contextWindow > 0) {
+        const used = usage.inputTokens + usage.outputTokens + usage.cacheReadTokens;
+        const pct = Math.round((used / usage.contextWindow) * 100);
+        stats.push(`📊 ${pct}%`);
+      }
+      stats.push(`💰 $${usage.totalCostUsd.toFixed(2)}`);
     }
-    stats.push(`💰 $${usage.totalCostUsd.toFixed(2)}`);
   }
 
   // Activity counters — only rendered when non-zero so quiet turns stay quiet.
@@ -671,11 +691,17 @@ function buildStatusLineMarkdown(
   }
 
   tail.push(`_${esc(stats.join(' · '))}_`);
+  if (footer) tail.push(esc(footer));
 
   sections.push(tail.join('\n'));
   return sections.join('\n\n');
 }
 
+/**
+ * The message that closes a turn: the status line, with the usage footer at its
+ * bottom when the chat shows both. /statusline and /verbosity set them apart,
+ * so with the status line off, a chat that shows the footer gets it on its own.
+ */
 export async function sendStatusLine(
   ctx: Context,
   chatId: number,
@@ -683,10 +709,14 @@ export async function sendStatusLine(
   usage?: AgentUsage,
   lastPrompt?: string,
 ): Promise<void> {
-  if (!userPreferences.getShowStatusLine(chatId)) return;
   try {
-    const markdown = buildStatusLineMarkdown(chatId, sessionKey, usage, lastPrompt);
-    await ctx.reply(markdown, { parse_mode: 'MarkdownV2' });
+    if (userPreferences.getShowStatusLine(chatId)) {
+      const markdown = buildStatusLineMarkdown(chatId, sessionKey, usage, lastPrompt);
+      await ctx.reply(markdown, { parse_mode: 'MarkdownV2' });
+      return;
+    }
+    const footer = usageFooter(chatId, usage);
+    if (footer) await ctx.reply(footer);
   } catch (err) {
     console.debug('[StatusLine] Failed to send:', err instanceof Error ? err.message : err);
   }
