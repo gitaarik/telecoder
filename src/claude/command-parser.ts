@@ -148,6 +148,7 @@ export function getAvailableCommands(): string {
       '• `/cost` \\- Show usage limits and cost from Claude Code',
       '• `/compact` \\- Compact the context window \\(reports the token reduction\\)',
       '• `/botstatus` \\- Show bot process status',
+      '• `/version` \\- Show the running version and whether it\'s the latest',
       `• \`/restartbot\` \\- Restart the bot process${adminTag}`,
       `• \`/rebuildbot\` \\- Rebuild and restart with auto\\-resume; \`/rebuildbot idle\` waits for each bot to finish first${adminTag}`,
       '• `/ping` \\- Check if bot is responsive',

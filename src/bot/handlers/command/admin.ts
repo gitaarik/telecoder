@@ -1,5 +1,5 @@
 /**
- * Bot lifecycle commands: /update, /botstatus, /restartbot, /rebuildbot.
+ * Bot lifecycle commands: /update, /botstatus, /version, /restartbot, /rebuildbot.
  *
  * These are the handlers that act on the bot process itself rather than on a
  * conversation, so they are the only ones that touch botctl, the reload marker
@@ -37,7 +37,8 @@ import {
   type SystemdUnit,
 } from '../../../utils/systemd.js';
 import { launcherRestartHint } from '../../../utils/stale-launcher.js';
-import { describeRunningBuild } from '../../../utils/build-info.js';
+import { describeRunningBuild, getLatestBuild, getRunningBuild } from '../../../utils/build-info.js';
+import { checkCode, checkRemote, describeCodeCheck, describeRemoteCheck } from '../../../utils/version-check.js';
 
 /** Write the reload marker so autoResumeAfterReload picks up sessions on restart. */
 export function writeReloadMarker(): void {
@@ -215,6 +216,23 @@ export async function handleBotStatus(ctx: Context): Promise<void> {
     (warning ? `\n\n${esc(warning)}` : '');
 
   await replyMd(ctx, msg);
+}
+
+export async function handleVersion(ctx: Context): Promise<void> {
+  const [code, remote, warning] = await Promise.all([
+    checkCode(getRunningBuild(), getLatestBuild(), PROJECT_ROOT),
+    checkRemote(PROJECT_ROOT),
+    // A worker's stamp only speaks for that worker, not the launcher it runs in.
+    staleLauncherWarning(),
+  ]);
+
+  const build = describeRunningBuild();
+  const answer = [build && `Running: ${build}`, describeCodeCheck(code), describeRemoteCheck(remote)]
+    .filter(Boolean)
+    .join('\n');
+
+  // Plain text, no parse_mode: a commit subject would otherwise need escaping.
+  await ctx.reply(warning ? `${answer}\n\n${warning}` : answer);
 }
 
 /**

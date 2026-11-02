@@ -480,6 +480,7 @@ your secrets, which is the only form of that answer worth trusting.
 | `/allow` | Let someone in as a guest — reply to their message, or `/allow @user` — admin-only |
 | `/deny` | Remove someone admitted with `/allow` — admin-only |
 | `/botstatus` | Bot process status and the version it's running |
+| `/version` | The running version and whether it's the latest, against the code in the checkout and the branch it tracks |
 | `/restartbot` | Restart the bot — admin-only |
 | `/rebuildbot` | Rebuild code and restart — this instance, all, or all once each is idle (`/rebuildbot idle`) — admin-only |
 | `/update` | Update the Claude Code CLI — admin-only |

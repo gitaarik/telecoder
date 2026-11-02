@@ -2149,6 +2149,15 @@
             time.</p>
           </div>
           <div class="feature-card" data-category="reliability">
+            <div class="feature-icon"><svg><use href="#i-gauge"/></svg></div>
+            <h3>Ask whether you're on the latest</h3>
+            <p><code>/version</code> compares the running build with the code in the checkout and
+            the branch it tracks, and names what catches it up: <code>/restartbot</code> for a build
+            that's done but not loaded, <code>/rebuildbot</code> for code changed since. It compares
+            contents rather than commits, so a docs commit or a history rewrite doesn't count as
+            falling behind, and a check that couldn't run says so instead of passing.</p>
+          </div>
+          <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-inbox"/></svg></div>
             <h3>Nothing gets dropped</h3>
             <p>After every turn TeleCoder checks what it sent against Claude Code's own session log
@@ -3064,6 +3073,10 @@ CCR_AUTOSTART=true</pre>
             <div class="command-row">
               <code class="command-code">/botstatus</code>
               <span class="command-desc">Show bot process status and the version it's running</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/version</code>
+              <span class="command-desc">Show the running version and whether it's the latest, against the code in the checkout and the branch it tracks (bypasses processing queue)</span>
             </div>
             <div class="command-row">
               <code class="command-code">/restartbot</code>

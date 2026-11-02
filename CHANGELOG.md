@@ -257,6 +257,17 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **`/version` says whether you're on the latest** — the version a restart names
+  tells you what came back, but not whether anything newer has landed since. A
+  fix you'd committed and never built looked just like one that was live.
+  `/version` names the running build, compares it with the code in the checkout
+  and the branch it tracks, and says what catches it up: `/restartbot` for a build
+  that's done but not loaded, `/rebuildbot` for code changed since, `git pull` for
+  commits that aren't here yet. It compares the contents of what a build compiles
+  rather than commits, so a docs commit, committing what was already built, or a
+  history rewrite doesn't count as falling behind. A check that couldn't run says
+  so instead of passing, and it answers during a running turn.
+
 - **A message you sent too soon can be taken back** — a message sent while the
   bot was busy got no answer at all, so a bot that was only still working looked
   idle, and you found out when the reply to the last message landed. Deleting it

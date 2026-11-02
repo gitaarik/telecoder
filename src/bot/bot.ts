@@ -28,6 +28,7 @@ import {
   handleSuggestions,
   handleSuggestionsCallback,
   handleBotStatus,
+  handleVersion,
   handleRestartBot,
   handleRestartBotCallback,
   handleRestartCallback,
@@ -285,6 +286,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'resume', description: '▶️ Resume a session' },
     { command: 'continue', description: '▶️ Continue last session' },
     { command: 'botstatus', description: '🩺 Show bot process status' },
+    { command: 'version', description: '🏷️ Show the running version and whether it is the latest' },
     { command: 'restartbot', description: '🔁 Restart the bot' },
     { command: 'rebuildbot', description: '🔄 Rebuild and restart with session restore' },
     { command: 'context', description: '🧠 Show Claude context usage' },
@@ -390,6 +392,7 @@ export async function createBot(): Promise<Bot> {
   cmd('stop', handleCancel); // alias — natural expectation for "stop the current turn"
   cmd('ping', handlePing);
   cmd('status', handleStatus);
+  cmd('version', handleVersion);
   // Lifecycle and transport are admin-only: they act on every session in the
   // bot, not just the caller's, and /method decides whether the permission gate
   // (a PreToolUse hook, so PTY-only) is in the loop at all.

@@ -80,6 +80,7 @@ export {
   handleUpdate,
   handleUpdateCallback,
   handleBotStatus,
+  handleVersion,
   handleRestartBot,
   handleRestartBotCallback,
   handleRestartCallback,

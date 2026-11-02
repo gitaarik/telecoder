@@ -1,6 +1,7 @@
 /**
  * Writes dist/build-info.json: which commit `npm run build` is compiling, for
- * the bot to name once it is running the result (src/utils/build-info.ts).
+ * the bot to name once it is running the result (src/utils/build-info.ts), and a
+ * hash of its source, for /version to compare with the code (source-hash.mjs).
  *
  * Runs ahead of tsc, because tsc emits despite type errors: a build that fails
  * still replaces dist/, and the next restart runs what it left there. Stamped
@@ -13,6 +14,7 @@
 
 import { execFileSync } from 'child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { hashSource } from './source-hash.mjs';
 
 const STAMP = 'dist/build-info.json';
 
@@ -43,6 +45,7 @@ try {
     commit,
     subject,
     dirty: Boolean(changes),
+    sourceHash: hashSource('.'),
     builtAt: new Date().toISOString(),
   }, null, 2) + '\n');
 } catch (err) {

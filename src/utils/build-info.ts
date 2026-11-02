@@ -1,6 +1,6 @@
 /**
- * Which build this process is running, for the messages that follow a restart
- * and for /botstatus.
+ * Which build this process is running, for the messages that follow a restart,
+ * /botstatus and /version.
  *
  * Asking git at startup would answer a different question. HEAD is what's
  * checked out and the bot runs dist/, so after a commit and a plain /restartbot
@@ -21,6 +21,8 @@ export interface BuildInfo {
   subject?: string;
   /** Built with uncommitted changes under src/. */
   dirty?: boolean;
+  /** Of what the build compiled (scripts/source-hash.mjs). */
+  sourceHash?: string;
   builtAt: string;
 }
 
@@ -46,9 +48,20 @@ export function describeBuild(build: BuildInfo): string {
 // dist/utils/build-info.js finds dist/build-info.json. Run from source under
 // tsx this looks in src/ and finds nothing, which is right: that code is the
 // working tree, not any build.
-const runningBuild = readBuildInfo(new URL('../build-info.json', import.meta.url));
+const STAMP = new URL('../build-info.json', import.meta.url);
+const runningBuild = readBuildInfo(STAMP);
 
 /** The build this process loaded, or null when it isn't running a stamped one. */
+export function getRunningBuild(): BuildInfo | null {
+  return runningBuild;
+}
+
+/** The last build on disk, which this process hasn't loaded if it came after the start. */
+export function getLatestBuild(): BuildInfo | null {
+  return readBuildInfo(STAMP);
+}
+
+/** getRunningBuild, in words. */
 export function describeRunningBuild(): string | null {
   return runningBuild && describeBuild(runningBuild);
 }
