@@ -4,28 +4,22 @@
 
 **Claude Code from Telegram.** Your agent runs on your machine — you drive it from your phone.
 
+[![CI](https://github.com/gitaarik/telecoder/actions/workflows/ci.yml/badge.svg)](https://github.com/gitaarik/telecoder/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Claude](https://img.shields.io/badge/Claude_Agent_SDK-Anthropic-cc785c?logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
-[![Telegram](https://img.shields.io/badge/Telegram_Bot-Grammy-26a5e4?logo=telegram&logoColor=white)](https://grammy.dev/)
+[![Claude](https://img.shields.io/badge/Claude_Code-SDK_%2B_PTY-cc785c?logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
+[![Telegram](https://img.shields.io/badge/Telegram_Bot-grammY-26a5e4?logo=telegram&logoColor=white)](https://grammy.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+[Website](https://telecoder.dev) · [Quick Start](#quick-start) · [Commands](#commands) · [Roadmap](ROADMAP.md) · [Changelog](CHANGELOG.md)
 
 <br />
 
 ```
-  Telegram  ──▶  Grammy Bot  ──▶  Claude Agent SDK  ──▶  Your Machine
-  voice/text     command router     agentic runtime       bash, files, code
+  Telegram  ──▶  grammY bot  ──▶  Claude Code (SDK or PTY)  ──▶  Your machine
+  voice/text     command router    agentic runtime               bash, files, code
 ```
 
 </div>
-
----
-
-> TeleCoder began in February 2026 as a fork of
-> [Claudegram by @NachoSEO](https://github.com/NachoSEO/claudegram) and now runs as an
-> independent project maintained by [@gitaarik](https://github.com/gitaarik) — 350+ commits
-> and ~70k lines beyond the original, including a provider router, PTY transport,
-> multi-instance launcher, background task lifecycle, and an agent watchdog.
-> See [Credits](#credits) for full attribution.
 
 ---
 
@@ -34,6 +28,32 @@
 TeleCoder bridges Telegram to a **full Claude Code agent** running locally on your machine. Send a message in Telegram — Claude reads your files, runs commands, writes code, transcribes voice notes, and speaks responses back. All from your phone.
 
 This is not a simple API wrapper. It's the real Claude Code agent with tool access — Bash, file I/O, code editing, web browsing — packaged behind a Telegram interface with streaming responses, session memory, and rich output formatting.
+
+**Who it's for:** developers who already use Claude Code and want to keep working when they're away from their desk. You host it yourself, on your own machine and with your own Claude account. You can share a bot with a small group you trust ([Sharing a bot](#sharing-a-bot)), but there is no hosted version.
+
+**Built with:**
+
+| Area | Technology |
+|------|------------|
+| Language and runtime | TypeScript on Node.js 20+ |
+| Telegram | [grammY](https://grammy.dev/) |
+| Claude Code transports | [Claude Agent SDK](https://docs.anthropic.com/en/docs/claude-code), or the real `claude` CLI through `node-pty` and `@xterm/headless` |
+| Agent tools | [Model Context Protocol](https://modelcontextprotocol.io/) server, for the tools that reach back into Telegram |
+| Config and scheduling | Zod, croner |
+| Tests | Vitest |
+| Optional | `yt-dlp` and `ffmpeg` for media; Groq and OpenAI for speech |
+
+**Project status:** in active development, and used every day for my own development work, including building TeleCoder itself. The latest tagged release is v1.1.0, with newer work under "Unreleased" in the [changelog](CHANGELOG.md). The code is about 45k lines of TypeScript, plus 18k lines of tests (116 test files, 1,412 tests). See the [roadmap](ROADMAP.md) for what's next.
+
+> [!NOTE]
+> TeleCoder began as a fork of [Claudegram by @NachoSEO](https://github.com/NachoSEO/claudegram),
+> whose last commit was in March 2026. It has been developed independently since April 2026 by
+> [@gitaarik](https://github.com/gitaarik): 350+ commits, adding about 75k lines and removing 18k.
+> The commit history since the fork is all in this repository, which was created in July 2026 when
+> the project was renamed, so its GitHub creation date is later than its first commits.
+> See [Credits](#credits) for attribution.
+>
+> TeleCoder is an independent project, not affiliated with or endorsed by Anthropic or Telegram.
 
 ---
 
@@ -45,70 +65,129 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 
 ### Agent Core
 - Full Claude Code with tool access (Bash, Read, Write, Edit, Glob, Grep)
+- Two transports: the Agent SDK, or the real `claude` CLI in a pseudo-terminal
 - Session resume across messages — Claude remembers everything
 - Project-based working directories
 - Streaming responses with live-updating messages
-- Model picker: Sonnet · Opus · Haiku
-- Plan mode, explore mode, loop mode
-- Provider router — Claude Code (SDK or PTY) or CCR, with one-tap
-  failover when Max throttles ([details](#providers))
+- Model and effort pickers, plan, explore and loop modes
+- Provider router with one-tap failover when Max throttles ([details](#providers))
 
-### Reddit Integration
-- `/reddit` — posts, subreddits, user profiles (needs a Reddit OAuth app)
-- `/vreddit` — download & send Reddit-hosted videos
-- Auto-compression for videos > 50 MB (CRF → two-pass)
-- Original oversized videos archived locally
-- Large threads auto-export to JSON
+### Multiple Bots
+- Run several bots from one launcher, each with its own sessions and preferences
+- Hand a conversation to a sibling bot with `/fork`
+- Apply a setting everywhere with `/model sonnet all`
+- [Setup](#running-several-bots)
 
-### Media Extraction
-- `/extract` — YouTube, Instagram, TikTok video/audio/transcript
-- Text, audio (MP3), video (MP4), or all modes
-- Requires yt-dlp, ffmpeg (system binaries)
+### Sessions
+- `/resume`, `/continue` and `/recap` to get back to earlier work
+- `/fork` and `/tree` to branch a conversation and navigate its branches
+- `/teleport` to continue a session in your terminal
+- Chats carry on by themselves after a restart
+- Each forum topic runs as an independent session
 
-### Medium Integration
-- `/medium` — fetch articles as readable text via Freedium
-- Telegraph Instant View, save as Markdown, or both
-- Pure TypeScript, no Python/Playwright needed
+### Background & Scheduled Work
+- Background tasks and Monitor events relayed to Telegram as they happen
+- `/tasks` and `/shells` to inspect and stop what's running
+- `/schedule` for recurring prompts (`every 5m`, `daily 9am`, or cron)
+
+### Reliability
+- Agent watchdog that detects silent or stuck tools, with `/cancel` working during hangs
+- Rapid split pastes combined into one prompt
+- Messages that have to wait say so, and can be taken back
 
 </td>
 <td width="50%" valign="top">
 
+### Claude Can Reach You
+- MCP tools let Claude ask with buttons or polls, send files and schedule prompts
+- CLI permission dialogs relayed to Telegram in PTY mode
+- Talk naturally — Claude picks the right tool without explicit commands
+
+### Sharing & Permissions
+- Admins, approvers, guests, and per-group contributors and spectators
+- Permission gate, scope guard and a plain-language charter ([details](#sharing-a-bot))
+
 ### Voice & Audio
 - Send a voice note → transcribed via Groq Whisper → fed to Claude
 - `/transcribe` — standalone transcription (reply-to or prompt)
-- `/tts` — agent responses spoken back as Telegram voice notes
-- 13 voices via OpenAI TTS (`gpt-4o-mini-tts`)
+- `/tts` — agent responses spoken back as Telegram voice notes, via Groq Orpheus or OpenAI
 
 ### Rich Output
 - MarkdownV2 formatting with automatic escaping
 - Telegraph Instant View for long responses & tables
 - Smart chunking that preserves code blocks
-- ForceReply interactive prompts for multi-step commands
-- `/teleport` — fork session to terminal for continued work
+- Terminal-style tool status (`/terminalui`)
 - Inline keyboards for settings (model, mode, TTS, clear)
 
-### Terminal UI
-- Terminal-style display with tool status spinners
-- Shows what Claude is doing in real time
-- Toggle with `/terminalui`
-
-### MCP Tools (Intelligent Routing)
-- Talk naturally — Claude auto-uses the right tools
-- Reddit, Medium, YouTube, project management via MCP
-- No explicit commands needed for common tasks
-
-### Forum Topic Sessions
-- Each forum topic runs as an independent session
-- Work on multiple projects in parallel across topics
-
-### Image Uploads
-- Send photos or image docs in chat
-- Saved to project under `.claudegram/uploads/`
-- Claude is notified with path + caption
+### Content & Uploads
+- Send photos or image documents; saved under `.claudegram/uploads/` in the project
+- `/reddit` and `/vreddit` — Reddit posts, threads and videos
+- `/extract` — YouTube, Instagram and TikTok video, audio or transcript (`yt-dlp`, `ffmpeg`)
+- `/medium` — Medium articles as readable text via Freedium
 
 </td>
 </tr>
 </table>
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+| Requirement | Notes |
+|-------------|-------|
+| **Node.js 20+** | with npm |
+| **Claude Code CLI** | installed and authenticated — `claude` in your PATH |
+| **Telegram bot token** | from [@BotFather](https://t.me/botfather) |
+| **Your Telegram user ID** | from [@userinfobot](https://t.me/userinfobot) |
+
+### Setup
+
+```bash
+git clone https://github.com/gitaarik/telecoder.git
+cd telecoder
+cp .env.example .env
+```
+
+Edit `.env`:
+
+```bash
+TELEGRAM_BOT_TOKEN=your_bot_token
+ALLOWED_USER_IDS=your_user_id
+```
+
+### Run
+
+```bash
+npm install
+npm run dev        # dev mode with hot reload
+```
+
+Open your bot in Telegram → `/start`
+
+### Run the tests
+
+The test suite needs no bot token, Claude login or `.env`:
+
+```bash
+npm install
+npm test
+```
+
+---
+---
+
+## Running several bots
+
+One launcher can run several bots, each in its own worker with its own sessions and
+preferences. That lets you keep separate conversations going, and hand one from bot to bot
+with `/fork`.
+
+```bash
+cp instances.json.example instances.json   # add your bot tokens; this file is gitignored
+npm run dev:multi                          # or, after a build: npm run start:multi
+```
 
 ---
 
@@ -322,43 +401,6 @@ your secrets, which is the only form of that answer worth trusting.
 
 ---
 
-## Quick Start
-
-### Prerequisites
-
-| Requirement | Notes |
-|-------------|-------|
-| **Node.js 20+** | with npm |
-| **Claude Code CLI** | installed and authenticated — `claude` in your PATH |
-| **Telegram bot token** | from [@BotFather](https://t.me/botfather) |
-| **Your Telegram user ID** | from [@userinfobot](https://t.me/userinfobot) |
-
-### Setup
-
-```bash
-git clone https://github.com/gitaarik/telecoder.git
-cd telecoder
-cp .env.example .env
-```
-
-Edit `.env`:
-
-```bash
-TELEGRAM_BOT_TOKEN=your_bot_token
-ALLOWED_USER_IDS=your_user_id
-```
-
-### Run
-
-```bash
-npm install
-npm run dev        # dev mode with hot reload
-```
-
-Open your bot in Telegram → `/start`
-
----
-
 ## Commands
 
 ### Session
@@ -498,23 +540,25 @@ MEDIUM_TIMEOUT_MS=15000
 ```bash
 # .env
 GROQ_API_KEY=your_groq_key
-GROQ_TRANSCRIBE_PATH=/absolute/path/to/groq_transcribe.py
 ```
 
 </details>
 
 <details>
-<summary><strong>Text-to-Speech — OpenAI TTS</strong></summary>
+<summary><strong>Text-to-Speech — Groq Orpheus or OpenAI</strong></summary>
+
+Groq is the default and uses `GROQ_API_KEY`. To use OpenAI instead:
 
 ```bash
 # .env
+TTS_PROVIDER=openai
 OPENAI_API_KEY=your_openai_key
 TTS_MODEL=gpt-4o-mini-tts
 TTS_VOICE=coral
 TTS_RESPONSE_FORMAT=opus
 ```
 
-13 voices available: `alloy`, `ash`, `ballad`, `cedar`, `coral`, `echo`, `fable`, `marin`, `nova`, `onyx`, `sage`, `shimmer`, `verse`
+13 OpenAI voices available: `alloy`, `ash`, `ballad`, `cedar`, `coral`, `echo`, `fable`, `marin`, `nova`, `onyx`, `sage`, `shimmer`, `verse`
 
 </details>
 
@@ -646,8 +690,8 @@ restarts the bot. `/members` is readable by anyone who can prompt.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GROQ_API_KEY` | — | Groq API key for Whisper |
-| `GROQ_TRANSCRIBE_PATH` | — | Path to `groq_transcribe.py` |
 | `OPENAI_API_KEY` | — | OpenAI API key for TTS |
+| `TTS_PROVIDER` | `groq` | `groq` (Orpheus) or `openai` |
 | `TTS_VOICE` | `coral` | Default TTS voice |
 | `TTS_MODEL` | `gpt-4o-mini-tts` | TTS model |
 | `VOICE_SHOW_TRANSCRIPT` | `true` | Show transcript text before agent response |
@@ -657,72 +701,45 @@ restarts the bot. `/members` is readable by anyone who can prompt.
 ## Architecture
 
 ```
-src/
-├── bot/
-│   ├── bot.ts                     # Bot setup, handler registration
-│   ├── handlers/
-│   │   ├── command.handler.ts     # All slash commands + inline keyboards
-│   │   ├── message.handler.ts     # Text routing, ForceReply dispatch
-│   │   ├── voice.handler.ts       # Voice download, transcription, agent relay
-│   │   └── photo.handler.ts       # Image save + agent notification
-│   └── middleware/
-│       ├── auth.middleware.ts      # User whitelist + group chat auth
-│       ├── group-role.middleware.ts # Contributor/spectator gate
-│       ├── queued-messages.ts     # Queued notice, Take back, holds messages while Claude is busy
-│       └── stale-filter.ts        # Ignore stale messages on restart
-├── claude/
-│   ├── agent.ts                   # Claude Agent SDK, session resume, system prompt
-│   ├── mcp-tools.ts              # MCP server: Reddit, Medium, Extract, Telegraph tools
-│   ├── session-manager.ts         # Per-chat session state
-│   ├── session-history.ts         # Session persistence and history
-│   ├── request-queue.ts           # Sequential request queue
-│   ├── command-parser.ts          # Help text + command descriptions
-│   └── agent-watchdog.ts          # Watchdog for long-running agent tasks
-├── reddit/
-│   ├── redditfetch.ts             # Native TypeScript Reddit client (OAuth2)
-│   └── vreddit.ts                 # Reddit video download + compression pipeline
-├── medium/
-│   └── freedium.ts                # Freedium article fetcher
-├── media/
-│   └── extract.ts                 # YouTube/TikTok/Instagram extraction (yt-dlp)
-├── telegram/
-│   ├── message-sender.ts          # Streaming, chunking, Telegraph routing
-│   ├── markdown.ts                # MarkdownV2 escaping
-│   ├── telegraph.ts               # Telegraph Instant View client
-│   ├── telegraph-settings.ts      # Per-chat Telegraph toggle
-│   ├── terminal-renderer.ts       # Terminal-style UI renderer
-│   ├── terminal-settings.ts       # Per-chat terminal UI toggle
-│   └── deduplication.ts           # Message dedup
-├── tts/
-│   ├── tts.ts                     # TTS provider routing (Groq Orpheus / OpenAI)
-│   ├── tts-settings.ts            # Per-chat voice settings
-│   └── voice-reply.ts             # TTS hook for agent responses
-├── audio/
-│   └── transcribe.ts              # Shared transcription utilities
-├── utils/
-│   ├── download.ts                # URL download with SSRF protection
-│   ├── sanitize.ts                # Path and error sanitization
-│   ├── workspace-guard.ts         # Workspace boundary enforcement
-│   ├── url-guard.ts               # URL validation (protocol, SSRF)
-│   ├── file-type.ts               # File content validation
-│   ├── caffeinate.ts              # macOS sleep prevention
-│   ├── session-key.ts             # Session key generation (DM + forum topics)
-│   ├── agent-timer.ts             # Agent execution timing
-│   └── debug-agent.ts             # Debug utilities
-├── config.ts                      # Zod-validated environment config
-└── index.ts                       # Entry point
+Telegram ⇄ grammY bot ⇄ provider router ─┬─ claude: Agent SDK ─────┐
+           auth, group roles,            ├─ claude: PTY (real CLI) ┼─▶ tools on your machine
+           batching, queueing            └─ ccr: Agent SDK ────────┘
+                ▲
+                └── MCP server: lets the agent ask questions, send files and schedule prompts
 ```
+
+| Path | What's there |
+|------|--------------|
+| `src/index.ts`, `src/launcher.ts` | Entry points for one bot, or several in worker threads |
+| `src/config.ts` | Zod-validated environment config |
+| `src/bot/` | Bot setup, command and message handlers, middleware, group access |
+| `src/providers/` | Provider router, SDK and CCR providers, switching, per-user preferences |
+| `src/claude/` | PTY provider and TUI parsing, session state and history, watchdog, permission gate, scope guard, charter judge, scheduler, MCP tools |
+| `src/bin/` | The MCP server process |
+| `src/telegram/` | Streaming, chunking, MarkdownV2, Telegraph, task cards |
+| `src/startup/` | Restoring chats after a restart |
+| `src/reddit/`, `src/medium/`, `src/media/`, `src/audio/`, `src/tts/` | Content and speech integrations |
+| `src/utils/` | Shared helpers, including download, path and error sanitizing, and SSRF protection |
+| `tests/` | Vitest suite, mirroring `src/` |
+| `scripts/` | Bot control and shared-bot account setup |
+| `docs/` | Website, [PTY design notes](docs/design/pty-provider.md), [debugging notes](docs/debugging/interrupted-by-user-misattribution.md), [example charter](docs/CHARTER.example.md) |
+| `prototypes/pty/` | The prototype that came before the PTY provider |
 
 ---
 
 ## Development
 
 ```bash
-npm run dev          # Dev mode with hot reload (tsx watch)
-npm run typecheck    # Type check only
-npm run build        # Compile to dist/
-npm start            # Run compiled build
+npm run dev            # Dev mode with hot reload (tsx watch)
+npm run dev:multi      # Run the bots in instances.json
+npm test               # Run the test suite
+npm run test:coverage  # Tests with a coverage report
+npm run typecheck      # Type check only
+npm run build          # Compile to dist/
+npm start              # Run compiled build
 ```
+
+CI runs the type check, tests and build on every push. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Bot Control Script
 
@@ -763,9 +780,20 @@ Then `/continue` or `/resume` in Telegram to restore your session.
   credential path, pause too
 - **Charter judge** — guest messages are read against a charter before they run
 - **Project sandbox** — the project picker is scoped to `WORKSPACE_DIR`
-- **Permission mode** — uses `acceptEdits` by default
+- **Permission mode** — `/mode` sets how much Claude asks before acting
 - **Dangerous mode** — opt-in auto-approve for all tool permissions
 - **Secrets** — loaded from `.env` (gitignored), never committed
+
+### What it stores and sends
+
+TeleCoder has no server of its own. Its state stays on your machine, in `~/.claudegram`
+(owner-only permissions), and includes session metadata and preferences. On a shared bot it
+also includes the Telegram ids and names of the people it has seen or let in.
+
+Your messages go to Telegram and to Claude Code, and from there to the model provider you
+use. Claude Code keeps its own session transcripts in `~/.claude`. Voice and text-to-speech
+go to Groq or OpenAI, and only if you configure them. Long replies can be published to
+Telegraph when Instant View is on, and those pages are public to anyone with the link.
 
 ---
 
