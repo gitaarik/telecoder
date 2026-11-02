@@ -22,8 +22,8 @@
 
 > TeleCoder began in February 2026 as a fork of
 > [Claudegram by @NachoSEO](https://github.com/NachoSEO/claudegram) and now runs as an
-> independent project maintained by [@gitaarik](https://github.com/gitaarik) — 185+ commits
-> and ~25k lines beyond the original, including a provider router, PTY transport,
+> independent project maintained by [@gitaarik](https://github.com/gitaarik) — 350+ commits
+> and ~70k lines beyond the original, including a provider router, PTY transport,
 > multi-instance launcher, background task lifecycle, and an agent watchdog.
 > See [Credits](#credits) for full attribution.
 
