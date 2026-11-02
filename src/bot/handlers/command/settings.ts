@@ -8,6 +8,7 @@
  */
 
 import { Context } from 'grammy';
+import * as path from 'path';
 import { config } from '../../../config.js';
 import { sessionManager } from '../../../claude/session-manager.js';
 import { promptsIn } from '../../../claude/fork-tree.js';
@@ -651,6 +652,12 @@ function buildStatusLineMarkdown(
   }
 
   const stats: string[] = [];
+  // The bot's display name only says where it is now; this stays with each
+  // answer for scrolling back. After a switch it already names the new project,
+  // where the next message goes, even though the turn ran in the old one.
+  const project = sessionKey ? sessionManager.getSession(sessionKey)?.workingDirectory : undefined;
+  if (project) stats.push(`📁 ${path.basename(project) || project}`);
+
   const label = getEffortLabel(chatId);
   stats.push(label || '🧠 Auto');
 

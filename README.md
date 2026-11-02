@@ -470,7 +470,7 @@ your secrets, which is the only form of that answer worth trusting.
 | `/context` | Show Claude context / token usage |
 | `/cost` | Show usage limits and cost as Claude Code reports them — session/weekly limits on a subscription, dollar totals on API billing — plus TeleCoder's own running tally for the conversation, which the CLI cannot keep (SDK mode only) |
 | `/compact` | Compact the context window (SDK and PTY), reporting the token reduction |
-| `/statusline` | Toggle per-turn status line (effort, model, context %, cost) |
+| `/statusline` | Toggle per-turn status line (project, effort, model, context %, cost) |
 | `/botname` | Toggle dynamic bot name (shows the active project) |
 | `/topic` | Set or clear the conversation topic |
 | `/tasks` | List active background tasks |

@@ -7,6 +7,12 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Sessions
 
+- **The status line names the project** — a bot moves between projects and its
+  display name only says where it is now, so scrolling back left you guessing
+  which project an older answer belonged to. `📁 telecoder` now leads the stats
+  under each answer. After a switch it already names the new project, where your
+  next message goes.
+
 - **A turn ends in one message** — with the status line on under `/verbosity
   verbose`, a turn closed with two messages that both gave the context and the
   cost, and each one notified you. The context bar now sits at the bottom of the
