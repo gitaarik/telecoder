@@ -292,6 +292,17 @@ describe('the bot as assembled', () => {
     await vi.waitFor(() => expect(fx.prompts).toEqual(['first', 'and the tests']), WAIT);
   });
 
+  it('answers a read-only command like /commands during the turn, with no ack', async () => {
+    send('first');
+    await vi.waitFor(() => expect(fx.prompts).toEqual(['first']), WAIT);
+
+    const id = send('/commands');
+    await vi.waitFor(() => expect(callsTo('sendMessage').some((c) => String(c.payload.text).includes('Bot Commands'))).toBe(true), WAIT);
+
+    expect(fx.finish.has('first')).toBe(true);
+    expect(ackFor(id)).toBeUndefined();
+  });
+
   it('leaves the chat free while a message is set aside', async () => {
     send('first');
     await vi.waitFor(() => expect(fx.prompts).toEqual(['first']), WAIT);

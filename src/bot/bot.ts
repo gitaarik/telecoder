@@ -416,6 +416,17 @@ export async function createBot(): Promise<Bot> {
   // Sets an idea aside for after the turn, so it can't wait behind that turn. And
   // with nothing running, it's the one message that doesn't start one.
   cmd('later', handleLater);
+  // Read-only, with nothing a running turn could be disturbed by, so they answer
+  // mid-turn rather than after it: a fixed list, a look at the session list or
+  // the bot process, a re-read of the transcript, and two that ask a probe of
+  // their own rather than the live session. Anything that changes the session
+  // or starts a turn stays behind sequentialize below.
+  cmd('commands', handleCommands);
+  cmd('sessions', handleSessions);
+  cmd('botstatus', handleBotStatus);
+  cmd('recap', handleRecap);
+  cmd('projectcommands', handleProjectCommands);
+  cmd('context', handleContext);
   cmd('tasks', handleTasks); // Read-only; must bypass queue so it works mid-stream
   cmd('cost', handleCost); // Read-only probe + a peek at the live TUI panel; bypasses the queue so it answers mid-turn
   cmd('shells', handleShells); // Lists/kills OS-level bg processes; must bypass queue to rescue hung sessions
@@ -510,8 +521,6 @@ export async function createBot(): Promise<Bot> {
   cmd('botname', handleBotName);
   cmd('topic', handleTopic);
   cmd('tts', handleTTS);
-  cmd('botstatus', handleBotStatus);
-  cmd('context', handleContext);
   // /compact is a native Claude Code slash command, not a bot command — route it
   // through the normal message pipeline (handleMessage), which forwards it to
   // the active provider. The PTY provider runs the real compaction and reports
@@ -521,7 +530,6 @@ export async function createBot(): Promise<Bot> {
   cmd('compact', handleMessage, { forwardsToAgent: true });
   cmd('update', adminOnly(handleUpdate));
 
-  cmd('commands', handleCommands);
   cmd('model', handleModelCommand);
   cmd('effort', handleEffort);
   cmd('verbosity', handleVerbosity);
@@ -538,8 +546,6 @@ export async function createBot(): Promise<Bot> {
   // Session resume commands
   cmd('resume', handleResume);
   cmd('continue', handleContinue);
-  cmd('sessions', handleSessions);
-  cmd('recap', handleRecap);
 
   // Fork: /fork forks from current state; /accept and /decline are the
   // slash-command equivalents of the target-side inline buttons.
@@ -549,7 +555,6 @@ export async function createBot(): Promise<Bot> {
 
   // Loop mode
   cmd('loop', handleLoop);
-  cmd('projectcommands', handleProjectCommands);
   cmd('permissions', adminOnly(handlePermissions));
   // Admins *and* approvers: opening a window is a decision about prompts, not
   // a power over the bot, so it sits with the people who answer them.

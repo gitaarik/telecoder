@@ -2143,7 +2143,9 @@
             <h3>Send while it's still working</h3>
             <p>A message that lands mid-turn waits for that turn to finish and then goes in,
             rather than timing out on a Claude that was never going to answer it yet. Long turns
-            run to the end instead of being answered halfway.</p>
+            run to the end instead of being answered halfway. Commands that only read, like
+            <code>/commands</code>, <code>/sessions</code> or <code>/recap</code>, answer at once;
+            the ones that change the session wait their turn like a message does.</p>
           </div>
           <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-instances"/></svg></div>
