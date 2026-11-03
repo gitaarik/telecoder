@@ -31,7 +31,7 @@ async function startBot() {
   return (await import('../../src/providers/project-favorites.js')).projectFavorites;
 }
 
-const CHAT = '37620077';
+const CHAT = '42';
 const favoritesFile = () => path.join(home, '.claudegram', 'project-favorites.json');
 const paths = (favorites: { path: string }[]) => favorites.map((f) => f.path);
 

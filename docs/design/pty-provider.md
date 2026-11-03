@@ -1,6 +1,6 @@
 # Pty-driven Claude Code provider
 
-Status: **active** — provider is wired and feature-complete for the hook-driven verbose UI path (tool indicators, edit diffs, Stop-driven end-of-turn) and a standalone stdio MCP subprocess (no-IPC tools + claudegram_set_topic over an HTTP IPC bridge). The remaining IPC-dependent tools (send_file, ask_user, switch_project, extract_media's Telegram side) are pending. The design notes below capture the original framing and reasoning; see git log for what shipped (`feat: wire PTY provider as /method option`, `feat: PTY mode verbose UI via hook bridge + Stop-driven end-of-turn`, `feat: standalone MCP server for PTY mode`, `feat: claudegram_set_topic MCP tool over IPC bridge`).
+Status: **active** — provider is wired and feature-complete for the hook-driven verbose UI path (tool indicators, edit diffs, Stop-driven end-of-turn) and a standalone stdio MCP subprocess (`src/bin/mcp-server.ts`). Tools that need the bot (send_file, ask_user, set_topic, switch_project, …) reach it over a loopback HTTP IPC bridge; the rest run inline. The design notes below capture the original framing and reasoning; see git log for what shipped (`feat: wire PTY provider as /method option`, `feat: PTY mode verbose UI via hook bridge + Stop-driven end-of-turn`, `feat: standalone MCP server for PTY mode`, `feat: claudegram_set_topic MCP tool over IPC bridge`).
 
 ## Why this exists
 
@@ -45,7 +45,7 @@ Session continuity is shareable across providers: all three ultimately spawn the
 
 ### MCP tools
 
-Still needed. Telegram-facing tools (`send_file`, `ask_user`, `set_topic`) bridge the bot to Telegram, not the SDK. Content tools (`fetch_reddit`, `fetch_medium`, `extract_media`) encode useful behavior worth keeping.
+Still needed. Telegram-facing tools (`send_file`, `ask_user`, `set_topic`) bridge the bot to Telegram, not the SDK.
 
 What changes is the **transport**:
 - SDK mode: in-process MCP via `createTeleCoderMcpServer()` (see `src/claude/mcp-tools.ts`).

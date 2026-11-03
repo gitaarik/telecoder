@@ -17,11 +17,6 @@ output/
 # Local-only dev docs (not for public repos)
 AGENTS.md
 CLAUDE_AGENT_SDK_MIGRATION_MASTER_PLAN.md
-MEDIUM_*.md
-
-# Local Python scripts (Medium scraper tooling)
-scripts/medium_fetch.py
-scripts/medium_login.py
 PENDING_ACTIONS.md
 
 # Test coverage output

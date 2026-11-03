@@ -36,8 +36,6 @@ reviews:
     - "!CLAUDE.md"
     - "!AGENTS.md"
     - "!CLAUDE_AGENT_SDK_MIGRATION_MASTER_PLAN.md"
-    - "!MEDIUM_*.md"
-    - "!scripts/medium_*.py"
     - "!dist/**"
     - "!node_modules/**"
     - "!package-lock.json"
