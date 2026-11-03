@@ -439,6 +439,7 @@ your secrets, which is the only form of that answer worth trusting.
 | `/model` | Switch Sonnet / Opus / Haiku — this bot, or add `all` for every instance |
 | `/effort` | Set reasoning effort (low / medium / high / xhigh / max / auto); `all` works here too |
 | `/btw` | Ask a side question without interrupting the running task |
+| `/later [text]` | Set an idea aside without sending it; once Claude is done, the bot asks whether to send it, with Send and Drop. Alone, lists what's set aside |
 | `/mode` | How much Claude asks before acting (manual / accept edits / plan / auto / bypass) — admin-only |
 | `/streaming` | Toggle streaming / wait replies |
 | `/method` | Switch Claude transport (SDK / PTY) — admin-only |

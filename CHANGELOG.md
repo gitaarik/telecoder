@@ -263,6 +263,21 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **Commands that only read answer during a turn** — every command behind the
+  queue waited for the running turn, so `/commands` sat behind a long turn,
+  acked as queued, to print a fixed list once Claude was done. `/commands`,
+  `/sessions`, `/botstatus`, `/recap`, `/projectcommands` and `/context` now
+  answer at once. Commands that change the session or start a turn still wait
+  their turn, as a message does.
+- **`/later` sets an idea aside before it's sent** — **Ask me after** is only
+  on a message already waiting behind a turn. An idea you had while nothing was
+  running had nowhere to go, and one sent as a turn was ending could go out
+  before you'd tapped the button. `/later <text>` sets it aside straight away,
+  with the same question, **Send** and **Drop** afterwards. Sent while Claude is
+  idle, it waits until the next turn has run, and `/later` alone lists what's
+  set aside in the chat. A question left unanswered while the conversation moves
+  on is now asked again below each new reply, without a second notification,
+  instead of staying above them all.
 - **Decide on a follow-up after you've read the answer** — a message sent during
   a turn went out as soon as that turn ended unless you took it back, so you had
   to decide before you'd seen the answer it depended on. The `⏳ Queued` notice
