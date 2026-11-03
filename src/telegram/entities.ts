@@ -100,6 +100,25 @@ export class EntityText {
     }));
   }
 
+  /**
+   * A moment in time, which Telegram shows in the reader's own timezone and
+   * format — Bot API 9.5's `date_time` entity. The bot runs on a server whose
+   * clock can be hours off the reader's, so a time it writes out itself can be
+   * too. `text` is what a client too old for the entity shows instead.
+   *
+   * `format` is Telegram's: `t` a short time (22:45), `T` one with seconds.
+   */
+  dateTime(text: string, unixMs: number, format: 't' | 'T' = 't'): this {
+    return this.styled(text, (offset, length) => ({
+      type: 'date_time',
+      offset,
+      length,
+      unix_time: Math.floor(unixMs / 1000),
+      date_time_format: format,
+      // grammy's MessageEntity predates Bot API 9.5 and has no `date_time`.
+    }) as unknown as MessageEntity);
+  }
+
   /** Append another built message, its entities shifted to where it lands. */
   append(message: EntityMessage): this {
     for (const entity of message.entities) {

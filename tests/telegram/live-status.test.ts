@@ -5,9 +5,9 @@
  * Telegram Desktop draws that animation on the CPU for as long as it shows —
  * so a long turn kept the client busy throughout. A turn with a live status
  * line no longer sends it. Once the action log is in the chat, the status line
- * moves to the bottom of the log, over the prompt the turn is running: the log
- * is posted below the status bubble and the prompt, and is usually tall enough
- * to push both off screen.
+ * moves to the bottom of the log, over the prompt the turn is running and the
+ * time the log was drawn: the log is posted below the status bubble and the
+ * prompt, and is usually tall enough to push both off screen.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -134,15 +134,15 @@ describe('a running turn', () => {
 
     const [, posted] = api.sendMessage.mock.calls[0];
     expect(posted).toMatch(/^⏳ Action Log\n/);
-    expect(posted).toMatch(/\n\n⏳ 💻 Running\nnpm test\n\n▸ run the tests$/);
+    expect(posted).toMatch(/\n\n⏳ 💻 Running\nnpm test\n\n▸ run the tests\n\n🕐 Updated \d\d:\d\d$/);
 
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(edits(LOG).at(-1)).toMatch(/\n\n⏳ 💻 Running \[10s\]\nnpm test\n\n▸ run the tests$/);
+    expect(edits(LOG).at(-1)).toMatch(/\n\n⏳ 💻 Running \[10s\]\nnpm test\n\n▸ run the tests\n\n🕐 Updated \d\d:\d\d$/);
 
     // The bubble is edited once, to the pointer, and left alone after that.
     await vi.advanceTimersByTimeAsync(20_000);
     expect(edits(BUBBLE)).toEqual([POINTER]);
-    expect(edits(LOG).at(-1)).toMatch(/\[30s\]\nnpm test\n\n▸ run the tests$/);
+    expect(edits(LOG).at(-1)).toMatch(/\[30s\]\nnpm test\n\n▸ run the tests\n\n🕐 Updated \d\d:\d\d$/);
 
     // A finished turn's log no longer reads as running.
     await sender.cancelStreaming(ctx);
@@ -163,7 +163,7 @@ describe('a running turn', () => {
     await sender.noteQuestionPosted(ctx, '7004');
 
     expect(edits(LOG)).toHaveLength(before + 1);
-    expect(edits(LOG).at(-1)).toMatch(/\n\n⏸️ Waiting for your answer — see the question below ↓\n\n▸ run the tests$/);
+    expect(edits(LOG).at(-1)).toMatch(/\n\n⏸️ Waiting for your answer — see the question below ↓\n\n▸ run the tests\n\n🕐 Updated \d\d:\d\d$/);
     await sender.cancelStreaming(ctx);
   });
 });

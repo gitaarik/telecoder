@@ -35,6 +35,16 @@ describe('EntityText', () => {
     expect((entities[0] as { user: { id: number } }).user.id).toBe(42);
   });
 
+  it('renders a time as a date_time entity, in whole seconds', () => {
+    const at = Date.UTC(2026, 10, 3, 17, 20, 0) + 999;
+    const { text, entities } = new EntityText().add('🕐 Updated ').dateTime('17:20', at).build();
+
+    expect(text).toBe('🕐 Updated 17:20');
+    expect(entities).toEqual([
+      { type: 'date_time', offset: 11, length: 5, unix_time: Date.UTC(2026, 10, 3, 17, 20, 0) / 1000, date_time_format: 't' },
+    ]);
+  });
+
   it('keeps several spans in order and non-overlapping', () => {
     const { text, entities } = new EntityText()
       .bold('A')

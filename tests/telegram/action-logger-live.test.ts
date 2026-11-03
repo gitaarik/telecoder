@@ -13,6 +13,10 @@
  * - Under that it shows the prompt the turn is running. A tall log pushes the
  *   message the prompt came in far up the chat, and with it what the turn is
  *   for, which the user then scrolled back up to find.
+ * - Last comes the time it was drawn. Telegram doesn't show when a message was
+ *   last edited, so a log that had stopped moving looked like one still going.
+ *   Its times are `date_time` entities, which read in the user's timezone; the
+ *   server's clock read an hour or more off theirs.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -66,6 +70,18 @@ const bash = (command: string, content: string): ToolResultEvent => ({
 
 /** The text an entity covers, by the UTF-16 offsets Telegram reads. */
 const covered = (d: Delivered, e: MessageEntity) => d.text.slice(e.offset, e.offset + e.length);
+
+/** A Bot API 9.5 `date_time` entity, which grammy's MessageEntity predates. */
+interface DateTimeEntity extends Pick<MessageEntity, 'offset' | 'length'> {
+  unix_time: number;
+  date_time_format: string;
+}
+
+const dateTimes = (d: Delivered) =>
+  d.entities.filter((e) => (e.type as string) === 'date_time') as unknown as DateTimeEntity[];
+
+/** How the bottom of a live log reads, whatever the server's clock says. */
+const UPDATED = String.raw`\n\n🕐 Updated \d\d:\d\d$`;
 
 /** A status line whose text the test can change, with a command block like the bubble's. */
 function statusLine(initial: string) {
@@ -153,7 +169,7 @@ describe('ActionLogger live log', () => {
 
     await logger.addToolResult(SESSION, bash('ls', 'src'), 20, 2000);
     expect(logger.showsStatus(SESSION)).toBe(true);
-    expect(latest().text).toMatch(/\n\n⏳ 💻 Running \[12s\]\nnpm test$/);
+    expect(latest().text).toMatch(new RegExp(String.raw`\n\n⏳ 💻 Running \[12s\]\nnpm test${UPDATED}`));
     const block = latest().entities.find((e) => e.type === 'pre' && e.language === 'bash')!;
     expect(covered(latest(), block)).toBe('npm test');
 
@@ -177,7 +193,9 @@ describe('ActionLogger live log', () => {
     await logger.initialize(ctx, SESSION, status.source, 'run the\ntests and fix what fails');
     await logger.addToolResult(SESSION, bash('ls', 'src'), 20, 2000);
 
-    expect(latest().text).toMatch(/\n\n⏳ 💻 Running \[12s\]\nnpm test\n\n▸ run the tests and fix what fails$/);
+    expect(latest().text).toMatch(
+      new RegExp(String.raw`\n\n⏳ 💻 Running \[12s\]\nnpm test\n\n▸ run the tests and fix what fails${UPDATED}`),
+    );
     const italic = latest().entities.filter((e) => e.type === 'italic').map((e) => covered(latest(), e));
     expect(italic).toEqual(['▸ run the tests and fix what fails']);
 
@@ -188,13 +206,13 @@ describe('ActionLogger live log', () => {
   });
 
   it('shows the prompt as it was sent, with the terminal UI off too', async () => {
-    /** The bottom line of a log for a turn sent `prompt`, with the terminal UI off. */
+    /** The prompt line at the bottom of a log for a turn sent `prompt`, with the terminal UI off. */
     const bottomLine = async (prompt: string) => {
       const logger = new ActionLogger();
       const { ctx, latest } = fakeChat();
       await logger.initialize(ctx, SESSION, undefined, prompt);
       await logger.addToolResult(SESSION, bash('ls', 'src'), 20, 2000);
-      return latest().text.split('\n').at(-1);
+      return latest().text.match(new RegExp(String.raw`\n([^\n]*)${UPDATED}`))?.[1];
     };
 
     // A skill is what the turn is running, though /tree and the status line
@@ -207,6 +225,54 @@ describe('ActionLogger live log', () => {
     expect(await bottomLine('run the tests '.repeat(21))).toBe(`▸ ${'run the tests '.repeat(20)}run the tests`);
     expect(await bottomLine(`${'word '.repeat(80)}what do you think?`))
       .toBe(`▸ ${'word '.repeat(38)}word … ${'word '.repeat(16)}what do you think?`);
+  });
+
+  it('stamps each action with a time that reads in the user’s timezone', async () => {
+    const start = Date.UTC(2026, 10, 3, 17, 20, 0);
+    vi.setSystemTime(start);
+    const logger = new ActionLogger();
+    const { ctx, latest } = fakeChat();
+    await logger.initialize(ctx, SESSION);
+    await logger.addToolResult(SESSION, bash('ls', 'src'), 20, 2000);
+    await vi.advanceTimersByTimeAsync(65_000);
+    await logger.addToolResult(SESSION, bash('cat a', 'a'), 20, 2000);
+
+    const [first, second] = dateTimes(latest());
+    expect(latest().text).toMatch(/^⏳ Action Log\n\n💻 ✅ \[\d\d:\d\d\] Bash result\n/);
+    expect(covered(latest(), first as unknown as MessageEntity)).toMatch(/^\d\d:\d\d$/);
+    expect(first).toMatchObject({ unix_time: start / 1000, date_time_format: 't' });
+    expect(second).toMatchObject({ unix_time: start / 1000 + 65, date_time_format: 't' });
+  });
+
+  it('ends with the time it was drawn, which a quiet stretch still moves on, until the turn ends', async () => {
+    const start = Date.UTC(2026, 10, 3, 17, 20, 0);
+    vi.setSystemTime(start);
+    const logger = new ActionLogger();
+    const { ctx, delivered, latest } = fakeChat();
+    const status = statusLine('⏳ 💻 Running [12s]');
+    await logger.initialize(ctx, SESSION, status.source, 'run the tests');
+    await logger.addToolResult(SESSION, bash('ls', 'src'), 20, 2000);
+
+    const drawnAt = () => {
+      const time = dateTimes(latest()).at(-1)!;
+      expect(latest().text.slice(0, time.offset)).toMatch(/\n\n▸ run the tests\n\n🕐 Updated $/);
+      expect(time.offset + time.length).toBe(latest().text.length);
+      return time.unix_time;
+    };
+    expect(drawnAt()).toBe(start / 1000);
+
+    // The status line reads the same, as it does through a long build with the
+    // timer off; the refresh that comes every ten seconds still redraws.
+    await logger.refreshStatus(SESSION);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(delivered).toHaveLength(2);
+    expect(drawnAt()).toBe(start / 1000 + 10);
+
+    logger.endTurn(SESSION);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(latest().text).toMatch(/^📋 Action Log\n/);
+    expect(latest().text).not.toContain('🕐 Updated');
+    expect(dateTimes(latest())).toHaveLength(1); // the action's own time
   });
 
   it("drops the live marker and status line as soon as the turn ends", async () => {

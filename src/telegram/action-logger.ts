@@ -4,9 +4,13 @@
  * UI-like experience where actions are accumulated and displayed together.
  *
  * While its turn runs, the log also carries the turn's live status line at its
- * bottom, and under that the prompt the turn is running. The log is posted
- * below the prompt and the status bubble, and is usually tall enough to push
- * both off screen, so the bottom of the log is where the user is looking.
+ * bottom, under that the prompt the turn is running, and last the time it was
+ * drawn. The log is posted below the prompt and the status bubble, and is
+ * usually tall enough to push both off screen, so the bottom of the log is
+ * where the user is looking.
+ *
+ * Times go out as `date_time` entities, so they read in the user's own
+ * timezone rather than the server's.
  */
 
 import { GrammyError, type Api, type Context } from 'grammy';
@@ -47,6 +51,14 @@ function cutForLiveLog(text: string): string {
 }
 
 /**
+ * A time as the server's clock reads it, for the clients that can't show a
+ * `date_time` entity. The rest show it in the reader's timezone instead.
+ */
+function serverClockTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+}
+
+/**
  * The turn's prompt as the live log shows it. promptLabel leaves a slash
  * command out, not being a turn of the conversation, but here a skill like
  * /code-review is what the turn is running, so it shows as typed.
@@ -74,11 +86,13 @@ export interface ActionEntry {
  */
 export type StatusSource = () => EntityMessage;
 
-/** How the log is drawn: still running, and with which status line and prompt under it. */
+/** How the log is drawn: still running, and with which status line, prompt and time under it. */
 interface LogView {
   live: boolean;
   status?: EntityMessage;
   prompt?: string;
+  /** When this draw happened, shown last while the turn runs. */
+  drawnAt?: number;
 }
 
 interface ActionLogState {
@@ -453,6 +467,7 @@ export class ActionLogger {
       // so a second call could come out longer than the fit was measured on.
       status: state.ended ? undefined : state.statusSource?.(),
       prompt: state.ended ? undefined : state.prompt,
+      drawnAt: state.ended ? undefined : Date.now(),
     };
     return this.renderActionLog(state.entries, this.entriesThatFit(state.entries, view), view);
   }
@@ -483,9 +498,17 @@ export class ActionLogger {
    * chat by the start of its newest message, which mid-turn is usually this
    * one — so that's where the list shows the agent is still at it.
    *
-   * The prompt goes last, under the status line, so what the turn is for sits
-   * where the user is looking: by the time the log is this long, the message
-   * that started the turn is far above it.
+   * The prompt goes under the status line, so what the turn is for sits where
+   * the user is looking: by the time the log is this long, the message that
+   * started the turn is far above it.
+   *
+   * Under the prompt, the time of the draw. Telegram shows when a message was
+   * sent but not when it was last edited, so a log that has stopped moving
+   * looks the same as one that's still going. With the terminal UI on, the
+   * status line redraws the log every ten seconds, so a time that keeps up
+   * with the clock means the bot is alive however long the current step
+   * takes, and one that falls behind means it isn't. Without the status line
+   * nothing redraws it between actions, and it's the time of the newest one.
    */
   private renderActionLog(entries: ActionEntry[], shown: number, view: LogView): EntityMessage {
     const b = new EntityText();
@@ -499,19 +522,18 @@ export class ActionLogger {
       const statusEmoji = entry.status === 'completed' ? '✅' :
                          entry.status === 'error' ? '❌' : '⏳';
 
-      const time = new Date(entry.timestamp).toLocaleTimeString('en-US', {
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-
-      b.newline(2).add(`${entry.icon} ${statusEmoji} [${time}] ${entry.title}`);
+      b.newline(2).add(`${entry.icon} ${statusEmoji} [`)
+        .dateTime(serverClockTime(entry.timestamp), entry.timestamp)
+        .add(`] ${entry.title}`);
       if (entry.subtitle) b.newline().code(cutForLiveLog(entry.subtitle));
       if (entry.content) b.newline().pre(cutForLiveLog(entry.content));
     }
 
     if (view.status) b.newline(2).append(view.status);
     if (view.prompt) b.newline(2).italic(`▸ ${view.prompt}`);
+    if (view.drawnAt !== undefined) {
+      b.newline(2).add('🕐 Updated ').dateTime(serverClockTime(view.drawnAt), view.drawnAt);
+    }
 
     return b.build();
   }

@@ -278,6 +278,14 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **The live action log says when it last moved** — Telegram shows when a
+  message was sent but not when it was last edited, so a live log that had
+  stopped moving looked just like one that was still going, and a long quiet
+  step left you wondering whether the bot was still alive. The log now ends
+  with the time it was last drawn, under the prompt. With the status line on
+  it's redrawn every ten seconds, so a time that keeps up with your clock means
+  the bot is alive however long the step takes. That time and the one on each
+  action now read in your own timezone; they were the server's.
 - **Commands that only read answer during a turn** — every command behind the
   queue waited for the running turn, so `/commands` sat behind a long turn,
   acked as queued, to print a fixed list once Claude was done. `/commands`,
