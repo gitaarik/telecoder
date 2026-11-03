@@ -56,10 +56,10 @@ Behaviour stays the same, and tests come first where coverage is thin:
 
 | File | Lines |
 |------|-------|
-| `src/claude/pty-provider.ts` | 2,466 |
+| `src/claude/pty-provider.ts` | 2,476 |
 | `src/telegram/message-sender.ts` | 1,449 |
 | `src/claude/agent.ts` | 1,387 |
-| `src/bot/handlers/command/settings.ts` | 1,116 |
+| `src/bot/handlers/command/settings.ts` | 1,153 |
 
 ### 6. Settle the "interrupted by user" misattribution (2–4 h)
 

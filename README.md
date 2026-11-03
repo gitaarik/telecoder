@@ -43,12 +43,12 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 | Tests | Vitest |
 | Optional | Groq and OpenAI for speech, and `ffmpeg` for Groq's spoken replies |
 
-**Project status:** in active development, and used every day for my own development work, including building TeleCoder itself. The latest tagged release is v1.1.0, with newer work under "Unreleased" in the [changelog](CHANGELOG.md). The code is about 45k lines of TypeScript, plus 18k lines of tests (117 test files, 1,418 tests). See the [roadmap](ROADMAP.md) for what's next.
+**Project status:** in active development, and used every day for my own development work, including building TeleCoder itself. The latest tagged release is v1.1.0, with newer work under "Unreleased" in the [changelog](CHANGELOG.md). The code is about 42k lines of TypeScript, plus 21k lines of tests (122 test files, 1,574 tests). See the [roadmap](ROADMAP.md) for what's next.
 
 > [!NOTE]
 > TeleCoder began as a fork of [Claudegram by @NachoSEO](https://github.com/NachoSEO/claudegram),
 > whose last commit was in March 2026. It has been developed independently since April 2026 by
-> [@gitaarik](https://github.com/gitaarik): 350+ commits, adding about 75k lines and removing 18k.
+> [@gitaarik](https://github.com/gitaarik): 370+ commits, adding about 76k lines and removing 22k.
 > The commit history since the fork is all in this repository, which was created in July 2026 when
 > the project was renamed, so its GitHub creation date is later than its first commits.
 > See [Credits](#credits) for attribution.
@@ -173,7 +173,6 @@ npm install
 npm test
 ```
 
----
 ---
 
 ## Running several bots
