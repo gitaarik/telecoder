@@ -261,54 +261,8 @@ const envSchema = z.object({
     .default('5')
     .transform((val) => parseInt(val, 10)),
   AUTO_RESTORE_SESSION: z.string().default('false').transform(toBool),
-  REDDITFETCH_JSON_THRESHOLD_CHARS: z
-    .string()
-    .default('8000')
-    .transform((val) => parseInt(val, 10)),
-  // Reddit API credentials (native TypeScript module)
-  REDDIT_CLIENT_ID: z.string().optional(),
-  REDDIT_CLIENT_SECRET: z.string().optional(),
-  REDDIT_USERNAME: z.string().optional(),
-  REDDIT_PASSWORD: z.string().optional(),
-  // Reddit fetch configuration
-  REDDIT_ENABLED: z.string().default('true').transform(toBool),
-  // DEPRECATED: REDDITFETCH_PATH — replaced by native TypeScript module; kept for reference only
-  REDDITFETCH_PATH: z.string().default(''),
-  REDDITFETCH_TIMEOUT_MS: z
-    .string()
-    .default('30000')
-    .transform((val) => parseInt(val, 10)),
-  REDDITFETCH_DEFAULT_LIMIT: z
-    .string()
-    .default('10')
-    .transform((val) => parseInt(val, 10)),
-  REDDITFETCH_DEFAULT_DEPTH: z
-    .string()
-    .default('5')
-    .transform((val) => parseInt(val, 10)),
-  // Reddit video download
-  VREDDIT_ENABLED: z.string().default('true').transform(toBool),
-  REDDIT_VIDEO_MAX_SIZE_MB: z
-    .string()
-    .default('50')
-    .transform((val) => parseInt(val, 10)),
   // Telegraph (Instant View for long messages)
   TELEGRAPH_ENABLED: z.string().default('true').transform(toBool),
-  // Medium / Freedium configuration
-  MEDIUM_ENABLED: z.string().default('true').transform(toBool),
-  MEDIUM_TIMEOUT_MS: z
-    .string()
-    .default('15000')
-    .transform((val) => parseInt(val, 10)),
-  MEDIUM_FILE_THRESHOLD_CHARS: z
-    .string()
-    .default('8000')
-    .transform((val) => parseInt(val, 10)),
-  FREEDIUM_HOST: z.string().default('freedium-mirror.cfd'),
-  FREEDIUM_RATE_LIMIT_MS: z
-    .string()
-    .default('2000')
-    .transform((val) => parseInt(val, 10)),
   // Voice transcription (Groq Whisper)
   GROQ_API_KEY: z.string().optional(),
   TRANSCRIBE_ENABLED: z.string().default('true').transform(toBool),
@@ -329,14 +283,6 @@ const envSchema = z.object({
   TRANSCRIBE_FILE_THRESHOLD_CHARS: z
     .string()
     .default('4000')
-    .transform((val) => parseInt(val, 10)),
-  // Media extraction (/extract command)
-  EXTRACT_ENABLED: z.string().default('true').transform(toBool),
-  YTDLP_COOKIES_PATH: z.string().default(''),
-  YTDLP_PROXY_LIST_PATH: z.string().default(''),
-  EXTRACT_TRANSCRIBE_TIMEOUT_MS: z
-    .string()
-    .default('180000')
     .transform((val) => parseInt(val, 10)),
   // Verbosity tier (quiet | normal | verbose | debug). Drives the defaults
   // for several rendering flags below; per-chat /verbosity overrides this,
@@ -360,10 +306,6 @@ const envSchema = z.object({
   // Terminal UI verbose: show full commands/paths without truncation and longer session previews.
   // When set, overrides the verbosity tier.
   TERMINAL_UI_VERBOSE: z
-    .string()
-    .default('false')
-    .transform((val) => val.toLowerCase() === 'true'),
-  ALLOW_PRIVATE_NETWORK_URLS: z
     .string()
     .default('false')
     .transform((val) => val.toLowerCase() === 'true'),
@@ -520,21 +462,7 @@ if (parsed.data.APPROVER_USER_IDS.length > 0) {
   }
 }
 
-// /reddit is the one integration with a hard credential gate: without an OAuth
-// app it can only ever fail. Unless REDDIT_ENABLED says otherwise, key it off
-// the credentials so a fresh install doesn't advertise a command that cannot
-// work. Setting REDDIT_ENABLED explicitly still wins in both directions.
-const redditConfigured = Boolean(
-  parsed.data.REDDIT_CLIENT_ID &&
-    parsed.data.REDDIT_CLIENT_SECRET &&
-    parsed.data.REDDIT_USERNAME &&
-    parsed.data.REDDIT_PASSWORD
-);
-
-export const config = {
-  ...parsed.data,
-  REDDIT_ENABLED: isEnvSet('REDDIT_ENABLED') ? parsed.data.REDDIT_ENABLED : redditConfigured,
-};
+export const config = { ...parsed.data };
 
 export type Config = typeof config;
 

@@ -5,6 +5,21 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ## Unreleased
 
+### Removed
+
+- **`/medium`, `/reddit`, `/vreddit` and `/extract`, and the agent tools behind
+  them** — these content fetchers came from Claudegram: Medium articles through
+  the Freedium mirror, which exists to get around Medium's paywall, Reddit threads
+  through a bot account's OAuth app, Reddit videos, and YouTube, Instagram and
+  TikTok downloads through `yt-dlp`. None of them has to do with driving Claude
+  Code, which can read a link itself. The `claudegram_fetch_reddit`,
+  `claudegram_fetch_medium` and `claudegram_extract_media` tools went with them,
+  so a bare YouTube, TikTok, Instagram or Reddit video link is now an ordinary
+  message to Claude instead of opening a download menu. Their settings
+  (`REDDIT_*`, `REDDITFETCH_*`, `VREDDIT_ENABLED`, `MEDIUM_*`, `FREEDIUM_*`,
+  `EXTRACT_*`, `YTDLP_*` and `ALLOW_PRIVATE_NETWORK_URLS`) are ignored if they're
+  still in your `.env`, and `yt-dlp` and `ffprobe` are no longer needed.
+
 ### Sessions
 
 - **The status line names the project** — a bot moves between projects and its

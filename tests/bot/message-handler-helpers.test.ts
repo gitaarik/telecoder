@@ -1,10 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { fmtTokens, getProgressBar } from '../../src/utils/format.js';
-import {
-  extractRedditUrl,
-  getAutoVRedditUrl,
-  formatResetIn,
-} from '../../src/bot/handlers/message.handler.js';
+import { formatResetIn } from '../../src/bot/handlers/message.handler.js';
 
 describe('fmtTokens', () => {
   it('renders small counts verbatim', () => {
@@ -39,48 +35,6 @@ describe('getProgressBar', () => {
   it('clamps out-of-range percentages', () => {
     expect(getProgressBar(-20)).toBe(getProgressBar(0));
     expect(getProgressBar(150)).toBe(getProgressBar(100));
-  });
-});
-
-describe('extractRedditUrl', () => {
-  it('finds reddit.com / subdomain / short-link / video hosts', () => {
-    expect(extractRedditUrl('see https://reddit.com/r/x')).toBe('https://reddit.com/r/x');
-    expect(extractRedditUrl('https://www.reddit.com/r/x/comments/1')).toBe(
-      'https://www.reddit.com/r/x/comments/1',
-    );
-    expect(extractRedditUrl('https://redd.it/abc')).toBe('https://redd.it/abc');
-    expect(extractRedditUrl('https://v.redd.it/xyz')).toBe('https://v.redd.it/xyz');
-  });
-
-  it('returns null when there is no reddit url', () => {
-    expect(extractRedditUrl('just text')).toBeNull();
-    expect(extractRedditUrl('https://example.com/r/x')).toBeNull();
-  });
-
-  it('does not match a lookalike host (notreddit.com)', () => {
-    expect(extractRedditUrl('https://notreddit.com/r/x')).toBeNull();
-  });
-});
-
-describe('getAutoVRedditUrl', () => {
-  // VREDDIT_ENABLED defaults to true in the test env.
-  it('returns the url for a solo reddit link', () => {
-    expect(getAutoVRedditUrl('https://v.redd.it/abc')).toBe('https://v.redd.it/abc');
-  });
-
-  it('returns the url when the message explicitly asks for vreddit', () => {
-    expect(getAutoVRedditUrl('vreddit https://reddit.com/r/x/comments/1')).toBe(
-      'https://reddit.com/r/x/comments/1',
-    );
-  });
-
-  it('returns null for a reddit link buried in a longer non-vreddit message', () => {
-    expect(getAutoVRedditUrl('look at this https://reddit.com/r/x and tell me about it')).toBeNull();
-  });
-
-  it('ignores slash commands and empty input', () => {
-    expect(getAutoVRedditUrl('/reddit https://v.redd.it/abc')).toBeNull();
-    expect(getAutoVRedditUrl('   ')).toBeNull();
   });
 });
 

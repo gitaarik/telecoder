@@ -53,10 +53,6 @@ reviews:
       instructions: |
         These are security-critical utilities. Check for: SSRF protection in URL handling,
         path traversal prevention, proper file descriptor cleanup, and no token/secret leakage.
-    - path: "src/media/**"
-      instructions: |
-        Check for: SSRF protection on user-provided URLs, proper error sanitization,
-        and safe handling of external tool invocations (yt-dlp). No tokens in CLI args.
     - path: "src/telegram/**"
       instructions: |
         Focus on: Telegram API limits (4096 char messages, rate limiting on edits),

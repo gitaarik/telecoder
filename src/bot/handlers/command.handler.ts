@@ -49,23 +49,10 @@ export {
 export { getStreamingMode } from './command/streaming-mode.js';
 export { handleAllow, handleDeny, handleMembers } from './command/access.js';
 export {
-  executeRedditFetch,
-  executeMediumFetch,
-  handleReddit,
-  handleVReddit,
-  handleMedium,
-  handleMediumCallback,
-  handleRedditActionCallback,
-} from './command/web-fetch.js';
-export {
   sendTranscriptResult,
   handleTranscribe,
   handleTranscribeAudio,
   handleTranscribeDocument,
-  handleExtract,
-  showExtractMenu,
-  handleExtractCallback,
-  executeExtract,
 } from './command/media.js';
 export { handleCost, parseCostOutput } from './command/cost.js';
 export { handleTasks, handleTasksCallback, handleShells, handleShellsCallback } from './command/tasks.js';

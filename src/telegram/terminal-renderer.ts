@@ -34,9 +34,6 @@ export const TOOL_ICONS: Record<string, string> = {
   'mcp__claudegram-tools__claudegram_ask_user': '❓',
   'mcp__claudegram-tools__claudegram_set_topic': '🏷️',
   'mcp__claudegram-tools__claudegram_send_file': '📎',
-  'mcp__claudegram-tools__claudegram_fetch_reddit': '🔴',
-  'mcp__claudegram-tools__claudegram_fetch_medium': '📰',
-  'mcp__claudegram-tools__claudegram_extract_media': '🎬',
   'mcp__claudegram-tools__claudegram_list_projects': '📂',
   'mcp__claudegram-tools__claudegram_switch_project': '🔀',
   'mcp__claudegram-tools__publish_telegraph': '📄',
@@ -361,9 +358,6 @@ export function getToolAction(toolName: string): string {
     'mcp__claudegram-tools__claudegram_ask_user': 'Asking',
     'mcp__claudegram-tools__claudegram_set_topic': 'Setting topic',
     'mcp__claudegram-tools__claudegram_send_file': 'Sending file',
-    'mcp__claudegram-tools__claudegram_fetch_reddit': 'Fetching Reddit',
-    'mcp__claudegram-tools__claudegram_fetch_medium': 'Fetching Medium',
-    'mcp__claudegram-tools__claudegram_extract_media': 'Extracting media',
     'mcp__claudegram-tools__claudegram_list_projects': 'Listing projects',
     'mcp__claudegram-tools__claudegram_switch_project': 'Switching project',
     'mcp__claudegram-tools__publish_telegraph': 'Publishing Telegraph',
@@ -408,12 +402,6 @@ export function extractToolDetail(toolName: string, input: Record<string, unknow
       return str('topic');
     case 'mcp__claudegram-tools__claudegram_send_file':
       return verbose ? str('file_path') : truncatePath(str('file_path'));
-    case 'mcp__claudegram-tools__claudegram_fetch_reddit':
-      return str('target');
-    case 'mcp__claudegram-tools__claudegram_fetch_medium':
-      return verbose ? str('url') : truncateUrl(str('url'));
-    case 'mcp__claudegram-tools__claudegram_extract_media':
-      return verbose ? str('url') : truncateUrl(str('url'));
     case 'mcp__claudegram-tools__claudegram_switch_project':
       return str('project_name');
     case 'mcp__claudegram-tools__publish_telegraph':

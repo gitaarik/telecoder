@@ -76,8 +76,8 @@ migration path, since moving a bot token to a local server is hard to undo.
 
 ### 8. Easier setup and releases (5–8 h)
 
-- A `doctor` command that checks the bot token, the `claude` login, `ffmpeg` and `yt-dlp`,
-  and says exactly what to fix
+- A `doctor` command that checks the bot token, the `claude` login and `ffmpeg`, and says
+  exactly what to fix
 - Move the full configuration reference out of the README into `docs/`
 - Cut v1.2.0 from the changelog's large "Unreleased" section, and publish release notes
   for each version from then on

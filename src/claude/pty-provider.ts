@@ -2227,7 +2227,7 @@ You are in plan mode. Your only job this turn is to produce an implementation pl
 PROHIBITED THIS TURN (treat as if these tools are disabled):
   • Edit, Write, NotebookEdit — no file changes of any kind
   • Bash commands that mutate state (no rm, mv, cp, mkdir, npm install, git commit, git push, etc.)
-  • Any side-effecting MCP tool (no send_file, no extract_media, no telegraph publishing)
+  • Any side-effecting MCP tool (no send_file, no telegraph publishing)
   • Do not run a build, do not run tests
   • Do not "just fix one quick thing while you're there"
 

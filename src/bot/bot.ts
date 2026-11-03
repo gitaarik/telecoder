@@ -68,10 +68,6 @@ import {
   handleSessions,
   handleTeleport,
   handleFile,
-  handleReddit,
-  handleVReddit,
-  handleMedium,
-  handleMediumCallback,
   handleTerminalUI,
   handleTerminalUICallback,
   handleStatusLine,
@@ -79,9 +75,6 @@ import {
   handleTranscribe,
   handleTranscribeAudio,
   handleTranscribeDocument,
-  handleExtract,
-  handleExtractCallback,
-  handleRedditActionCallback,
   handleBotName,
   handleBotNameCallback,
   handleTopic,
@@ -322,11 +315,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'deny', description: '🚫 Remove someone admitted with /allow' },
     { command: 'members', description: '👥 Show who may prompt the agent in this group' },
     { command: 'teleport', description: '🚀 Move session to terminal' },
-    ...(config.REDDIT_ENABLED ? [{ command: 'reddit', description: '📡 Fetch Reddit posts & subreddits' }] : []),
-    ...(config.VREDDIT_ENABLED ? [{ command: 'vreddit', description: '🎬 Download Reddit video from post URL' }] : []),
-    ...(config.MEDIUM_ENABLED ? [{ command: 'medium', description: '📰 Fetch Medium articles' }] : []),
     ...(config.TRANSCRIBE_ENABLED ? [{ command: 'transcribe', description: '🎤 Transcribe audio to text' }] : []),
-    ...(config.EXTRACT_ENABLED ? [{ command: 'extract', description: '📥 Extract text/audio/video from URL' }] : []),
     { command: 'file', description: '📎 Download a file from project' },
     { command: 'telegraph', description: '📄 View markdown with Instant View' },
     { command: 'suggestions', description: '💡 Toggle predicted next-prompt buttons' },
@@ -568,25 +557,9 @@ export async function createBot(): Promise<Bot> {
   cmd('telegraph', handleTelegraph);
   cmd('suggestions', handleSuggestions);
 
-  // Reddit
-  if (config.REDDIT_ENABLED) {
-    cmd('reddit', handleReddit);
-  }
-  if (config.VREDDIT_ENABLED) {
-    cmd('vreddit', handleVReddit);
-  }
-  if (config.MEDIUM_ENABLED) {
-    cmd('medium', handleMedium);
-  }
-
   // Transcribe
   if (config.TRANSCRIBE_ENABLED) {
     cmd('transcribe', handleTranscribe);
-  }
-
-  // Media extraction
-  if (config.EXTRACT_ENABLED) {
-    cmd('extract', handleExtract);
   }
 
   // Callback query handler for inline keyboards
@@ -623,12 +596,6 @@ export async function createBot(): Promise<Bot> {
       await handleClearCallback(ctx);
     } else if (data.startsWith('project:')) {
       await adminOnly(handleProjectCallback)(ctx);
-    } else if (data.startsWith('medium:')) {
-      await handleMediumCallback(ctx);
-    } else if (data.startsWith('extract:')) {
-      await handleExtractCallback(ctx);
-    } else if (data.startsWith('reddit_action:')) {
-      await handleRedditActionCallback(ctx);
     } else if (data.startsWith('restart:')) {
       await handleRestartCallback(ctx);
     } else if (data.startsWith('startup:')) {

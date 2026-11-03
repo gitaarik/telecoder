@@ -25,8 +25,6 @@ export default defineConfig({
       // worker otherwise inherits that worker's BOT_NAME (e.g. "TeleCoder 6"),
       // and the botname tests assert against the default.
       BOT_NAME: 'TeleCoder',
-      // Force the SSRF guard on regardless of the developer's shell/.env.
-      ALLOW_PRIVATE_NETWORK_URLS: 'false',
     },
     include: ['tests/**/*.test.ts'],
     coverage: {

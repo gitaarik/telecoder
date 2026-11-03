@@ -41,7 +41,7 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 | Agent tools | [Model Context Protocol](https://modelcontextprotocol.io/) server, for the tools that reach back into Telegram |
 | Config and scheduling | Zod, croner |
 | Tests | Vitest |
-| Optional | `yt-dlp` and `ffmpeg` for media; Groq and OpenAI for speech |
+| Optional | Groq and OpenAI for speech, and `ffmpeg` for Groq's spoken replies |
 
 **Project status:** in active development, and used every day for my own development work, including building TeleCoder itself. The latest tagged release is v1.1.0, with newer work under "Unreleased" in the [changelog](CHANGELOG.md). The code is about 45k lines of TypeScript, plus 18k lines of tests (117 test files, 1,418 tests). See the [roadmap](ROADMAP.md) for what's next.
 
@@ -119,11 +119,9 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 - Terminal-style tool status (`/terminalui`)
 - Inline keyboards for settings (model, mode, TTS, clear)
 
-### Content & Uploads
+### Files & Uploads
 - Send photos or image documents; saved under `.claudegram/uploads/` in the project
-- `/reddit` and `/vreddit` — Reddit posts, threads and videos
-- `/extract` — YouTube, Instagram and TikTok video, audio or transcript (`yt-dlp`, `ffmpeg`)
-- `/medium` — Medium articles as readable text via Freedium
+- `/file` sends you any file from the project
 
 </td>
 </tr>
@@ -448,16 +446,12 @@ your secrets, which is the only form of that answer worth trusting.
 | `/verbosity` | Pick verbosity tier (quiet / normal / verbose / debug) |
 | `/terminalui` | Toggle terminal-style display |
 
-### Content
+### Files & Output
 | Command | Description |
 |---------|-------------|
-| `/reddit` | Fetch Reddit posts, subreddits, profiles |
-| `/vreddit` | Download Reddit-hosted videos |
-| `/medium` | Fetch Medium articles via Freedium |
 | `/file` | Download a project file |
 | `/telegraph` | Toggle Instant View for long responses |
 | `/suggestions` | Toggle predicted next-prompt buttons under each response |
-| `/extract <url>` | Download media from YouTube, TikTok, Instagram |
 
 ### Voice & TTS
 | Command | Description |
@@ -503,40 +497,6 @@ works once the bot has seen them post, and a numeric user id always works.
 ---
 
 ## Optional Integrations
-
-<details>
-<summary><strong>Reddit — <code>/reddit</code> & <code>/vreddit</code></strong></summary>
-
-`/reddit` is a pure TypeScript module using Reddit's OAuth2 API directly — no external Python dependency.
-
-```bash
-# .env
-REDDIT_CLIENT_ID=your_client_id
-REDDIT_CLIENT_SECRET=your_client_secret
-REDDIT_USERNAME=bot_account
-REDDIT_PASSWORD=bot_password
-```
-
-Create a "script" app at https://www.reddit.com/prefs/apps/. Use a dedicated bot account — NOT your personal credentials.
-
-`/reddit` turns itself on once all four credentials are present, and stays hidden otherwise, so it never shows up in the command menu as something that can only fail. Set `REDDIT_ENABLED` explicitly to override that either way.
-
-`/vreddit` is separate — it reads Reddit's public JSON and needs no credentials, only `ffmpeg` and `ffprobe` on your PATH.
-
-</details>
-
-<details>
-<summary><strong>Medium — <code>/medium</code></strong></summary>
-
-Pure TypeScript via Freedium mirror — no extra dependencies.
-
-```bash
-# .env (optional tuning)
-FREEDIUM_HOST=freedium-mirror.cfd
-MEDIUM_TIMEOUT_MS=15000
-```
-
-</details>
 
 <details>
 <summary><strong>Voice Transcription — Groq Whisper</strong></summary>
@@ -661,34 +621,6 @@ restarts the bot. `/members` is readable by anyone who can prompt.
 | `CCR_AUTOSTART` | `false` | Run `ccr start` when the proxy isn't reachable |
 | `CCR_BINARY` | `ccr` | Path or name of the `ccr` binary for autostart |
 
-### Reddit
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REDDIT_ENABLED` | on when all four credentials are set | Force `/reddit` on or off |
-| `REDDIT_CLIENT_ID` | — | Reddit OAuth2 client ID |
-| `REDDIT_CLIENT_SECRET` | — | Reddit OAuth2 client secret |
-| `REDDIT_USERNAME` | — | Reddit bot account username |
-| `REDDIT_PASSWORD` | — | Reddit bot account password |
-| `REDDIT_VIDEO_MAX_SIZE_MB` | `50` | Max video size before compression |
-| `REDDITFETCH_TIMEOUT_MS` | `30000` | Execution timeout |
-| `REDDITFETCH_JSON_THRESHOLD_CHARS` | `8000` | Auto-switch to JSON output |
-
-### Medium / Freedium
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `FREEDIUM_HOST` | `freedium-mirror.cfd` | Freedium mirror host |
-| `MEDIUM_TIMEOUT_MS` | `15000` | Fetch timeout |
-| `MEDIUM_FILE_THRESHOLD_CHARS` | `8000` | File save threshold |
-
-### Media Extraction
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `EXTRACT_ENABLED` | `true` | Enable /extract command |
-| `YTDLP_COOKIES_PATH` | — | Netscape cookies.txt for yt-dlp |
-
 ### Voice & TTS
 
 | Variable | Default | Description |
@@ -722,8 +654,8 @@ Telegram ⇄ grammY bot ⇄ provider router ─┬─ claude: Agent SDK ──�
 | `src/bin/` | The MCP server process |
 | `src/telegram/` | Streaming, chunking, MarkdownV2, Telegraph, task cards |
 | `src/startup/` | Restoring chats after a restart |
-| `src/reddit/`, `src/medium/`, `src/media/`, `src/audio/`, `src/tts/` | Content and speech integrations |
-| `src/utils/` | Shared helpers, including download, path and error sanitizing, and SSRF protection |
+| `src/audio/`, `src/tts/` | Speech: voice transcription and spoken replies |
+| `src/utils/` | Shared helpers, including download, path and error sanitizing |
 | `tests/` | Vitest suite, mirroring `src/` |
 | `scripts/` | Bot control and shared-bot account setup |
 | `docs/` | Website, [PTY design notes](docs/design/pty-provider.md), [debugging notes](docs/debugging/interrupted-by-user-misattribution.md), [example charter](docs/CHARTER.example.md) |
