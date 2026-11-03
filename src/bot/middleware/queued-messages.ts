@@ -43,6 +43,18 @@
  * nothing is running or waiting in the session. Send feeds the update back through
  * the whole middleware chain as if it had just arrived, which is what gets a voice
  * note transcribed and puts the message back in line if a turn has started since.
+ *
+ * `/later <text>` sets an idea aside without typing it at Claude first. It's the
+ * only way in while nothing is running, when any message would start a turn, and
+ * it saves racing the ack's button against the end of a turn. It goes into the
+ * same store and through the same question, with the command taken off what goes
+ * out. Sent while Claude is idle, it waits for the next turn to come and go before
+ * asking, or the question would go up at once. `/later` alone lists what's set
+ * aside in the chat.
+ *
+ * A question left unanswered while the conversation moves on would scroll out of
+ * sight, so once another turn has run it's taken down and asked again below the
+ * new reply, without a buzz the second time.
  */
 
 import * as path from 'path';
@@ -94,7 +106,15 @@ const TAKEN_BACK = '🗑 Taken back before it reached Claude.';
 const CANCELLED = '🛑 Cancelled before it reached Claude.';
 const NO_LONGER_WAITING = '⌛ No longer waiting. If Claude never answered it, send it again.';
 const PARKED = "🔔 Set aside. I'll ask when Claude is done.";
-const REMINDER = '🔔 You set this aside. Still want to send it?';
+const PARKED_AFTER_NEXT_TURN = "🔔 Set aside. I'll ask after Claude's next turn.";
+const REMINDER = '🔔 You set this aside. Still want to send it?\n✏️ Edit your message above to change what goes out.';
+const NOTHING_SET_ASIDE = 'Nothing is set aside in this chat.\n\n'
+  + "/later <text> keeps an idea for after Claude's turn, without it reaching Claude now. "
+  + 'Or tap 🔔 Ask me after on a message waiting behind a turn.';
+const LIST_HEADING = '🔔 Set aside in this chat:';
+const LIST_FOOTER = 'Each gets a question below the reply, with Send and Drop. Edit a message to change what goes out.';
+/** The command and the whitespace after it, on a message that starts with it. */
+const LATER_COMMAND = /^\/later(?:@\w+)?(?:\s+|$)/i;
 const SENT = '📤 Sent.';
 const DROPPED = '🗑 Dropped before it reached Claude.';
 const NOT_YOURS = 'Only the person who sent this, or an admin, can do that.';
@@ -138,6 +158,12 @@ const parkedMessageSchema = z.object({
   noticeId: z.number().optional(),
   /** The question, once it's gone up. */
   reminderId: z.number().optional(),
+  /** Set aside with /later: the command is taken off the text, on arrival and after an edit. */
+  command: z.boolean().optional(),
+  /** Set aside while nothing was running, so the next turn is what it waits for. */
+  awaitsTurn: z.boolean().optional(),
+  /** A turn has run since the question went up, so it's to be asked again below the new reply. */
+  repost: z.boolean().optional(),
 });
 
 type ParkedMessage = z.infer<typeof parkedMessageSchema>;
@@ -332,24 +358,31 @@ export function forgetParkedMessages(): void {
   reminding = false;
 }
 
+/** Whether Claude is on a turn in the session, whoever started it. */
+function turnRunning(sessionKey: SessionKey): boolean {
+  return isProcessing(sessionKey)
+    || getPtyProvider().isSessionGenerating(sessionKey)
+    || hasSelfStartedTurn(sessionKey);
+}
+
 /**
  * Whether the session has nothing left that would change the answer the question
  * is about. Background tasks don't count: they can run for hours with the session
  * free, and if one reports back, a question already asked still stands.
  */
 function sessionIsIdle(sessionKey: SessionKey): boolean {
-  return !inFlight.has(sessionKey)
-    && !isProcessing(sessionKey)
-    && !getPtyProvider().isSessionGenerating(sessionKey)
-    && !hasSelfStartedTurn(sessionKey);
+  return !inFlight.has(sessionKey) && !turnRunning(sessionKey);
 }
 
+/** Post the question, or post it again below a newer reply. */
 async function postReminder(api: Api, key: string, message: ParkedMessage): Promise<void> {
+  const again = message.reminderId !== undefined;
   try {
     const sent = await api.sendMessage(message.chatId, REMINDER, {
       // Unlike the ack this does buzz: its whole job is to reach someone who has
-      // looked away. The message it hangs off is what shows what's being asked
-      // about, and stays right if that message is edited.
+      // looked away. Asked again it doesn't, since that only keeps it in view.
+      // The message it hangs off is what shows what's being asked about, and
+      // stays right if that message is edited.
       reply_parameters: { message_id: message.messageId, allow_sending_without_reply: true },
       reply_markup: {
         inline_keyboard: [[
@@ -357,15 +390,19 @@ async function postReminder(api: Api, key: string, message: ParkedMessage): Prom
           { text: '🗑 Drop', callback_data: `${CALLBACK_PREFIX}drop:${message.messageId}` },
         ]],
       },
+      ...(again ? { disable_notification: true } : {}),
       ...(message.threadId !== undefined ? { message_thread_id: message.threadId } : {}),
     });
-    const { noticeId } = message;
+    // The notice, or the question this one replaces, would only sit above the
+    // reply saying what this now says below it.
+    const superseded = again ? message.reminderId : message.noticeId;
     message.reminderId = sent.message_id;
     delete message.noticeId;
+    delete message.repost;
     saveParked();
-    if (noticeId !== undefined) {
-      void api.deleteMessage(message.chatId, noticeId)
-        .catch((err: unknown) => console.warn('[Queued] Could not remove the notice:', sanitizeError(err)));
+    if (superseded !== undefined) {
+      void api.deleteMessage(message.chatId, superseded)
+        .catch((err: unknown) => console.warn('[Queued] Could not take down what the question replaces:', sanitizeError(err)));
     }
   } catch (err) {
     console.warn(`[Queued] Could not ask about message ${message.messageId}:`, sanitizeError(err));
@@ -379,13 +416,32 @@ async function remindWhereIdle(): Promise<void> {
   if (reminding) return;
   reminding = true;
   try {
-    const due = [...parked].filter(([key, message]) => message.reminderId === undefined && !unreachable.has(key));
-    if (due.length === 0 && reminderTimer) {
+    const watched = [...parked].filter(([key]) => !unreachable.has(key));
+    if (watched.length === 0 && reminderTimer) {
       clearInterval(reminderTimer);
       reminderTimer = null;
     }
-    for (const [key, message] of due) {
-      if (!botRef || !sessionIsIdle(message.sessionKey)) continue;
+    for (const [key, message] of watched) {
+      if (!botRef) break;
+      const running = turnRunning(message.sessionKey);
+      // Set aside while nothing was running: the next turn is what it's waiting for.
+      if (message.awaitsTurn) {
+        if (running) {
+          delete message.awaitsTurn;
+          saveParked();
+        }
+        continue;
+      }
+      // Asked already. A turn running now leaves the question above its reply,
+      // so once that's over it's asked again below.
+      if (message.reminderId !== undefined) {
+        if (running && !message.repost) {
+          message.repost = true;
+          saveParked();
+        }
+        if (!message.repost) continue;
+      }
+      if (!sessionIsIdle(message.sessionKey)) continue;
       // A turn Claude started itself is only over once its reply is in the chat,
       // and the question belongs below that.
       await whenRepliesSent(message.sessionKey);
@@ -397,14 +453,118 @@ async function remindWhereIdle(): Promise<void> {
 }
 
 /**
- * Start looking for the moment to ask, until nothing is left to ask about. It
+ * Start looking for the moment to ask, for as long as anything is set aside. It
  * polls because the turn ending is only one of the things it's waiting for, and
- * the poll only runs while a message is set aside and not yet asked about.
+ * the poll only runs while something is set aside.
  */
 export function armReminders(): void {
   if (reminderTimer) return;
   reminderTimer = setInterval(() => void remindWhereIdle(), REMIND_POLL_MS);
   reminderTimer.unref();
+}
+
+/**
+ * Take the command off, leaving the idea as the message Claude will get. The
+ * command entity would then point at nothing, and nothing downstream reads
+ * entities, which is also what lets the mention gate rewrite text in place.
+ */
+function stripLaterCommand(msg: Message): void {
+  if (typeof msg.text !== 'string') return;
+  (msg as { text: string }).text = msg.text.replace(LATER_COMMAND, '');
+  delete (msg as { entities?: unknown }).entities;
+}
+
+async function postNotice(api: Api, message: ParkedMessage, text: string): Promise<number | undefined> {
+  try {
+    const sent = await api.sendMessage(message.chatId, text, {
+      // Answering the person who just typed it, who is looking at the chat.
+      reply_parameters: { message_id: message.messageId, allow_sending_without_reply: true },
+      reply_markup: { inline_keyboard: [[takeBackButton(message.messageId)]] },
+      disable_notification: true,
+      ...(message.threadId !== undefined ? { message_thread_id: message.threadId } : {}),
+    });
+    return sent.message_id;
+  } catch (err) {
+    console.warn('[Queued] Could not post the notice:', sanitizeError(err));
+    return undefined;
+  }
+}
+
+function firstLine(text: string): string {
+  const line = text.trim().split('\n')[0] ?? '';
+  return line.length > 80 ? `${line.slice(0, 79)}…` : line;
+}
+
+/** One line of the list: what the message says, and what it's waiting for. */
+function describeSetAside(message: ParkedMessage): string {
+  const msg = message.update.message;
+  const words = msg.text ?? msg.caption;
+  const what = words !== undefined && words.trim()
+    ? firstLine(words)
+    : msg.voice ? '🎤 voice note' : msg.photo ? '🖼 photo' : msg.document ? '📎 file' : 'message';
+  const state = message.reminderId !== undefined ? 'asked, see below the reply'
+    : message.awaitsTurn ? "after Claude's next turn"
+      : 'when Claude is done';
+  return `${what} · ${state}`;
+}
+
+async function listSetAside(ctx: Context, sessionKey: SessionKey): Promise<void> {
+  const mine = [...parked.values()]
+    .filter((message) => message.sessionKey === sessionKey)
+    .sort((a, b) => a.messageId - b.messageId);
+  if (mine.length === 0) {
+    await ctx.reply(NOTHING_SET_ASIDE, { parse_mode: undefined });
+    return;
+  }
+  const lines = mine.map((message, i) => `${i + 1}. ${describeSetAside(message)}`);
+  await ctx.reply([LIST_HEADING, ...lines, '', LIST_FOOTER].join('\n'), { parse_mode: undefined });
+}
+
+/**
+ * `/later <text>`: set an idea aside without it reaching Claude. Asked about once
+ * Claude is done, or after the next turn if nothing is running, since asking at
+ * once would be no help. On its own, lists what's set aside in the chat. Registered
+ * ahead of sequentialize, or it would wait behind the very turn it's meant to
+ * outlast.
+ */
+export async function handleLater(ctx: Context): Promise<void> {
+  const msg = ctx.message;
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!msg || typeof msg.text !== 'string' || !keyInfo) return;
+  if (!msg.text.replace(LATER_COMMAND, '').trim()) return listSetAside(ctx, keyInfo.sessionKey);
+
+  const key = entryKey(keyInfo.chatId, msg.message_id);
+  // Telegram delivering it twice.
+  if (parked.has(key)) return;
+
+  const update = ctx.update as MessageUpdate;
+  stripLaterCommand(update.message);
+  const awaitsTurn = !turnRunning(keyInfo.sessionKey);
+  const message: ParkedMessage = {
+    chatId: keyInfo.chatId,
+    threadId: keyInfo.threadId,
+    sessionKey: keyInfo.sessionKey,
+    messageId: msg.message_id,
+    senderId: ctx.from?.id,
+    update,
+    command: true,
+    ...(awaitsTurn ? { awaitsTurn: true } : {}),
+  };
+  parked.set(key, message);
+  saveParked();
+  armReminders();
+  console.log(`[Queued] Set message ${msg.message_id} in ${keyInfo.sessionKey} aside with /later`);
+
+  const noticeId = await postNotice(ctx.api, message, awaitsTurn ? PARKED_AFTER_NEXT_TURN : PARKED);
+  if (noticeId === undefined) return;
+  if (parked.get(key) === message && message.reminderId === undefined) {
+    message.noticeId = noticeId;
+    saveParked();
+  } else {
+    // Dealt with, or asked about, while the notice was on its way.
+    void ctx.api.deleteMessage(keyInfo.chatId, noticeId)
+      .catch((err: unknown) => console.warn('[Queued] Could not remove the notice:', sanitizeError(err)));
+  }
 }
 
 /** Back through the whole chain, as if it had just arrived. */
@@ -477,7 +637,8 @@ export async function handleEditedMessage(ctx: Context): Promise<void> {
   const edited = ctx.editedMessage;
   if (!edited) return;
   const key = entryKey(edited.chat.id, edited.message_id);
-  const waiting = queued.get(key) ?? parked.get(key);
+  const setAside = parked.get(key);
+  const waiting = queued.get(key) ?? setAside;
   if (!waiting) return;
 
   if (wasBatched(waiting.update.message)) {
@@ -486,8 +647,10 @@ export async function handleEditedMessage(ctx: Context): Promise<void> {
   }
   // The gate did this for the message as it arrived, and passes edits untouched.
   if (config.GROUP_REQUIRE_MENTION) stripBotMention(edited, ctx.me);
+  // As did /later's handler, which an edit doesn't reach either.
+  if (setAside?.command) stripLaterCommand(edited);
   waiting.update.message = edited;
-  if (parked.has(key)) saveParked();
+  if (setAside) saveParked();
 }
 
 function maySettle(ctx: Context, senderId: number | undefined): boolean {

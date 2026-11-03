@@ -58,6 +58,7 @@ const {
   holdQueuedMessage,
   handleQueuedCallback,
   handleEditedMessage,
+  handleLater,
   initParkedMessages,
   forgetParkedMessages,
   armReminders,
@@ -74,7 +75,7 @@ const STRANGER = 99;
 /** Comfortably past the ack's delay, the hold's poll and the reminder's. */
 const WAIT_MS = 1_100;
 
-const REMINDER = '🔔 You set this aside. Still want to send it?';
+const REMINDER = '🔔 You set this aside. Still want to send it?\n✏️ Edit your message above to change what goes out.';
 const PARKED_FILE = path.join(os.homedir(), '.claudegram', 'parked-messages-123456789.json');
 
 interface Turn { release: () => void; cancelled: boolean }
@@ -137,6 +138,7 @@ function makeBot(): Bot {
 
   // The same order as createBot in src/bot/bot.ts.
   b.command('cancel', handleCancel);
+  b.command('later', handleLater);
   b.callbackQuery(/^queued:/, handleQueuedCallback);
   b.on('edited_message', handleEditedMessage);
   initParkedMessages(b);
@@ -1013,6 +1015,60 @@ describe('setting a message aside', () => {
       expect(started).toEqual(['first', 'second, fixed']);
     });
   });
+
+  describe('left unanswered', () => {
+    it('is asked again below the next reply, without a buzz, and the old question comes down', async () => {
+      const id = await asked();
+      expect(callsTo('deleteMessage').map((c) => c.payload.message_id)).toEqual([5000]);
+
+      send('third');
+      await advance();
+      // Not while the turn runs: the reply it belongs under isn't there yet.
+      expect(remindersFor(id)).toHaveLength(1);
+
+      turns.get('third')!.release();
+      await advance();
+      const reminders = remindersFor(id);
+      expect(reminders).toHaveLength(2);
+      expect(reminders[0]?.payload.disable_notification).toBeUndefined();
+      expect(reminders[1]?.payload.disable_notification).toBe(true);
+      expect(callsTo('deleteMessage').map((c) => c.payload.message_id)).toEqual([5000, 5001]);
+
+      await tapButton(`queued:send:${id}`);
+      await advance();
+      expect(started).toEqual(['first', 'third', 'second']);
+    });
+
+    it("isn't asked again when nothing but a bot command has run", async () => {
+      const id = await asked();
+
+      send('/clear');
+      await advance();
+      await advance();
+
+      expect(commandsRun).toEqual(['/clear']);
+      expect(remindersFor(id)).toHaveLength(1);
+    });
+
+    it('is asked again after a Send on another message, which is a turn like any other', async () => {
+      const second = await setAside('second');
+      const third = send('third');
+      await advance();
+      await tapButton(`queued:park:${third}`, { ackId: 5001 });
+      turns.get('first')!.release();
+      await advance();
+      expect(remindersFor(second)).toHaveLength(1);
+      expect(remindersFor(third)).toHaveLength(1);
+
+      await tapButton(`queued:send:${third}`);
+      await advance();
+      turns.get('third')!.release();
+      await advance();
+
+      expect(remindersFor(second)).toHaveLength(2);
+      expect(remindersFor(third)).toHaveLength(1);
+    });
+  });
 });
 
 describe('an edit to a message still in line', () => {
@@ -1335,5 +1391,156 @@ describe('CANCEL_ON_NEW_MESSAGE', () => {
     await advance();
 
     expect(turns.get('first')!.cancelled).toBe(false);
+  });
+});
+
+describe('/later', () => {
+  const notices = (messageId: number) => acksFor(messageId).filter((c) => String(c.payload.text).startsWith('🔔 Set aside'));
+
+  it('sets an idea aside during a turn without it reaching Claude, and asks once the turn is over', async () => {
+    send('first');
+    await advance();
+    const id = send('/later fix the typo too');
+    await advance();
+
+    expect(started).toEqual(['first']);
+    expect(notices(id)[0]?.payload).toMatchObject({
+      text: "🔔 Set aside. I'll ask when Claude is done.",
+      reply_parameters: { message_id: id, allow_sending_without_reply: true },
+      reply_markup: { inline_keyboard: [[{ text: '🗑 Take back', callback_data: `queued:${id}` }]] },
+      disable_notification: true,
+    });
+    // No ack: it isn't in line, and the notice says what's happening to it.
+    expect(acksFor(id)).toHaveLength(1);
+    expect(remindersFor(id)).toEqual([]);
+
+    turns.get('first')!.release();
+    await advance();
+    expect(remindersFor(id)).toHaveLength(1);
+    expect(callsTo('deleteMessage').map((c) => c.payload.message_id)).toEqual([5000]);
+
+    await tapButton(`queued:send:${id}`);
+    await advance();
+    expect(started).toEqual(['first', 'fix the typo too']);
+  });
+
+  it('is the way in while nothing is running, and waits for the next turn to come and go', async () => {
+    const id = send('/later and rename the flag');
+    await advance();
+    expect(notices(id)[0]?.payload.text).toBe("🔔 Set aside. I'll ask after Claude's next turn.");
+
+    await advance(5_000);
+    expect(remindersFor(id)).toEqual([]);
+    expect(started).toEqual([]);
+
+    send('first');
+    await advance();
+    expect(remindersFor(id)).toEqual([]);
+
+    turns.get('first')!.release();
+    await advance();
+    expect(remindersFor(id)).toHaveLength(1);
+    expect(callsTo('deleteMessage').map((c) => c.payload.message_id)).toEqual([5000]);
+  });
+
+  it("isn't woken by a bot command, which isn't a turn", async () => {
+    const id = send('/later and rename the flag');
+    await advance();
+    send('/clear');
+    await advance();
+    await advance();
+
+    expect(commandsRun).toEqual(['/clear']);
+    expect(remindersFor(id)).toEqual([]);
+  });
+
+  it('lists what is set aside in the chat, or says there is nothing', async () => {
+    send('/later');
+    await advance();
+    expect(textsSent().at(-1)).toContain('Nothing is set aside in this chat.');
+
+    send('/later and rename the flag');
+    await advance();
+    send('/later');
+    await advance();
+    expect(textsSent().at(-1)).toContain("1. and rename the flag · after Claude's next turn");
+
+    // The turn it was waiting for, which also puts two more behind it.
+    send('first');
+    await advance();
+    const second = send('second');
+    await advance();
+    await tapButton(`queued:park:${second}`, { ackId: 5002 });
+    send('/later   spaced out\nwith a second line');
+    await advance();
+
+    send('/later');
+    await advance();
+    expect(textsSent().at(-1)).toBe([
+      '🔔 Set aside in this chat:',
+      '1. and rename the flag · when Claude is done',
+      '2. second · when Claude is done',
+      '3. spaced out · when Claude is done',
+      '',
+      'Each gets a question below the reply, with Send and Drop. Edit a message to change what goes out.',
+    ].join('\n'));
+
+    turns.get('first')!.release();
+    await advance();
+    send('/later');
+    await advance();
+    expect(textsSent().at(-1)).toContain('1. and rename the flag · asked, see below the reply');
+  });
+
+  it('sends an edit, with the command taken off again', async () => {
+    send('first');
+    await advance();
+    const id = send('/later fix the typo');
+    await advance();
+
+    await edit(id, '/later fix the typo in the README');
+    turns.get('first')!.release();
+    await advance();
+    await tapButton(`queued:send:${id}`);
+    await advance();
+
+    expect(started).toEqual(['first', 'fix the typo in the README']);
+  });
+
+  it('can be taken back from its notice, and then nothing asks about it', async () => {
+    const id = send('/later and rename the flag');
+    await advance();
+
+    await tapTakeBack(id, { ackId: 5000 });
+    expect(answers()).toEqual(['Taken back.']);
+    expect(edits().at(-1)).toBe('🗑 Taken back before it reached Claude.');
+
+    send('first');
+    await advance();
+    turns.get('first')!.release();
+    await advance();
+    expect(remindersFor(id)).toEqual([]);
+    expect(started).toEqual(['first']);
+  });
+
+  it('is still waiting for a turn after a restart', async () => {
+    const id = send('/later and rename the flag');
+    await advance();
+
+    forgetParkedMessages();
+    initParkedMessages(bot);
+    armReminders();
+    await advance(3_000);
+    expect(remindersFor(id)).toEqual([]);
+
+    send('first');
+    await advance();
+    turns.get('first')!.release();
+    await advance();
+    expect(remindersFor(id)).toHaveLength(1);
+
+    await tapButton(`queued:send:${id}`);
+    await advance();
+    expect(started).toEqual(['first', 'and rename the flag']);
   });
 });

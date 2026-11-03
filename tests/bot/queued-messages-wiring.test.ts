@@ -62,7 +62,7 @@ const { config } = await import('../../src/config.js');
 const CHAT = 1; // In the suite's ALLOWED_USER_IDS.
 const GROUP = -1009990001; // In the suite's ALLOWED_GROUP_IDS.
 const WAIT = { timeout: 5_000, interval: 20 };
-const REMINDER = '🔔 You set this aside. Still want to send it?';
+const REMINDER = '🔔 You set this aside. Still want to send it?\n✏️ Edit your message above to change what goes out.';
 
 let bot: Bot;
 let pending: Promise<void>[];
@@ -275,6 +275,21 @@ describe('the bot as assembled', () => {
 
     await tapButton(`queued:send:${second}`);
     await vi.waitFor(() => expect(fx.prompts).toEqual(['first', 'second']), WAIT);
+  });
+
+  it('sets an idea aside with /later during a turn, and delivers it without the command on Send', async () => {
+    send('first');
+    await vi.waitFor(() => expect(fx.prompts).toEqual(['first']), WAIT);
+    const idea = send('/later and the tests');
+    await vi.waitFor(() => expect(ackFor(idea)?.payload.text).toBe("🔔 Set aside. I'll ask when Claude is done."), WAIT);
+    expect(reminderFor(idea)).toBeUndefined();
+
+    fx.finish.get('first')!();
+    await vi.waitFor(() => expect(reminderFor(idea)).toBeDefined(), WAIT);
+    expect(fx.prompts).toEqual(['first']);
+
+    await tapButton(`queued:send:${idea}`);
+    await vi.waitFor(() => expect(fx.prompts).toEqual(['first', 'and the tests']), WAIT);
   });
 
   it('leaves the chat free while a message is set aside', async () => {

@@ -13,6 +13,7 @@ import {
   holdQueuedMessage,
   handleQueuedCallback,
   handleEditedMessage,
+  handleLater,
   initParkedMessages,
 } from './middleware/queued-messages.js';
 import {
@@ -334,6 +335,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'verbosity', description: '🎚️ Set verbosity tier (quiet/normal/verbose/debug)' },
     { command: 'method', description: '🛰️ Switch Claude transport (SDK / PTY)' },
     { command: 'btw', description: '💬 Side question without interrupting' },
+    { command: 'later', description: '🔔 Set an idea aside for after the turn' },
     { command: 'tasks', description: '🔄 List active background tasks' },
     { command: 'shells', description: '🔍 List & kill background shells (PTY mode)' },
     ...(config.CCR_ENABLED ? [{ command: 'provider', description: '🔌 Switch AI provider' }] : []),
@@ -411,6 +413,9 @@ export async function createBot(): Promise<Bot> {
   cmd('deny', adminOnly(handleDeny));
   cmd('users', adminOnly(handleUsers));
   cmd('btw', handleBtw); // Side question — must bypass queue to work mid-task
+  // Sets an idea aside for after the turn, so it can't wait behind that turn. And
+  // with nothing running, it's the one message that doesn't start one.
+  cmd('later', handleLater);
   cmd('tasks', handleTasks); // Read-only; must bypass queue so it works mid-stream
   cmd('cost', handleCost); // Read-only probe + a peek at the live TUI panel; bypasses the queue so it answers mid-turn
   cmd('shells', handleShells); // Lists/kills OS-level bg processes; must bypass queue to rescue hung sessions

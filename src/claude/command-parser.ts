@@ -81,6 +81,7 @@ export function getAvailableCommands(): string {
         '• `/explore <question>` \\- Use explore agent for codebase questions',
         '• `/loop <task>` \\- Run iteratively until task complete',
         '• `/model [name]` \\- Show or set AI model',
+        "• `/later [text]` \\- Set an idea aside, and be asked about it after Claude's turn",
         ...(config.CCR_ENABLED ? [`• \`/provider\` \\- Switch AI provider \\(Claude / CCR\\)${adminTag}`] : []),
         '• `/commands` \\- Show this list',
       ],

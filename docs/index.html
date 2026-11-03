@@ -2110,9 +2110,12 @@
             <div class="feature-icon"><svg><use href="#i-bell"/></svg></div>
             <h3>Decide after you've read the answer</h3>
             <p>Not sure a follow-up will still apply? Tap <code>🔔 Ask me after</code> on its
-            <code>⏳ Queued</code> notice and it won't go out by itself. When Claude is done, the
-            bot asks below the reply whether you still want to send it, with Send and Drop
-            buttons. The question waits for as long as you need, restarts included. Edit the
+            <code>⏳ Queued</code> notice and it won't go out by itself. Had the idea while nothing
+            was running, or don't want to race the turn? <code>/later &lt;text&gt;</code> sets it
+            aside the same way, and <code>/later</code> alone lists what's waiting. When Claude is
+            done, the bot asks below the reply whether you still want to send it, with Send and Drop
+            buttons. The question waits for as long as you need, restarts included, and follows the
+            conversation down: left unanswered, it's asked again below each new reply. Edit the
             message in the meantime and the edit is what goes out.</p>
           </div>
           <div class="feature-card" data-category="reliability">
@@ -2950,6 +2953,10 @@ CCR_AUTOSTART=true</pre>
               <span class="command-desc">Ask a side question without interrupting the current task. Works in both modes: SDK mode uses the live query's side-question channel, PTY mode answers from a read-only, non-persisted fork of the running session — so the transcript is never touched and the turn keeps going.</span>
             </div>
             <div class="command-row">
+              <code class="command-code">/later [text]</code>
+              <span class="command-desc">Set an idea aside without it reaching Claude, mid-turn or while nothing is running. Once Claude is done — or, if it was idle, once the next turn has run — the bot asks below the reply whether to send it, with Send and Drop; a question left unanswered is asked again below each new reply. Edit the message in the meantime and the edit is what goes out. On its own, lists what's set aside in the chat. Same store as <code>🔔 Ask me after</code>, so it survives restarts.</span>
+            </div>
+            <div class="command-row">
               <code class="command-code">/tasks</code>
               <span class="command-desc">List active background work — subagents, monitors, backgrounded shells and workflows — grouped by kind, with elapsed time; tap a number to view details. Entries that have gone silent for 15 minutes are flagged <strong>⚠️</strong> — a finished task normally drops off the list, so a long-quiet one usually means its completion event never arrived; monitors are exempt, since idling until an event fires is exactly what they do. Works in both SDK and PTY mode. In PTY mode, <strong>🔎 Ask claude</strong> types <code>/tasks</code> into the live TUI and relays Claude Code's own background view, which also covers shells it started on its own and anything armed before the last bot restart.</span>
             </div>
@@ -3070,7 +3077,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/cancel, /stop</code>
-              <span class="command-desc">Stop the running turn, including one Claude started itself, and drop every message waiting behind it (alias: /stop). To recall one message and leave the turn running, tap Take back on its <code>⏳ Queued</code> notice instead. A message set aside with Ask me after stays set aside.</span>
+              <span class="command-desc">Stop the running turn, including one Claude started itself, and drop every message waiting behind it (alias: /stop). To recall one message and leave the turn running, tap Take back on its <code>⏳ Queued</code> notice instead. A message set aside with Ask me after or /later stays set aside.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/commands</code>
