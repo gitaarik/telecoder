@@ -247,10 +247,22 @@ function convertTable(tableLines: string[]): string[] {
       const header = headers[c] || '';
       const cell = row[c] || '';
       if (!cell) continue;
-      out.push(header ? `**${header}**: ${cell}` : cell);
+      out.push(header ? `**${withoutBold(header)}**: ${cell}` : cell);
     }
   }
   return out;
+}
+
+/**
+ * A header cell without its own bold markers, since the label is made bold anyway. A header that is
+ * bold already, as in `| **Name** |`, would otherwise become `****Name****`, which telegram-markdown-v2
+ * turns into an empty bold on each side, so the label came out plain. Code spans keep their text.
+ */
+function withoutBold(cell: string): string {
+  return cell
+    .split(/(`+[^`]*`+)/)
+    .map((part, k) => (k % 2 ? part : part.replace(/\*\*(.+?)\*\*/g, '$1')))
+    .join('');
 }
 
 /**

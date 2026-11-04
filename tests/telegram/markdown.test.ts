@@ -150,3 +150,23 @@ describe('escapeMarkdownV2Code', () => {
     expect(escapeMarkdownV2Code('/code-review')).toBe('/code-review');
   });
 });
+
+describe('convertToTelegramMarkdown — tables', () => {
+  const table = (header: string) => convertToTelegramMarkdown(`| ${header} | Value |\n| --- | --- |\n| a | b |`);
+
+  it('writes each row as lines that start with the header in bold', () => {
+    expect(table('Name')).toBe('*Name*: a\n*Value*: b\n');
+  });
+
+  it('keeps the header in bold when its cell is bold already', () => {
+    expect(table('**Name**')).toBe('*Name*: a\n*Value*: b\n');
+  });
+
+  it('makes the whole header bold when part of its cell is bold', () => {
+    expect(table('**New** name')).toBe('*New name*: a\n*Value*: b\n');
+  });
+
+  it('leaves the stars in a code span in the header as written', () => {
+    expect(table('`a**b**c`')).toBe('*`a**b**c`*: a\n*Value*: b\n');
+  });
+});
