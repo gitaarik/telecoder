@@ -61,20 +61,42 @@ Behaviour stays the same, and tests come first where coverage is thin:
 | `src/claude/agent.ts` | 1,387 |
 | `src/bot/handlers/command/settings.ts` | 1,153 |
 
-### 6. Settle the "interrupted by user" misattribution (2–4 h)
+### 6. Codex alongside Claude Code (25–35 h)
+
+When my Claude subscription runs out, the fallback today is CCR, which points Claude Code
+at DeepSeek through a local router. Codex, on a ChatGPT plan, would be a fallback with its
+own agent loop, tools and models.
+
+It gets one transport, `codex app-server` (JSON-RPC over stdio), which OpenAI documents
+for clients that handle approvals and streamed events. There is no PTY mode: the Claude
+PTY transport exists because Anthropic bills SDK use apart from the subscription, and
+Codex doesn't appear to make that split, so scraping a second TUI would buy nothing.
+
+- Add a Codex provider on `codex app-server`: streamed replies, tool indicators, edit
+  diffs, interrupting a turn, and usage
+- Route Codex's approval requests through the permission gate and scope guard, using the
+  Telegram prompt the PTY transport already has
+- Load TeleCoder's stdio MCP server (`src/bin/mcp-server.ts`) into Codex, and support
+  `/model`, reasoning effort and images
+- Offer Codex in `/provider` and the throttle failover. A switch forks the conversation
+  with a summary, as switching to CCR does
+- Give Claude-only features such as `/tree`, background tasks and plugins a clear "not on
+  Codex" reply, and list what stays behind, as the README does for CCR
+
+### 7. Settle the "interrupted by user" misattribution (2–4 h)
 
 Long background tasks sometimes report "Request interrupted by user" when nobody
 interrupted them. The foreground variant is understood; the background one is still open.
 Findings so far are in
 [`docs/debugging/interrupted-by-user-misattribution.md`](docs/debugging/interrupted-by-user-misattribution.md).
 
-### 7. Files over 20 MB (4–6 h)
+### 8. Files over 20 MB (4–6 h)
 
 Telegram's cloud Bot API won't let a bot download a file over 20 MB. Add optional support
 for a self-hosted Telegram Bot API server: an opt-in Compose file, docs, and a safe
 migration path, since moving a bot token to a local server is hard to undo.
 
-### 8. Easier setup and releases (5–8 h)
+### 9. Easier setup and releases (5–8 h)
 
 - A `doctor` command that checks the bot token, the `claude` login and `ffmpeg`, and says
   exactly what to fix
@@ -84,7 +106,8 @@ migration path, since moving a bot token to a local server is hard to undo.
 
 ## Out of scope
 
-TeleCoder stays a self-hosted client for Claude Code. These are not planned:
+TeleCoder stays a self-hosted client for coding agents like Claude Code and Codex. These
+are not planned:
 
 - A hosted or multi-tenant service
 - Hosting, training or evaluating AI models
