@@ -20,6 +20,28 @@
  * buffer, where the TUI's own chrome lives — a scan of the whole screen would
  * take an assistant message that merely quotes the phrase as proof that
  * claude is still working.
+ *
+ * Above the input box is the transcript, where claude draws each reply from
+ * its Markdown rather than printing the Markdown itself. Measured on claude
+ * 2.1.280 at 120x40: a reply's first row starts with `● `, its later rows are
+ * indented by two, its lines wrap at the terminal's width, and a blank row
+ * comes between its blocks. Bold and italic markers go, and the cells carry
+ * those attributes instead. Headings lose their `#`s and show bold, `#` also
+ * italic and underlined. Inline code, and a code block without a language,
+ * get a colour of their own, a code block with one gets syntax colours, and
+ * neither shows its fences. A quote is a dim `▎` before italic text, and a
+ * link is `text (url)`. Lists, `---`, `~~strike~~` and HTML tags stay as
+ * written. A table is drawn in box drawing, with a rule between every two
+ * rows:
+ *
+ *     ┌───────┬───────┐
+ *     │ cell1 │ cell2 │
+ *     ├───────┼───────┤
+ *     │ cell3 │ cell4 │
+ *     └───────┴───────┘
+ *
+ * A cell too long for its column goes on in the same cell on the next row,
+ * and when a table opens the reply, its top border is the `● ` row.
  */
 
 /** Rows from the bottom that hold the TUI's chrome rather than transcript. */
