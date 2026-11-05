@@ -145,6 +145,33 @@ describe('replyFromScreen', () => {
   it('keeps a one-word reply', () => {
     expect(replyFromScreen(['● pineapple', ...box, ...panel].join('\n'))).toBe('pineapple');
   });
+
+  // Claude draws a table in box drawing, and its rows open with `│ ` as an
+  // input box's side border does.
+  it('keeps a table and the text after it', () => {
+    const table = [
+      '  ┌───────┬────────┐',
+      '  │ Step  │ Status │',
+      '  ├───────┼────────┤',
+      '  │ build │ ok     │',
+      '  ├───────┼────────┤',
+      '  │ test  │ failed │',
+      '  └───────┴────────┘',
+    ];
+    const reply = ['● Here are the results:', '', ...table, '', '  The test step needs a look.'];
+    const screen = [...reply, '✻ Brewed for 3s', ...box].join('\n');
+    expect(replyFromScreen(screen)).toBe(reply.join('\n').slice('● '.length));
+  });
+
+  it('keeps a table of one column that opens the reply', () => {
+    const reply = ['● ┌──────┐', '  │ only │', '  └──────┘', '', '  Done.'];
+    expect(replyFromScreen([...reply, ...box].join('\n'))).toBe(reply.join('\n').slice('● '.length));
+  });
+
+  it('stops at an input box with side borders', () => {
+    const sideBordered = ['╭──────────────────╮', '│ ❯ typed text     │', '╰──────────────────╯'];
+    expect(replyFromScreen(['● Done.', ...sideBordered].join('\n'))).toBe('Done.');
+  });
 });
 
 describe('screenSignature', () => {

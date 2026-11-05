@@ -161,12 +161,17 @@ const AGENT_NOTICE_ROW = /^\s*●\s+Agent\s+".*"\s+\w+\s+·/u;
 /** A prompt already submitted, as the transcript shows it. */
 const SUBMITTED_PROMPT_ROW = /^\s*❯\s+\S/u;
 
-/** Does this row end the assistant's text: a timer, an input box part or a rule? */
+/**
+ * Does this row end the assistant's text: a timer, an input box part or a rule?
+ *
+ * A row opening with `│ ` is not one. An input box with side borders opens
+ * with a `╭` row, which ends the text before its first `│` row, and the rows
+ * of a table that claude draws in box drawing open with `│ ` too.
+ */
 function endsReply(line: string): boolean {
   const trimmed = line.trim();
   return trimmed.startsWith('✻')
     || /^[╭╰╮╯]/u.test(trimmed)
-    || /^│\s/u.test(trimmed)
     || trimmed.includes('❯')
     || /^[─━═]{3,}$/u.test(trimmed);
 }
