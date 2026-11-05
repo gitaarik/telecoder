@@ -69,6 +69,24 @@ describe('isGenerating', () => {
     ].join('\n'))).toBe(true);
   });
 
+  // Rows from a live 120x40 pty running claude 2.1.280. While its Stop hook
+  // runs, as at the end of every turn in PTY mode, the spinner says so.
+  it.each([
+    '* Percolating… (12s · ↓ 1.2k tokens)',
+    '✶ Improvising… (1m 3s · ↓ 56 tokens)',
+    '· Inferring… (running Stop hook · 0s · ↓ 2 tokens)',
+  ])('reads a live spinner above the input box as a turn in flight: %s', (spinner) => {
+    expect(isGenerating([
+      '● All set.',
+      '',
+      spinner,
+      SEP,
+      '❯ ',
+      SEP,
+      '  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents                                /rc',
+    ].join('\n'))).toBe(true);
+  });
+
   it('does not read the completed-turn timer as a turn in flight', () => {
     expect(isGenerating([
       '● All set.',
@@ -126,6 +144,8 @@ describe('replyFromScreen', () => {
   it.each([
     ['a tool call', '● Bash(true)'],
     ['a tool call cut off by wrapping', '● Bash(python3 -c "import time; time.sl'],
+    ['calls collapsed into one row', '● Read 1 file (ctrl+o to expand)'],
+    ['collapsed calls still running', '● Reading 1 file… (ctrl+o to expand)'],
     ['an agent notice', '● Agent "Run the checks" finished · 4s'],
   ])('returns nothing when the turn ended on %s', (_name, row) => {
     const screen = ['● An earlier answer.', '❯ next question', row, '  ⎿  (No content)', '✻ Brewed for 3s', ...box].join('\n');
@@ -168,6 +188,44 @@ describe('replyFromScreen', () => {
     expect(replyFromScreen([...reply, ...box].join('\n'))).toBe(reply.join('\n').slice('● '.length));
   });
 
+  // While the turn runs, the spinner sits between the reply and the input box,
+  // in any of its frames.
+  it.each([
+    '✢ Percolating… (4s · ↓ 120 tokens)',
+    '* Percolating… (4s · ↓ 120 tokens)',
+    '✶ Percolating… (4s · ↓ 120 tokens)',
+    '✽ Percolating… (4s · ↓ 120 tokens)',
+    '· Percolating… (4s · ↓ 120 tokens)',
+    '✶ Improvising… (1m 3s · ↓ 56 tokens)',
+    '· Inferring… (running Stop hook · 0s · ↓ 2 tokens)',
+  ])('stops at the live spinner: %s', (spinner) => {
+    const screen = ['● The first part of the answer.', '', spinner, ...box].join('\n');
+    expect(replyFromScreen(screen)).toBe('The first part of the answer.');
+  });
+
+  // A running call's `●` blinks. These are the moments it is off.
+  it('stops at calls after the text while their bullets are off', () => {
+    const screen = [
+      '● The package has two scripts.',
+      '  Both run the build.',
+      '',
+      '  Reading 1 file… (ctrl+o to expand)',
+      '  ⎿  package.json',
+      '',
+      '  Bash(echo done)',
+      '  ⎿  Running…',
+      '',
+      '✢ Percolating… (6s · ↓ 210 tokens)',
+      ...box,
+    ].join('\n');
+    expect(replyFromScreen(screen)).toBe('The package has two scripts.\n  Both run the build.');
+  });
+
+  it('leaves out the row of a call whose bullet is off', () => {
+    const screen = ['● Running the check now.', '', '  Bash(npm test)', '  ⎿  Running…', ...box].join('\n');
+    expect(replyFromScreen(screen)).toBe('Running the check now.');
+  });
+
   it('stops at an input box with side borders', () => {
     const sideBordered = ['╭──────────────────╮', '│ ❯ typed text     │', '╰──────────────────╯'];
     expect(replyFromScreen(['● Done.', ...sideBordered].join('\n'))).toBe('Done.');
@@ -183,6 +241,14 @@ describe('screenSignature', () => {
       '❯ ',
     ].join('\n');
     expect(screenSignature(at(29))).toBe(screenSignature(at(30)));
+  });
+
+  it.each([
+    [(secs: number) => `✶ Improvising… (1m ${secs}s · ↓ 56 tokens)`],
+    [(secs: number) => `· Inferring… (running Stop hook · ${secs}s · ↓ 2 tokens)`],
+  ])('is unchanged when only the spinner timer ticks, past a minute or waiting on a hook', (spinner) => {
+    const at = (secs: number) => ['● All set.', spinner(secs), SEP, '❯ '].join('\n');
+    expect(screenSignature(at(3))).toBe(screenSignature(at(4)));
   });
 
   // Rows as a live 120x40 pty draws them, from the moment a subagent starts.

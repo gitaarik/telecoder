@@ -52,11 +52,16 @@ const SPINNER_ROWS = 12;
 /** The footer's interrupt hint, offered only while a generation is running. */
 const INTERRUPT_HINT = /esc to interrupt/i;
 /**
- * The live spinner: a glyph, a gerund, and a running timer. The completed
- * turn's summary (`✻ Brewed for 3m 5s`) is deliberately not matched — it has
- * no ellipsis and stays on screen long after the turn ends.
+ * The live spinner: a glyph, a gerund, and a running timer. Measured on
+ * claude 2.1.280, the glyph cycles through `✢ * ✶ ✻ ✽ ·` several times a
+ * second, and the timer opens the parentheses (`✶ Percolating… (29s · ↓ 1.2k
+ * tokens)`), counts minutes past the first one (`(1m 3s · …)`), and follows
+ * what claude waits on while a hook runs (`· Inferring… (running Stop hook ·
+ * 0s · ↓ 2 tokens)`). The completed turn's summary (`✻ Brewed for 3m 5s`) is
+ * deliberately not matched — it has no ellipsis and stays on screen long
+ * after the turn ends.
  */
-const LIVE_SPINNER = /[✶✳✻✽✢·]\s+\S+…\s*\(\d+\s*s/u;
+const LIVE_SPINNER = /^\s*[✶✳✻✽✢·*]\s+\S+…\s*\((?:[^()]*·\s*)?(?:\d+h\s*)?(?:\d+m\s*)?\d+s\b/u;
 /** Claude's own output bullet, so a quoted hint isn't read as chrome. */
 const ASSISTANT_BULLET = /^\s*●/u;
 
@@ -154,15 +159,33 @@ export function hasInputBox(screenText: string): boolean {
     || (INPUT_ROW.test(line) && RULE.test(lines[i - 1] ?? '') && RULE.test(lines[i + 1] ?? '')));
 }
 
-/** A tool call's row in the transcript: `● Bash(npm test)`, cut off if it wraps. */
-const TOOL_CALL_ROW = /^\s*●\s+[A-Za-z][\w:-]*\((?:[^)]*|.*\))\s*$/u;
+/**
+ * A tool call's row in the transcript: `● Bash(npm test)`, cut off if it
+ * wraps, or the one row claude collapses calls into, `● Read 1 file (ctrl+o
+ * to expand)`, which reads `● Reading 1 file… (ctrl+o to expand)` while they
+ * run.
+ */
+const TOOL_CALL_ROW = /^\s*●\s+(?:[A-Za-z][\w:-]*\((?:[^)]*|.*\))|.*\(ctrl\+o to expand\))\s*$/u;
+/**
+ * The rows that still tell a call apart from text while its `●` is off. The
+ * bullet blinks while the call runs, and without it the call's rows read as
+ * more rows of the text above them. What claude draws under a call opens with
+ * `⎿` (`  ⎿  Running…`), and a collapsed call's row ends in its hint.
+ */
+const TOOL_RESULT_ROW = /^\s*⎿/u;
+const COLLAPSED_CALL_ROW = /\(ctrl\+o to expand\)\s*$/u;
 /** A background agent reporting in: `● Agent "Run the checks" finished · 4s`. */
 const AGENT_NOTICE_ROW = /^\s*●\s+Agent\s+".*"\s+\w+\s+·/u;
 /** A prompt already submitted, as the transcript shows it. */
 const SUBMITTED_PROMPT_ROW = /^\s*❯\s+\S/u;
 
 /**
- * Does this row end the assistant's text: a timer, an input box part or a rule?
+ * Does this row end the assistant's text: a timer, a tool call's row, an input
+ * box part or a rule?
+ *
+ * The timer is the completed turn's `✻` summary, or the live spinner in any of
+ * its frames, while the turn still runs. A call's rows end it when the call's
+ * `●` is off.
  *
  * A row opening with `│ ` is not one. An input box with side borders opens
  * with a `╭` row, which ends the text before its first `│` row, and the rows
@@ -171,6 +194,9 @@ const SUBMITTED_PROMPT_ROW = /^\s*❯\s+\S/u;
 function endsReply(line: string): boolean {
   const trimmed = line.trim();
   return trimmed.startsWith('✻')
+    || LIVE_SPINNER.test(trimmed)
+    || TOOL_RESULT_ROW.test(trimmed)
+    || COLLAPSED_CALL_ROW.test(trimmed)
     || /^[╭╰╮╯]/u.test(trimmed)
     || trimmed.includes('❯')
     || /^[─━═]{3,}$/u.test(trimmed);
@@ -209,7 +235,15 @@ export function replyFromScreen(screenText: string): string {
   }
 
   const end = below.findIndex(endsReply);
-  return [rows[bullet], ...(end === -1 ? below : below.slice(0, end))]
+  let text = end === -1 ? below : below.slice(0, end);
+  // A `⎿` row hangs under its call's own rows, which have no `●` while it is
+  // off: they go too, back to the blank row before them.
+  if (end !== -1 && TOOL_RESULT_ROW.test(below[end])) {
+    let blank = text.length - 1;
+    while (blank >= 0 && text[blank].trim()) blank--;
+    if (blank >= 0) text = text.slice(0, blank);
+  }
+  return [rows[bullet], ...text]
     .join('\n')
     .replace(/^\s*●\s*/u, '')
     .trim();
