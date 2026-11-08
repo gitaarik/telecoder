@@ -119,6 +119,13 @@ Do NOT use it for:
 - Yes/no questions that the conversation context already implies the answer to.
 Keep button labels ≤ 25 chars where you can — a longer one still reaches the user in full (the message body lists every option, keyed A/B/C), but the whole keyboard then shrinks to bare letters. Prefer 2–4 options. Add an optional one-line description per option only when the label alone is unclear.`;
 
+const REQUEST_SECRET_TOOL_PROMPT = `
+
+Secrets:
+When a task needs a credential from the user (an API key, a token, a password), get it with the claudegram_request_secret MCP tool. Never ask them to paste one into the chat, and don't send them to a terminal for it: whatever is sent in the chat ends up in this conversation and in the Telegram history.
+The tool runs your command with the secret in $SECRET and on stdin, after the user sends it and the bot deletes their message. You get the exit code and the output with the secret blanked out, never the value, so make the command store or use it in one go.
+For a long-lived Claude token (CLAUDE_CODE_OAUTH_TOKEN), set source to "claude-setup-token": the bot runs \`claude setup-token\` on this machine and walks the user through signing in, and the token goes into your command without passing through Telegram.`;
+
 const SET_TOPIC_TOOL_PROMPT = `
 
 Auto-Topic Tool (IMPORTANT — call this often):
@@ -157,6 +164,7 @@ Reasoning Summary (required when enabled):
 const TOOL_PROMPTS = [
   SEND_FILE_TOOL_PROMPT,
   ASK_USER_TOOL_PROMPT,
+  REQUEST_SECRET_TOOL_PROMPT,
   config.DYNAMIC_BOT_NAME && !config.AUTO_TOPIC_HAIKU ? SET_TOPIC_TOOL_PROMPT : '',
 ].join('');
 

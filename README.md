@@ -100,6 +100,7 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 
 ### Claude Can Reach You
 - MCP tools let Claude ask with buttons or polls, send files and schedule prompts
+- Secrets stay out of the chat: you send a key, the bot deletes it and hands it to the command Claude named, and a Claude token can be made on the spot with `claude setup-token`
 - CLI permission dialogs relayed to Telegram in PTY mode
 - Talk naturally — Claude picks the right tool without explicit commands
 
@@ -718,6 +719,9 @@ Then `/continue` or `/resume` in Telegram to restore your session.
 - **Permission mode** — `/mode` sets how much Claude asks before acting
 - **Dangerous mode** — opt-in auto-approve for all tool permissions
 - **Secrets** — loaded from `.env` (gitignored), never committed
+- **Secret requests** — a key Claude asks for goes from your message into the
+  command it named, and the message is deleted; Claude sees only the result.
+  Private chats with an admin only
 
 ### What it stores and sends
 
@@ -726,7 +730,9 @@ TeleCoder has no server of its own. Its state stays on your machine, in `~/.clau
 also includes the Telegram ids and names of the people it has seen or let in.
 
 Your messages go to Telegram and to Claude Code, and from there to the model provider you
-use. Claude Code keeps its own session transcripts in `~/.claude`. Voice and text-to-speech
+use. A secret you send when Claude asks for one is the exception: it goes to Telegram like any
+message, until the bot deletes it, and from there only into the command Claude named. A Claude
+token made with `claude setup-token` doesn't go through Telegram at all. Claude Code keeps its own session transcripts in `~/.claude`. Voice and text-to-speech
 go to Groq or OpenAI, and only if you configure them. Long replies can be published to
 Telegraph when Instant View is on, and those pages are public to anyone with the link.
 

@@ -88,7 +88,17 @@ const NO_CHAT_MESSAGE =
   "TeleCoder didn't do this: it has no Telegram chat on record for this Claude Code session. "
   + 'Put what you needed from the user in your reply instead.';
 
-export type IpcHandler = (turn: ActiveTurn, body: Record<string, unknown>) => Promise<unknown> | unknown;
+/**
+ * `signal` aborts when the caller hangs up before the answer is sent: the MCP
+ * subprocess drops a tool call claude has cancelled, and dies with its pty.
+ * A handler that holds something open for the call, like a request the user
+ * hasn't answered yet, can stop waiting on it then.
+ */
+export type IpcHandler = (
+  turn: ActiveTurn,
+  body: Record<string, unknown>,
+  signal: AbortSignal,
+) => Promise<unknown> | unknown;
 
 const handlers = new Map<string, IpcHandler>();
 
@@ -174,8 +184,13 @@ export async function startIpcServer(): Promise<{ port: number }> {
         return;
       }
 
+      const hangUp = new AbortController();
+      res.on('close', () => {
+        if (!res.writableFinished) hangUp.abort();
+      });
+
       try {
-        const result = await handler(turn, payload);
+        const result = await handler(turn, payload, hangUp.signal);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(result ?? { ok: true }));
       } catch (err) {

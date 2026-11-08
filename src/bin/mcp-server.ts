@@ -50,8 +50,13 @@ const claudeSessionId = process.env.TELECODER_CLAUDE_SESSION_ID || '';
  * five minutes past it) as the outer backstop. The server side already disables its own
  * timeouts for the same reason — see startIpcServer.
  */
-function ipc<T = unknown>(routePath: string, payload: Record<string, unknown> = {}): Promise<T> {
+function ipc<T = unknown>(
+  routePath: string,
+  payload: Record<string, unknown> = {},
+  signal?: AbortSignal,
+): Promise<T> {
   if (!ipcPort) return Promise.reject(new Error('TELECODER_IPC_PORT not set; cannot reach bot'));
+  if (signal?.aborted) return Promise.reject(new Error(`IPC ${routePath} → cancelled`));
   const body = JSON.stringify({ session_id: claudeSessionId, ...payload });
 
   return new Promise<T>((resolve, reject) => {
@@ -91,6 +96,9 @@ function ipc<T = unknown>(routePath: string, payload: Record<string, unknown> = 
     req.on('error', (err: NodeJS.ErrnoException) => {
       reject(new Error(`IPC ${routePath} → ${err.code ?? err.message}`));
     });
+    // A tool call claude cancels hangs up on the bot, which is how a request
+    // it holds open for the call learns nobody is waiting for it any more.
+    signal?.addEventListener('abort', () => req.destroy(new Error('cancelled')), { once: true });
     req.end(body);
   });
 }
@@ -163,6 +171,31 @@ server.tool(
     } catch (error) {
       return {
         content: [{ type: 'text' as const, text: `Ask-user error: ${error instanceof Error ? error.message : String(error)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+// ── claudegram_request_secret (IPC: long-poll on the user's message) ──
+server.tool(
+  'claudegram_request_secret',
+  'Get a secret from the user (an API key, token or password) without it entering this conversation. The user sends it in Telegram; TeleCoder deletes their message at once and runs `command` with the secret in $SECRET and on stdin. You get the exit code and the output with the secret blanked out, never the value. Use this whenever a task needs a credential from the user: never ask them to paste one into the chat, and don\'t send them to a terminal or a `!` command for it. They see the command before they send anything, so make it do exactly what it says. For a long-lived Claude token (CLAUDE_CODE_OAUTH_TOKEN), set source to "claude-setup-token": TeleCoder runs `claude setup-token` on this machine and walks them through signing in, and the token goes straight into your command without passing through Telegram. Works only in a private chat with an admin of the bot. Blocks until the command has run, the user cancels, or the request times out.',
+  {
+    name: z.string().min(1).max(100).describe('What the secret is, as the user knows it: an env var name like CLAUDE_CODE_OAUTH_TOKEN, or a label like "Stripe test key".'),
+    purpose: z.string().min(1).describe('One or two sentences for the user: what it is for, and where to get it.'),
+    command: z.string().min(1).describe('Bash that consumes the secret, from $SECRET or from stdin (the secret and a newline). It runs once, with no terminal, and has 2 minutes. Prefer stdin where the tool reads it: an argument shows in the process list while the command runs. Example: npx dotenvx set API_KEY "$SECRET" -f .env'),
+    cwd: z.string().optional().describe('Directory to run the command in. Defaults to the session\'s working directory; ~ works.'),
+    pattern: z.string().optional().describe('A regular expression the secret has to match, e.g. ^sk-ant-oat01-. A message that doesn\'t match is deleted unused and the user asked again, so a stray reply can\'t end up stored as the secret.'),
+    source: z.enum(['paste', 'claude-setup-token']).optional().describe('"paste" (the default): the user sends the secret. "claude-setup-token": TeleCoder makes a long-lived Claude OAuth token by running `claude setup-token` here; the user signs in through a link and sends back the code the page shows. A token they already have is accepted too.'),
+  },
+  async (args, extra) => {
+    try {
+      const result = await ipc<IpcReply>('/mcp/request_secret', args, extra.signal);
+      return toolResult(result);
+    } catch (error) {
+      return {
+        content: [{ type: 'text' as const, text: `Secret request error: ${error instanceof Error ? error.message : String(error)}` }],
         isError: true,
       };
     }

@@ -1775,6 +1775,7 @@
   <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 2.8v4.4"/><path d="M15 2.8v4.4"/><path d="M6.5 7.2h11v3.3a5.5 5.5 0 0 1-11 0z"/><path d="M12 16v5.2"/></symbol>
   <symbol id="i-plugins" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><path d="M17 13.8v6.4"/><path d="M13.8 17h6.4"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.5c0 4.3-3.1 7-7.5 7.8-4.4-.8-7.5-3.5-7.5-7.8V6z"/><circle cx="12" cy="10.8" r="1.6"/><path d="M12 12.4v2.4"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.8" cy="12" r="4.3"/><path d="M12.1 12H21"/><path d="M17.4 12v3.4"/><path d="M20.4 12v2.4"/></symbol>
   <symbol id="i-vault" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="12" cy="12" r="3.6"/><path d="M12 6.2v2.2"/><path d="M12 15.6v2.2"/><path d="M17.6 12h-2.2"/><path d="M8.6 12H6.4"/></symbol>
   <symbol id="i-fence" viewBox="0 0 24 24"><path d="M4 20V8.5L6.5 6 9 8.5V20z"/><path d="M15 20V8.5L17.5 6 20 8.5V20z"/><path d="M4 11.5h16"/><path d="M4 15.5h16"/></symbol>
   <symbol id="i-approve" viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.5c0 4.3-3.1 7-7.5 7.8-4.4-.8-7.5-3.5-7.5-7.8V6z"/><path d="m8.8 11.6 2.3 2.3 4.1-4.4"/></symbol>
@@ -2008,6 +2009,15 @@
             out in full above the buttons, keyed A/B/C, so a long one is never lost to a clipped
             button. A question nobody answers in time closes itself instead of leaving
             live-looking buttons behind.</p>
+          </div>
+          <div class="feature-card" data-category="agent">
+            <div class="feature-icon"><svg><use href="#i-key"/></svg></div>
+            <h3>Secrets that stay out of the chat</h3>
+            <p>When a task needs an API key or a token, Claude asks for it and names the command it
+            goes into. You send it as a message, the bot deletes it the moment it arrives and runs
+            the command, and Claude only sees the result. A Claude token can be made on the spot:
+            the bot runs <code>claude setup-token</code> and you sign in from your phone, so the
+            token never touches Telegram.</p>
           </div>
           <div class="feature-card" data-category="agent">
             <div class="feature-icon"><svg><use href="#i-bulb"/></svg></div>

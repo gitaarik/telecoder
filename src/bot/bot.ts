@@ -126,6 +126,7 @@ import { groupMentionMiddleware } from './middleware/group-mention.middleware.js
 import { groupRoleMiddleware } from './middleware/group-role.middleware.js';
 import { trackForceReplyPrompts } from '../telegram/force-reply-tracker.js';
 import { resolvePendingPoll } from '../claude/poll-user.js';
+import { captureSecretMessages, handleSecretCallback } from '../claude/secret-request.js';
 import { registerBotCommandName } from '../claude/command-parser.js';
 
 // Resolve sequentialize constraint: same-chat updates are ordered,
@@ -369,6 +370,13 @@ export async function createBot(): Promise<Bot> {
   // who have only ever talked to the other humans.
   bot.use(groupRoleMiddleware);
 
+  // A message answering claudegram_request_secret comes out of the stream
+  // here, deleted from the chat before anything below can batch it, queue it
+  // or hand it to the agent. The turn that asked is blocked on the answer, so
+  // the answer can't wait in line behind it either. Commands pass, so /cancel
+  // still works.
+  bot.use(captureSecretMessages);
+
   // Register through `cmd` rather than `bot.command` directly so the set of
   // names TeleCoder claims stays discoverable at runtime. Registration order
   // and placement relative to sequentialize are unchanged — `cmd` calls
@@ -447,6 +455,8 @@ export async function createBot(): Promise<Bot> {
   // call. If the callback got queued, it'd deadlock behind the query that's
   // waiting for it.
   bot.callbackQuery(/^q:/, handleAskUserCallback);
+  // The Cancel button under a secret request, for the same reason.
+  bot.callbackQuery(/^secret:/, handleSecretCallback);
   // /fork callbacks bypass sequentialize too: the user often taps Fork on a
   // past message while a turn is running. Picker UI is non-destructive (it
   // just shows another message), and accept/decline operate on file state,

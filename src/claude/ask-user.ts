@@ -349,6 +349,24 @@ export function getQuestionResponders(id: string): number[] | undefined {
 }
 
 /**
+ * Count a wait on the user that isn't a button question, such as a secret
+ * request, as one: the watchdog pauses for it and the status bubble says
+ * the turn is waiting on them. Returns the call that ends the wait, which is
+ * safe to make more than once.
+ */
+export function noteAwaitingUser(sessionKey: string): () => void {
+  pendingBySession.set(sessionKey, (pendingBySession.get(sessionKey) ?? 0) + 1);
+  let ended = false;
+  return () => {
+    if (ended) return;
+    ended = true;
+    const next = (pendingBySession.get(sessionKey) ?? 1) - 1;
+    if (next <= 0) pendingBySession.delete(sessionKey);
+    else pendingBySession.set(sessionKey, next);
+  };
+}
+
+/**
  * True when there's an outstanding ask-user question for this sessionKey.
  * The agent watchdog uses this to pause its timeouts so legitimate waits
  * for a button tap don't get force-closed as a "stale tool".

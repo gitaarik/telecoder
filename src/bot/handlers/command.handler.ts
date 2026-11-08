@@ -18,6 +18,7 @@ import { getWorkspaceRoot, isPathWithinRoot } from '../../utils/workspace-guard.
 import { resolveClaudeExecutableForMethod } from '../../utils/resolve-claude-bin.js';
 import { getActiveMethod, getPtyProvider } from '../../providers/claude-provider.js';
 import { takeBackAllQueued } from '../middleware/queued-messages.js';
+import { cancelSecretRequest } from '../../claude/secret-request.js';
 import { groupAvailableCommands, type AvailableCommands } from '../../claude/available-commands.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
 import { replyMd, getEffortLabel, withBackToPrevious } from './command/shared.js';
@@ -420,8 +421,11 @@ export async function handleCancel(ctx: Context): Promise<void> {
   const wasProcessing = isProcessing(sessionKey);
   // First, because the turn ending is what would let them through.
   const takenBackCount = takeBackAllQueued(ctx.api, sessionKey);
+  // Before the turn, too: until the request is withdrawn, the next message
+  // would still be taken for the secret it asked for.
+  const secretCancelled = cancelSecretRequest(sessionKey);
   // A turn claude started itself has no handle for cancelRequest to find.
-  const cancelled = await cancelRequest(sessionKey) || getPtyProvider().interruptOwnTurn(sessionKey);
+  const cancelled = await cancelRequest(sessionKey) || getPtyProvider().interruptOwnTurn(sessionKey) || secretCancelled;
   const clearedCount = takenBackCount + clearQueue(sessionKey);
 
   if (cancelled || clearedCount > 0) {

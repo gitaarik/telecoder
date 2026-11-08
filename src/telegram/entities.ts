@@ -84,6 +84,11 @@ export class EntityText {
     }));
   }
 
+  /** `text` as a link to `url`, which the reader doesn't have to see spelled out. */
+  link(text: string, url: string): this {
+    return this.styled(text, (offset, length) => ({ type: 'text_link', offset, length, url }));
+  }
+
   /**
    * Mention a user by numeric id. Telegram notifies them if they are a member
    * of the chat, whether or not they have a @username, and renders `label` as

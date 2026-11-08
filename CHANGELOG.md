@@ -20,6 +20,24 @@ reasoning — the commit bodies are the long form, this is the index.
   `EXTRACT_*`, `YTDLP_*` and `ALLOW_PRIVATE_NETWORK_URLS`) are ignored if they're
   still in your `.env`, and `yt-dlp` and `ffprobe` are no longer needed.
 
+### Agent
+
+- **Secrets that stay out of the chat** — a task that needed a key or a token
+  used to end in instructions to open a terminal on the machine over SSH and
+  type it there, since anything sent in the chat, or run there with `!`, lands
+  in the session log, in the model's context and in the Telegram history. The
+  new `claudegram_request_secret` tool has Claude name the secret and the
+  command that consumes it, and shows you both. You send the secret as an
+  ordinary message: the bot takes it out of the stream before anything can
+  queue or forward it, deletes it, and runs the command with it in `$SECRET`
+  and on stdin. Claude gets the exit code and the output with the secret
+  blanked out. For a long-lived Claude token the bot runs `claude setup-token`
+  itself: it sends you the sign-in link, you approve on your phone and send
+  back the code the page shows, and the token goes from the CLI straight into
+  the command without passing through Telegram. It works in private chats with
+  an admin, one request at a time, and `/cancel` or the Cancel button
+  withdraws it.
+
 ### Sessions
 
 - **The status line names the project** — a bot moves between projects and its

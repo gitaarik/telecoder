@@ -36,6 +36,7 @@ import { scheduler } from './scheduler.js';
 import { readLastAssistantTurnText } from './session-jsonl.js';
 import { getDeliveredProse, recordDeliveredProse, stripDeliveredPrefix } from './turn-prose.js';
 import { parseSessionKey } from '../utils/session-key.js';
+import { parseSecretRequest, requestSecret } from './secret-request.js';
 
 const TELEGRAM_MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 
@@ -189,6 +190,33 @@ registerIpcHandler('/mcp/ask_user', async (turn, body) => {
     };
   }
   return { success: true, message: `User selected: ${answer.label}` };
+});
+
+// ── /mcp/request_secret ──────────────────────────────────────────────
+// Long-polls like ask_user: the user's answer is a message that
+// captureSecretMessages takes out of the chat, or a sign-in code for the
+// claude setup-token run the request starts. Hanging up (claude cancelled the
+// call, or its pty went away) withdraws the request, so the next message the
+// user sends isn't taken for a secret nobody is waiting on.
+registerIpcHandler('/mcp/request_secret', async (turn, body, signal) => {
+  const req = parseSecretRequest(body);
+  if (typeof req === 'string') return { success: false, message: req };
+
+  const ctx = getTelegramCtx(turn.options as unknown);
+  if (!ctx?.chat?.id) {
+    return { success: false, message: 'Error: no Telegram context available to ask the user.' };
+  }
+
+  // Same reasons as ask_user: the prose that leads up to the request goes
+  // out above it, not after the user has answered.
+  const { messageSender } = await import('../telegram/message-sender.js');
+  await beforePosting(turn);
+  if (!turn.selfStarted) await flushTurnProse(turn.sessionKey, ctx, messageSender);
+
+  return requestSecret(ctx, turn.sessionKey, req, signal, {
+    onPosted: () => messageSender.noteQuestionPosted(ctx, turn.sessionKey),
+    onSettled: () => messageSender.noteQuestionAnswered(ctx, turn.sessionKey),
+  });
 });
 
 // ── /mcp/switch_project ──────────────────────────────────────────────
