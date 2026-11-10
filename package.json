@@ -44,7 +44,7 @@
     "@xterm/headless": "^6.0.0",
     "croner": "^10.0.1",
     "dotenv": "^16.4.7",
-    "grammy": "^1.31.3",
+    "grammy": "^1.46.0",
     "https-proxy-agent": "^8.0.0",
     "node-pty": "^1.1.0",
     "openai": "^6.16.0",
