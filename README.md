@@ -426,7 +426,7 @@ your secrets, which is the only form of that answer worth trusting.
 | `/prompts [N]` | List just the last N prompts you sent, without the replies (default 15, max 25) |
 | `/sync` | Resend the latest assistant reply from the session log if Telegram missed any of it |
 | `/handoff` | Dump the conversation to markdown — Telegraph link plus downloadable file |
-| `/fork` | Fork the conversation — new branch on this bot, or hand off to a sibling bot |
+| `/fork` | Fork the conversation — into a new thread on a bot with threads, otherwise a new branch on this bot or a hand-off to a sibling bot |
 | `/tree` | Draw the conversation's fork tree; tap a point to carry on that branch or branch from it |
 | `/accept` | Accept a pending fork from another bot |
 | `/decline` | Discard a pending fork without loading it |

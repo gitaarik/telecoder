@@ -58,13 +58,4 @@ describe('buildTargetPicker', () => {
     ]);
   });
 
-  it('offers a new thread first on a bot with threads', () => {
-    siblings = [];
-    const { lines, keyboard } = buildTargetPicker(5, { thread: true });
-    expect(lines).toEqual([
-      'A\\. 🧵 New thread — this one carries on as it is',
-      'B\\. 🌱 New branch here — TeleCoder',
-    ]);
-    expect(keyboard[0]).toEqual([{ text: 'A · 🧵 New thread', callback_data: 'fork:to:thread:5' }]);
-  });
 });

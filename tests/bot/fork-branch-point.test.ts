@@ -47,7 +47,7 @@ process.env.TELECODER_TEST_HOME = home;
 const PROJECT = path.join(home, 'project');
 fs.mkdirSync(PROJECT);
 
-const { handleForkCallback, handleAcceptCommand, buildForkMarker, replyQuote } = await import('../../src/bot/handlers/fork.handler.js');
+const { handleForkCallback, handleAcceptCommand, handleForkCommand, buildForkMarker, replyQuote } = await import('../../src/bot/handlers/fork.handler.js');
 const { putPendingFork, getPendingFork } = await import('../../src/claude/pending-forks.js');
 const { messageOffsets } = await import('../../src/claude/message-offsets.js');
 const { sessionManager } = await import('../../src/claude/session-manager.js');
@@ -408,5 +408,60 @@ describe('a fork into a new thread', () => {
       expect.objectContaining(FORK_BUTTON),
     );
     expect(messageOffsets.lookup(String(chatId), 80)?.lineCount).toBe(3);
+  });
+
+  it('goes straight into a thread from the Fork button on a bot with threads', async () => {
+    const chatId = 405;
+    sourceChat(chatId, 72);
+    const before = sessionManager.getSession(String(chatId))?.claudeSessionId;
+    const createForumTopic = vi.fn(async () => ({ message_thread_id: 11, name: '🍴 project', icon_color: 0 }));
+    const pick = {
+      ...tap(chatId, 1, 'fork:pick', 72),
+      chat: { id: chatId, type: 'private' },
+      me: { username: 'telecoder_bot', has_topics_enabled: true },
+      api: { createForumTopic, sendMessage: vi.fn(async () => ({ message_id: 502 })) },
+      reply: vi.fn(async () => ({ message_id: 90 })),
+    };
+
+    await handleForkCallback(asCtx(pick));
+
+    // No picker and no confirmation: the thread is open with the fork in it.
+    expect(createForumTopic).toHaveBeenCalledWith(chatId, '🍴 project');
+    const thread = sessionManager.getSession(`${chatId}:11`)!;
+    expect(uuidsIn(sessionJsonlPath(PROJECT, thread.claudeSessionId!))).toEqual(['u1', 'a1', 'a2']);
+    expect(sessionManager.getSession(String(chatId))?.claudeSessionId).toBe(before);
+    // The reply it was taken from stays; the link goes under it, keeping the fork point.
+    expect(pick.editMessageText).not.toHaveBeenCalled();
+    expect(pick.reply).toHaveBeenCalledWith(
+      expect.stringContaining('https://t.me/telecoder_bot/11'),
+      expect.objectContaining({ ...FORK_BUTTON, reply_parameters: { message_id: 72 } }),
+    );
+    expect(messageOffsets.lookup(String(chatId), 90)?.lineCount).toBe(3);
+  });
+
+  it('goes straight into a thread from /fork on a bot with threads', async () => {
+    const chatId = 406;
+    sourceChat(chatId, 74);
+    sessionManager.createSession(String(chatId), PROJECT).claudeSessionId = `source-${chatId}`;
+    const createForumTopic = vi.fn(async () => ({ message_thread_id: 12, name: '🍴 project', icon_color: 0 }));
+    const command = {
+      chat: { id: chatId, type: 'private' },
+      from: { id: 1 },
+      message: { message_id: 75, text: '/fork' },
+      me: { username: 'telecoder_bot', has_topics_enabled: true },
+      api: { createForumTopic, sendMessage: vi.fn(async () => ({ message_id: 503 })) },
+      reply: vi.fn(async () => ({ message_id: 76 })),
+    };
+
+    await handleForkCommand(asCtx(command));
+
+    // The whole conversation so far, both turns.
+    const thread = sessionManager.getSession(`${chatId}:12`)!;
+    expect(uuidsIn(sessionJsonlPath(PROJECT, thread.claudeSessionId!))).toEqual(['u1', 'a1', 'a2', 'u2', 'a3']);
+    expect(command.reply).toHaveBeenCalledTimes(1);
+    expect(command.reply).toHaveBeenCalledWith(
+      expect.stringContaining('https://t.me/telecoder_bot/12'),
+      expect.objectContaining({ reply_parameters: { message_id: 75 } }),
+    );
   });
 });

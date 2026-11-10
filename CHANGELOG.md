@@ -39,12 +39,15 @@ reasoning — the commit bodies are the long form, this is the index.
   The name is the topic's first half, the broad area, which holds still
   while the second half follows each message.
 
-- **A fork can open a thread of its own** — on a bot with threads, the 🍴
-  Fork picker offers "🧵 New thread" first. It opens a thread named after
-  the topic with 🍴 in front, loads the conversation up to that point into it
-  with the settings the thread you forked from chose, and turns the picker
-  into a link to it. The thread you forked from carries on unchanged, so both
-  stay open side by side instead of one going to `/resume`.
+- **A fork opens a thread of its own** — on a bot with threads, the 🍴 Fork
+  button and `/fork` go straight to a new thread, with no picker and no
+  confirmation: someone who turned threads on wants them, and a thread you
+  didn't want is deleted as easily as a confirmation is cancelled. It opens a
+  thread named after the topic with 🍴 in front, loads the conversation up to
+  that point into it with the settings the thread you forked from chose, and
+  replies with a link to it. The thread you forked from carries on unchanged,
+  so both stay open side by side instead of one going to `/resume`. Bots
+  without threads keep the picker.
 
 ### Renamed
 
