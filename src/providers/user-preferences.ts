@@ -233,6 +233,18 @@ class UserPreferencesManager {
     this.patch(scope, { showPromptInStatusLine: enabled });
   }
 
+  /**
+   * Start `to` with the settings `from` chose for itself — for a thread forked
+   * off another, which should carry on with the same model and transport. A
+   * chat-wide `from` copies nothing: `to` falls back to it anyway.
+   */
+  copyScope(from: SettingsScope, to: SettingsScope): void {
+    const own = this.data[String(from)];
+    if (!own || String(from) === String(scopeChatId(from))) return;
+    this.data[String(to)] = { ...own, lastUpdated: new Date().toISOString() };
+    this.save();
+  }
+
   clearPreferences(scope: SettingsScope): void {
     delete this.data[String(scope)];
     this.save();

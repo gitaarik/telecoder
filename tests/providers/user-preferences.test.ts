@@ -177,4 +177,29 @@ describe('userPreferences per thread', () => {
     expect(store.getModel(42)).toBe('opus');
     expect(store.getModel('42:7')).toBe('opus');
   });
+
+  it("starts a forked thread with the settings its source thread chose", async () => {
+    const store = await loadStore();
+    store.setModel(42, 'opus');
+    store.setModel('42:7', 'haiku');
+    store.setMethod('42:7', 'pty');
+
+    store.copyScope('42:7', '42:9');
+
+    expect(store.getModel('42:9')).toBe('haiku');
+    expect(store.getMethod('42:9')).toBe('pty');
+    // The copy is the new thread's own: changing the source leaves it be.
+    store.setModel('42:7', 'sonnet');
+    expect(store.getModel('42:9')).toBe('haiku');
+  });
+
+  it('copies nothing from a chat-wide scope, which the thread falls back to anyway', async () => {
+    const store = await loadStore();
+    store.setModel(42, 'opus');
+
+    store.copyScope(42, '42:9');
+
+    expect(readPrefs(prefsPath())['42:9']).toBeUndefined();
+    expect(store.getModel('42:9')).toBe('opus');
+  });
 });

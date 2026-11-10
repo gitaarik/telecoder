@@ -4,8 +4,10 @@
  * A message sent from a bot's "All" view starts a new thread, and Telegram
  * names it "New chat" and flags the name as implicit: one the bot is expected
  * to replace. The session topic (Haiku's summary, or what the agent set with
- * telecoder_set_topic) is already the name we want, so every topic change is
- * passed on to the thread with editForumTopic.
+ * telecoder_set_topic) already says what the thread is about, so every topic
+ * change is passed on to the thread with editForumTopic. Only the topic's
+ * first half goes in: the broad area, which stays put while the second half,
+ * the task of the moment, changes with every message.
  *
  * A name the user gave the thread is theirs, and is never overwritten: one
  * typed when creating the thread, or a rename seen afterwards. Group forum
@@ -21,6 +23,7 @@ import type { Api, Bot, Context, NextFunction } from 'grammy';
 import { BOT_ID } from '../config.js';
 import { ensureStateDir, getStateDir, readJsonFile, writeJsonFile } from '../utils/json-store.js';
 import { buildSessionKey, parseSessionKey } from '../utils/session-key.js';
+import { TOPIC_PART_SEPARATOR } from '../claude/auto-topic-haiku.js';
 
 /** Telegram's limit on a topic name. */
 const MAX_NAME_LENGTH = 128;
@@ -35,6 +38,8 @@ const titleSchema = z.object({
   /** 'user' names are never touched; 'implicit' and 'bot' ones are ours to replace. */
   owner: z.enum(['implicit', 'bot', 'user']),
   name: z.string().optional(),
+  /** Goes in front of every name we give the thread, e.g. 🍴 for a fork's. */
+  prefix: z.string().optional(),
 });
 const fileSchema = z.object({ threads: z.record(z.string(), titleSchema) });
 type ThreadTitle = z.infer<typeof titleSchema>;
@@ -58,6 +63,25 @@ function state(): Record<string, ThreadTitle> {
 function record(sessionKey: string, title: ThreadTitle): void {
   state()[sessionKey] = title;
   writeJsonFile(STATE_FILE, { threads: state() }, 'ThreadTitles');
+}
+
+/**
+ * The name a topic gives a thread: its first half, the broad area, which
+ * holds still while the second half follows each message. A topic set by
+ * hand or by the agent has no halves and goes in whole.
+ */
+export function threadName(topic: string, prefix = ''): string {
+  const general = topic.split(TOPIC_PART_SEPARATOR)[0].trim();
+  if (!general) return '';
+  return `${prefix}${general}`.slice(0, MAX_NAME_LENGTH);
+}
+
+/**
+ * Take on a thread the bot created itself, under the name it was created
+ * with, so the topic it inherits isn't sent straight back as a rename.
+ */
+export function adoptThread(sessionKey: string, name: string, prefix?: string): void {
+  record(sessionKey, { owner: 'bot', name, ...(prefix ? { prefix } : {}) });
 }
 
 /** A thread of a private chat, which is the only kind we name. */
@@ -102,13 +126,14 @@ function observe(ctx: Context): void {
 }
 
 async function rename(sessionKey: string, name: string): Promise<void> {
-  if (!api || state()[sessionKey]?.owner === 'user') return;
-  if (state()[sessionKey]?.name === name) return;
+  const current = state()[sessionKey];
+  if (!api || current?.owner === 'user') return;
+  if (current?.name === name) return;
   const { chatId, threadId } = parseSessionKey(sessionKey);
   lastRenameAt.set(sessionKey, Date.now());
   try {
     await api.editForumTopic(chatId, threadId!, { name });
-    record(sessionKey, { owner: 'bot', name });
+    record(sessionKey, { owner: 'bot', name, ...(current?.prefix ? { prefix: current.prefix } : {}) });
   } catch (err) {
     console.debug(`[ThreadTitles] Failed to rename ${sessionKey}:`, err instanceof Error ? err.message : err);
   }
@@ -120,8 +145,9 @@ async function rename(sessionKey: string, name: string): Promise<void> {
  * the cooldown are held and only the latest one is sent when it runs out.
  */
 export function syncThreadTitle(sessionKey: string, topic: string): void {
-  const name = topic.trim().slice(0, MAX_NAME_LENGTH);
-  if (!name || !namesThread(sessionKey)) return;
+  if (!namesThread(sessionKey)) return;
+  const name = threadName(topic, state()[sessionKey]?.prefix);
+  if (!name) return;
 
   const held = pending.get(sessionKey);
   if (held) clearTimeout(held.timer);

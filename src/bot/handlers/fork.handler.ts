@@ -6,9 +6,13 @@
  *   1. "🍴 Fork" button on a past bot message     → fork:pick
  *      ↳ shows picker of sibling bots
  *   2. Tap target bot                             → fork:to:<botId>:<msgId>
+ *      (or a new thread, on a bot with threads    → fork:to:thread:<msgId>)
  *      ↳ shows confirmation
  *   3. Tap Confirm                                → fork:confirm:<botId>:<msgId>
  *      ↳ truncates source JSONL, writes pending fork to target's file
+ *
+ * A new thread is loaded at once, like a branch here: createForumTopic, then
+ * the fork goes into the new thread's session, and this one carries on.
  *
  * Target-side pickup (in message.handler):
  *   user sends any message → bot sees pending fork → shows accept/decline
@@ -29,7 +33,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { BOT_ID, config } from '../../config.js';
-import { getSessionKeyFromCtx } from '../../utils/session-key.js';
+import { buildSessionKey, getSessionKeyFromCtx } from '../../utils/session-key.js';
 import { messageOffsets, countJsonlLines } from '../../claude/message-offsets.js';
 import { FORK_KEYBOARD, BRANCH_MARKER_KEYBOARD } from '../../telegram/message-sender.js';
 import {
@@ -57,8 +61,25 @@ import { cutLabel, promptLabel } from '../../telegram/prompt-label.js';
 import { restoreTopicAndRefreshBotName } from './command.handler.js';
 import { getSessionTopic } from './command.handler.js';
 import { sessionDisplayName } from './command/shared.js';
+import { adoptThread, threadName } from '../../telegram/thread-titles.js';
+import { userPreferences } from '../../providers/user-preferences.js';
+import { buildSyntheticCtx } from '../../claude/synthetic-ctx.js';
 
 const BOT_NAME = config.BOT_NAME;
+
+/** Stands in for a bot id in `fork:to:` and `fork:confirm:` when the target is a new thread. */
+const THREAD_TARGET = 'thread';
+/** In front of a forked thread's name, so it reads apart from the one it came from. */
+const FORK_THREAD_PREFIX = '🍴 ';
+
+/**
+ * Whether a fork can open a thread of its own here: a private chat with a bot
+ * that has threads turned on. Groups have forum topics, but people name and
+ * order those for each other, so a fork doesn't add to them.
+ */
+function canForkToThread(ctx: Context): boolean {
+  return ctx.chat?.type === 'private' && ctx.me?.has_topics_enabled === true;
+}
 
 interface ForkOfferTexts {
   text: string;
@@ -78,11 +99,20 @@ interface ForkOfferTexts {
  * the way /resume and `telecoder_ask_user` list their options. Cancel keeps
  * its own row and no letter: it is the way out, not one of the targets.
  */
-export function buildTargetPicker(anchorMsgId: number): {
+export function buildTargetPicker(anchorMsgId: number, opts: { thread?: boolean } = {}): {
   lines: string[];
   keyboard: Array<Array<{ text: string; callback_data: string }>>;
 } {
   const targets = [
+    // First where it's offered: it keeps both conversations open side by
+    // side, which is what a fork is usually for.
+    ...(opts.thread
+      ? [{
+          label: '🧵 New thread',
+          description: 'this one carries on as it is',
+          callbackData: `fork:to:${THREAD_TARGET}:${anchorMsgId}`,
+        }]
+      : []),
     // Which bot "here" is goes in the description rather than the label: it
     // is the one sending the message, so it is context, not the choice — and
     // parenthesising it on the label costs the whole keyboard its labels.
@@ -186,7 +216,7 @@ async function onPick(ctx: Context): Promise<void> {
 
   const projectLabel = path.basename(offset.projectPath);
 
-  const picker = buildTargetPicker(msgId);
+  const picker = buildTargetPicker(msgId, { thread: canForkToThread(ctx) });
   await ctx.reply(
     `🍴 *Fork conversation*\n\nFrom this point in *${esc(projectLabel)}* — pick where to branch it:\n\n` +
       picker.lines.join('\n'),
@@ -210,8 +240,9 @@ async function onTo(ctx: Context, targetBotId: string, sourceMsgId: number): Pro
     await ctx.answerCallbackQuery({ text: 'Fork point no longer available.' });
     return;
   }
-  const target = findBotById(targetBotId);
-  if (!target) {
+  const toThread = targetBotId === THREAD_TARGET;
+  const target = toThread ? undefined : findBotById(targetBotId);
+  if (!toThread && !target) {
     await ctx.answerCallbackQuery({ text: 'Target bot not found.' });
     return;
   }
@@ -220,14 +251,18 @@ async function onTo(ctx: Context, targetBotId: string, sourceMsgId: number): Pro
 
   const projectLabel = path.basename(offset.projectPath);
   const isSelf = targetBotId === BOT_ID;
-  const text = isSelf
+  const text = toThread
+    ? `🍴 *Fork into a new thread?*\n\n` +
+      `This copies *${esc(projectLabel)}* up to that point into a new thread, with this thread's settings\\. ` +
+      `This thread carries on unchanged\\.`
+    : isSelf
     ? `🍴 *Branch into a new conversation?*\n\n` +
       `This copies *${esc(projectLabel)}* up to that point into a fresh conversation on this bot\\. ` +
       `Your current conversation is saved to /resume history, and you continue from the branch point\\.`
-    : `🍴 *Fork to ${esc(target.name)}?*\n\n` +
-      `This will copy the conversation in *${esc(projectLabel)}* up to that point and hand it off to *${esc(target.name)}*\\.\n\n` +
-      `When you open *${esc(target.name)}* and send any message, you'll get a prompt to accept the fork\\. ` +
-      `Accepting replaces *${esc(target.name)}*'s current conversation \\(saved to its /resume history\\)\\.`;
+    : `🍴 *Fork to ${esc(target!.name)}?*\n\n` +
+      `This will copy the conversation in *${esc(projectLabel)}* up to that point and hand it off to *${esc(target!.name)}*\\.\n\n` +
+      `When you open *${esc(target!.name)}* and send any message, you'll get a prompt to accept the fork\\. ` +
+      `Accepting replaces *${esc(target!.name)}*'s current conversation \\(saved to its /resume history\\)\\.`;
 
   try {
     await ctx.editMessageText(text, {
@@ -256,8 +291,9 @@ async function onConfirm(ctx: Context, targetBotId: string, sourceMsgId: number)
     await ctx.answerCallbackQuery({ text: 'Fork point no longer available.' });
     return;
   }
-  const target = findBotById(targetBotId);
-  if (!target) {
+  const toThread = targetBotId === THREAD_TARGET;
+  const target = toThread ? undefined : findBotById(targetBotId);
+  if (!toThread && !target) {
     await ctx.answerCallbackQuery({ text: 'Target bot not found.' });
     return;
   }
@@ -315,20 +351,25 @@ async function onConfirm(ctx: Context, targetBotId: string, sourceMsgId: number)
     return;
   }
 
+  if (toThread) {
+    await forkIntoThread(ctx, keyInfo.sessionKey, fork, offset);
+    return;
+  }
+
   // Key the pending fork by Telegram user id, not sessionKey: each bot has
   // its own DM with the user with a different chatId, so the target bot
   // can't find the fork by chatId-based key. User id is constant across
   // bots; the offer will land in whichever chat the user next messages
   // the target bot in.
-  putPendingFork(target.botId, userId, fork);
+  putPendingFork(target!.botId, userId, fork);
 
   await ctx.answerCallbackQuery({ text: 'Forked.' });
 
   const projectLabel = path.basename(offset.projectPath);
   try {
     await ctx.editMessageText(
-      `✅ *Forked to ${esc(target.name)}*\n\n` +
-        `Open *${esc(target.name)}* and send any message — you'll get the option to accept the forked conversation \\(${esc(projectLabel)}\\)\\.\n\n` +
+      `✅ *Forked to ${esc(target!.name)}*\n\n` +
+        `Open *${esc(target!.name)}* and send any message — you'll get the option to accept the forked conversation \\(${esc(projectLabel)}\\)\\.\n\n` +
         `_This conversation carries on here unchanged\\._`,
       { parse_mode: 'MarkdownV2', reply_markup: FORK_KEYBOARD },
     );
@@ -340,6 +381,66 @@ async function onConfirm(ctx: Context, targetBotId: string, sourceMsgId: number)
     if (anchorId) messageOffsets.record(keyInfo.sessionKey, anchorId, offset);
   } catch (err) {
     console.debug('[Fork] onConfirm edit failed:', err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * Open a new thread and load the fork into it, leaving this thread as it is.
+ *
+ * The new thread starts with the settings this one chose for itself (model,
+ * effort, transport…), since it carries on the same conversation, and a name
+ * from the same topic with 🍴 in front, which it keeps through later renames
+ * so the two stay apart in the list. The fork's banner goes into the new
+ * thread; the picker here turns into a link to it, keeping the fork point.
+ */
+async function forkIntoThread(
+  ctx: Context,
+  sessionKey: string,
+  fork: PendingFork,
+  offset: NonNullable<ReturnType<typeof messageOffsets.lookup>>,
+): Promise<void> {
+  const chatId = ctx.chat?.id;
+  if (!chatId) {
+    await ctx.answerCallbackQuery({ text: 'Cannot identify this chat.' });
+    return;
+  }
+
+  const projectLabel = path.basename(fork.projectPath);
+  const name = threadName(fork.topic ?? '', FORK_THREAD_PREFIX) || `${FORK_THREAD_PREFIX}${projectLabel}`;
+  let threadId: number;
+  try {
+    threadId = (await ctx.api.createForumTopic(chatId, name)).message_thread_id;
+  } catch (err) {
+    console.error('[Fork] createForumTopic failed:', err instanceof Error ? err.message : err);
+    await ctx.answerCallbackQuery({ text: 'Could not open a new thread.' });
+    return;
+  }
+  await ctx.answerCallbackQuery({ text: 'Forked into a new thread.' });
+
+  const threadKey = buildSessionKey(chatId, threadId);
+  adoptThread(threadKey, name, FORK_THREAD_PREFIX);
+  userPreferences.copyScope(sessionKey, threadKey);
+
+  const threadCtx = buildSyntheticCtx({ api: ctx.api, sessionKey: threadKey, syntheticText: '' });
+  await loadFork(threadCtx, threadKey, fork, {
+    above: 'The conversation it was forked from carries on in its own thread.',
+  });
+
+  const link = ctx.me?.username ? `https://t.me/${ctx.me.username}/${threadId}` : undefined;
+  try {
+    await ctx.editMessageText(
+      `✅ *Forked into a new thread*\n\n` +
+        (link ? `[${esc(name)}](${link})` : `*${esc(name)}*`) +
+        ` carries on from that point in *${esc(projectLabel)}*\\.\n\n` +
+        `_This thread carries on here unchanged\\._`,
+      { parse_mode: 'MarkdownV2', reply_markup: FORK_KEYBOARD },
+    );
+    // Same as a fork to another bot: this confirmation stands for the point
+    // the fork was taken from, so it can be forked again from here.
+    const anchorId = ctx.callbackQuery?.message?.message_id;
+    if (anchorId) messageOffsets.record(sessionKey, anchorId, offset);
+  } catch (err) {
+    console.debug('[Fork] forkIntoThread edit failed:', err instanceof Error ? err.message : err);
   }
 }
 
@@ -456,7 +557,7 @@ export async function handleForkCommand(ctx: Context): Promise<void> {
 
   const projectLabel = path.basename(session.workingDirectory);
 
-  const picker = buildTargetPicker(anchorMsgId);
+  const picker = buildTargetPicker(anchorMsgId, { thread: canForkToThread(ctx) });
   await ctx.reply(
     `🍴 *Fork conversation*\n\nFrom the current state of *${esc(projectLabel)}* — pick where to branch it:\n\n` +
       picker.lines.join('\n'),

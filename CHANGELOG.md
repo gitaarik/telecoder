@@ -36,6 +36,15 @@ reasoning — the commit bodies are the long form, this is the index.
   moves on, at most once a minute so the thread isn't filled with rename
   notices. A name you gave the thread yourself, when creating it or by
   renaming it later, is never replaced. Group forum topics keep their names.
+  The name is the topic's first half, the broad area, which holds still
+  while the second half follows each message.
+
+- **A fork can open a thread of its own** — on a bot with threads, the 🍴
+  Fork picker offers "🧵 New thread" first. It opens a thread named after
+  the topic with 🍴 in front, loads the conversation up to that point into it
+  with the settings the thread you forked from chose, and turns the picker
+  into a link to it. The thread you forked from carries on unchanged, so both
+  stay open side by side instead of one going to `/resume`.
 
 ### Renamed
 

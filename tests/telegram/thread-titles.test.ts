@@ -128,4 +128,26 @@ describe('thread titles', () => {
 
     expect(t.editForumTopic).toHaveBeenCalledTimes(1);
   });
+
+  it("names a thread after the topic's first half, which holds still", async () => {
+    const t = await load();
+
+    t.syncThreadTitle(KEY, 'Thread naming · Shortening the names');
+
+    expect(t.editForumTopic).toHaveBeenCalledWith(CHAT, THREAD, { name: 'Thread naming' });
+  });
+
+  it("keeps a forked thread's prefix through later renames", async () => {
+    vi.useFakeTimers();
+    const t = await load();
+    t.adoptThread(KEY, '🍴 Thread naming', '🍴 ');
+
+    // The topic it inherited gives the name it was created with: no rename.
+    t.syncThreadTitle(KEY, 'Thread naming · Whatever came next');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(t.editForumTopic).not.toHaveBeenCalled();
+
+    t.syncThreadTitle(KEY, 'Fork to thread · Testing it');
+    expect(t.editForumTopic).toHaveBeenCalledWith(CHAT, THREAD, { name: '🍴 Fork to thread' });
+  });
 });

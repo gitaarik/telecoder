@@ -374,3 +374,39 @@ describe('the confirmation in the chat a fork was sent from', () => {
     expect(getPendingFork('b3', 5)?.jsonl).toBe(BRANCH_POINT);
   });
 });
+
+describe('a fork into a new thread', () => {
+  it('opens a thread, loads the fork there and leaves this conversation as it was', async () => {
+    const chatId = 404;
+    sourceChat(chatId, 70);
+    const before = sessionManager.getSession(String(chatId))?.claudeSessionId;
+    const createForumTopic = vi.fn(async () => ({ message_thread_id: 9, name: '🍴 project', icon_color: 0 }));
+    const sendMessage = vi.fn(async () => ({ message_id: 501 }));
+    const confirm = {
+      ...tap(chatId, 1, 'fork:confirm:thread:70', 80),
+      chat: { id: chatId, type: 'private' },
+      me: { username: 'telecoder_bot', has_topics_enabled: true },
+      api: { createForumTopic, sendMessage },
+    };
+
+    await handleForkCallback(asCtx(confirm));
+
+    // Named after the project when the conversation has no topic yet.
+    expect(createForumTopic).toHaveBeenCalledWith(chatId, '🍴 project');
+    const thread = sessionManager.getSession(`${chatId}:9`)!;
+    expect(uuidsIn(sessionJsonlPath(PROJECT, thread.claudeSessionId!))).toEqual(['u1', 'a1', 'a2']);
+    // The banner goes into the new thread, not this one.
+    expect(sendMessage).toHaveBeenCalledWith(
+      chatId,
+      expect.stringContaining('New branch'),
+      expect.objectContaining({ message_thread_id: 9 }),
+    );
+    expect(sessionManager.getSession(String(chatId))?.claudeSessionId).toBe(before);
+    // And the picker here turns into a link to it, keeping the fork point.
+    expect(confirm.editMessageText).toHaveBeenCalledWith(
+      expect.stringContaining('https://t.me/telecoder_bot/9'),
+      expect.objectContaining(FORK_BUTTON),
+    );
+    expect(messageOffsets.lookup(String(chatId), 80)?.lineCount).toBe(3);
+  });
+});
