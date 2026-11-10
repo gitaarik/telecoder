@@ -23,7 +23,7 @@ import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
 import { fitsOnButton } from '../../../telegram/button-text.js';
 import { userPreferences } from '../../../providers/user-preferences.js';
 import { getPtyProvider } from '../../../providers/claude-provider.js';
-import { getSessionKeyFromCtx, parseSessionKey } from '../../../utils/session-key.js';
+import { getSessionKeyFromCtx, parseSessionKey, type SettingsScope } from '../../../utils/session-key.js';
 import { formatTimeAgo } from '../../../utils/format.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -74,9 +74,9 @@ export const EFFORT_LEVELS: { id: EffortLevel; label: string; description: strin
   { id: 'max', label: '🚀 Max', description: 'Maximum effort' },
 ];
 
-/** Get the full label (e.g. "🐇 Low") for a chat's current effort level. */
-export function getEffortLabel(chatId: number): string | undefined {
-  const effort = getEffort(chatId);
+/** Get the full label (e.g. "🐇 Low") for a thread's or chat's current effort level. */
+export function getEffortLabel(scope: SettingsScope): string | undefined {
+  const effort = getEffort(scope);
   if (!effort) return undefined;
   return EFFORT_LEVELS.find((l) => l.id === effort)?.label;
 }
@@ -84,8 +84,8 @@ export function getEffortLabel(chatId: number): string | undefined {
 /** Build status lines appended to project confirmation messages. */
 export function projectStatusSuffix(sessionKey: string): string {
   const { chatId } = parseSessionKey(sessionKey);
-  const model = getModel(chatId);
-  const provider = getActiveProviderName(chatId);
+  const model = getModel(sessionKey);
+  const provider = getActiveProviderName(sessionKey);
   const dangerous = isDangerousMode() ? '⚠️ ENABLED' : 'Disabled';
   const session = sessionManager.getSession(sessionKey);
   const created = session?.createdAt
@@ -93,7 +93,7 @@ export function projectStatusSuffix(sessionKey: string): string {
     : new Date().toLocaleString();
   const sessionId = session?.claudeSessionId;
 
-  const effortLabel = getEffortLabel(chatId) ?? 'Default';
+  const effortLabel = getEffortLabel(sessionKey) ?? 'Default';
   let suffix = `\n• *Provider:* ${esc(provider)}\n• *Model:* ${esc(model)}\n• *Effort:* ${esc(effortLabel)}\n• *Created:* ${esc(created)}\n• *Dangerous Mode:* ${esc(dangerous)}`;
   if (sessionId) {
     suffix += `\n• *Session ID:* \`${esc(sessionId)}\``;
@@ -215,20 +215,20 @@ export function withBackToPrevious(
  * Clearing the conversation makes the next message respawn with the new value,
  * keeping the conversation itself intact. No-op for non-PTY providers.
  */
-export function restartPtyForSettingChange(chatId: number, sessionKey: string): boolean {
-  if (!needsPtyRestart(chatId)) return false;
+export function restartPtyForSettingChange(sessionKey: string): boolean {
+  if (!needsPtyRestart(sessionKey)) return false;
   getPtyProvider().clearConversation(sessionKey);
   return true;
 }
 
 /**
- * Whether a spawn-time setting change would need a pty restart for this chat —
+ * Whether a spawn-time setting change would need a pty restart here —
  * the same test restartPtyForSettingChange makes, without doing it. For
  * rebuilding a confirmation whose restart already happened.
  */
-export function needsPtyRestart(chatId: number): boolean {
-  if (getActiveProviderName(chatId) !== 'claude') return false;
-  return userPreferences.getMethod(chatId) === 'pty';
+export function needsPtyRestart(scope: SettingsScope): boolean {
+  if (getActiveProviderName(scope) !== 'claude') return false;
+  return userPreferences.getMethod(scope) === 'pty';
 }
 
 /** Escaped MarkdownV2 note appended when a pty restart is pending. */

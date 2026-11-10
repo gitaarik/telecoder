@@ -33,7 +33,7 @@ import {
 export async function handleModelCommand(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
-  const { chatId } = keyInfo;
+  const { chatId, sessionKey } = keyInfo;
 
   const text = ctx.message?.text || '';
   // Aliases are all lowercase, but a hand-typed full ID may not be — match
@@ -42,12 +42,12 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
   const { value: rawArg, scope } = parseScopeArg(text.split(' ').slice(1).join(' '));
   const args = rawArg.toLowerCase();
 
-  const providerName = getActiveProviderName(chatId);
-  const models = await getAvailableModels(chatId);
+  const providerName = getActiveProviderName(sessionKey);
+  const models = await getAvailableModels(sessionKey);
   const validIds = models.map(m => m.id);
 
   if (!args) {
-    const currentModel = getModel(chatId);
+    const currentModel = getModel(sessionKey);
 
     // Two per row — the alias list is long enough now (fable/opus/sonnet/haiku
     // plus opusplan, best and the [1m] variants) that one row each turns the
@@ -114,8 +114,8 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
   }
 
   const chosen = known ? args : rawArg;
-  setModel(chatId, chosen);
-  const restarted = restartPtyForSettingChange(chatId, keyInfo.sessionKey);
+  setModel(sessionKey, chosen);
+  const restarted = restartPtyForSettingChange(keyInfo.sessionKey);
   const caution = known
     ? ''
     : `\n\n⚠️ Not a known alias — passed to the CLI as\\-is\\. If your install can't serve it, the next turn fails; /model to pick again\\.`;
@@ -147,7 +147,7 @@ export async function handleModelCallback(ctx: Context): Promise<void> {
   const model = data.replace('model:', '');
 
   // Validate against current provider's models
-  const models = await getAvailableModels(chatId);
+  const models = await getAvailableModels(sessionKey);
   const validIds = models.map(m => m.id);
 
   if (!validIds.includes(model)) {
@@ -155,8 +155,8 @@ export async function handleModelCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  setModel(chatId, model);
-  const restarted = restartPtyForSettingChange(chatId, sessionKey);
+  setModel(sessionKey, model);
+  const restarted = restartPtyForSettingChange(sessionKey);
 
   const modelInfo = models.find(m => m.id === model);
   const displayName = modelInfo?.label || model;
@@ -178,11 +178,12 @@ const PROVIDER_DESCRIPTIONS: Record<ProviderName, string> = {
 };
 
 export async function handleProviderCommand(ctx: Context): Promise<void> {
-  const chatId = ctx.chat?.id;
-  if (!chatId) return;
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { sessionKey } = keyInfo;
 
   const providers = getAvailableProviders();
-  const active = getActiveProviderName(chatId);
+  const active = getActiveProviderName(sessionKey);
 
   const keyboard = providers.map((p) => {
     const label = p === active ? `✓ ${p}` : p;
@@ -208,8 +209,9 @@ export async function handleProviderCommand(ctx: Context): Promise<void> {
  * Sticky — stays on CCR until the user toggles back.
  */
 export async function handleCcrCommand(ctx: Context): Promise<void> {
-  const chatId = ctx.chat?.id;
-  if (!chatId) return;
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { sessionKey } = keyInfo;
 
   if (!config.CCR_ENABLED) {
     await replyMd(
@@ -219,14 +221,13 @@ export async function handleCcrCommand(ctx: Context): Promise<void> {
     return;
   }
 
-  const active = getActiveProviderName(chatId);
+  const active = getActiveProviderName(sessionKey);
   const next: ProviderName = active === 'ccr' ? 'claude' : 'ccr';
-  const sessionKey = getSessionKeyFromCtx(ctx)?.sessionKey;
 
   // If a live session owned by the other backend would be abandoned, confirm
   // first (switching starts a fresh session — sessions can't cross backends).
-  if (sessionKey && switchRequiresConfirm(sessionKey, next)) {
-    await ctx.reply(buildSwitchConfirmText(chatId, next), {
+  if (switchRequiresConfirm(sessionKey, next)) {
+    await ctx.reply(buildSwitchConfirmText(sessionKey, next), {
       parse_mode: 'MarkdownV2',
       reply_markup: { inline_keyboard: buildSwitchConfirmKeyboard(next) },
     });
@@ -235,21 +236,18 @@ export async function handleCcrCommand(ctx: Context): Promise<void> {
 
   // switchProvider forks the session (clears the stale session_id and carries
   // over a summary) so the next message starts clean on the new backend.
-  if (sessionKey) {
-    await switchProvider(sessionKey, chatId, next);
-  } else {
-    await setActiveProvider(chatId, next);
-  }
+  await switchProvider(sessionKey, next);
   // Clear model — Claude and CCR share labels but CCR's mapping is different.
-  clearModel(chatId);
+  clearModel(sessionKey);
 
   const label = next === 'ccr' ? 'CCR \\(routed\\)' : 'Claude \\(Max\\)';
   await replyMd(ctx, `🔌 Switched provider to *${label}*\\.\n\n_Sticky — use /ccr again or /provider to switch back\\._`);
 }
 
 export async function handleProviderCallback(ctx: Context): Promise<void> {
-  const chatId = ctx.chat?.id;
-  if (!chatId) return;
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { sessionKey } = keyInfo;
 
   const data = ctx.callbackQuery?.data;
   if (!data || !data.startsWith('provider:')) return;
@@ -262,18 +260,17 @@ export async function handleProviderCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  if (provider === getActiveProviderName(chatId)) {
+  if (provider === getActiveProviderName(sessionKey)) {
     await ctx.answerCallbackQuery({ text: `Already using ${provider}` });
     return;
   }
 
-  const sessionKey = getSessionKeyFromCtx(ctx)?.sessionKey;
 
   // If a live session owned by a different backend would be abandoned, confirm
   // first — switching starts a fresh session (sessions can't cross backends).
-  if (sessionKey && switchRequiresConfirm(sessionKey, provider)) {
+  if (switchRequiresConfirm(sessionKey, provider)) {
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText(buildSwitchConfirmText(chatId, provider), {
+    await ctx.editMessageText(buildSwitchConfirmText(sessionKey, provider), {
       parse_mode: 'MarkdownV2',
       reply_markup: { inline_keyboard: buildSwitchConfirmKeyboard(provider) },
     });
@@ -281,12 +278,8 @@ export async function handleProviderCallback(ctx: Context): Promise<void> {
   }
 
   // No live session (or already owned by target): switch transparently.
-  if (sessionKey) {
-    await switchProvider(sessionKey, chatId, provider);
-  } else {
-    await setActiveProvider(chatId, provider);
-  }
-  clearModel(chatId); // Models differ between providers
+  await switchProvider(sessionKey, provider);
+  clearModel(sessionKey); // Models differ between providers
 
   await ctx.answerCallbackQuery({ text: `Switched to ${provider}!` });
   await ctx.editMessageText(
@@ -296,8 +289,8 @@ export async function handleProviderCallback(ctx: Context): Promise<void> {
 }
 
 /** MarkdownV2 confirmation body shown before a destructive provider switch. */
-function buildSwitchConfirmText(chatId: number, target: ProviderName): string {
-  const current = getActiveProviderName(chatId);
+function buildSwitchConfirmText(sessionKey: string, target: ProviderName): string {
+  const current = getActiveProviderName(sessionKey);
   return (
     `🔀 *Switch to ${esc(target)}?*\n\n` +
     `Your current conversation runs on *${esc(current)}*\\. Sessions can't move ` +
@@ -318,8 +311,9 @@ function buildSwitchConfirmKeyboard(target: ProviderName) {
 
 /** Handles the confirm/cancel buttons from a provider-switch prompt. */
 export async function handleProviderSwitchCallback(ctx: Context): Promise<void> {
-  const chatId = ctx.chat?.id;
-  if (!chatId) return;
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { sessionKey } = keyInfo;
 
   const data = ctx.callbackQuery?.data;
   if (!data || !data.startsWith('provider_switch:')) return;
@@ -338,13 +332,8 @@ export async function handleProviderSwitchCallback(ctx: Context): Promise<void> 
   }
   const provider = target as ProviderName;
 
-  const sessionKey = getSessionKeyFromCtx(ctx)?.sessionKey;
-  if (sessionKey) {
-    await switchProvider(sessionKey, chatId, provider);
-  } else {
-    await setActiveProvider(chatId, provider);
-  }
-  clearModel(chatId);
+  await switchProvider(sessionKey, provider);
+  clearModel(sessionKey);
 
   await ctx.answerCallbackQuery({ text: `Switched to ${provider}!` });
   await ctx.editMessageText(

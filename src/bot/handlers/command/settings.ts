@@ -37,7 +37,7 @@ import {
   type VerbosityLevel,
 } from '../../../utils/verbosity.js';
 import { fmtTokens, getProgressBar } from '../../../utils/format.js';
-import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
+import { getSessionKeyFromCtx, parseSessionKey, type SettingsScope } from '../../../utils/session-key.js';
 import {
   PERMISSION_MODES,
   isPermissionModeId,
@@ -410,7 +410,7 @@ export async function handleEffort(ctx: Context): Promise<void> {
   const scope = parsed.scope;
 
   if (!args) {
-    const currentEffort = getEffort(chatId) || 'default';
+    const currentEffort = getEffort(sessionKey) || 'default';
 
     const keyboard = EFFORT_LEVELS.map((level) => {
       const isCurrent = level.id === currentEffort;
@@ -441,11 +441,11 @@ export async function handleEffort(ctx: Context): Promise<void> {
   }
 
   if (args === 'auto' || args === 'default' || args === 'reset') {
-    clearEffort(chatId);
-    const restarted = restartPtyForSettingChange(chatId, sessionKey);
+    clearEffort(sessionKey);
+    const restarted = restartPtyForSettingChange(sessionKey);
     const where = hasSiblings() ? ` for *${esc(config.BOT_NAME)}*` : '';
     const confirmation = `✅ Effort reset to *auto* \\(CLI default\\)${where}${restarted ? PTY_RESTART_NOTE : ''}`;
-    await replyWithScope(ctx, chatId, confirmation, 'effort', null, 'auto', scope);
+    await replyWithScope(ctx, sessionKey, confirmation, 'effort', null, 'auto', scope);
     return;
   }
 
@@ -465,11 +465,11 @@ export async function handleEffort(ctx: Context): Promise<void> {
     return;
   }
 
-  setEffort(chatId, args);
-  const restarted = restartPtyForSettingChange(chatId, sessionKey);
+  setEffort(sessionKey, args);
+  const restarted = restartPtyForSettingChange(sessionKey);
   const info = EFFORT_LEVELS.find(l => l.id === args);
   const confirmation = `${prefsConfirmation('effort', info?.label || args)}${restarted ? PTY_RESTART_NOTE : ''}`;
-  await replyWithScope(ctx, chatId, confirmation, 'effort', args, args, scope);
+  await replyWithScope(ctx, sessionKey, confirmation, 'effort', args, args, scope);
 }
 
 /**
@@ -479,7 +479,7 @@ export async function handleEffort(ctx: Context): Promise<void> {
  */
 async function replyWithScope(
   ctx: Context,
-  chatId: number,
+  sessionKey: string,
   confirmation: string,
   setting: 'model' | 'effort',
   value: string | null,
@@ -488,10 +488,10 @@ async function replyWithScope(
 ): Promise<void> {
   if (scope === 'all') {
     const summary = await applyToAllBots({
-      chatId,
+      chatId: parseSessionKey(sessionKey).chatId,
       setting,
       value,
-      provider: getActiveProviderName(chatId),
+      provider: getActiveProviderName(sessionKey),
     });
     await replyMd(ctx, `${confirmation}${summary}`);
     return;
@@ -515,8 +515,8 @@ export async function handleEffortCallback(ctx: Context): Promise<void> {
   const level = data.replace('effort:', '');
 
   if (level === 'auto') {
-    clearEffort(chatId);
-    const restarted = restartPtyForSettingChange(chatId, sessionKey);
+    clearEffort(sessionKey);
+    const restarted = restartPtyForSettingChange(sessionKey);
     await ctx.answerCallbackQuery({ text: 'Effort reset to auto!' });
     const where = hasSiblings() ? ` for *${esc(config.BOT_NAME)}*` : '';
     const keyboard = buildApplyToAllKeyboard('effort', 'auto');
@@ -535,8 +535,8 @@ export async function handleEffortCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  setEffort(chatId, level);
-  const restarted = restartPtyForSettingChange(chatId, sessionKey);
+  setEffort(sessionKey, level);
+  const restarted = restartPtyForSettingChange(sessionKey);
 
   const info = EFFORT_LEVELS.find(l => l.id === level);
   const displayName = info?.label || level;
@@ -658,11 +658,11 @@ function buildStatusLineMarkdown(
   const project = sessionKey ? sessionManager.getSession(sessionKey)?.workingDirectory : undefined;
   if (project) stats.push(`📁 ${path.basename(project) || project}`);
 
-  const label = getEffortLabel(chatId);
+  const label = getEffortLabel(sessionKey ?? chatId);
   stats.push(label || '🧠 Auto');
 
   const footer = usageFooter(chatId, usage);
-  const provider = getActiveProviderName(chatId);
+  const provider = getActiveProviderName(sessionKey ?? chatId);
   if (usage) {
     if (usage.model) {
       const shortened = shortenModelName(usage.model);
@@ -932,15 +932,16 @@ export async function handleVerbosityCallback(ctx: Context): Promise<void> {
 }
 
 export async function handleMethodCommand(ctx: Context): Promise<void> {
-  const chatId = ctx.chat?.id;
-  if (!chatId) return;
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { sessionKey } = keyInfo;
 
   const descriptions: Record<string, string> = {
     sdk: "Use Claude Code SDK (default, recommended)",
     pty: "Use interactive PTY session (experimental, for Max subscription)",
   };
 
-  const currentMethod = userPreferences.getMethod(chatId) ?? 'sdk';
+  const currentMethod = userPreferences.getMethod(sessionKey) ?? 'sdk';
   const availableMethods = ['sdk', 'pty'];
 
   const keyboard = availableMethods.map((method) => {
@@ -961,8 +962,9 @@ export async function handleMethodCommand(ctx: Context): Promise<void> {
 }
 
 export async function handleMethodCallback(ctx: Context): Promise<void> {
-  const chatId = ctx.chat?.id;
-  if (!chatId) return;
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!keyInfo) return;
+  const { sessionKey } = keyInfo;
 
   const data = ctx.callbackQuery?.data;
   if (!data || !data.startsWith('method:')) return;
@@ -970,7 +972,7 @@ export async function handleMethodCallback(ctx: Context): Promise<void> {
   const newMethod = data.replace('method:', '');
 
   if (newMethod === 'sdk' || newMethod === 'pty') {
-    userPreferences.setMethod(chatId, newMethod);
+    userPreferences.setMethod(sessionKey, newMethod);
   }
 
   await ctx.answerCallbackQuery();
@@ -1036,19 +1038,19 @@ export async function handleSuggestionsCallback(ctx: Context): Promise<void> {
  * the SDK, so the row names the mode and the reason rather than making a
  * person read two files to find out what they already picked.
  */
-function describeTransportDefault(chatId: number): { label: string; why: string } {
-  const method = getActiveMethod(chatId);
+function describeTransportDefault(scope: SettingsScope): { label: string; why: string } {
+  const method = getActiveMethod(scope);
   const label = permissionModeInfo(transportDefaultMode(method, config.DANGEROUS_MODE)).label;
   if (method === 'pty') return { label, why: "Claude Code's own default" };
   return { label, why: config.DANGEROUS_MODE ? 'SDK, DANGEROUS_MODE=true' : 'the SDK default' };
 }
 
-function buildPermissionModeMenu(chatId: number): {
+function buildPermissionModeMenu(scope: SettingsScope): {
   text: string;
   keyboard: { text: string; callback_data: string }[][];
 } {
-  const current = userPreferences.getPermissionMode(chatId);
-  const fallback = describeTransportDefault(chatId);
+  const current = userPreferences.getPermissionMode(scope);
+  const fallback = describeTransportDefault(scope);
 
   const keyboard = PERMISSION_MODES.map((info) => [{
     text: info.id === current ? `✓ ${info.label}` : info.label,
@@ -1087,20 +1089,20 @@ function permissionModeSetText(id: PermissionModeId): string {
 }
 
 /** Same, for the reset — which names the mode it reset *to*, not just "default". */
-function permissionModeResetText(chatId: number): string {
-  const { label, why } = describeTransportDefault(chatId);
+function permissionModeResetText(scope: SettingsScope): string {
+  const { label, why } = describeTransportDefault(scope);
   return `✅ Permission mode reset to the transport default: *${esc(label)}*\n\n_${esc(why)}_`;
 }
 
 export async function handlePermissionMode(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
-  const { chatId } = keyInfo;
+  const { sessionKey } = keyInfo;
 
   const arg = (ctx.message?.text || '').split(' ').slice(1).join(' ').trim();
 
   if (!arg) {
-    const { text, keyboard } = buildPermissionModeMenu(chatId);
+    const { text, keyboard } = buildPermissionModeMenu(sessionKey);
     await ctx.reply(text, {
       parse_mode: 'MarkdownV2',
       reply_markup: { inline_keyboard: keyboard },
@@ -1110,8 +1112,8 @@ export async function handlePermissionMode(ctx: Context): Promise<void> {
 
   const lower = arg.toLowerCase();
   if (lower === 'default' || lower === 'reset') {
-    userPreferences.clearPermissionMode(chatId);
-    await replyMd(ctx, permissionModeResetText(chatId));
+    userPreferences.clearPermissionMode(sessionKey);
+    await replyMd(ctx, permissionModeResetText(sessionKey));
     return;
   }
 
@@ -1125,29 +1127,29 @@ export async function handlePermissionMode(ctx: Context): Promise<void> {
     return;
   }
 
-  userPreferences.setPermissionMode(chatId, parsed);
+  userPreferences.setPermissionMode(sessionKey, parsed);
   await replyMd(ctx, permissionModeSetText(parsed));
 }
 
 export async function handlePermissionModeCallback(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
-  const { chatId } = keyInfo;
+  const { sessionKey } = keyInfo;
 
   const data = ctx.callbackQuery?.data;
   if (!data || !data.startsWith('permmode:')) return;
   const choice = data.replace('permmode:', '');
 
   if (choice === 'default') {
-    userPreferences.clearPermissionMode(chatId);
-    const { label } = describeTransportDefault(chatId);
+    userPreferences.clearPermissionMode(sessionKey);
+    const { label } = describeTransportDefault(sessionKey);
     await ctx.answerCallbackQuery({ text: `Default: ${label}` });
-    await ctx.editMessageText(permissionModeResetText(chatId), { parse_mode: 'MarkdownV2' });
+    await ctx.editMessageText(permissionModeResetText(sessionKey), { parse_mode: 'MarkdownV2' });
     return;
   }
 
   if (!isPermissionModeId(choice)) return;
-  userPreferences.setPermissionMode(chatId, choice);
+  userPreferences.setPermissionMode(sessionKey, choice);
   await ctx.answerCallbackQuery({ text: `Mode: ${permissionModeInfo(choice).label}` });
   await ctx.editMessageText(permissionModeSetText(choice), { parse_mode: 'MarkdownV2' });
 }

@@ -9,6 +9,7 @@ import {
   isDangerousMode as claudeIsDangerousMode,
 } from '../claude/agent.js';
 import { getCcrShimPath } from '../claude/ccr-shim.js';
+import type { SettingsScope } from '../utils/session-key.js';
 import { ensureCcrRunning } from './ccr-health.js';
 import type { Provider, AgentOptions, LoopOptions, AgentResponse, AgentUsage, ModelInfo } from './types.js';
 
@@ -53,16 +54,16 @@ export const ccrProvider: Provider = {
     claudeClearConversation(sessionKey);
   },
 
-  setModel(chatId: number, model: string): void {
-    claudeSetModel(chatId, model);
+  setModel(scope: SettingsScope, model: string): void {
+    claudeSetModel(scope, model);
   },
 
-  getModel(chatId: number): string {
-    return claudeGetModel(chatId);
+  getModel(scope: SettingsScope): string {
+    return claudeGetModel(scope);
   },
 
-  clearModel(chatId: number): void {
-    claudeClearModel(chatId);
+  clearModel(scope: SettingsScope): void {
+    claudeClearModel(scope);
   },
 
   getCachedUsage(sessionKey: string): AgentUsage | undefined {

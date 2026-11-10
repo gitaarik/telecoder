@@ -21,6 +21,7 @@ import {
 } from '../../../providers/prefs-sync.js';
 import { getActiveProviderName, getAvailableModels } from '../../../providers/provider-router.js';
 import { config } from '../../../config.js';
+import { getSessionKeyFromCtx, type SettingsScope } from '../../../utils/session-key.js';
 import { EFFORT_LEVELS, needsPtyRestart, PTY_RESTART_NOTE } from './shared.js';
 
 export type PrefsScope = 'this' | 'all';
@@ -148,7 +149,7 @@ export function prefsConfirmation(setting: PrefsChange['setting'], displayLabel:
 
 /** Human-readable name for a value, matching what the pickers show. */
 async function describeValue(
-  chatId: number,
+  scope: SettingsScope,
   setting: PrefsChange['setting'],
   value: string | null,
 ): Promise<string> {
@@ -157,7 +158,7 @@ async function describeValue(
     return EFFORT_LEVELS.find((l) => l.id === value)?.label ?? value;
   }
   if (value === null) return 'default';
-  const models = await getAvailableModels(chatId);
+  const models = await getAvailableModels(scope);
   return models.find((m) => m.id === value)?.label ?? value;
 }
 
@@ -167,9 +168,10 @@ async function describeValue(
  * out, then rewrites the message with what each bot did.
  */
 export async function handlePrefsAllCallback(ctx: Context): Promise<void> {
-  const chatId = ctx.chat?.id;
+  const keyInfo = getSessionKeyFromCtx(ctx);
   const data = ctx.callbackQuery?.data;
-  if (!chatId || !data?.startsWith(PREFS_ALL_PREFIX)) return;
+  if (!keyInfo || !data?.startsWith(PREFS_ALL_PREFIX)) return;
+  const { chatId, sessionKey } = keyInfo;
 
   const rest = data.slice(PREFS_ALL_PREFIX.length);
   const sep = rest.indexOf(':');
@@ -195,14 +197,14 @@ export async function handlePrefsAllCallback(ctx: Context): Promise<void> {
     chatId,
     setting,
     value,
-    provider: getActiveProviderName(chatId),
+    provider: getActiveProviderName(sessionKey),
   };
 
-  const label = await describeValue(chatId, setting, value);
+  const label = await describeValue(sessionKey, setting, value);
   const confirmation = value === null && setting === 'effort'
     ? `✅ Effort reset to *auto* \\(CLI default\\)${hasSiblings() ? ` for *${esc(config.BOT_NAME)}*` : ''}`
     : prefsConfirmation(setting, label);
-  const restartNote = needsPtyRestart(chatId) ? PTY_RESTART_NOTE : '';
+  const restartNote = needsPtyRestart(sessionKey) ? PTY_RESTART_NOTE : '';
   const summary = await applyToAllBots(change);
 
   await ctx.editMessageText(`${confirmation}${restartNote}${summary}`, { parse_mode: 'MarkdownV2' });

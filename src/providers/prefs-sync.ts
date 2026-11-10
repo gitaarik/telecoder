@@ -121,15 +121,15 @@ export function applyPrefsChange(change: PrefsChange): PrefsApplyOutcome {
 /**
  * Tear down this chat's idle pty sessions so the next turn respawns with the
  * new flag. Returns how many were left running because they were mid-turn.
- * No-op unless this chat actually runs on the pty transport.
+ * Only sessions that actually run on the pty transport count; with threads,
+ * that is decided per thread, since each can have picked its own.
  */
 function restartPtySessionsForChat(chatId: number): number {
-  if (getActiveProviderName(chatId) !== 'claude') return 0;
-  if (userPreferences.getMethod(chatId) !== 'pty') return 0;
-
   const pty = getPtyProvider();
   let busy = 0;
   for (const sessionKey of pty.listSessionKeysForChat(chatId)) {
+    if (getActiveProviderName(sessionKey) !== 'claude') continue;
+    if (userPreferences.getMethod(sessionKey) !== 'pty') continue;
     if (isInFlight(sessionKey)) {
       busy++;
       continue;

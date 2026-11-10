@@ -2307,9 +2307,10 @@
           </div>
           <div class="feature-card" data-category="sessions">
             <div class="feature-icon"><svg><use href="#i-topic"/></svg></div>
-            <h3>A session per forum topic</h3>
-            <p>Each topic in a Telegram group runs as its own independent session, so several
-            projects can run in parallel in one place.</p>
+            <h3>A session per topic or thread</h3>
+            <p>Each topic in a Telegram group, and each thread in a private chat with a bot that
+            has threads on, runs as its own independent session with its own model, effort,
+            backend and permission mode, so several projects can run in parallel in one place.</p>
           </div>
           <div class="feature-card" data-category="sessions">
             <div class="feature-icon"><svg><use href="#i-shield"/></svg></div>
@@ -2954,7 +2955,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/mode &lt;manual|acceptEdits|plan|auto|bypass&gt;</code>
-              <span class="command-desc">How much Claude asks before acting, per chat. Same modes the desktop cycles with shift+tab; buttons if you pass no argument. Default follows the transport, and the menu spells out what that resolves to — auto on PTY, accept edits on the SDK unless <code>DANGEROUS_MODE</code> promotes it. Admin-only.</span>
+              <span class="command-desc">How much Claude asks before acting, per chat or thread. Same modes the desktop cycles with shift+tab; buttons if you pass no argument. Default follows the transport, and the menu spells out what that resolves to — auto on PTY, accept edits on the SDK unless <code>DANGEROUS_MODE</code> promotes it. Admin-only.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/streaming</code>

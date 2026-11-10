@@ -2,7 +2,7 @@
 import { userPreferences } from './user-preferences.js';
 import { sdkProvider } from './sdk-provider.js';
 import { PtyProvider } from '../claude/pty-provider.js';
-import { parseSessionKey } from '../utils/session-key.js';
+import type { SettingsScope } from '../utils/session-key.js';
 import { config } from '../config.js';
 import type { Provider, AgentOptions, LoopOptions, AgentResponse, AgentUsage, ModelInfo } from './types.js';
 
@@ -13,11 +13,11 @@ export function getPtyProvider(): PtyProvider {
   return ptyProvider;
 }
 
-function getMethod(chatId: number): 'sdk' | 'pty' {
-  // Per-chat /method wins; CLAUDE_METHOD_DEFAULT decides for a chat that has
-  // never picked one. A supervised bot sets it to 'pty', where the permission
+function getMethod(scope: SettingsScope): 'sdk' | 'pty' {
+  // The thread's or chat's /method wins; CLAUDE_METHOD_DEFAULT decides for one
+  // that has never picked one. A supervised bot sets it to 'pty', where the permission
   // gate's PreToolUse hook actually runs.
-  return userPreferences.getMethod(chatId) || config.CLAUDE_METHOD_DEFAULT;
+  return userPreferences.getMethod(scope) || config.CLAUDE_METHOD_DEFAULT;
 }
 
 /**
@@ -25,12 +25,12 @@ function getMethod(chatId: number): 'sdk' | 'pty' {
  * that need to match the transport's behaviour without routing a turn — e.g.
  * inspecting the CLI build that would actually serve the chat.
  */
-export function getActiveMethod(chatId: number): 'sdk' | 'pty' {
-  return getMethod(chatId);
+export function getActiveMethod(scope: SettingsScope): 'sdk' | 'pty' {
+  return getMethod(scope);
 }
 
-function getInternalProvider(chatId: number): Provider {
-  const method = getMethod(chatId);
+function getInternalProvider(scope: SettingsScope): Provider {
+  const method = getMethod(scope);
   if (method === 'pty') {
     return ptyProvider;
   }
@@ -43,35 +43,31 @@ export const claudeProvider: Provider = {
   name: 'claude',
 
   sendToAgent(sessionKey: string, message: string, options?: AgentOptions): Promise<AgentResponse> {
-    const chatId = parseSessionKey(sessionKey).chatId;
-    return getInternalProvider(chatId).sendToAgent(sessionKey, message, options);
+    return getInternalProvider(sessionKey).sendToAgent(sessionKey, message, options);
   },
 
   sendLoopToAgent(sessionKey: string, message: string, options?: LoopOptions): Promise<AgentResponse> {
-    const chatId = parseSessionKey(sessionKey).chatId;
-    return getInternalProvider(chatId).sendLoopToAgent(sessionKey, message, options);
+    return getInternalProvider(sessionKey).sendLoopToAgent(sessionKey, message, options);
   },
 
   clearConversation(sessionKey: string): void {
-    const chatId = parseSessionKey(sessionKey).chatId;
-    getInternalProvider(chatId).clearConversation(sessionKey);
+    getInternalProvider(sessionKey).clearConversation(sessionKey);
   },
 
-  setModel(chatId: number, model: string): void {
-    getInternalProvider(chatId).setModel(chatId, model);
+  setModel(scope: SettingsScope, model: string): void {
+    getInternalProvider(scope).setModel(scope, model);
   },
 
-  getModel(chatId: number): string {
-    return getInternalProvider(chatId).getModel(chatId);
+  getModel(scope: SettingsScope): string {
+    return getInternalProvider(scope).getModel(scope);
   },
 
-  clearModel(chatId: number): void {
-    getInternalProvider(chatId).clearModel(chatId);
+  clearModel(scope: SettingsScope): void {
+    getInternalProvider(scope).clearModel(scope);
   },
 
   getCachedUsage(sessionKey: string): AgentUsage | undefined {
-    const chatId = parseSessionKey(sessionKey).chatId;
-    return getInternalProvider(chatId).getCachedUsage(sessionKey);
+    return getInternalProvider(sessionKey).getCachedUsage(sessionKey);
   },
 
   isDangerousMode(): boolean {
@@ -79,7 +75,7 @@ export const claudeProvider: Provider = {
     return sdkProvider.isDangerousMode();
   },
 
-  async getAvailableModels(chatId: number): Promise<ModelInfo[]> {
-    return getInternalProvider(chatId).getAvailableModels(chatId);
+  async getAvailableModels(scope: SettingsScope): Promise<ModelInfo[]> {
+    return getInternalProvider(scope).getAvailableModels(scope);
   },
 };

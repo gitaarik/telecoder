@@ -34,8 +34,8 @@ export async function handleBtw(ctx: Context): Promise<void> {
   // PTY mode has no SDK Query to hang askSideQuestion off — answer from a
   // read-only fork of the live session instead. Only Claude sessions have a
   // resumable JSONL transcript; ccr falls through to the SDK path.
-  const usesPty = getActiveProviderName(chatId) === 'claude'
-    && userPreferences.getMethod(chatId) === 'pty';
+  const usesPty = getActiveProviderName(sessionKey) === 'claude'
+    && userPreferences.getMethod(sessionKey) === 'pty';
   if (usesPty) {
     await handleBtwViaFork(ctx, sessionKey, question);
     return;

@@ -23,6 +23,19 @@ export function parseSessionKey(key: SessionKey): { chatId: number; threadId?: n
   };
 }
 
+/**
+ * What a per-conversation setting (model, effort, transport…) is stored under:
+ * a session key, so each forum topic or private-chat thread keeps its own, or
+ * a bare chat id for the chat-wide value every thread falls back to. A plain
+ * chat's session key is its chat id, so there the two are the same entry.
+ */
+export type SettingsScope = SessionKey | number;
+
+/** The chat a settings scope belongs to. */
+export function scopeChatId(scope: SettingsScope): number {
+  return typeof scope === 'number' ? scope : parseSessionKey(scope).chatId;
+}
+
 interface SessionKeyInfo {
   chatId: number;
   threadId?: number;

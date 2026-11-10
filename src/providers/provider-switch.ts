@@ -23,6 +23,7 @@ import {
   clearConversation,
 } from './provider-router.js';
 import type { ProviderName } from './types.js';
+import type { SettingsScope } from '../utils/session-key.js';
 
 // How many recent exchanges to carry over, and how much of each turn to keep.
 const CARRY_OVER_EXCHANGES = 6;
@@ -88,13 +89,12 @@ export function buildCarryOverPreamble(sessionKey: string): string | undefined {
 }
 
 /**
- * Switch `sessionKey`/`chatId` to `target`, starting a fresh session. When
+ * Switch `sessionKey` to `target`, starting a fresh session. When
  * `carryOver` is true (default) the prior conversation is summarized and queued
  * as a preamble for the next turn. Safe to call even when no session is active.
  */
 export async function switchProvider(
   sessionKey: string,
-  chatId: number,
   target: ProviderName,
   carryOver: boolean = true,
 ): Promise<void> {
@@ -109,10 +109,10 @@ export async function switchProvider(
   clearConversation(sessionKey);
   sessionManager.startNewConversation(sessionKey);
 
-  await setActiveProvider(chatId, target);
+  await setActiveProvider(sessionKey, target);
 }
 
 /** Resolve the provider that would be active after a no-op (current). */
-export function currentProvider(chatId: number): ProviderName {
-  return getActiveProviderName(chatId);
+export function currentProvider(scope: SettingsScope): ProviderName {
+  return getActiveProviderName(scope);
 }

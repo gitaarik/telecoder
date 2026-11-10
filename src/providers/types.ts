@@ -1,3 +1,5 @@
+import type { SettingsScope } from '../utils/session-key.js';
+
 export type ProviderName = 'claude' | 'ccr';
 export type ClaudeMethod = 'sdk' | 'pty';
 
@@ -227,10 +229,10 @@ export interface Provider {
   sendToAgent(sessionKey: string, message: string, options?: AgentOptions): Promise<AgentResponse>;
   sendLoopToAgent(sessionKey: string, message: string, options?: LoopOptions): Promise<AgentResponse>;
   clearConversation(sessionKey: string): void;
-  setModel(chatId: number, model: string): void;
-  getModel(chatId: number): string;
-  clearModel(chatId: number): void;
+  setModel(scope: SettingsScope, model: string): void;
+  getModel(scope: SettingsScope): string;
+  clearModel(scope: SettingsScope): void;
   getCachedUsage(sessionKey: string): AgentUsage | undefined;
   isDangerousMode(): boolean;
-  getAvailableModels(chatId: number): Promise<ModelInfo[]>;
+  getAvailableModels(scope: SettingsScope): Promise<ModelInfo[]>;
 }

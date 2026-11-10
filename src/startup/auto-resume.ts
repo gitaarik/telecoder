@@ -136,7 +136,7 @@ export async function autoResumeAfterReload(bot: Bot, notified: Set<string>): Pr
       if (entry.topic) {
         header += ` \\(topic: ${escapeMarkdownV2(entry.topic)}\\)`;
       }
-      const effortLabel = getEffortLabel(chatId);
+      const effortLabel = getEffortLabel(sessionKey);
       if (effortLabel) {
         header += `\nEffort: ${escapeMarkdownV2(effortLabel)}`;
       }

@@ -10,26 +10,14 @@ import {
   type EffortLevel,
 } from '../claude/agent.js';
 import { userPreferences } from './user-preferences.js';
-import { parseSessionKey } from '../utils/session-key.js';
+import type { SettingsScope } from '../utils/session-key.js';
 import type { Provider, ProviderName, AgentOptions, LoopOptions, AgentResponse, AgentUsage, ModelInfo } from './types.js';
 
 // Re-export types for consumers
 export type { AgentUsage, AgentResponse, AgentOptions, LoopOptions, ModelInfo, ProviderName };
 
-// Per-chat provider selection (in-memory cache)
-const chatProviders = new Map<number, ProviderName>();
-
-// Load persisted preferences on startup
-function loadPersistedProvider(chatId: number): ProviderName | undefined {
-  return userPreferences.getProvider(chatId);
-}
-
-function savePersistedProvider(chatId: number, provider: ProviderName): void {
-  userPreferences.setProvider(chatId, provider);
-}
-
-function getProvider(chatId: number): Provider {
-  const name = getActiveProviderName(chatId);
+function getProvider(scope: SettingsScope): Provider {
+  const name = getActiveProviderName(scope);
   if (name === 'ccr') {
     if (!config.CCR_ENABLED) {
       console.warn('[ProviderRouter] CCR provider selected but CCR_ENABLED=false; falling back to Claude');
@@ -42,23 +30,18 @@ function getProvider(chatId: number): Provider {
 
 // --- Public API (identical signatures to agent.ts) ---
 
-export function getActiveProviderName(chatId: number): ProviderName {
+/**
+ * The backend a chat or thread runs on. Read straight from the preferences,
+ * which are in memory already: a cache of its own here would go stale for the
+ * threads that fall back to a chat-wide value when that value changes.
+ */
+export function getActiveProviderName(scope: SettingsScope): ProviderName {
   if (!config.CCR_ENABLED) return 'claude';
-  // Check in-memory cache first
-  const cached = chatProviders.get(chatId);
-  if (cached) return cached;
-  // Load from persistence
-  const persisted = loadPersistedProvider(chatId);
-  if (persisted) {
-    chatProviders.set(chatId, persisted);
-    return persisted;
-  }
-  return 'claude';
+  return userPreferences.getProvider(scope) ?? 'claude';
 }
 
-export async function setActiveProvider(chatId: number, provider: ProviderName): Promise<void> {
-  chatProviders.set(chatId, provider);
-  savePersistedProvider(chatId, provider);
+export async function setActiveProvider(scope: SettingsScope, provider: ProviderName): Promise<void> {
+  userPreferences.setProvider(scope, provider);
 }
 
 export function getAvailableProviders(): ProviderName[] {
@@ -99,9 +82,8 @@ export async function sendToAgent(
   const blocked = await screened(sessionKey, message, options);
   if (blocked) return blocked;
 
-  const chatId = parseSessionKey(sessionKey).chatId;
-  const providerName = getActiveProviderName(chatId);
-  return getProvider(chatId).sendToAgent(sessionKey, message, { ...options, providerName });
+  const providerName = getActiveProviderName(sessionKey);
+  return getProvider(sessionKey).sendToAgent(sessionKey, message, { ...options, providerName });
 }
 
 export async function sendLoopToAgent(
@@ -112,9 +94,8 @@ export async function sendLoopToAgent(
   const blocked = await screened(sessionKey, message, options);
   if (blocked) return blocked;
 
-  const chatId = parseSessionKey(sessionKey).chatId;
-  const providerName = getActiveProviderName(chatId);
-  return getProvider(chatId).sendLoopToAgent(sessionKey, message, { ...options, providerName });
+  const providerName = getActiveProviderName(sessionKey);
+  return getProvider(sessionKey).sendLoopToAgent(sessionKey, message, { ...options, providerName });
 }
 
 export function clearConversation(sessionKey: string): void {
@@ -123,21 +104,20 @@ export function clearConversation(sessionKey: string): void {
   ccrProvider.clearConversation(sessionKey);
 }
 
-export function setModel(chatId: number, model: string): void {
-  getProvider(chatId).setModel(chatId, model);
+export function setModel(scope: SettingsScope, model: string): void {
+  getProvider(scope).setModel(scope, model);
 }
 
-export function getModel(chatId: number): string {
-  return getProvider(chatId).getModel(chatId);
+export function getModel(scope: SettingsScope): string {
+  return getProvider(scope).getModel(scope);
 }
 
-export function clearModel(chatId: number): void {
-  getProvider(chatId).clearModel(chatId);
+export function clearModel(scope: SettingsScope): void {
+  getProvider(scope).clearModel(scope);
 }
 
 export function getCachedUsage(sessionKey: string): AgentUsage | undefined {
-  const chatId = parseSessionKey(sessionKey).chatId;
-  return getProvider(chatId).getCachedUsage(sessionKey);
+  return getProvider(sessionKey).getCachedUsage(sessionKey);
 }
 
 export function isDangerousMode(): boolean {
@@ -149,22 +129,22 @@ export function isDangerousMode(): boolean {
 export { isValidEffortLevel };
 export type { EffortLevel };
 
-export function setEffort(chatId: number, effort: EffortLevel): void {
-  claudeSetEffort(chatId, effort);
+export function setEffort(scope: SettingsScope, effort: EffortLevel): void {
+  claudeSetEffort(scope, effort);
 }
 
-export function getEffort(chatId: number): EffortLevel | undefined {
-  return claudeGetEffort(chatId);
+export function getEffort(scope: SettingsScope): EffortLevel | undefined {
+  return claudeGetEffort(scope);
 }
 
-export function clearEffort(chatId: number): void {
-  claudeClearEffort(chatId);
+export function clearEffort(scope: SettingsScope): void {
+  claudeClearEffort(scope);
 }
 
-export async function getAvailableModels(chatId: number): Promise<ModelInfo[]> {
-  const providerName = getActiveProviderName(chatId);
+export async function getAvailableModels(scope: SettingsScope): Promise<ModelInfo[]> {
+  const providerName = getActiveProviderName(scope);
   if (providerName === 'ccr') {
-    return ccrProvider.getAvailableModels(chatId);
+    return ccrProvider.getAvailableModels(scope);
   }
-  return claudeProvider.getAvailableModels(chatId);
+  return claudeProvider.getAvailableModels(scope);
 }

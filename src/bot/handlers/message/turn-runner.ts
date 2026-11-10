@@ -49,12 +49,12 @@ export async function handleCcrThrottleCallback(ctx: Context): Promise<void> {
       return;
     }
     const pending = lastThrottledPrompt.get(sessionKey);
-    if (getActiveProviderName(chatId) !== 'ccr') {
+    if (getActiveProviderName(sessionKey) !== 'ccr') {
       // Fork onto a fresh CCR session, carrying over a summary so the retry
       // keeps context. A direct resume would replay the Anthropic session's
       // thinking blocks; CCR tolerates that, but forking keeps the two
       // backends' sessions cleanly separated for the eventual switch back.
-      await switchProvider(sessionKey, chatId, 'ccr');
+      await switchProvider(sessionKey, 'ccr');
     }
     lastThrottledPrompt.delete(sessionKey);
 

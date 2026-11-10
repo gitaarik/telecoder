@@ -411,7 +411,7 @@ export async function handleCost(ctx: Context): Promise<void> {
     // into a process already running, and neither waits on the other.
     const [raw, live] = await Promise.all([
       runClaudeCost(costExecutables(), cwd),
-      readLiveSessionTotals(sessionKey, getActiveMethod(chatId)),
+      readLiveSessionTotals(sessionKey, getActiveMethod(sessionKey)),
     ]);
     await typing?.catch(() => { /* chat action is best-effort */ });
     let report = parseCostOutput(raw, getSessionCost(sessionKey), live.session);

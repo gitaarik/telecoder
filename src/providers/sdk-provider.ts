@@ -9,6 +9,7 @@ import {
   isDangerousMode as claudeIsDangerousMode,
 } from '../claude/agent.js';
 import { getModelsForBinary } from '../claude/model-catalog.js';
+import type { SettingsScope } from '../utils/session-key.js';
 import { resolveActiveClaudeExecutable } from '../utils/resolve-claude-bin.js';
 import type { Provider, AgentOptions, LoopOptions, AgentResponse, AgentUsage, ModelInfo } from './types.js';
 
@@ -27,16 +28,16 @@ export const sdkProvider: Provider = {
     claudeClearConversation(sessionKey);
   },
 
-  setModel(chatId: number, model: string): void {
-    claudeSetModel(chatId, model);
+  setModel(scope: SettingsScope, model: string): void {
+    claudeSetModel(scope, model);
   },
 
-  getModel(chatId: number): string {
-    return claudeGetModel(chatId);
+  getModel(scope: SettingsScope): string {
+    return claudeGetModel(scope);
   },
 
-  clearModel(chatId: number): void {
-    claudeClearModel(chatId);
+  clearModel(scope: SettingsScope): void {
+    claudeClearModel(scope);
   },
 
   getCachedUsage(sessionKey: string): AgentUsage | undefined {

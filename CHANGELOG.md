@@ -17,6 +17,18 @@ reasoning — the commit bodies are the long form, this is the index.
   its name once it has stopped. A file that doesn't parse, lists no bots, or
   gives two bots one name is ignored until it's fixed.
 
+### Threads
+
+- **Each thread keeps its own model, effort, backend, transport and
+  permission mode** — in a bot with threads, a `/model` in one thread used to
+  switch every thread in the chat, because these were stored per chat. Now
+  they're stored per thread. A thread that never picked one follows the chat's
+  setting, so a new thread starts out the way the chat was before threads, and
+  resetting one in a thread goes back to the default, not the chat's choice.
+  Verbosity and the status line toggles stay per chat. Chats without threads
+  are unchanged, and "apply to all bots" still applies to the other bots'
+  chats as a whole.
+
 ### Renamed
 
 - **The last Claudegram names** — the agent's tools are now `telecoder_*`

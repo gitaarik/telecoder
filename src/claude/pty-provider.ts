@@ -10,7 +10,7 @@ import { clearDeliveredProse, getDeliveredProse, stripDeliveredPrefix } from './
 import { isNativeCompactCommand } from './command-parser.js';
 import { isCancelled } from './request-queue.js';
 import { getWorkspaceRoot } from '../utils/workspace-guard.js';
-import { parseSessionKey } from '../utils/session-key.js';
+import { parseSessionKey, type SettingsScope } from '../utils/session-key.js';
 import { formatCompactionConfirmation } from '../utils/format.js';
 import { envWithoutParentSession } from '../utils/claude-env.js';
 import { legacyEnv } from '../utils/legacy-env.js';
@@ -806,7 +806,7 @@ export class PtyProvider implements Provider {
       // Report what actually served the turn. If the log has no model on it,
       // say so rather than inventing one — claude picks its own default.
       model: snapshot.model
-        || userPreferences.getModel(parseSessionKey(sessionKey).chatId)
+        || userPreferences.getModel(sessionKey)
         || 'Claude Code default',
     };
     this.usageCache.set(sessionKey, usage);
@@ -1067,13 +1067,12 @@ export class PtyProvider implements Provider {
       TELECODER_WORKSPACE_ROOT: getWorkspaceRoot(),
     }));
 
-    // /effort and /model are per-chat preferences the CLI accepts as flags.
+    // /effort and /model are per-thread preferences the CLI accepts as flags.
     // They can only be applied at spawn, so changing either tears the pty down
     // (see handleEffort / handleModelCommand) to force a respawn — context
     // survives because the next spawn resumes the same session id.
-    const { chatId } = parseSessionKey(sessionKey);
-    const effort = userPreferences.getEffort(chatId);
-    const model = userPreferences.getModel(chatId);
+    const effort = userPreferences.getEffort(sessionKey);
+    const model = userPreferences.getModel(sessionKey);
 
     const args = [
       '--dangerously-skip-permissions',
@@ -1631,8 +1630,7 @@ export class PtyProvider implements Provider {
    * did before this existed, so it is worth a log line and nothing more.
    */
   private async _applyPermissionMode(session: PtySession, sessionKey: string): Promise<void> {
-    const { chatId } = parseSessionKey(sessionKey);
-    const chosen = userPreferences.getPermissionMode(chatId);
+    const chosen = userPreferences.getPermissionMode(sessionKey);
     const target = chosen ?? transportDefaultMode('pty', config.DANGEROUS_MODE);
 
     const pty: ModePty = {
@@ -2122,10 +2120,10 @@ export class PtyProvider implements Provider {
     console.log(`[PtyProvider] Cleared conversation for session ${sessionKey}`);
   }
 
-  setModel(chatId: number, model: string): void {
+  setModel(scope: SettingsScope, model: string): void {
     // Applied as `--model` on the next spawn; the caller tears the pty down so
     // that happens on the next turn rather than whenever the session restarts.
-    userPreferences.setModel(chatId, model);
+    userPreferences.setModel(scope, model);
   }
 
   /**
@@ -2134,25 +2132,25 @@ export class PtyProvider implements Provider {
    * spawned), then to an honest placeholder — claude picks its own default and
    * we genuinely don't know which until a turn has been written.
    */
-  getModel(chatId: number): string {
-    const cached = this._findUsageForChat(chatId);
+  getModel(scope: SettingsScope): string {
+    const cached = this._findUsageForScope(scope);
     if (cached?.model) return cached.model;
-    return userPreferences.getModel(chatId) ?? 'Claude Code default';
+    return userPreferences.getModel(scope) ?? 'Claude Code default';
   }
 
-  clearModel(chatId: number): void {
-    userPreferences.clearModel(chatId);
+  clearModel(scope: SettingsScope): void {
+    userPreferences.clearModel(scope);
   }
 
   /**
-   * usageCache is keyed by session key (chat, or chat:thread for forum topics)
-   * but the Provider model API only gets a chat id — so match the plain chat
-   * key first, then any thread under it.
+   * usageCache is keyed by session key (chat, or chat:thread for threads). A
+   * thread's scope is its session key; a chat-wide scope matches the plain
+   * chat key first, then any thread under it.
    */
-  private _findUsageForChat(chatId: number): AgentUsage | undefined {
-    const direct = this.usageCache.get(String(chatId));
-    if (direct) return direct;
-    const prefix = `${chatId}:`;
+  private _findUsageForScope(scope: SettingsScope): AgentUsage | undefined {
+    const direct = this.usageCache.get(String(scope));
+    if (direct || typeof scope === 'string') return direct;
+    const prefix = `${scope}:`;
     for (const [key, usage] of this.usageCache) {
       if (key.startsWith(prefix)) return usage;
     }
@@ -2173,7 +2171,7 @@ export class PtyProvider implements Provider {
     return true;
   }
 
-  async getAvailableModels(chatId: number): Promise<ModelInfo[]> {
+  async getAvailableModels(_scope: SettingsScope): Promise<ModelInfo[]> {
     // The aliases CLAUDE_BIN accepts for --model, minus any it predates. SDK
     // mode asks the same question of its own binary, so the two lists agree
     // whenever both point at the same install.

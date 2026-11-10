@@ -230,8 +230,7 @@ export async function handleStart(ctx: Context): Promise<void> {
     : '';
 
   const keyInfo = getSessionKeyFromCtx(ctx);
-  const chatId = keyInfo ? parseSessionKey(keyInfo.sessionKey).chatId : undefined;
-  const effortLabel = chatId !== undefined ? (getEffortLabel(chatId) ?? 'Default') : 'Default';
+  const effortLabel = keyInfo ? (getEffortLabel(keyInfo.sessionKey) ?? 'Default') : 'Default';
 
   const welcomeMessage = `👋 *Welcome to TeleCoder\\!*
 
@@ -277,10 +276,10 @@ export async function handleStatus(ctx: Context): Promise<void> {
       return;
     }
 
-    const currentModel = getModel(chatId);
-    const provider = getActiveProviderName(chatId);
+    const currentModel = getModel(sessionKey);
+    const provider = getActiveProviderName(sessionKey);
     const dangerousMode = isDangerousMode() ? '⚠️ ENABLED' : 'Disabled';
-    const effortLabel = getEffortLabel(chatId) ?? 'Default';
+    const effortLabel = getEffortLabel(sessionKey) ?? 'Default';
     const topic = getSessionTopic(sessionKey);
 
     const projectName = path.basename(session.workingDirectory);
@@ -582,7 +581,7 @@ export async function handlePermissions(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (enabled && keyInfo) {
     const { getActiveMethod } = await import('../../providers/claude-provider.js');
-    if (getActiveMethod(keyInfo.chatId) !== 'pty') {
+    if (getActiveMethod(keyInfo.sessionKey) !== 'pty') {
       lines.push(
         '',
         '⚠️ This chat is on the *SDK* transport, where the gate does not run — it is a hook on the `claude` CLI\\. Switch with `/method pty`\\.',
@@ -671,7 +670,7 @@ export async function handleProjectCommands(ctx: Context): Promise<void> {
   // Ask the binary this chat's turns actually run through. SDK and PTY mode
   // can be different installs at different versions, and their command sets
   // differ — listing the wrong one would name commands that don't exist here.
-  const executable = resolveClaudeExecutableForMethod(getActiveMethod(keyInfo.chatId));
+  const executable = resolveClaudeExecutableForMethod(getActiveMethod(keyInfo.sessionKey));
   // A cold cache means a probe — a fresh headless process — so show a typing
   // indicator rather than leaving the chat silent for a second or two.
   const typing = ctx.replyWithChatAction?.('typing');

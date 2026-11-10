@@ -194,7 +194,7 @@ export async function handleBotStatus(ctx: Context): Promise<void> {
 
   const mode = config.BOT_MODE === 'prod' ? 'Production' : 'Development';
   const keyInfo = getSessionKeyFromCtx(ctx);
-  const model = keyInfo ? getModel(keyInfo.chatId) : 'opus';
+  const model = keyInfo ? getModel(keyInfo.sessionKey) : 'opus';
   const streaming = config.STREAMING_MODE || 'streaming';
   const pid = process.pid;
   const memMB = (process.memoryUsage.rss() / 1024 / 1024).toFixed(1);

@@ -113,3 +113,68 @@ describe('userPreferences storage', () => {
     expect(fs.existsSync(prefsPath())).toBe(false);
   });
 });
+
+describe('userPreferences per thread', () => {
+  beforeEach(() => {
+    stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'telecoder-prefs-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(stateDir, { recursive: true, force: true });
+  });
+
+  it('keeps a thread its own setting, apart from its siblings and the chat', async () => {
+    const store = await loadStore();
+    store.setModel('42:7', 'haiku');
+
+    expect(store.getModel('42:7')).toBe('haiku');
+    expect(store.getModel('42:8')).toBeUndefined();
+    expect(store.getModel(42)).toBeUndefined();
+    // Survives a restart under its own key.
+    expect(readPrefs(prefsPath())['42:7'].model).toBe('haiku');
+  });
+
+  it('falls back to the chat for whatever the thread never set', async () => {
+    const store = await loadStore();
+    store.setModel(42, 'opus');
+    store.setMethod(42, 'pty');
+    store.setEffort('42:7', 'low');
+
+    expect(store.getModel('42:7')).toBe('opus');
+    expect(store.getMethod('42:7')).toBe('pty');
+    expect(store.getEffort('42:7')).toBe('low');
+    expect(store.getEffort(42)).toBeUndefined();
+  });
+
+  it("resets a thread to the default, not to the chat's choice", async () => {
+    const store = await loadStore();
+    store.setModel(42, 'opus');
+    store.setModel('42:7', 'haiku');
+    store.clearModel('42:7');
+
+    expect(store.getModel('42:7')).toBeUndefined();
+    expect(store.getModel(42)).toBe('opus');
+
+    // And that reset survives a reload rather than reverting to the chat's.
+    const reloaded = await loadStore();
+    expect(reloaded.getModel('42:7')).toBeUndefined();
+  });
+
+  it('reads a plain chat session key as the chat-wide entry', async () => {
+    const store = await loadStore();
+    store.setModel('42', 'sonnet');
+
+    expect(store.getModel(42)).toBe('sonnet');
+    store.clearModel('42');
+    expect(readPrefs(prefsPath())['42']).not.toHaveProperty('model');
+  });
+
+  it('loads files written before threads had settings of their own', async () => {
+    writePrefs(prefsPath(), { '42': { model: 'opus', lastUpdated: '2026-01-01T00:00:00.000Z' } });
+
+    const store = await loadStore();
+
+    expect(store.getModel(42)).toBe('opus');
+    expect(store.getModel('42:7')).toBe('opus');
+  });
+});

@@ -41,7 +41,7 @@ import { userPreferences } from '../providers/user-preferences.js';
 import { hasForeignThinkingSignatures } from './session-jsonl.js';
 import { BoundedMap } from '../utils/bounded-map.js';
 import { recordTurnCost, clearSessionCost } from './session-cost.js';
-import { parseSessionKey } from '../utils/session-key.js';
+import { parseSessionKey, type SettingsScope } from '../utils/session-key.js';
 import { resolveBundledClaudeBin, resolveActiveClaudeExecutable } from '../utils/resolve-claude-bin.js';
 import { formatCompactionConfirmation } from '../utils/format.js';
 
@@ -71,13 +71,6 @@ const pendingCarryOver = new BoundedMap<string, string>(1000);
 export function setPendingCarryOver(sessionKey: string, preamble: string): void {
   pendingCarryOver.set(sessionKey, preamble);
 }
-
-// Track current model per session (default: opus)
-// chatModels is intentionally unbounded — it's backed by persistent preferences
-const chatModels = new Map<string, string>();
-
-// Track effort level per user (default: undefined = SDK default)
-const chatEffort = new Map<string, string>();
 
 // Cache latest usage per session for /context and /status commands
 const chatUsageCache = new BoundedMap<string, AgentUsage>(1000);
@@ -167,12 +160,12 @@ function logAt(level: LogLevel, message: string, data?: unknown): void {
  * `transportDefaultMode`, which is also what /mode reads to name the default
  * in the chat — one rule, so the menu cannot describe a mode this returns.
  */
-function getPermissionMode(command?: string, chatId?: number): PermissionMode {
+function getPermissionMode(command?: string, scope?: SettingsScope): PermissionMode {
   if (command === 'plan') {
     return 'plan';
   }
 
-  const chosen = chatId !== undefined ? userPreferences.getPermissionMode(chatId) : undefined;
+  const chosen = scope !== undefined ? userPreferences.getPermissionMode(scope) : undefined;
   // The SDK and the CLI spell the ask-every-time mode differently; the table
   // holds both, and this transport needs `sdk`.
   const mode = chosen ?? transportDefaultMode('sdk', config.DANGEROUS_MODE);
@@ -359,19 +352,17 @@ export async function sendToAgent(
   }
   const previewFlushTimer = setInterval(flushPreview, 5_000);
 
-  const { chatId: parsedChatId } = parseSessionKey(sessionKey);
-
   // Determine permission mode
-  const permissionMode = getPermissionMode(command, parsedChatId);
+  const permissionMode = getPermissionMode(command, sessionKey);
 
   // Log in dangerous mode for security auditing
   logDangerousModeOperation(sessionKey, 'query', `prompt_length:${message.length} cwd:${session.workingDirectory}`);
 
   // Determine model to use (default to 'opus' to match getModel() default)
-  const effectiveModel = model || chatModels.get(sessionKey) || 'opus';
+  const effectiveModel = model || getModel(sessionKey);
 
   // Determine effort level (undefined = SDK default)
-  const effectiveEffort = getEffort(parsedChatId);
+  const effectiveEffort = getEffort(sessionKey);
 
   // Initialize timer for tracking query duration (watchdog created inside try with controller)
   const timer = createAgentTimer();
@@ -1331,51 +1322,35 @@ export function clearConversation(sessionKey: string): void {
   taskTracker.clear(sessionKey);
 }
 
-export function setModel(chatId: number, model: string): void {
-  chatModels.set(String(chatId), model);
-  userPreferences.setModel(chatId, model);
+// Model and effort are read from the preferences on every call: they are held
+// in memory already, and a cache here would go stale for the threads that fall
+// back to a chat-wide value when that value changes.
+export function setModel(scope: SettingsScope, model: string): void {
+  userPreferences.setModel(scope, model);
 }
 
-export function getModel(chatId: number): string {
-  // Check in-memory cache first, then persistence
-  let model = chatModels.get(String(chatId));
-  if (!model) {
-    model = userPreferences.getModel(chatId);
-    if (model) {
-      chatModels.set(String(chatId), model);
-    }
-  }
-  return model || 'opus';
+export function getModel(scope: SettingsScope): string {
+  return userPreferences.getModel(scope) || 'opus';
 }
 
-export function clearModel(chatId: number): void {
-  chatModels.delete(String(chatId));
-  userPreferences.clearModel(chatId);
+export function clearModel(scope: SettingsScope): void {
+  userPreferences.clearModel(scope);
 }
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 const VALID_EFFORT_LEVELS: EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
-export function setEffort(chatId: number, effort: EffortLevel): void {
-  chatEffort.set(String(chatId), effort);
-  userPreferences.setEffort(chatId, effort);
+export function setEffort(scope: SettingsScope, effort: EffortLevel): void {
+  userPreferences.setEffort(scope, effort);
 }
 
-export function getEffort(chatId: number): EffortLevel | undefined {
-  let effort = chatEffort.get(String(chatId));
-  if (!effort) {
-    effort = userPreferences.getEffort(chatId);
-    if (effort) {
-      chatEffort.set(String(chatId), effort);
-    }
-  }
-  return effort as EffortLevel | undefined;
+export function getEffort(scope: SettingsScope): EffortLevel | undefined {
+  return userPreferences.getEffort(scope) as EffortLevel | undefined;
 }
 
-export function clearEffort(chatId: number): void {
-  chatEffort.delete(String(chatId));
-  userPreferences.clearEffort(chatId);
+export function clearEffort(scope: SettingsScope): void {
+  userPreferences.clearEffort(scope);
 }
 
 export function isValidEffortLevel(level: string): level is EffortLevel {

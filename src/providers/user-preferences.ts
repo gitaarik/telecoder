@@ -1,5 +1,6 @@
 /**
- * Per-chat settings — model, effort, verbosity, transport, status-line toggles.
+ * Per-chat and per-thread settings — model, effort, verbosity, transport,
+ * status-line toggles.
  *
  * One file per bot. Every instance used to share a single `user-preferences.json`
  * keyed by chatId alone, which in a private chat is the same key on every bot:
@@ -16,6 +17,7 @@ import * as path from 'path';
 import { z } from 'zod';
 import { ensureStateDir, getStateDir, readJsonFile, writeJsonFile } from '../utils/json-store.js';
 import { BOT_ID } from '../config.js';
+import { scopeChatId, type SettingsScope } from '../utils/session-key.js';
 
 // Zod schema for user preferences
 const userPreferencesSchema = z.object({
@@ -25,13 +27,16 @@ const userPreferencesSchema = z.object({
   // user's saved model/effort/verbosity too.
   provider: z.enum(['claude', 'ccr']).optional().catch(undefined),
   method: z.enum(['sdk', 'pty']).optional(),
-  model: z.string().optional(),
-  effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
-  verbosity: z.enum(['quiet', 'normal', 'verbose', 'debug']).optional(),
+  // The clearable settings also take null: a thread that resets one to the
+  // default has to say so, or it would fall back to the chat's choice.
+  model: z.string().nullable().optional(),
+  effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).nullable().optional(),
+  verbosity: z.enum(['quiet', 'normal', 'verbose', 'debug']).nullable().optional(),
   // `.catch` for the same reason as provider: a mode this build no longer
   // knows about should drop, not take every other saved setting with it.
   permissionMode: z
     .enum(['manual', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'])
+    .nullable()
     .optional()
     .catch(undefined),
   showStatusLine: z.boolean().optional(),
@@ -46,14 +51,23 @@ const preferencesDataSchema = z.object({
 });
 
 export type UserPreferences = z.infer<typeof userPreferencesSchema>;
+type Field = Exclude<keyof UserPreferences, 'lastUpdated'>;
+type Value<F extends Field> = Exclude<UserPreferences[F], null>;
+type ClearableField = 'model' | 'effort' | 'verbosity' | 'permissionMode';
 
 const PREFS_DIR = getStateDir();
 const PREFS_FILE = path.join(PREFS_DIR, `user-preferences-${BOT_ID}.json`);
 /** The single shared file every instance wrote to before preferences were per-bot. */
 const LEGACY_PREFS_FILE = path.join(PREFS_DIR, 'user-preferences.json');
 
+/**
+ * Entries are keyed by settings scope (see SettingsScope): a chat id for the
+ * chat-wide value, `chatId:threadId` for one thread's. A thread reads its own
+ * entry first and the chat's after, field by field, so a thread only holds the
+ * settings it changed and picks up the rest from the chat.
+ */
 class UserPreferencesManager {
-  private data: Record<number, UserPreferences> = {};
+  private data: Record<string, UserPreferences> = {};
 
   constructor() {
     ensureStateDir(PREFS_DIR, 'UserPreferences');
@@ -70,10 +84,7 @@ class UserPreferencesManager {
       ? readJsonFile(LEGACY_PREFS_FILE, preferencesDataSchema, 'UserPreferences')
       : readJsonFile(PREFS_FILE, preferencesDataSchema, 'UserPreferences');
 
-    // Convert string keys back to numbers
-    this.data = Object.fromEntries(
-      Object.entries(loaded?.users ?? {}).map(([k, v]) => [parseInt(k, 10), v])
-    ) as Record<number, UserPreferences>;
+    this.data = { ...(loaded?.users ?? {}) };
 
     // Claim the per-bot file straight away rather than on the next setting
     // change, so the inherited values are visibly this bot's from now on.
@@ -87,10 +98,21 @@ class UserPreferencesManager {
     writeJsonFile(PREFS_FILE, { users: { ...this.data } }, 'UserPreferences');
   }
 
-  /** Apply a field change for `chatId`, stamping `lastUpdated` and persisting. */
-  private patch(chatId: number, changes: Partial<UserPreferences>): void {
-    this.data[chatId] = {
-      ...this.data[chatId],
+  /** The scope's own value, else the chat's; null (an explicit default) reads as unset. */
+  private get<F extends Field>(scope: SettingsScope, field: F): Value<F> | undefined {
+    const key = String(scope);
+    const own = this.data[key];
+    if (own && own[field] !== undefined) return (own[field] ?? undefined) as Value<F> | undefined;
+    const chatKey = String(scopeChatId(scope));
+    if (chatKey === key) return undefined;
+    return (this.data[chatKey]?.[field] ?? undefined) as Value<F> | undefined;
+  }
+
+  /** Apply a field change for `scope`, stamping `lastUpdated` and persisting. */
+  private patch(scope: SettingsScope, changes: Partial<UserPreferences>): void {
+    const key = String(scope);
+    this.data[key] = {
+      ...this.data[key],
       ...changes,
       lastUpdated: new Date().toISOString(),
     };
@@ -98,115 +120,121 @@ class UserPreferencesManager {
   }
 
   /**
-   * Drop a single field for `chatId`, if that chat has any preferences at all.
-   * `lastUpdated` is excluded — it is the one required field, and clearing it
-   * would leave an entry that no longer round-trips through the schema.
+   * Back to the default for `scope`. A chat-wide entry just drops the field. A
+   * thread stores null instead, so "default" isn't read as "whatever the chat
+   * has". `lastUpdated` is excluded — it is the one required field, and
+   * clearing it would leave an entry that no longer round-trips the schema.
    */
-  private unset(chatId: number, field: Exclude<keyof UserPreferences, 'lastUpdated'>): void {
-    if (!this.data[chatId]) return;
-    delete this.data[chatId][field];
-    this.data[chatId].lastUpdated = new Date().toISOString();
+  private unset(scope: SettingsScope, field: ClearableField): void {
+    const key = String(scope);
+    if (key !== String(scopeChatId(scope))) {
+      this.patch(scope, { [field]: null });
+      return;
+    }
+    if (!this.data[key]) return;
+    delete this.data[key][field];
+    this.data[key].lastUpdated = new Date().toISOString();
     this.save();
   }
 
-  getProvider(chatId: number): 'claude' | 'ccr' | undefined {
-    return this.data[chatId]?.provider;
+  getProvider(scope: SettingsScope): 'claude' | 'ccr' | undefined {
+    return this.get(scope, 'provider');
   }
 
-  setProvider(chatId: number, provider: 'claude' | 'ccr'): void {
-    this.patch(chatId, { provider });
+  setProvider(scope: SettingsScope, provider: 'claude' | 'ccr'): void {
+    this.patch(scope, { provider });
   }
 
-  getMethod(chatId: number): 'sdk' | 'pty' | undefined {
-    return this.data[chatId]?.method;
+  getMethod(scope: SettingsScope): 'sdk' | 'pty' | undefined {
+    return this.get(scope, 'method');
   }
 
-  setMethod(chatId: number, method: 'sdk' | 'pty'): void {
-    this.patch(chatId, { method });
+  setMethod(scope: SettingsScope, method: 'sdk' | 'pty'): void {
+    this.patch(scope, { method });
   }
 
-  getModel(chatId: number): string | undefined {
-    return this.data[chatId]?.model;
+  getModel(scope: SettingsScope): string | undefined {
+    return this.get(scope, 'model');
   }
 
-  setModel(chatId: number, model: string): void {
-    this.patch(chatId, { model });
+  setModel(scope: SettingsScope, model: string): void {
+    this.patch(scope, { model });
   }
 
-  clearModel(chatId: number): void {
-    this.unset(chatId, 'model');
+  clearModel(scope: SettingsScope): void {
+    this.unset(scope, 'model');
   }
 
-  getEffort(chatId: number): string | undefined {
-    return this.data[chatId]?.effort;
+  getEffort(scope: SettingsScope): string | undefined {
+    return this.get(scope, 'effort');
   }
 
-  setEffort(chatId: number, effort: string): void {
-    this.patch(chatId, { effort: effort as UserPreferences['effort'] });
+  setEffort(scope: SettingsScope, effort: string): void {
+    this.patch(scope, { effort: effort as UserPreferences['effort'] });
   }
 
-  clearEffort(chatId: number): void {
-    this.unset(chatId, 'effort');
+  clearEffort(scope: SettingsScope): void {
+    this.unset(scope, 'effort');
   }
 
-  getPermissionMode(chatId: number): UserPreferences['permissionMode'] {
-    return this.data[chatId]?.permissionMode;
+  getPermissionMode(scope: SettingsScope): Value<'permissionMode'> | undefined {
+    return this.get(scope, 'permissionMode');
   }
 
-  setPermissionMode(chatId: number, mode: NonNullable<UserPreferences['permissionMode']>): void {
-    this.patch(chatId, { permissionMode: mode });
+  setPermissionMode(scope: SettingsScope, mode: Value<'permissionMode'>): void {
+    this.patch(scope, { permissionMode: mode });
   }
 
-  clearPermissionMode(chatId: number): void {
-    this.unset(chatId, 'permissionMode');
+  clearPermissionMode(scope: SettingsScope): void {
+    this.unset(scope, 'permissionMode');
   }
 
-  getVerbosity(chatId: number): 'quiet' | 'normal' | 'verbose' | 'debug' | undefined {
-    return this.data[chatId]?.verbosity;
+  getVerbosity(scope: SettingsScope): 'quiet' | 'normal' | 'verbose' | 'debug' | undefined {
+    return this.get(scope, 'verbosity');
   }
 
-  setVerbosity(chatId: number, verbosity: 'quiet' | 'normal' | 'verbose' | 'debug'): void {
-    this.patch(chatId, { verbosity });
+  setVerbosity(scope: SettingsScope, verbosity: 'quiet' | 'normal' | 'verbose' | 'debug'): void {
+    this.patch(scope, { verbosity });
   }
 
-  clearVerbosity(chatId: number): void {
-    this.unset(chatId, 'verbosity');
+  clearVerbosity(scope: SettingsScope): void {
+    this.unset(scope, 'verbosity');
   }
 
-  getShowStatusLine(chatId: number): boolean {
-    return this.data[chatId]?.showStatusLine === true;
+  getShowStatusLine(scope: SettingsScope): boolean {
+    return this.get(scope, 'showStatusLine') === true;
   }
 
-  setShowStatusLine(chatId: number, enabled: boolean): void {
-    this.patch(chatId, { showStatusLine: enabled });
+  setShowStatusLine(scope: SettingsScope, enabled: boolean): void {
+    this.patch(scope, { showStatusLine: enabled });
   }
 
-  getShowTopicInStatusLine(chatId: number): boolean {
-    return this.data[chatId]?.showTopicInStatusLine === true;
+  getShowTopicInStatusLine(scope: SettingsScope): boolean {
+    return this.get(scope, 'showTopicInStatusLine') === true;
   }
 
-  setShowTopicInStatusLine(chatId: number, enabled: boolean): void {
-    this.patch(chatId, { showTopicInStatusLine: enabled });
+  setShowTopicInStatusLine(scope: SettingsScope, enabled: boolean): void {
+    this.patch(scope, { showTopicInStatusLine: enabled });
   }
 
-  getShowSessionInStatusLine(chatId: number): boolean {
-    return this.data[chatId]?.showSessionInStatusLine === true;
+  getShowSessionInStatusLine(scope: SettingsScope): boolean {
+    return this.get(scope, 'showSessionInStatusLine') === true;
   }
 
-  setShowSessionInStatusLine(chatId: number, enabled: boolean): void {
-    this.patch(chatId, { showSessionInStatusLine: enabled });
+  setShowSessionInStatusLine(scope: SettingsScope, enabled: boolean): void {
+    this.patch(scope, { showSessionInStatusLine: enabled });
   }
 
-  getShowPromptInStatusLine(chatId: number): boolean {
-    return this.data[chatId]?.showPromptInStatusLine === true;
+  getShowPromptInStatusLine(scope: SettingsScope): boolean {
+    return this.get(scope, 'showPromptInStatusLine') === true;
   }
 
-  setShowPromptInStatusLine(chatId: number, enabled: boolean): void {
-    this.patch(chatId, { showPromptInStatusLine: enabled });
+  setShowPromptInStatusLine(scope: SettingsScope, enabled: boolean): void {
+    this.patch(scope, { showPromptInStatusLine: enabled });
   }
 
-  clearPreferences(chatId: number): void {
-    delete this.data[chatId];
+  clearPreferences(scope: SettingsScope): void {
+    delete this.data[String(scope)];
     this.save();
   }
 }
