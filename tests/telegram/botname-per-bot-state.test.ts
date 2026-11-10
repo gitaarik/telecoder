@@ -1,6 +1,6 @@
 /**
  * Each bot is its own process, and they all keep state under the same
- * ~/.claudegram. What one bot remembers about its display name must survive
+ * ~/.telecoder. What one bot remembers about its display name must survive
  * another bot saving its own: a wrong "last sent" name makes a real rename look
  * like no change, and a lost block sends a call Telegram has already refused.
  *

@@ -1,5 +1,5 @@
 /**
- * claudegram_request_secret: a secret from the user that never enters the
+ * telecoder_request_secret: a secret from the user that never enters the
  * conversation.
  *
  * A task that needed a credential used to stop at a set of instructions: open
@@ -636,7 +636,7 @@ export async function requestSecret(
       return {
         success: false,
         message: `The user tried to make ${req.name} with claude setup-token, but it gave no token: ${outcome.reason}\n\n`
-          + 'Nothing was run. Call claudegram_request_secret again to give them another go.',
+          + 'Nothing was run. Call telecoder_request_secret again to give them another go.',
       };
     }
 
@@ -670,7 +670,7 @@ export async function requestSecret(
       ? `Output, with the secret shown as ${REDACTED}:\n${tailOf(run.output, OUTPUT_FOR_AGENT)}`
       : 'It printed nothing.');
     if (!ok) {
-      lines.push('The secret was not kept. To try again, fix the command and call claudegram_request_secret again.');
+      lines.push('The secret was not kept. To try again, fix the command and call telecoder_request_secret again.');
     }
     if (undeleted) {
       lines.push("TeleCoder couldn't delete the user's message with the secret in it, and has asked them to delete it.");

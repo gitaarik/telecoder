@@ -23,7 +23,7 @@ vi.mock('os', async (importOriginal) => {
 
 // The roster and the group store both resolve their state dir from
 // os.homedir(). Without a fake home they write into the developer's real
-// ~/.claudegram — this suite creates group access and access-request state, so
+// ~/.telecoder — this suite creates group access and access-request state, so
 // that is not hypothetical.
 let testHome: string;
 

@@ -43,6 +43,7 @@ import {
   restoreTopicAndRefreshBotName,
 } from './topic.js';
 import { sendStatusLine } from './settings.js';
+import { ensureProjectDataDir } from '../../../utils/project-data-dir.js';
 
 export async function handleClear(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
@@ -422,9 +423,9 @@ export async function handleHandoff(ctx: Context): Promise<void> {
   });
 
   const md = [...headerLines, ...bodyLines].join('\n');
-  const outDir = path.join(session.workingDirectory, '.claudegram', 'handoffs');
+  let outDir: string;
   try {
-    fs.mkdirSync(outDir, { recursive: true, mode: 0o700 });
+    outDir = ensureProjectDataDir(session.workingDirectory, 'handoffs');
   } catch (err) {
     await replyMd(ctx, `❌ Couldn't create handoff dir: ${esc(err instanceof Error ? err.message : String(err))}`);
     return;

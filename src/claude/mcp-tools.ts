@@ -47,7 +47,7 @@ export function createTeleCoderMcpServer(
   const tools = buildToolList(toolsCtx);
 
   return createSdkMcpServer({
-    name: 'claudegram-tools',
+    name: 'telecoder-tools',
     version: '1.0.0',
     tools,
   });
@@ -78,7 +78,7 @@ function buildToolList(toolsCtx: McpToolsContext) {
 
 function listProjectsTool(_toolsCtx: McpToolsContext) {
   return tool(
-    'claudegram_list_projects',
+    'telecoder_list_projects',
     'List all available projects in the workspace directory. Use this to see what projects the user can switch to.',
     {},
     async () => {
@@ -107,8 +107,8 @@ function listProjectsTool(_toolsCtx: McpToolsContext) {
 
 function switchProjectTool(toolsCtx: McpToolsContext) {
   return tool(
-    'claudegram_switch_project',
-    'Switch the working directory to a different project. The change takes effect on the next query. Use claudegram_list_projects first to see available projects.',
+    'telecoder_switch_project',
+    'Switch the working directory to a different project. The change takes effect on the next query. Use telecoder_list_projects first to see available projects.',
     { project_name: z.string().describe('Name of the project directory to switch to') },
     async ({ project_name }) => {
       try {
@@ -152,7 +152,7 @@ const TELEGRAM_MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 
 function sendFileTool(toolsCtx: McpToolsContext) {
   return tool(
-    'claudegram_send_file',
+    'telecoder_send_file',
     'Send a file from the server to the user via Telegram. The file must be within the current working directory or /tmp. Use this after creating files (SVGs, images, reports, etc.) to deliver them directly to the user. Maximum file size: 50MB.',
     {
       file_path: z.string().describe('Absolute or relative path to the file to send. Relative paths are resolved from the current working directory.'),
@@ -237,7 +237,7 @@ function sendFileTool(toolsCtx: McpToolsContext) {
 
 function setTopicTool(toolsCtx: McpToolsContext) {
   return tool(
-    'claudegram_set_topic',
+    'telecoder_set_topic',
     'Update the conversation topic shown in the status line. Call this proactively when the work topic changes. Pass an empty string to clear. Keep topics very short (1-4 words).',
     {
       topic: z.string().describe(
@@ -279,7 +279,7 @@ function setTopicTool(toolsCtx: McpToolsContext) {
 
 function publishTelegraphTool(_toolsCtx: McpToolsContext) {
   return tool(
-    'claudegram_publish_telegraph',
+    'telecoder_publish_telegraph',
     'Publish markdown content as a Telegraph (telegra.ph) Instant View page. Returns the URL. Useful for sharing long-form content as a readable link.',
     {
       title: z.string().describe('Page title'),
@@ -313,7 +313,7 @@ function publishTelegraphTool(_toolsCtx: McpToolsContext) {
 
 function askUserTool(toolsCtx: McpToolsContext) {
   return tool(
-    'claudegram_ask_user',
+    'telecoder_ask_user',
     'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or the question times out. Keep the question short and the options crisp — a label of ≤ 25 chars stays on its button; anything longer makes the whole keyboard fall back to lettered buttons (A/B/C) with the full labels listed in the message body. IMPORTANT: `context` is required and carries everything the user needs to decide (the comparison, trade-offs, findings, rationale) — it renders in the SAME message as the buttons. Do NOT write that explanation as prose before calling this tool: text you emit before an ask_user call is not delivered to the user until after they answer, so they would be choosing blind.',
     {
       question: z.string().describe('The question to display to the user. Keep concise (1-2 sentences).'),
@@ -389,13 +389,13 @@ function askUserTool(toolsCtx: McpToolsContext) {
 }
 
 /**
- * The SDK side of claudegram_request_secret; secret-request.ts has the flow.
+ * The SDK side of telecoder_request_secret; secret-request.ts has the flow.
  * The description and fields match src/bin/mcp-server.ts's, which PTY mode
  * registers.
  */
 function requestSecretTool(toolsCtx: McpToolsContext) {
   return tool(
-    'claudegram_request_secret',
+    'telecoder_request_secret',
     'Get a secret from the user (an API key, token or password) without it entering this conversation. The user sends it in Telegram; TeleCoder deletes their message at once and runs `command` with the secret in $SECRET and on stdin. You get the exit code and the output with the secret blanked out, never the value. Use this whenever a task needs a credential from the user: never ask them to paste one into the chat, and don\'t send them to a terminal for it. They see the command before they send anything, so make it do exactly what it says. For a long-lived Claude token (CLAUDE_CODE_OAUTH_TOKEN), set source to "claude-setup-token": TeleCoder runs `claude setup-token` on this machine and walks them through signing in, and the token goes straight into your command without passing through Telegram. Works only in a private chat with an admin of the bot. Blocks until the command has run, the user cancels, or the request times out.',
     {
       name: z.string().min(1).max(100).describe('What the secret is, as the user knows it: an env var name like CLAUDE_CODE_OAUTH_TOKEN, or a label like "Stripe test key".'),

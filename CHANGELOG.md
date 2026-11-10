@@ -17,6 +17,17 @@ reasoning — the commit bodies are the long form, this is the index.
   its name once it has stopped. A file that doesn't parse, lists no bots, or
   gives two bots one name is ignored until it's fixed.
 
+### Renamed
+
+- **The last Claudegram names** — the agent's tools are now `telecoder_*`
+  (`telecoder_ask_user`, `telecoder_send_file` and so on) on a server called
+  `telecoder-tools`. The state directory is `~/.telecoder`: the launcher moves
+  `~/.claudegram` across on its first start, before any bot runs, and leaves a
+  link at the old path for anything still holding it. Files sent in the chat
+  and `/handoff` notes go to `.telecoder/` in the project, which gets its own
+  `.gitignore`, so they stay out of git even in a project that only ignores
+  `.claudegram/`. Existing `.claudegram/` folders in projects are left alone.
+
 ### Removed
 
 - **`/medium`, `/reddit`, `/vreddit` and `/extract`, and the agent tools behind

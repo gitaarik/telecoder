@@ -6,7 +6,7 @@ import { BOT_ID } from '../config.js';
 
 /**
  * Persistent scheduler for /schedule Telegram commands. Schedules survive
- * bot restarts via ~/.claudegram/schedules-<BOT_ID>.json; in-memory timers
+ * bot restarts via ~/.telecoder/schedules-<BOT_ID>.json; in-memory timers
  * are re-armed on loadAll(). Hard caps enforced at create time so a user
  * can't accidentally cron themselves into a runaway billing crater.
  */

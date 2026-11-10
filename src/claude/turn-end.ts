@@ -122,7 +122,7 @@ export type TurnHold =
  * one chat, an hour and seven minutes after claude had said "Done".
  *
  * The count still guards the ordinary path, where it earns its keep: a tool
- * like claudegram_ask_user long-polls for a button tap and the pty is silent
+ * like telecoder_ask_user long-polls for a button tap and the pty is silent
  * by design for as long as it waits, which is otherwise indistinguishable
  * from a finished turn.
  */

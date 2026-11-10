@@ -9,7 +9,7 @@
  * The number is deliberately conservative: a full-width button on a narrow
  * phone is the case that clips first, and a label that stops short of the cut
  * costs nothing. Both features that put model-written text on a button —
- * `claudegram_ask_user` options and the predicted next prompt — measure
+ * `telecoder_ask_user` options and the predicted next prompt — measure
  * against this one constant so they clip at the same place.
  */
 export const MAX_BUTTON_TEXT_LEN = 30;

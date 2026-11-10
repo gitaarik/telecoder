@@ -3,7 +3,7 @@
  * every reply.
  *
  * Drives the real handler against a session made under a scratch home, so
- * nothing here touches the real ~/.claudegram.
+ * nothing here touches the real ~/.telecoder.
  */
 
 import { describe, it, expect, vi, afterAll } from 'vitest';

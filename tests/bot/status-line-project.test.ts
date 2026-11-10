@@ -4,7 +4,7 @@
  * project an older answer belongs to when you scroll back.
  *
  * Drives the real sendStatusLine, with sessions and the chat's preferences kept
- * under a scratch home, so nothing here touches the real ~/.claudegram.
+ * under a scratch home, so nothing here touches the real ~/.telecoder.
  */
 
 import { describe, it, expect, vi, afterAll } from 'vitest';

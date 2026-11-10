@@ -1,5 +1,5 @@
 /**
- * Pending-poll registry for claudegram_poll_user MCP tool.
+ * Pending-poll registry for telecoder_poll_user MCP tool.
  *
  * Mirrors ask-user.ts but uses Telegram polls instead of inline keyboards —
  * better for group decisions, vote counts, or multi-select. Telegram polls

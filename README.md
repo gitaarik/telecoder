@@ -122,7 +122,8 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 - Inline keyboards for settings (model, mode, TTS, clear)
 
 ### Files & Uploads
-- Send photos or image documents; saved under `.claudegram/uploads/` in the project
+- Send photos or image documents; saved under `.telecoder/uploads/` in the project, a folder
+  that keeps itself out of git
 - `/file` sends you any file from the project
 
 </td>
@@ -731,8 +732,10 @@ Then `/continue` or `/resume` in Telegram to restore your session.
 
 ### What it stores and sends
 
-TeleCoder has no server of its own. Its state stays on your machine, in `~/.claudegram`
-(owner-only permissions), and includes session metadata and preferences. On a shared bot it
+TeleCoder has no server of its own. Its state stays on your machine, in `~/.telecoder`
+(owner-only permissions), and includes session metadata and preferences. Before November 2026
+it was `~/.claudegram`: the launcher moves that across on its first start and leaves a link
+at the old path. On a shared bot it
 also includes the Telegram ids and names of the people it has seen or let in.
 
 Your messages go to Telegram and to Claude Code, and from there to the model provider you

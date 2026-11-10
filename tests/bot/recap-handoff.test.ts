@@ -7,7 +7,7 @@
  * /recap then ends the way a turn does, with the context and the status line.
  *
  * Drives the real handlers against transcripts written under a scratch home,
- * so nothing here touches the real ~/.claude or ~/.claudegram.
+ * so nothing here touches the real ~/.claude or ~/.telecoder.
  */
 
 import { describe, it, expect, vi, afterAll } from 'vitest';
@@ -167,7 +167,7 @@ describe('/handoff', () => {
   it('writes each exchange with only what you sent, paste lines intact', async () => {
     const { ctx, project } = chatWithTranscript('/handoff');
     await handleHandoff(ctx);
-    const dir = path.join(project, '.claudegram', 'handoffs');
+    const dir = path.join(project, '.telecoder', 'handoffs');
     const [file] = fs.readdirSync(dir);
     const md = fs.readFileSync(path.join(dir, file!), 'utf-8');
     const users = md.split('### User\n\n').slice(1).map((part) => part.split('\n\n### Assistant')[0]);

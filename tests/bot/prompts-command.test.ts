@@ -5,7 +5,7 @@
  *
  * Drives the real handlers, stores and session manager against transcripts
  * written under a scratch home, so nothing here touches the real ~/.claude or
- * ~/.claudegram.
+ * ~/.telecoder.
  */
 
 import { describe, it, expect, vi, afterAll, beforeEach } from 'vitest';

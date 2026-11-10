@@ -79,6 +79,8 @@ describe('classify', () => {
   });
 
   it('flags the bot’s own state and token files', () => {
+    expect(classify(path.join(HOME, '.telecoder/user-preferences.json'), CWD, ROOTS).outOfScope).toBe(true);
+    // The pre-rename path, which links to the same files after the move.
     expect(classify(path.join(HOME, '.claudegram/user-preferences.json'), CWD, ROOTS).outOfScope).toBe(true);
     expect(classify('/home/rik/dev/telecoder/.env', CWD, ROOTS).outOfScope).toBe(true);
     expect(classify('/home/rik/dev/telecoder/.env.bot2', CWD, ROOTS).outOfScope).toBe(true);

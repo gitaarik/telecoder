@@ -5,7 +5,7 @@ import * as path from 'path';
 import * as realOs from 'os';
 
 // The middleware now records who it has seen, which persists under
-// os.homedir()/.claudegram. Point that at a scratch dir so the suite never
+// os.homedir()/.telecoder. Point that at a scratch dir so the suite never
 // reads or writes the developer's real roster.
 vi.mock('os', async (importOriginal) => {
   const actual = await importOriginal<typeof import('os')>();
@@ -203,7 +203,7 @@ describe('authMiddleware and the runtime roster', () => {
   beforeEach(() => {
     next = vi.fn().mockResolvedValue(undefined) as unknown as NextFunction & ReturnType<typeof vi.fn>;
     vi.spyOn(console, 'log').mockImplementation(() => {});
-    fs.rmSync(path.join(testHome, '.claudegram', 'user-roster-123456789.json'), { force: true });
+    fs.rmSync(path.join(testHome, '.telecoder', 'user-roster-123456789.json'), { force: true });
     resetRosterCache();
     resetAccessCooldowns();
   });
@@ -319,7 +319,7 @@ describe('a stranger who keeps talking', () => {
   beforeEach(() => {
     next = vi.fn().mockResolvedValue(undefined) as unknown as NextFunction & ReturnType<typeof vi.fn>;
     vi.spyOn(console, 'log').mockImplementation(() => {});
-    fs.rmSync(path.join(testHome, '.claudegram', 'user-roster-123456789.json'), { force: true });
+    fs.rmSync(path.join(testHome, '.telecoder', 'user-roster-123456789.json'), { force: true });
     resetRosterCache();
     resetAccessCooldowns();
   });

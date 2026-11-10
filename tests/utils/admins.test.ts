@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as realOs from 'os';
 
 // hasGuestUsers() now reads the runtime roster, which persists under
-// os.homedir()/.claudegram — point it at a scratch dir so these tests neither
+// os.homedir()/.telecoder — point it at a scratch dir so these tests neither
 // read the developer's real roster nor leave one behind.
 vi.mock('os', async (importOriginal) => {
   const actual = await importOriginal<typeof import('os')>();
@@ -169,7 +169,7 @@ describe('supervision follows the runtime roster', () => {
   }
 
   beforeEach(() => {
-    fs.rmSync(path.join(testHome, '.claudegram', 'user-roster-123456789.json'), { force: true });
+    fs.rmSync(path.join(testHome, '.telecoder', 'user-roster-123456789.json'), { force: true });
     vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 
@@ -353,7 +353,7 @@ describe('approver config checks', () => {
  */
 describe('orphaned approver ids', () => {
   beforeEach(() => {
-    fs.rmSync(path.join(testHome, '.claudegram', 'user-roster-123456789.json'), { force: true });
+    fs.rmSync(path.join(testHome, '.telecoder', 'user-roster-123456789.json'), { force: true });
     vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
 

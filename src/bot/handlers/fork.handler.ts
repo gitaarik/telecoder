@@ -75,7 +75,7 @@ interface ForkOfferTexts {
  * width Telegram renders is ellipsised away with no way to read it — two bots
  * sharing a prefix would arrive as the same clipped line. So the targets are
  * written out in the message keyed A/B/C and the same letter keys the button,
- * the way /resume and `claudegram_ask_user` list their options. Cancel keeps
+ * the way /resume and `telecoder_ask_user` list their options. Cancel keeps
  * its own row and no letter: it is the way out, not one of the targets.
  */
 export function buildTargetPicker(anchorMsgId: number): {

@@ -37,7 +37,7 @@ async function startBot(id: string) {
   return { ...roster, ...(await import('../../src/utils/admins.js')) };
 }
 
-const stateFile = (name: string) => path.join(home, '.claudegram', name);
+const stateFile = (name: string) => path.join(home, '.telecoder', name);
 
 /** The file every bot shared before rosters were per-bot. */
 function writeSharedRoster(guests: number[], seen: { id: number; username: string }[] = []): void {

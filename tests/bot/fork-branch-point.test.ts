@@ -18,7 +18,7 @@ import * as path from 'path';
 
 // Transcripts and the bot's state files both resolve under os.homedir(); point
 // it at a scratch dir so nothing here touches the real ~/.claude or
-// ~/.claudegram. Read at call time, so the env var set below — before any
+// ~/.telecoder. Read at call time, so the env var set below — before any
 // module under test is imported — is what the stores pick up.
 vi.mock('os', async (importOriginal) => {
   const actual = await importOriginal<typeof import('os')>();

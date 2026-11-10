@@ -1,7 +1,7 @@
 /**
- * Pending-question registry for claudegram_ask_user MCP tool.
+ * Pending-question registry for telecoder_ask_user MCP tool.
  *
- * When Claude calls claudegram_ask_user, the MCP tool body:
+ * When Claude calls telecoder_ask_user, the MCP tool body:
  *   1. Calls createPendingQuestion() → gets { id, promise }
  *   2. Sends a Telegram message with an inline keyboard whose buttons have
  *      callback_data = `q:<id>:<optionIndex>`
@@ -51,8 +51,8 @@ const MAX_MESSAGE_LEN = 4096;
 
 /**
  * How long a question waits for a tap: QUESTION_TIMEOUT_MINUTES, 10 by
- * default. One clock for everything a turn stops to ask — claudegram_ask_user,
- * claudegram_poll_user, a relayed Claude Code dialog. Permission prompts and
+ * default. One clock for everything a turn stops to ask — telecoder_ask_user,
+ * telecoder_poll_user, a relayed Claude Code dialog. Permission prompts and
  * held messages keep their own, PERMISSION_PROMPT_TIMEOUT_MINUTES.
  */
 export function questionTimeoutMinutes(): number {
@@ -224,7 +224,7 @@ interface PendingEntry {
   /**
    * When set, only these Telegram user ids may answer. Left undefined the
    * question is open to anyone the auth middleware already let in, which is
-   * what an ordinary `claudegram_ask_user` wants — the whole point of a poll
+   * what an ordinary `telecoder_ask_user` wants — the whole point of a poll
    * in a group is that any member can answer it.
    *
    * The permission gate sets it, because a question guarding a destructive

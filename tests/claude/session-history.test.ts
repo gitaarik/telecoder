@@ -4,7 +4,7 @@
  * after a restart both look for it.
  *
  * Drives the real session manager and history store, with home redirected to
- * a scratch dir so nothing here touches the real ~/.claudegram.
+ * a scratch dir so nothing here touches the real ~/.telecoder.
  */
 
 import { describe, it, expect, vi, afterAll } from 'vitest';
@@ -96,7 +96,7 @@ describe('a history file written in creation order', () => {
       createdAt,
       lastActivity,
     });
-    const stateDir = path.join(home, '.claudegram');
+    const stateDir = path.join(home, '.telecoder');
     fs.mkdirSync(stateDir, { recursive: true });
     // The newest-created conversation first, though the chat went back to the
     // older one after it and was last active there.

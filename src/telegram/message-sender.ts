@@ -194,7 +194,7 @@ export function withTelegraphFooter(parts: string[], footer: string | null): str
   return [...parts, footer];
 }
 
-// `mcp__claudegram-tools__claudegram_send_file` → `claudegram_send_file`
+// `mcp__telecoder-tools__telecoder_send_file` → `telecoder_send_file`
 function stripMcpServerPrefix(toolName: string): string {
   if (!toolName.startsWith('mcp__')) return toolName;
   const lastSep = toolName.lastIndexOf('__');

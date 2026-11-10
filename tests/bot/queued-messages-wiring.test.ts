@@ -320,8 +320,8 @@ describe('the bot as assembled', () => {
     // Saved by an earlier process: the handlers ignore anything dated before this
     // one started, and every message saved to disk ends up that old.
     const stale = nextMessageId++;
-    const file = `${process.env.TELECODER_TEST_HOME}/.claudegram/parked-messages-123456789.json`;
-    fs.mkdirSync(`${process.env.TELECODER_TEST_HOME}/.claudegram`, { recursive: true });
+    const file = `${process.env.TELECODER_TEST_HOME}/.telecoder/parked-messages-123456789.json`;
+    fs.mkdirSync(`${process.env.TELECODER_TEST_HOME}/.telecoder`, { recursive: true });
     fs.writeFileSync(file, JSON.stringify({
       messages: [{
         chatId: CHAT,

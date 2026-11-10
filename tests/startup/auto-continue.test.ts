@@ -4,7 +4,7 @@
  * fresh?" to answer first.
  *
  * Drives the real session manager and history store, with home redirected to
- * a scratch dir so nothing here touches the real ~/.claudegram.
+ * a scratch dir so nothing here touches the real ~/.telecoder.
  */
 
 import { describe, it, expect, vi, afterAll, afterEach } from 'vitest';

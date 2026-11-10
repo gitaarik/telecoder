@@ -510,7 +510,7 @@ export async function sendToAgent(
                 hookSpecificOutput: {
                   hookEventName: 'UserPromptSubmit' as const,
                   additionalContext:
-                    `[Topic: ${topicLabel}] If user shifted focus, call claudegram_set_topic before replying.`,
+                    `[Topic: ${topicLabel}] If user shifted focus, call telecoder_set_topic before replying.`,
                 },
               };
             }],
@@ -558,7 +558,7 @@ export async function sendToAgent(
         telegramCtx: options.telegramCtx as Context,
         sessionKey,
       });
-      mcpServers['claudegram-tools'] = server;
+      mcpServers['telecoder-tools'] = server;
     }
 
     // Resolved once, because two things need it: the SDK, and the command
@@ -665,8 +665,8 @@ export async function sendToAgent(
     const silentToolUseIds = new Set<string>();
     const SILENT_TOOL_NAMES = new Set([
       'TodoWrite',
-      'mcp__claudegram-tools__claudegram_set_topic',
-      'mcp__claudegram-tools__claudegram_ask_user',
+      'mcp__telecoder-tools__telecoder_set_topic',
+      'mcp__telecoder-tools__telecoder_ask_user',
     ]);
     // For successful Edit/Write tool calls we render a before/after diff
     // instead of the generic "File edited successfully" tool_result. Inputs

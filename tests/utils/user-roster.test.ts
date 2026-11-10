@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as realOs from 'os';
 
-// The roster persists under os.homedir()/.claudegram; point it at a scratch dir
+// The roster persists under os.homedir()/.telecoder; point it at a scratch dir
 // so the suite never reads or writes the developer's real state.
 vi.mock('os', async (importOriginal) => {
   const actual = await importOriginal<typeof import('os')>();
@@ -39,7 +39,7 @@ const {
 } = await import('../../src/utils/user-roster.js');
 
 const ADMIN = 1;
-const ROSTER_FILE = () => path.join(home, '.claudegram', 'user-roster-123456789.json');
+const ROSTER_FILE = () => path.join(home, '.telecoder', 'user-roster-123456789.json');
 
 beforeEach(() => {
   fs.rmSync(ROSTER_FILE(), { force: true });

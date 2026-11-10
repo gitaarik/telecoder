@@ -7,7 +7,7 @@
  * message, and slice the source JSONL to lineCount to build the truncated
  * transcript that gets handed off to the target bot.
  *
- * File-backed (~/.claudegram/message-offsets-<botId>.json) so a restart
+ * File-backed (~/.telecoder/message-offsets-<botId>.json) so a restart
  * doesn't invalidate fork buttons that were posted before the restart.
  * Bounded per sessionKey to keep the file from growing forever — old
  * entries simply lose their fork button (the button still exists in chat

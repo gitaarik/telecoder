@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-// botname-settings persists cooldowns / last-sent names under ~/.claudegram.
+// botname-settings persists cooldowns / last-sent names under ~/.telecoder.
 // Redirect HOME before the module is ever imported so the suite can't read or
 // clobber the developer's real state.
 beforeAll(() => {

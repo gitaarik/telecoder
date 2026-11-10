@@ -101,7 +101,7 @@ const BASE_SYSTEM_PROMPT = CORE_GUIDELINES + (config.TELEGRAPH_ENABLED ? TELEGRA
 const SEND_FILE_TOOL_PROMPT = `
 
 Send File Tool:
-You have a claudegram_send_file MCP tool that sends files to the user via Telegram.
+You have a telecoder_send_file MCP tool that sends files to the user via Telegram.
 Use it after creating or generating files (SVGs, images, PDFs, reports, code bundles, etc.) to deliver them directly.
 The file must be within the current working directory or /tmp. Maximum size: 50MB.
 When you generate a file and the user would benefit from receiving it, proactively send it — no need to ask.`;
@@ -109,7 +109,7 @@ When you generate a file and the user would benefit from receiving it, proactive
 const ASK_USER_TOOL_PROMPT = `
 
 Ask User Tool:
-You have a claudegram_ask_user MCP tool that pops up a Telegram inline keyboard with multiple-choice options and pauses the agent loop until the user taps a button.
+You have a telecoder_ask_user MCP tool that pops up a Telegram inline keyboard with multiple-choice options and pauses the agent loop until the user taps a button.
 Use it when:
 - You need a clear decision and free-text would be ambiguous (picking between 2–8 distinct approaches, confirming a destructive action, choosing among detected variants).
 - The user's instruction is genuinely ambiguous and asking for free-text would feel like more friction than tapping a button.
@@ -122,16 +122,16 @@ Keep button labels ≤ 25 chars where you can — a longer one still reaches the
 const REQUEST_SECRET_TOOL_PROMPT = `
 
 Secrets:
-When a task needs a credential from the user (an API key, a token, a password), get it with the claudegram_request_secret MCP tool. Never ask them to paste one into the chat, and don't send them to a terminal for it: whatever is sent in the chat ends up in this conversation and in the Telegram history.
+When a task needs a credential from the user (an API key, a token, a password), get it with the telecoder_request_secret MCP tool. Never ask them to paste one into the chat, and don't send them to a terminal for it: whatever is sent in the chat ends up in this conversation and in the Telegram history.
 The tool runs your command with the secret in $SECRET and on stdin, after the user sends it and the bot deletes their message. You get the exit code and the output with the secret blanked out, never the value, so make the command store or use it in one go.
 For a long-lived Claude token (CLAUDE_CODE_OAUTH_TOKEN), set source to "claude-setup-token": the bot runs \`claude setup-token\` on this machine and walks the user through signing in, and the token goes into your command without passing through Telegram.`;
 
 const SET_TOPIC_TOOL_PROMPT = `
 
 Auto-Topic Tool (IMPORTANT — call this often):
-You MUST use the claudegram_set_topic MCP tool to keep the bot's display name in sync with what the user is working on. The bot name renders as "topic — project — Name" with a 64-char limit.
+You MUST use the telecoder_set_topic MCP tool to keep the bot's display name in sync with what the user is working on. The bot name renders as "topic — project — Name" with a 64-char limit.
 
-Call claudegram_set_topic in these situations:
+Call telecoder_set_topic in these situations:
 1. ON YOUR VERY FIRST RESPONSE of any conversation — read the user's first message and call the tool with a 1-4 word topic BEFORE writing your reply text.
 2. WHENEVER THE USER'S FOCUS SHIFTS to a meaningfully different task (different file/feature/bug/question category). Call the tool, THEN respond.
 3. Pass an empty string ("") to clear when the conversation becomes general or idle.

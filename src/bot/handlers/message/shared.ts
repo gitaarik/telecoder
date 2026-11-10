@@ -32,7 +32,7 @@ export async function replyFeatureDisabled(ctx: Context, feature: string): Promi
 /**
  * Fire-and-forget topic update via a parallel Haiku call. Runs alongside
  * the main agent turn so the bot name reflects the new topic almost
- * immediately, without depending on the main agent calling claudegram_set_topic.
+ * immediately, without depending on the main agent calling telecoder_set_topic.
  */
 export function fireAutoTopic(ctx: Context, sessionKey: string, userMessage: string): void {
   if (!config.AUTO_TOPIC_HAIKU) return;

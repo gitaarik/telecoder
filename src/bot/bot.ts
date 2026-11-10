@@ -370,7 +370,7 @@ export async function createBot(): Promise<Bot> {
   // who have only ever talked to the other humans.
   bot.use(groupRoleMiddleware);
 
-  // A message answering claudegram_request_secret comes out of the stream
+  // A message answering telecoder_request_secret comes out of the stream
   // here, deleted from the chat before anything below can batch it, queue it
   // or hand it to the agent. The turn that asked is blocked on the answer, so
   // the answer can't wait in line behind it either. Commands pass, so /cancel
@@ -450,7 +450,7 @@ export async function createBot(): Promise<Bot> {
   // /shells kill buttons must also bypass sequentialize — the whole point is to
   // rescue a session whose current turn is hung waiting on a bg shell.
   bot.callbackQuery(/^shells:/, handleShellsCallback);
-  // claudegram_ask_user button taps MUST bypass sequentialize: the agent
+  // telecoder_ask_user button taps MUST bypass sequentialize: the agent
   // query is mid-flight and waiting on this exact tap to complete the tool
   // call. If the callback got queued, it'd deadlock behind the query that's
   // waiting for it.
@@ -627,7 +627,7 @@ export async function createBot(): Promise<Bot> {
     // bot.callbackQuery handler above so they remain responsive mid-stream.
   });
 
-  // Resolve pending claudegram_poll_user MCP calls on first vote. Must be
+  // Resolve pending telecoder_poll_user MCP calls on first vote. Must be
   // registered before the catch-all paths so the poll_answer update reaches
   // us; non-anonymous polls only fire poll_answer for non-anonymous voting,
   // which is required for the resolve-on-first-vote semantics to work.

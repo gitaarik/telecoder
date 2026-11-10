@@ -1,5 +1,5 @@
 /**
- * Shared persistence for the small JSON state files under `~/.claudegram`.
+ * Shared persistence for the small JSON state files under `~/.telecoder`.
  *
  * Every persisted store in the bot (settings, preferences, favorites, name
  * cooldowns) used to hand-roll the same four steps: create the state dir,
@@ -19,9 +19,39 @@ import { atomicWriteFileSync } from './atomic-write.js';
 const DIR_MODE = 0o700;
 const FILE_MODE = 0o600;
 
-/** Shared directory holding all persisted bot state. */
+/** Basename of the state directory, under the home directory. */
+export const STATE_DIR_NAME = '.telecoder';
+
+/** Its name before TeleCoder was renamed from Claudegram. */
+export const LEGACY_STATE_DIR_NAME = '.claudegram';
+
+/**
+ * Shared directory holding all persisted bot state: `~/.telecoder`.
+ *
+ * Until the launcher has moved the pre-rename `~/.claudegram` across (see
+ * utils/state-dir-migration.ts), that one is still where the state is, so it is
+ * answered instead. That is the case for workers rebuilt under a launcher that
+ * started on an older build: it keeps running its old code, which never moves
+ * anything, and its new workers must go on reading the state it still writes.
+ * Workers never move the directory themselves, so several of them can't race
+ * each other doing it.
+ */
 export function getStateDir(): string {
-  return path.join(os.homedir(), '.claudegram');
+  const home = os.homedir();
+  const current = path.join(home, STATE_DIR_NAME);
+  if (fs.existsSync(current)) return current;
+  const legacy = path.join(home, LEGACY_STATE_DIR_NAME);
+  return isRealDirectory(legacy) ? legacy : current;
+}
+
+/** A directory that is not a symlink — a moved state dir leaves a link behind. */
+export function isRealDirectory(p: string): boolean {
+  try {
+    const stats = fs.lstatSync(p);
+    return stats.isDirectory() && !stats.isSymbolicLink();
+  } catch {
+    return false;
+  }
 }
 
 /**

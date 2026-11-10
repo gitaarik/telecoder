@@ -4,7 +4,7 @@
  *
  * Drives the real sendStatusLine against transcripts written under a scratch
  * home, with the chat's preferences kept there too, so nothing here touches
- * the real ~/.claude or ~/.claudegram.
+ * the real ~/.claude or ~/.telecoder.
  */
 
 import { describe, it, expect, vi, afterAll } from 'vitest';

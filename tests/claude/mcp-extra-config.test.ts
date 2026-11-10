@@ -42,7 +42,7 @@ afterEach(() => {
 describe('buildMcpConfigJson', () => {
 	it('carries only our own server when nothing extra is configured', () => {
 		(config as { EXTRA_MCP_CONFIG?: string }).EXTRA_MCP_CONFIG = undefined;
-		expect(Object.keys(servers(buildMcpConfigJson({})))).toEqual(['claudegram-tools']);
+		expect(Object.keys(servers(buildMcpConfigJson({})))).toEqual(['telecoder-tools']);
 	});
 
 	it('merges the servers the file names', () => {
@@ -54,7 +54,7 @@ describe('buildMcpConfigJson', () => {
 		);
 
 		const merged = servers(buildMcpConfigJson({}));
-		expect(Object.keys(merged).sort()).toEqual(['claudegram-tools', 'sjs-dev']);
+		expect(Object.keys(merged).sort()).toEqual(['sjs-dev', 'telecoder-tools']);
 		expect(merged['sjs-dev']).toEqual({ type: 'http', url: 'https://example.test/api/mcp' });
 	});
 
@@ -63,25 +63,25 @@ describe('buildMcpConfigJson', () => {
 		// stops being able to answer, with nothing in the transcript to say why.
 		(config as { EXTRA_MCP_CONFIG?: string }).EXTRA_MCP_CONFIG = write(
 			'clash.json',
-			JSON.stringify({ mcpServers: { 'claudegram-tools': { command: 'not-ours' } } }),
+			JSON.stringify({ mcpServers: { 'telecoder-tools': { command: 'not-ours' } } }),
 		);
 
-		expect(servers(buildMcpConfigJson({}))['claudegram-tools']).toMatchObject({ command: 'node' });
+		expect(servers(buildMcpConfigJson({}))['telecoder-tools']).toMatchObject({ command: 'node' });
 	});
 
 	it('starts anyway when the file is missing', () => {
 		(config as { EXTRA_MCP_CONFIG?: string }).EXTRA_MCP_CONFIG = path.join(dir, 'absent.json');
-		expect(Object.keys(servers(buildMcpConfigJson({})))).toEqual(['claudegram-tools']);
+		expect(Object.keys(servers(buildMcpConfigJson({})))).toEqual(['telecoder-tools']);
 	});
 
 	it('starts anyway when the file is not JSON, or is the wrong shape', () => {
 		(config as { EXTRA_MCP_CONFIG?: string }).EXTRA_MCP_CONFIG = write('bad.json', '{ nope');
-		expect(Object.keys(servers(buildMcpConfigJson({})))).toEqual(['claudegram-tools']);
+		expect(Object.keys(servers(buildMcpConfigJson({})))).toEqual(['telecoder-tools']);
 
 		(config as { EXTRA_MCP_CONFIG?: string }).EXTRA_MCP_CONFIG = write(
 			'shape.json',
 			JSON.stringify({ mcpServers: [] }),
 		);
-		expect(Object.keys(servers(buildMcpConfigJson({})))).toEqual(['claudegram-tools']);
+		expect(Object.keys(servers(buildMcpConfigJson({})))).toEqual(['telecoder-tools']);
 	});
 });

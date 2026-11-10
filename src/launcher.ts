@@ -15,6 +15,7 @@ import { config as loadEnv } from 'dotenv';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { getStateDir } from './utils/json-store.js';
+import { migrateLegacyStateDirAndLog } from './utils/state-dir-migration.js';
 import {
   resolveInstances,
   diffInstances,
@@ -129,6 +130,9 @@ const configPath = configFlagIdx !== -1 && args[configFlagIdx + 1]
 // Load base .env so all env vars are available as defaults
 const envPath = legacyEnv('ENV_PATH') || path.join(projectRoot, '.env');
 loadEnv({ path: envPath });
+
+// Before any worker exists to be reading or writing the state directory.
+migrateLegacyStateDirAndLog('Launcher');
 
 // Kept up to date with instances.json while the launcher runs: see "Live
 // instances.json" below. Mutated in place, never reassigned.

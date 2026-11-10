@@ -39,7 +39,7 @@ const LIVE_PROMPT_CHARS = 300;
 // flight land in it before it collapses.
 const COLLAPSE_DELAY_MS = 5000;
 
-// `mcp__claudegram-tools__claudegram_send_file` → `claudegram_send_file`
+// `mcp__telecoder-tools__telecoder_send_file` → `telecoder_send_file`
 function stripMcpServerPrefix(toolName: string): string {
   if (!toolName.startsWith('mcp__')) return toolName;
   const lastSep = toolName.lastIndexOf('__');

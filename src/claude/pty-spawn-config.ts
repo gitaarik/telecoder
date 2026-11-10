@@ -108,7 +108,7 @@ export function buildSettingsJson(ipcPort: number): string {
 /**
  * Build the system-prompt suffix that tells claude about our MCP tools.
  * Without this, the MCP tools show up only as deferred-tool names (claude
- * sees `mcp__claudegram-tools__claudegram_send_file` but doesn't have
+ * sees `mcp__telecoder-tools__telecoder_send_file` but doesn't have
  * its description, so it'll often fall back to WebFetch/Bash for the same
  * task). Mentioning each tool with a description and a "prefer over X"
  * hint makes claude pick the right tool.
@@ -118,30 +118,30 @@ export function buildSettingsJson(ipcPort: number): string {
  */
 export function buildMcpToolsSystemPromptNote(): string {
   const tools: string[] = [
-    '- mcp__claudegram-tools__claudegram_list_projects — list available workspace projects the user can switch to',
-    '- mcp__claudegram-tools__claudegram_switch_project — switch the working directory to a different project (call list_projects first). The change takes effect on the next user query.',
-    '- mcp__claudegram-tools__claudegram_send_file — send a file from the bot\'s filesystem (within the workspace or /tmp) to the user via Telegram. Use after creating files (reports, SVGs, images, etc.) to deliver them directly. Max 50MB.',
-    '- mcp__claudegram-tools__claudegram_ask_user — ask the user a multiple-choice question via a Telegram inline keyboard (2-8 options). Pauses until the user taps a button. Prefer this over the built-in AskUserQuestion whenever you need a decision from the user — AskUserQuestion is for terminal users and does not render correctly through TeleCoder.',
-    '- mcp__claudegram-tools__claudegram_poll_user — like ask_user but uses a Telegram poll. Pick this when multiple chat members should vote, when you want visible vote counts, or when you need multi-select. 2-10 options, non-anonymous, resolves on the first vote.',
-    '- mcp__claudegram-tools__claudegram_request_secret — get a secret (API key, token, password) from the user without it entering this conversation: they send it in Telegram, the bot deletes their message, and your `command` gets it in $SECRET and on stdin. You get the exit code and the output with the secret blanked out. Use it whenever a task needs a credential from the user. Never ask them to paste one into the chat or to run a `!` command for it, and don\'t send them to a terminal over SSH. For a long-lived Claude token (CLAUDE_CODE_OAUTH_TOKEN), set source "claude-setup-token": the bot runs `claude setup-token` here and walks them through signing in from their phone.',
-    '- mcp__claudegram-tools__claudegram_loop — schedule a prompt to re-fire on a fixed interval (min 60s). Use for periodic polling / "every N minutes do X" tasks. Prefer this over the built-in CronCreate or ScheduleWakeup — those don\'t reach back into Telegram. The user sees each fire as a "🔔 Scheduled" message.',
-    '- mcp__claudegram-tools__claudegram_schedule — schedule a prompt on a 5-field cron expression (e.g. "0 9 * * *" for daily 9am). Use for time-of-day tasks (morning summary, end-of-day report). Same Telegram-visible behavior as claudegram_loop.',
-    '- mcp__claudegram-tools__claudegram_list_schedules — list active schedules in this chat (id, cadence, runs, prompt preview). Call before creating a new schedule to check for duplicates, or to find an id to cancel.',
-    '- mcp__claudegram-tools__claudegram_cancel_schedule — remove a scheduled task by id.',
+    '- mcp__telecoder-tools__telecoder_list_projects — list available workspace projects the user can switch to',
+    '- mcp__telecoder-tools__telecoder_switch_project — switch the working directory to a different project (call list_projects first). The change takes effect on the next user query.',
+    '- mcp__telecoder-tools__telecoder_send_file — send a file from the bot\'s filesystem (within the workspace or /tmp) to the user via Telegram. Use after creating files (reports, SVGs, images, etc.) to deliver them directly. Max 50MB.',
+    '- mcp__telecoder-tools__telecoder_ask_user — ask the user a multiple-choice question via a Telegram inline keyboard (2-8 options). Pauses until the user taps a button. Prefer this over the built-in AskUserQuestion whenever you need a decision from the user — AskUserQuestion is for terminal users and does not render correctly through TeleCoder.',
+    '- mcp__telecoder-tools__telecoder_poll_user — like ask_user but uses a Telegram poll. Pick this when multiple chat members should vote, when you want visible vote counts, or when you need multi-select. 2-10 options, non-anonymous, resolves on the first vote.',
+    '- mcp__telecoder-tools__telecoder_request_secret — get a secret (API key, token, password) from the user without it entering this conversation: they send it in Telegram, the bot deletes their message, and your `command` gets it in $SECRET and on stdin. You get the exit code and the output with the secret blanked out. Use it whenever a task needs a credential from the user. Never ask them to paste one into the chat or to run a `!` command for it, and don\'t send them to a terminal over SSH. For a long-lived Claude token (CLAUDE_CODE_OAUTH_TOKEN), set source "claude-setup-token": the bot runs `claude setup-token` here and walks them through signing in from their phone.',
+    '- mcp__telecoder-tools__telecoder_loop — schedule a prompt to re-fire on a fixed interval (min 60s). Use for periodic polling / "every N minutes do X" tasks. Prefer this over the built-in CronCreate or ScheduleWakeup — those don\'t reach back into Telegram. The user sees each fire as a "🔔 Scheduled" message.',
+    '- mcp__telecoder-tools__telecoder_schedule — schedule a prompt on a 5-field cron expression (e.g. "0 9 * * *" for daily 9am). Use for time-of-day tasks (morning summary, end-of-day report). Same Telegram-visible behavior as telecoder_loop.',
+    '- mcp__telecoder-tools__telecoder_list_schedules — list active schedules in this chat (id, cadence, runs, prompt preview). Call before creating a new schedule to check for duplicates, or to find an id to cancel.',
+    '- mcp__telecoder-tools__telecoder_cancel_schedule — remove a scheduled task by id.',
   ];
   // Async built-ins (Monitor, backgrounded Bash, Task subagent) aren't
-  // claudegram_* tools, but PTY mode wires up a relay so task-notifications
+  // telecoder_* tools, but PTY mode wires up a relay so task-notifications
   // that arrive after the user-turn ends still reach Telegram. Mention it so
   // the model confidently uses these tools when they're the right fit.
   tools.push('- Async built-ins (Monitor, `Bash(run_in_background=true)`, `Task`/`Agent`) — supported in TeleCoder PTY mode. Task-notifications that fire between user turns are relayed to Telegram with a "📡 Monitor — ...", "⚙️ Backgrounded: ...", or "🤖 Subagent started: ..." header, paired with the actual event payload and your response. Use these freely for "watch X", "run X in background while continuing", or "delegate Y to a subagent" tasks.');
   tools.push('- PushNotification (built-in) — supported in TeleCoder PTY mode. The message text is relayed to Telegram as "🔔 <message>". Use the normal rules: only when the user might have walked away and there\'s something they\'d act on now.');
-  tools.push('- For scheduled/recurring tasks, prefer claudegram_loop / claudegram_schedule over the built-in CronCreate / ScheduleWakeup / RemoteTrigger — those don\'t reach back into Telegram.');
-  tools.push('- *Destructive-op safety:* before running anything irreversible — `rm -rf` on real paths, `sudo`, `git push --force` on shared branches, `DROP TABLE` / `TRUNCATE` against real DBs, `terraform destroy`, mass file rewrites — call `claudegram_ask_user` with a one-line summary of what you\'re about to do and "Confirm" / "Cancel" options. This bot runs unsupervised in Telegram and the user can\'t intervene mid-tool. When in doubt, ask.');
+  tools.push('- For scheduled/recurring tasks, prefer telecoder_loop / telecoder_schedule over the built-in CronCreate / ScheduleWakeup / RemoteTrigger — those don\'t reach back into Telegram.');
+  tools.push('- *Destructive-op safety:* before running anything irreversible — `rm -rf` on real paths, `sudo`, `git push --force` on shared branches, `DROP TABLE` / `TRUNCATE` against real DBs, `terraform destroy`, mass file rewrites — call `telecoder_ask_user` with a one-line summary of what you\'re about to do and "Confirm" / "Cancel" options. This bot runs unsupervised in Telegram and the user can\'t intervene mid-tool. When in doubt, ask.');
   if (config.TELEGRAPH_ENABLED) {
-    tools.push('- mcp__claudegram-tools__claudegram_publish_telegraph — publish a markdown document as a Telegraph (telegra.ph) Instant View page; returns the URL.');
+    tools.push('- mcp__telecoder-tools__telecoder_publish_telegraph — publish a markdown document as a Telegraph (telegra.ph) Instant View page; returns the URL.');
   }
   if (config.DYNAMIC_BOT_NAME) {
-    tools.push('- mcp__claudegram-tools__claudegram_set_topic — update the conversation topic shown in the bot display name. Call proactively when the topic of work shifts. Empty string clears it. Keep topics 1-4 words.');
+    tools.push('- mcp__telecoder-tools__telecoder_set_topic — update the conversation topic shown in the bot display name. Call proactively when the topic of work shifts. Empty string clears it. Keep topics 1-4 words.');
   }
   return [
     'You have access to TeleCoder-specific MCP tools listed below. They are loaded lazily — call them directly when relevant; do not try to reproduce their behavior with WebFetch/Bash.',
@@ -267,7 +267,7 @@ function readExtraMcpServers(): Record<string, unknown> {
  * what the subprocess uses to reach back to our loopback IPC server.
  *
  * Ours is written last on purpose: an extra config that happens to define
- * `claudegram-tools` cannot shadow the tools this bot needs to talk to Telegram
+ * `telecoder-tools` cannot shadow the tools this bot needs to talk to Telegram
  * at all, which is the one server whose absence has no visible failure mode —
  * it just stops answering.
  */
@@ -275,7 +275,7 @@ export function buildMcpConfigJson(env: Record<string, string>): string {
   return JSON.stringify({
     mcpServers: {
       ...readExtraMcpServers(),
-      'claudegram-tools': {
+      'telecoder-tools': {
         command: 'node',
         args: [MCP_SERVER_JS],
         env,

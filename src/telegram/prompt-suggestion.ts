@@ -8,7 +8,7 @@
  * dropped the rest: the user could still tap it, but could not read what they
  * were about to send.
  *
- * So the same rule `claudegram_ask_user` follows applies here. Text rides on
+ * So the same rule `telecoder_ask_user` follows applies here. Text rides on
  * its own button while it fits, which keeps the common short suggestion a
  * single tap under the response and adds nothing to the chat. Anything wider
  * goes into its own message — a card — where the full prompt is in the body

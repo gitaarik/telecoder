@@ -33,7 +33,7 @@ const fx = vi.hoisted(() => ({
   },
 }));
 
-// The real tracker writes a marker into ~/.claudegram for every turn.
+// The real tracker writes a marker into ~/.telecoder for every turn.
 vi.mock('../../src/claude/in-flight-tracker.js', () => ({
   markInFlight: () => {},
   clearInFlight: () => {},
@@ -76,7 +76,7 @@ const STRANGER = 99;
 const WAIT_MS = 1_100;
 
 const REMINDER = '🔔 You set this aside. Still want to send it?\n✏️ Edit your message above to change what goes out.';
-const PARKED_FILE = path.join(os.homedir(), '.claudegram', 'parked-messages-123456789.json');
+const PARKED_FILE = path.join(os.homedir(), '.telecoder', 'parked-messages-123456789.json');
 
 interface Turn { release: () => void; cancelled: boolean }
 

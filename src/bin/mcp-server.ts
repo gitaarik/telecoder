@@ -33,8 +33,8 @@ const claudeSessionId = process.env.TELECODER_CLAUDE_SESSION_ID || '';
  * is appended automatically so the IPC server can route to the right active
  * turn. Throws on non-2xx so the calling tool can surface a useful error.
  *
- * Deliberately `node:http` rather than `fetch`. claudegram_ask_user and
- * claudegram_poll_user are long polls: the bot holds the request open — sending
+ * Deliberately `node:http` rather than `fetch`. telecoder_ask_user and
+ * telecoder_poll_user are long polls: the bot holds the request open — sending
  * no response headers at all — for as long as the question stays open
  * (QUESTION_TIMEOUT_MINUTES, 10 by default) while it waits for a Telegram
  * button tap. undici, which backs global fetch, enforces a 5-minute
@@ -110,13 +110,13 @@ async function importTelegraph() {
 }
 
 const server = new McpServer({
-  name: 'claudegram-tools',
+  name: 'telecoder-tools',
   version: '1.0.0',
 });
 
-// ── claudegram_list_projects (no IPC, no flag — always on) ───────────
+// ── telecoder_list_projects (no IPC, no flag — always on) ───────────
 server.tool(
-  'claudegram_list_projects',
+  'telecoder_list_projects',
   'List all available projects in the workspace directory. Use this to see what projects the user can switch to.',
   {},
   async () => {
@@ -143,9 +143,9 @@ server.tool(
   },
 );
 
-// ── claudegram_ask_user (IPC: long-poll on Telegram button tap) ──────
+// ── telecoder_ask_user (IPC: long-poll on Telegram button tap) ──────
 server.tool(
-  'claudegram_ask_user',
+  'telecoder_ask_user',
   'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or the question times out. Keep the question short and the options crisp — a label of ≤ 25 chars stays on its button; anything longer makes the whole keyboard fall back to lettered buttons (A/B/C) with the full labels listed in the message body. Prefer this over the built-in AskUserQuestion when interacting through TeleCoder. IMPORTANT: `context` is required and carries everything the user needs to decide (the comparison, trade-offs, findings, rationale) — it renders in the SAME message as the buttons. Do NOT write that explanation as prose before calling this tool: text you emit before an ask_user call is not delivered to the user until after they answer, so they would be choosing blind.',
   {
     question: z.string().describe('The question to display to the user. Keep concise (1-2 sentences).'),
@@ -177,9 +177,9 @@ server.tool(
   },
 );
 
-// ── claudegram_request_secret (IPC: long-poll on the user's message) ──
+// ── telecoder_request_secret (IPC: long-poll on the user's message) ──
 server.tool(
-  'claudegram_request_secret',
+  'telecoder_request_secret',
   'Get a secret from the user (an API key, token or password) without it entering this conversation. The user sends it in Telegram; TeleCoder deletes their message at once and runs `command` with the secret in $SECRET and on stdin. You get the exit code and the output with the secret blanked out, never the value. Use this whenever a task needs a credential from the user: never ask them to paste one into the chat, and don\'t send them to a terminal or a `!` command for it. They see the command before they send anything, so make it do exactly what it says. For a long-lived Claude token (CLAUDE_CODE_OAUTH_TOKEN), set source to "claude-setup-token": TeleCoder runs `claude setup-token` on this machine and walks them through signing in, and the token goes straight into your command without passing through Telegram. Works only in a private chat with an admin of the bot. Blocks until the command has run, the user cancels, or the request times out.',
   {
     name: z.string().min(1).max(100).describe('What the secret is, as the user knows it: an env var name like CLAUDE_CODE_OAUTH_TOKEN, or a label like "Stripe test key".'),
@@ -202,10 +202,10 @@ server.tool(
   },
 );
 
-// ── claudegram_switch_project (IPC: updates session workdir) ─────────
+// ── telecoder_switch_project (IPC: updates session workdir) ─────────
 server.tool(
-  'claudegram_switch_project',
-  'Switch the working directory to a different project. The change takes effect on the next query. Use claudegram_list_projects first to see available projects.',
+  'telecoder_switch_project',
+  'Switch the working directory to a different project. The change takes effect on the next query. Use telecoder_list_projects first to see available projects.',
   {
     project_name: z.string().describe('Name of the project directory to switch to'),
   },
@@ -222,9 +222,9 @@ server.tool(
   },
 );
 
-// ── claudegram_send_file (IPC: needs bot for Telegram sendDocument) ──
+// ── telecoder_send_file (IPC: needs bot for Telegram sendDocument) ──
 server.tool(
-  'claudegram_send_file',
+  'telecoder_send_file',
   'Send a file from the server to the user via Telegram. The file must be within the current working directory or /tmp. Use this after creating files (SVGs, images, reports, etc.) to deliver them directly to the user. Maximum file size: 50MB.',
   {
     file_path: z.string().describe('Absolute or workspace-relative path to the file to send.'),
@@ -243,10 +243,10 @@ server.tool(
   },
 );
 
-// ── claudegram_set_topic (IPC: needs bot for Telegram setMyName) ─────
+// ── telecoder_set_topic (IPC: needs bot for Telegram setMyName) ─────
 if (process.env.TELECODER_DYNAMIC_BOT_NAME === 'true') {
   server.tool(
-    'claudegram_set_topic',
+    'telecoder_set_topic',
     'Update the conversation topic shown in the bot display name. Call this proactively when the work topic changes. Pass an empty string to clear. Keep topics very short (1-4 words, e.g. "auth refactor", "CI fix", "dark mode").',
     {
       topic: z.string().describe('Short topic label (1-4 words). Empty string to clear.'),
@@ -271,10 +271,10 @@ if (process.env.TELECODER_DYNAMIC_BOT_NAME === 'true') {
   );
 }
 
-// ── claudegram_publish_telegraph ─────────────────────────────────────
+// ── telecoder_publish_telegraph ─────────────────────────────────────
 if (process.env.TELECODER_TELEGRAPH_ENABLED === 'true') {
   server.tool(
-    'claudegram_publish_telegraph',
+    'telecoder_publish_telegraph',
     'Publish markdown content as a Telegraph (telegra.ph) Instant View page. Returns the URL. Useful for sharing long-form content as a readable link.',
     {
       title: z.string().describe('Page title'),
@@ -301,10 +301,10 @@ if (process.env.TELECODER_TELEGRAPH_ENABLED === 'true') {
   );
 }
 
-// ── claudegram_poll_user (IPC: Telegram poll) ────────────────────────
+// ── telecoder_poll_user (IPC: Telegram poll) ────────────────────────
 server.tool(
-  'claudegram_poll_user',
-  'Ask the user (or a group) a question via a Telegram poll. Prefer this over claudegram_ask_user when (a) multiple chat members should vote, (b) you want vote counts shown alongside, or (c) you need multi-select. Polls are non-anonymous (vote identities visible). Resolves on the first vote — for multi-select, the snapshot at that moment is returned. 2-10 options.',
+  'telecoder_poll_user',
+  'Ask the user (or a group) a question via a Telegram poll. Prefer this over telecoder_ask_user when (a) multiple chat members should vote, (b) you want vote counts shown alongside, or (c) you need multi-select. Polls are non-anonymous (vote identities visible). Resolves on the first vote — for multi-select, the snapshot at that moment is returned. 2-10 options.',
   {
     question: z.string().describe('The poll question. ≤ 300 chars (Telegram cap).'),
     options: z.array(z.string()).min(2).max(10).describe('Poll options. Each ≤ 100 chars.'),
@@ -327,9 +327,9 @@ server.tool(
   },
 );
 
-// ── claudegram_loop (IPC: registers an interval schedule) ────────────
+// ── telecoder_loop (IPC: registers an interval schedule) ────────────
 server.tool(
-  'claudegram_loop',
+  'telecoder_loop',
   'Schedule a prompt to re-fire on a fixed interval, pinging the user via Telegram each time. Use for "every N minutes/hours, do X" tasks (poll a status, check a metric, remind me). The first fire is one interval from now, NOT immediately. Returns the schedule id. Hard caps: 60s minimum interval, default 50 fires (max 500), 10 schedules per chat.',
   {
     prompt: z.string().describe('Exact prompt to re-fire on each tick. Write it as a complete instruction — the model receives it with no extra context beyond your current session.'),
@@ -355,10 +355,10 @@ server.tool(
   },
 );
 
-// ── claudegram_schedule (IPC: registers a cron-based schedule) ───────
+// ── telecoder_schedule (IPC: registers a cron-based schedule) ───────
 server.tool(
-  'claudegram_schedule',
-  'Schedule a prompt to fire on a cron expression (e.g. "0 9 * * *" for daily 9am). Use for time-of-day or day-of-week tasks (morning standup, weekly summary, end-of-day report). 5-field cron only (minute hour day-of-month month day-of-week). Returns the schedule id. Same caps as claudegram_loop.',
+  'telecoder_schedule',
+  'Schedule a prompt to fire on a cron expression (e.g. "0 9 * * *" for daily 9am). Use for time-of-day or day-of-week tasks (morning standup, weekly summary, end-of-day report). 5-field cron only (minute hour day-of-month month day-of-week). Returns the schedule id. Same caps as telecoder_loop.',
   {
     prompt: z.string().describe('Exact prompt to fire on each scheduled time.'),
     cron_expression: z.string().describe('5-field cron expression. Examples: "0 9 * * *" (daily 9am), "0 9 * * 1-5" (weekdays 9am), "*/15 * * * *" (every 15 min on the dot — note: subject to the same 60s minimum).'),
@@ -383,9 +383,9 @@ server.tool(
   },
 );
 
-// ── claudegram_list_schedules (IPC: read-only) ───────────────────────
+// ── telecoder_list_schedules (IPC: read-only) ───────────────────────
 server.tool(
-  'claudegram_list_schedules',
+  'telecoder_list_schedules',
   'List active schedules for the current chat. Returns each schedule\'s id, type, cadence, run count, and prompt preview. Use before creating a new schedule to check existing ones, or to find an id to cancel.',
   {},
   async () => {
@@ -401,10 +401,10 @@ server.tool(
   },
 );
 
-// ── claudegram_cancel_schedule (IPC: remove a schedule by id) ────────
+// ── telecoder_cancel_schedule (IPC: remove a schedule by id) ────────
 server.tool(
-  'claudegram_cancel_schedule',
-  'Cancel and remove a scheduled task by id. Get the id from claudegram_list_schedules.',
+  'telecoder_cancel_schedule',
+  'Cancel and remove a scheduled task by id. Get the id from telecoder_list_schedules.',
   {
     id: z.string().describe('The schedule id (looks like sch_xxxxxxxx_xxxxxx).'),
   },

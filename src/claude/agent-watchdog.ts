@@ -36,7 +36,7 @@ export interface WatchdogOptions {
   /**
    * Optional callback that returns true while the query is legitimately
    * waiting on an external user action (e.g. an inline-keyboard tap from
-   * claudegram_ask_user). When true, all timeout checks are skipped and the
+   * telecoder_ask_user). When true, all timeout checks are skipped and the
    * activity timestamps are kept fresh so the watchdog doesn't fire the
    * moment the wait ends.
    */

@@ -10,7 +10,7 @@
  * the one place the full text is guaranteed to reach the user, and the button
  * only has to point back at it.
  *
- * `claudegram_ask_user` established the rule and `/resume` follows it; both
+ * `telecoder_ask_user` established the rule and `/resume` follows it; both
  * build their keyboard here so a question and a session list clip at the same
  * place instead of each keeping their own copy of the threshold.
  */

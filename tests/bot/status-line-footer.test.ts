@@ -4,7 +4,7 @@
  * /statusline and /verbosity set the two apart, so either can still show alone.
  *
  * Drives the real sendStatusLine, with the chat's preferences kept under a
- * scratch home, so nothing here touches the real ~/.claudegram.
+ * scratch home, so nothing here touches the real ~/.telecoder.
  */
 
 import { describe, it, expect, vi, afterAll } from 'vitest';

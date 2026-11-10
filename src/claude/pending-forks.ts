@@ -3,7 +3,7 @@
  * Bot A writes the truncated transcript here keyed by Bot B's id. Bot B picks
  * it up on the next user message and offers accept/decline.
  *
- * File: ~/.claudegram/pending-forks-<targetBotId>.json
+ * File: ~/.telecoder/pending-forks-<targetBotId>.json
  * Structure: { users: { [userId]: PendingFork } } — keyed by the Telegram
  * user id, not the chatId, because each bot has its own private DM with the
  * user (different chatId per bot). Routing by user id lets a fork from a
@@ -11,7 +11,7 @@
  * other's chatId. The target bot's chat resolves when the user actually
  * messages it — wherever they message from, that's where the offer shows up.
  *
- * Cross-bot handoff is via the shared `~/.claudegram/` dir on disk — every
+ * Cross-bot handoff is via the shared `~/.telecoder/` dir on disk — every
  * worker on this machine can read/write any bot's file. The target worker
  * doesn't get a live notification; it polls on each incoming user message.
  */

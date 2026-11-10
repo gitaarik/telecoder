@@ -31,12 +31,12 @@ export const TOOL_ICONS: Record<string, string> = {
 
   // TeleCoder MCP tools — keys are the SDK-reported full names so
   // updateToolOperation/getToolIcon match without any extra normalization.
-  'mcp__claudegram-tools__claudegram_ask_user': '❓',
-  'mcp__claudegram-tools__claudegram_set_topic': '🏷️',
-  'mcp__claudegram-tools__claudegram_send_file': '📎',
-  'mcp__claudegram-tools__claudegram_list_projects': '📂',
-  'mcp__claudegram-tools__claudegram_switch_project': '🔀',
-  'mcp__claudegram-tools__publish_telegraph': '📄',
+  'mcp__telecoder-tools__telecoder_ask_user': '❓',
+  'mcp__telecoder-tools__telecoder_set_topic': '🏷️',
+  'mcp__telecoder-tools__telecoder_send_file': '📎',
+  'mcp__telecoder-tools__telecoder_list_projects': '📂',
+  'mcp__telecoder-tools__telecoder_switch_project': '🔀',
+  'mcp__telecoder-tools__telecoder_publish_telegraph': '📄',
 
   // Status indicators
   thinking: '💭',
@@ -48,7 +48,7 @@ export const TOOL_ICONS: Record<string, string> = {
 
 /**
  * Strip the `mcp__<server>__` prefix from a tool name so it can be displayed
- * concisely (e.g. `mcp__claudegram-tools__claudegram_ask_user` → `claudegram_ask_user`).
+ * concisely (e.g. `mcp__telecoder-tools__telecoder_ask_user` → `telecoder_ask_user`).
  * Returns the original name when no prefix is present.
  */
 function stripMcpPrefix(toolName: string): string {
@@ -355,12 +355,12 @@ export function getToolAction(toolName: string): string {
     WebFetch: 'Fetching',
     WebSearch: 'Searching web',
     NotebookEdit: 'Editing notebook',
-    'mcp__claudegram-tools__claudegram_ask_user': 'Asking',
-    'mcp__claudegram-tools__claudegram_set_topic': 'Setting topic',
-    'mcp__claudegram-tools__claudegram_send_file': 'Sending file',
-    'mcp__claudegram-tools__claudegram_list_projects': 'Listing projects',
-    'mcp__claudegram-tools__claudegram_switch_project': 'Switching project',
-    'mcp__claudegram-tools__publish_telegraph': 'Publishing Telegraph',
+    'mcp__telecoder-tools__telecoder_ask_user': 'Asking',
+    'mcp__telecoder-tools__telecoder_set_topic': 'Setting topic',
+    'mcp__telecoder-tools__telecoder_send_file': 'Sending file',
+    'mcp__telecoder-tools__telecoder_list_projects': 'Listing projects',
+    'mcp__telecoder-tools__telecoder_switch_project': 'Switching project',
+    'mcp__telecoder-tools__telecoder_publish_telegraph': 'Publishing Telegraph',
   };
   if (actions[toolName]) return actions[toolName];
   if (toolName.startsWith('mcp__')) return stripMcpPrefix(toolName);
@@ -396,15 +396,15 @@ export function extractToolDetail(toolName: string, input: Record<string, unknow
     case 'Task':
     case 'Agent': // subagent tool — renamed Task→Agent in newer Claude Code builds
       return verbose ? str('description') : truncateCommand(str('description'));
-    case 'mcp__claudegram-tools__claudegram_ask_user':
+    case 'mcp__telecoder-tools__telecoder_ask_user':
       return verbose ? str('question') : truncateCommand(str('question'));
-    case 'mcp__claudegram-tools__claudegram_set_topic':
+    case 'mcp__telecoder-tools__telecoder_set_topic':
       return str('topic');
-    case 'mcp__claudegram-tools__claudegram_send_file':
+    case 'mcp__telecoder-tools__telecoder_send_file':
       return verbose ? str('file_path') : truncatePath(str('file_path'));
-    case 'mcp__claudegram-tools__claudegram_switch_project':
+    case 'mcp__telecoder-tools__telecoder_switch_project':
       return str('project_name');
-    case 'mcp__claudegram-tools__publish_telegraph':
+    case 'mcp__telecoder-tools__telecoder_publish_telegraph':
       return str('title');
     default:
       return undefined;

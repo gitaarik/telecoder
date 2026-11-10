@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock the prefs store so tests don't read/write the real ~/.claudegram file.
+// Mock the prefs store so tests don't read/write the real ~/.telecoder file.
 const getVerbosity = vi.fn();
 vi.mock('../../src/providers/user-preferences.js', () => ({
   userPreferences: { getVerbosity: (...a: unknown[]) => getVerbosity(...a) },

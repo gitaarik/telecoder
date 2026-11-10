@@ -467,7 +467,7 @@ describe('parseModal with chrome below the footer', () => {
  * column, which claude's cursor skips.
  */
 function mcpServers(at: number): string {
-  const rows = ['✘ broken', '✔ claudegram-tools   9 tools', '✔ sjs-dev            111 tools'];
+  const rows = ['✘ broken', '✔ telecoder-tools   9 tools', '✔ sjs-dev            111 tools'];
   return [
     '❯ /mcp',
     '',
@@ -515,7 +515,7 @@ describe('parseModal on /mcp', () => {
     // cursor one row further down the list than it was.
     const modal = parseModal(mcpServers(2))!;
     expect(modal.title).toBe('Manage MCP servers');
-    expect(modal.options.map((o) => o.text)).toEqual(['✘ broken', '✔ claudegram-tools', '✔ sjs-dev']);
+    expect(modal.options.map((o) => o.text)).toEqual(['✘ broken', '✔ telecoder-tools', '✔ sjs-dev']);
     expect(modal.highlighted).toBe(2);
   });
 
@@ -528,7 +528,7 @@ describe('parseModal on /mcp', () => {
       '    ✔ sjs-dev            111 tools\n\n    User MCPs (/home/rik/.claude.json)\n    ✔ notes              4 tools',
     );
     const modal = parseModal(twoGroups)!;
-    expect(modal.options.map((o) => o.text)).toEqual(['✘ broken', '✔ claudegram-tools', '✔ sjs-dev', '✔ notes']);
+    expect(modal.options.map((o) => o.text)).toEqual(['✘ broken', '✔ telecoder-tools', '✔ sjs-dev', '✔ notes']);
     // Nor does the heading hang under the row above it as that row's detail.
     expect(modal.options[2].detail).toBe('111 tools');
     expect(arrowsTo(modal, 3)).toHaveLength(3);

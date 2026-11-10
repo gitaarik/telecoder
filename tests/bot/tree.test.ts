@@ -97,8 +97,8 @@ write('regex', lines(u1, a1, u5, a5));
 write('solo', lines(rec('x1', 'user', 'Something else'), rec('x2', 'assistant', 'Sure.')));
 
 // Another bot has the regex branch in its /resume.
-fs.mkdirSync(path.join(home, '.claudegram'), { recursive: true });
-fs.writeFileSync(path.join(home, '.claudegram', 'sessions-b2.json'), JSON.stringify({
+fs.mkdirSync(path.join(home, '.telecoder'), { recursive: true });
+fs.writeFileSync(path.join(home, '.telecoder', 'sessions-b2.json'), JSON.stringify({
   sessions: {
     '7': [{
       conversationId: 'conv-regex',

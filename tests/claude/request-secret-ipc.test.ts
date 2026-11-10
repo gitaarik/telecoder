@@ -1,5 +1,5 @@
 /**
- * claudegram_request_secret through the real IPC server and the real
+ * telecoder_request_secret through the real IPC server and the real
  * /mcp/request_secret route, with a stand-in for Telegram: the way the MCP
  * subprocess reaches it in PTY mode.
  */

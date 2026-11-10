@@ -140,7 +140,7 @@ const QUICK = { clearMs: 400, settleMs: 10 };
  * a level, to the top of the server list, and out of the menu from there.
  */
 function fakeMcp(): ModalPty & { written: string[] } {
-  const servers = ['✘ broken', '✔ claudegram-tools   9 tools', '✔ sjs-dev            111 tools'];
+  const servers = ['✘ broken', '✔ telecoder-tools   9 tools', '✔ sjs-dev            111 tools'];
   const names = ['Broken', 'Claudegram-tools', 'Sjs-dev'];
   const actions = ['View tools', 'Reconnect', 'Disable'];
   let level: 'servers' | 'server' | 'closed' = 'servers';

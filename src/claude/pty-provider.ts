@@ -345,7 +345,7 @@ interface PtySession {
   /**
    * In-flight tool count for the active turn. Bumped on PreToolUse hooks,
    * decremented on PostToolUse/PostToolUseFailure. While >0 we refuse the
-   * idle-fallback end-of-turn (a long-running tool like claudegram_ask_user
+   * idle-fallback end-of-turn (a long-running tool like telecoder_ask_user
    * can pause the pty for minutes with no output). Stop is still authoritative
    * — it only fires after all tools complete, so it can resolve regardless.
    */
@@ -1102,14 +1102,14 @@ export class PtyProvider implements Provider {
       // Hard-disable claude's built-in AskUserQuestion. The headless xterm has
       // no real user to type a response, so an AskUserQuestion call freezes
       // the turn until MAX_TURN_MS fires (~30 min). The system-prompt note
-      // already steers claude toward claudegram_ask_user, but the model still
+      // already steers claude toward telecoder_ask_user, but the model still
       // reaches for the built-in sometimes mid-turn — a hard deny forces it
       // to the MCP variant (or plain text).
       //
       // CronCreate / ScheduleWakeup / RemoteTrigger are also blocked: their
       // fires land outside our session (cron in PTY mode, RemoteTrigger on
       // claude.ai's servers) and never reach the Telegram chat.
-      // claudegram_loop / claudegram_schedule replace them and route fires
+      // telecoder_loop / telecoder_schedule replace them and route fires
       // through the bot. Set TELECODER_ALLOW_NATIVE_SCHEDULING=1 to keep
       // the built-ins enabled if you want to experiment.
       '--disallowedTools', legacyEnv('ALLOW_NATIVE_SCHEDULING') === '1'
@@ -1132,7 +1132,7 @@ export class PtyProvider implements Provider {
         // the bot inherited, this pty must write its session log — the bot has
         // no other way to read the model's reply.
         CLAUDE_CODE_FORCE_SESSION_PERSISTENCE: '1',
-        // Claude code's default MCP tool-call timeout is 60s. claudegram_ask_user
+        // Claude code's default MCP tool-call timeout is 60s. telecoder_ask_user
         // long-polls for up to QUESTION_TIMEOUT_MINUTES waiting on a Telegram
         // button tap; without this override claude aborts the call at 60s,
         // fires postToolUseFailure with an empty tool_response (rendered as
@@ -2234,7 +2234,7 @@ PROHIBITED THIS TURN (treat as if these tools are disabled):
 ALLOWED:
   • Read, Grep, Glob — read-only file inspection
   • Bash for strictly read-only commands (ls, cat, grep, git log, git diff, git status, wc)
-  • claudegram_list_projects, claudegram_ask_user — read-only or interactive-only
+  • telecoder_list_projects, telecoder_ask_user — read-only or interactive-only
 
 If you find yourself about to call a prohibited tool, STOP and put the action into the plan instead. The user will review the plan and explicitly ask you to execute in a follow-up message.
 

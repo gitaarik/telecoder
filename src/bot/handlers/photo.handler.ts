@@ -21,17 +21,14 @@ import { type PhotoSize } from 'grammy/types';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
 import { requireSession } from './session-guard.js';
 import { progressCallbacks, withStreamingTurn } from '../../telegram/streaming-turn.js';
-
-const UPLOADS_DIR = '.claudegram/uploads';
+import { ensureProjectDataDir } from '../../utils/project-data-dir.js';
 
 function sanitizeFileName(name: string): string {
   return path.basename(name).replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
 function ensureUploadsDir(projectDir: string): string {
-  const dir = path.join(projectDir, UPLOADS_DIR);
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  return dir;
+  return ensureProjectDataDir(projectDir, 'uploads');
 }
 
 function pickLargestPhoto(photoSizes: PhotoSize[]): PhotoSize {

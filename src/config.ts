@@ -357,8 +357,8 @@ const envSchema = z.object({
     .string()
     .default('7200000')
     .transform((val) => parseInt(val, 10)),
-  // How long a question from the agent — claudegram_ask_user buttons, a
-  // claudegram_poll_user poll, a Claude Code dialog relayed to the chat —
+  // How long a question from the agent — telecoder_ask_user buttons, a
+  // telecoder_poll_user poll, a Claude Code dialog relayed to the chat —
   // waits for an answer before the turn carries on without one. The turn is
   // paused for the whole wait, so a long timeout is a long stall whenever a
   // question goes unanswered; keep it well under CLAUDE_PTY_HARD_TIMEOUT_MS,

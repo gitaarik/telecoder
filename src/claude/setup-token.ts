@@ -1,5 +1,5 @@
 /**
- * Drives `claude setup-token` in a pty of its own, for claudegram_request_secret.
+ * Drives `claude setup-token` in a pty of its own, for telecoder_request_secret.
  *
  * `claude setup-token` makes a long-lived (one-year) OAuth token for a Claude
  * subscription, for a machine or an agent to run on without anyone's own

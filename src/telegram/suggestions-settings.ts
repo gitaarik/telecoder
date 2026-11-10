@@ -1,7 +1,7 @@
 /**
  * Per-chat prompt-suggestion settings — controls whether TeleCoder enables
  * Claude Code's `prompt_suggestion` feature for this session and scrapes the
- * resulting ghost text. Persisted to ~/.claudegram/suggestions-settings.json.
+ * resulting ghost text. Persisted to ~/.telecoder/suggestions-settings.json.
  *
  * Takes effect on next PTY spawn (the env var is set at spawn time). A
  * mid-session toggle is recorded but won't activate until the user starts a

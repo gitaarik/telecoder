@@ -34,7 +34,7 @@ export interface ActiveTurn {
   /**
    * Bumped on PreToolUse, decremented on PostToolUse/Failure. PtyProvider uses
    * this to refuse the idle-fallback end-of-turn while a tool is still in
-   * flight (e.g. claudegram_ask_user can block for minutes waiting on a button
+   * flight (e.g. telecoder_ask_user can block for minutes waiting on a button
    * tap; otherwise we'd resolve the turn long before the tool returns).
    */
   onToolStart?: () => void;
@@ -203,7 +203,7 @@ export async function startIpcServer(): Promise<{ port: number }> {
     });
   });
 
-  // Long-poll friendly: claudegram_ask_user can hold a request open for as long
+  // Long-poll friendly: telecoder_ask_user can hold a request open for as long
   // as QUESTION_TIMEOUT_MINUTES waiting on a user button tap, and Node's
   // default requestTimeout (5 min in Node 18+) would otherwise kill the
   // connection mid-wait. This

@@ -32,7 +32,7 @@ async function startBot() {
 }
 
 const CHAT = '42';
-const favoritesFile = () => path.join(home, '.claudegram', 'project-favorites.json');
+const favoritesFile = () => path.join(home, '.telecoder', 'project-favorites.json');
 const paths = (favorites: { path: string }[]) => favorites.map((f) => f.path);
 
 describe('favorites across bots', () => {
