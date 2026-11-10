@@ -29,6 +29,14 @@ reasoning — the commit bodies are the long form, this is the index.
   are unchanged, and "apply to all bots" still applies to the other bots'
   chats as a whole.
 
+- **Threads are named after what they're about** — a message sent from a
+  bot's "All" view starts a thread Telegram calls "New chat", and every one of
+  them looked the same in the list. The bot now renames a private chat's
+  thread to its session topic, and follows the topic as the conversation
+  moves on, at most once a minute so the thread isn't filled with rename
+  notices. A name you gave the thread yourself, when creating it or by
+  renaming it later, is never replaced. Group forum topics keep their names.
+
 ### Renamed
 
 - **The last Claudegram names** — the agent's tools are now `telecoder_*`

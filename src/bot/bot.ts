@@ -125,6 +125,7 @@ import { describeResponderRefusal } from '../telegram/admin-mention.js';
 import { groupMentionMiddleware } from './middleware/group-mention.middleware.js';
 import { groupRoleMiddleware } from './middleware/group-role.middleware.js';
 import { trackForceReplyPrompts } from '../telegram/force-reply-tracker.js';
+import { initThreadTitles } from '../telegram/thread-titles.js';
 import { resolvePendingPoll } from '../claude/poll-user.js';
 import { captureSecretMessages, handleSecretCallback } from '../claude/secret-request.js';
 import { registerBotCommandName } from '../claude/command-parser.js';
@@ -354,6 +355,10 @@ export async function createBot(): Promise<Bot> {
 
   // Apply auth middleware to all updates
   bot.use(authMiddleware);
+
+  // Note who named each private-chat thread, from the notices passing by, so a
+  // name the user chose is never replaced by the session topic.
+  initThreadTitles(bot);
 
   // In groups, ignore messages that aren't addressed to the bot, so people can
   // talk to each other without triggering a turn. Runs before the command

@@ -17,6 +17,7 @@ import { summarizeTopicWithHaiku } from '../../../claude/auto-topic-haiku.js';
 import { readLastAiTitle } from '../../../claude/session-jsonl.js';
 import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
 import { isBotNameEnabled } from '../../../telegram/botname-settings.js';
+import { namesThread } from '../../../telegram/thread-titles.js';
 import { userPreferences } from '../../../providers/user-preferences.js';
 import { parseSessionKey } from '../../../utils/session-key.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../../../utils/workspace-guard.js';
@@ -36,10 +37,13 @@ export async function replyFeatureDisabled(ctx: Context, feature: string): Promi
  */
 export function fireAutoTopic(ctx: Context, sessionKey: string, userMessage: string): void {
   if (!config.AUTO_TOPIC_HAIKU) return;
-  // Fire if the topic will be visible somewhere — either the bot name or the
-  // status line. Skipping when nothing displays it avoids wasted Haiku calls.
+  // Fire if the topic will be visible somewhere — the bot name, the status
+  // line or the thread's name. Skipping when nothing displays it avoids wasted
+  // Haiku calls.
   const { chatId } = parseSessionKey(sessionKey);
-  const wantsTopic = isBotNameEnabled(sessionKey) || userPreferences.getShowTopicInStatusLine(chatId);
+  const wantsTopic = isBotNameEnabled(sessionKey)
+    || userPreferences.getShowTopicInStatusLine(chatId)
+    || namesThread(sessionKey);
   if (!wantsTopic) return;
   void (async () => {
     try {

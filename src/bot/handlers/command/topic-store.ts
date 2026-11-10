@@ -24,6 +24,7 @@ import {
   rateLimitedSetMyName,
   notifyBotNameBlock,
 } from '../../../telegram/botname-settings.js';
+import { syncThreadTitle } from '../../../telegram/thread-titles.js';
 
 // Per-session topic (ephemeral — not persisted across restarts)
 const sessionTopics: Map<string, string> = new Map();
@@ -96,6 +97,8 @@ export function setSessionTopic(sessionKey: string, topic: string): string {
   lastTopicSetAt.set(sessionKey, Date.now());
   // Persist so topic survives restarts
   sessionHistory.updateTopic(sessionKey, topic || undefined);
+  // In a private chat's thread, the topic is the thread's name too.
+  syncThreadTitle(sessionKey, topic);
   return buildBotDisplayName(sessionKey);
 }
 
