@@ -150,4 +150,33 @@ describe('thread titles', () => {
     t.syncThreadTitle(KEY, 'Fork to thread · Testing it');
     expect(t.editForumTopic).toHaveBeenCalledWith(CHAT, THREAD, { name: '🍴 Fork to thread' });
   });
+
+  it('puts the project in front, so threads in different projects tell apart', async () => {
+    const t = await load();
+
+    t.syncThreadTitle(KEY, 'Thread naming · Adding the project', 'telecoder');
+
+    expect(t.editForumTopic).toHaveBeenCalledWith(CHAT, THREAD, { name: 'telecoder · Thread naming' });
+  });
+
+  it('leaves the project out when the topic already names it', async () => {
+    const t = await load();
+
+    expect(t.threadName('TeleCoder bot · Thread titles', '', 'telecoder')).toBe('TeleCoder bot');
+  });
+
+  it('names a thread after its project alone while there is no topic yet', async () => {
+    const t = await load();
+
+    t.syncThreadTitle(KEY, '', 'sjs');
+
+    expect(t.editForumTopic).toHaveBeenCalledWith(CHAT, THREAD, { name: 'sjs' });
+  });
+
+  it("puts a fork's prefix before the project", async () => {
+    const t = await load();
+
+    expect(t.threadName('Fork tree · Labels', '🍴 ', 'telecoder')).toBe('🍴 telecoder · Fork tree');
+    expect(t.threadName('', '🍴 ', 'telecoder')).toBe('🍴 telecoder');
+  });
 });

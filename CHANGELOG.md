@@ -37,7 +37,10 @@ reasoning — the commit bodies are the long form, this is the index.
   notices. A name you gave the thread yourself, when creating it or by
   renaming it later, is never replaced. Group forum topics keep their names.
   The name is the topic's first half, the broad area, which holds still
-  while the second half follows each message.
+  while the second half follows each message. The project's folder name goes
+  in front, `telecoder · Thread naming`, since one bot's threads can each be
+  in a different project; it's left out when the topic already names it, and
+  after a project switch it's the whole name until the new topic comes in.
 
 - **A fork opens a thread of its own** — on a bot with threads, the 🍴 Fork
   button and `/fork` go straight to a new thread, with no picker and no

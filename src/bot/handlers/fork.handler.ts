@@ -450,7 +450,7 @@ async function forkIntoThread(
   }
 
   const projectLabel = path.basename(fork.projectPath);
-  const name = threadName(fork.topic ?? '', FORK_THREAD_PREFIX) || `${FORK_THREAD_PREFIX}${projectLabel}`;
+  const name = threadName(fork.topic ?? '', FORK_THREAD_PREFIX, projectLabel);
   let threadId: number;
   try {
     threadId = (await ctx.api.createForumTopic(chatId, name)).message_thread_id;

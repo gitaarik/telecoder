@@ -98,7 +98,8 @@ export function setSessionTopic(sessionKey: string, topic: string): string {
   // Persist so topic survives restarts
   sessionHistory.updateTopic(sessionKey, topic || undefined);
   // In a private chat's thread, the topic is the thread's name too.
-  syncThreadTitle(sessionKey, topic);
+  const workingDirectory = sessionManager.getSession(sessionKey)?.workingDirectory;
+  syncThreadTitle(sessionKey, topic, workingDirectory ? path.basename(workingDirectory) : undefined);
   return buildBotDisplayName(sessionKey);
 }
 

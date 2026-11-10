@@ -7,7 +7,8 @@
  * telecoder_set_topic) already says what the thread is about, so every topic
  * change is passed on to the thread with editForumTopic. Only the topic's
  * first half goes in: the broad area, which stays put while the second half,
- * the task of the moment, changes with every message.
+ * the task of the moment, changes with every message. The project's folder
+ * name goes in front, since one bot's threads can each be in another project.
  *
  * A name the user gave the thread is theirs, and is never overwritten: one
  * typed when creating the thread, or a rename seen afterwards. Group forum
@@ -69,11 +70,17 @@ function record(sessionKey: string, title: ThreadTitle): void {
  * The name a topic gives a thread: its first half, the broad area, which
  * holds still while the second half follows each message. A topic set by
  * hand or by the agent has no halves and goes in whole.
+ *
+ * The project leads, so it survives the thread list cutting names short. It
+ * is left out when the topic already names it, as Haiku's often does, and is
+ * the whole name while there is no topic yet, as just after a project switch.
  */
-export function threadName(topic: string, prefix = ''): string {
+export function threadName(topic: string, prefix = '', project = ''): string {
   const general = topic.split(TOPIC_PART_SEPARATOR)[0].trim();
-  if (!general) return '';
-  return `${prefix}${general}`.slice(0, MAX_NAME_LENGTH);
+  const showProject = project && !general.toLowerCase().includes(project.toLowerCase());
+  const name = [showProject ? project : '', general].filter(Boolean).join(TOPIC_PART_SEPARATOR);
+  if (!name) return '';
+  return `${prefix}${name}`.slice(0, MAX_NAME_LENGTH);
 }
 
 /**
@@ -141,12 +148,13 @@ async function rename(sessionKey: string, name: string): Promise<void> {
 
 /**
  * Pass a new session topic on to the thread's name. A no-op outside private
- * threads, for an empty topic, and for a name the user chose. Renames inside
- * the cooldown are held and only the latest one is sent when it runs out.
+ * threads, for an empty topic in no known project, and for a name the user
+ * chose. Renames inside the cooldown are held and only the latest one is sent
+ * when it runs out.
  */
-export function syncThreadTitle(sessionKey: string, topic: string): void {
+export function syncThreadTitle(sessionKey: string, topic: string, project?: string): void {
   if (!namesThread(sessionKey)) return;
-  const name = threadName(topic, state()[sessionKey]?.prefix);
+  const name = threadName(topic, state()[sessionKey]?.prefix, project);
   if (!name) return;
 
   const held = pending.get(sessionKey);
