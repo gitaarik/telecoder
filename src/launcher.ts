@@ -10,12 +10,18 @@
  */
 
 import { Worker, isMainThread } from 'worker_threads';
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'fs';
+import { readFileSync, existsSync, mkdirSync, writeFileSync, watchFile } from 'fs';
 import { config as loadEnv } from 'dotenv';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { getStateDir } from './utils/json-store.js';
-import { stripJsonComments, expandName } from './utils/instance-config.js';
+import {
+  resolveInstances,
+  diffInstances,
+  botIdOf,
+  InstancesConfigError,
+  type ResolvedInstance,
+} from './utils/instance-config.js';
 import { legacyEnv } from './utils/legacy-env.js';
 import { planRespawn } from './utils/respawn-backoff.js';
 import { tickWasStalled, withinStallCooldown, shouldEscalateWedged } from './utils/host-stall.js';
@@ -78,27 +84,11 @@ const CRASH_RESPAWN_DELAYS_MS = [1_000, 5_000, 15_000, 60_000];
 // days apart don't add up to a give-up.
 const CRASH_STREAK_RESET_MS = 300_000;
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface ResolvedInstance {
-  name: string;
-  token: string;
-  overrides?: Record<string, string>;
-}
-
-interface InstanceEntry {
-  name: string;
-  token?: string;    // single bot
-  tokens?: string[]; // list = auto-template with sequential numbering
-  overrides?: Record<string, string>;
-}
-
-interface InstancesConfig {
-  defaults?: Record<string, string>;
-  instances: InstanceEntry[];
-}
+// How often the launcher looks at instances.json for edits, and how long it
+// lets an edit settle before reading it: an editor or a script can take more
+// than one write to save a file.
+const CONFIG_POLL_MS = 2_000;
+const CONFIG_SETTLE_MS = 500;
 
 // ---------------------------------------------------------------------------
 // Load & expand instances config
@@ -111,42 +101,13 @@ function loadInstancesConfig(configPath: string): ResolvedInstance[] {
     process.exit(1);
   }
 
-  const raw = readFileSync(configPath, 'utf-8');
-  const parsed: InstancesConfig = JSON.parse(stripJsonComments(raw));
-  const defaults = parsed.defaults ?? {};
-  const resolved: ResolvedInstance[] = [];
-
-  for (const entry of parsed.instances ?? []) {
-    const mergedOverrides = { ...defaults, ...entry.overrides };
-
-    if (entry.tokens?.length) {
-      // List of tokens → auto-template: expand name with {n}/{N}
-      const total = entry.tokens.length;
-      entry.tokens.forEach((token, i) => {
-        resolved.push({
-          name: expandName(entry.name, i + 1, total),
-          token,
-          overrides: mergedOverrides,
-        });
-      });
-    } else if (entry.token) {
-      // Single token → individual instance
-      resolved.push({
-        name: entry.name,
-        token: entry.token,
-        overrides: mergedOverrides,
-      });
-    } else {
-      console.warn(`\u26a0\ufe0f Skipping instance "${entry.name}": no token or tokens provided`);
-    }
-  }
-
-  if (resolved.length === 0) {
-    console.error('\u274c No instances defined in config. Add instances with token or tokens.');
+  try {
+    return resolveInstances(readFileSync(configPath, 'utf-8'), (warning) => console.warn(`\u26a0\ufe0f ${warning}`));
+  } catch (err) {
+    if (!(err instanceof InstancesConfigError)) throw err;
+    console.error(`\u274c ${path.basename(configPath)}: ${err.message}`);
     process.exit(1);
   }
-
-  return resolved;
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +130,8 @@ const configPath = configFlagIdx !== -1 && args[configFlagIdx + 1]
 const envPath = legacyEnv('ENV_PATH') || path.join(projectRoot, '.env');
 loadEnv({ path: envPath });
 
+// Kept up to date with instances.json while the launcher runs: see "Live
+// instances.json" below. Mutated in place, never reassigned.
 const instances = loadInstancesConfig(configPath);
 
 console.log(`\ud83d\ude80 Launching ${instances.length} bot instance(s)...`);
@@ -232,9 +195,74 @@ function scheduleRespawn(inst: ResolvedInstance, delayMs: number): void {
   setTimeout(() => {
     respawning.delete(inst.name);
     if (shuttingDown) return;
-    spawnWorker(inst);
-    console.log(`[Launcher] ✓ ${inst.name} respawned`);
+    // instances.json may have changed while this one was down. Bring the bot
+    // back as the file has it now, or not at all if it was taken out.
+    const current = configuredEntryFor(inst);
+    if (!current) {
+      console.log(`[Launcher] ${inst.name} is no longer in ${path.basename(configPath)} — not bringing it back`);
+      releaseName(inst.name);
+      shutdownIfNothingLeft(0);
+      return;
+    }
+    const renamed = current.name !== inst.name;
+    if (startWhenNameIsFree(current)) {
+      console.log(`[Launcher] ✓ ${current.name} respawned${renamed ? ` (was ${inst.name})` : ''}`);
+    } else {
+      console.log(`[Launcher] ${current.name} (was ${inst.name}) will start once its new name is free`);
+    }
+    if (renamed) releaseName(inst.name);
   }, delayMs);
+}
+
+/** The bot's entry in instances.json as it reads now, matched by bot id. */
+function configuredEntryFor(inst: ResolvedInstance): ResolvedInstance | undefined {
+  const id = botIdOf(inst.token);
+  return instances.find((i) => botIdOf(i.token) === id);
+}
+
+// Which bot each live worker runs, by worker name. Names move between bots when
+// instances.json is edited, so "is there a worker called X" doesn't answer "is
+// this bot running".
+const workerBotIds = new Map<string, string>();
+
+function isRunning(inst: ResolvedInstance): boolean {
+  return workerBotIds.get(inst.name) === botIdOf(inst.token);
+}
+
+// Bots waiting to start under a name another worker still holds, keyed by that
+// name. This is how a bot takes over the name of one on its way out: a bot
+// renamed in the same edit that takes another one out, say, or several
+// renumbered at once when a bot is taken out of the middle of a `tokens` list.
+const waitingForName = new Map<string, ResolvedInstance>();
+
+function isWaiting(inst: ResolvedInstance): boolean {
+  const id = botIdOf(inst.token);
+  return [...waitingForName.values()].some((w) => botIdOf(w.token) === id);
+}
+
+/** Start `inst` now if its name is free, or as soon as it is. True if it started now. */
+function startWhenNameIsFree(inst: ResolvedInstance): boolean {
+  // Whatever it was waiting for before, this is the start it gets.
+  const id = botIdOf(inst.token);
+  for (const [name, w] of waitingForName) if (botIdOf(w.token) === id) waitingForName.delete(name);
+  if (workers.has(inst.name) || respawning.has(inst.name)) {
+    waitingForName.set(inst.name, inst);
+    return false;
+  }
+  spawnWorker(inst);
+  return true;
+}
+
+/** A worker has given up `name` for good: start whoever was waiting for it. */
+function releaseName(name: string): void {
+  const waiting = waitingForName.get(name);
+  if (!waiting) return;
+  waitingForName.delete(name);
+  if (shuttingDown) return;
+  // The file may have moved on while it waited: start the bot as it reads now,
+  // under whatever name that is, or not at all if it was taken out.
+  const current = configuredEntryFor(waiting);
+  if (current && startWhenNameIsFree(current)) console.log(`[Launcher] ✓ ${current.name} started`);
 }
 
 function shutdownIfNothingLeft(code: number | null): void {
@@ -443,6 +471,7 @@ function spawnWorker(inst: ResolvedInstance): Worker {
 
   const worker = new Worker(workerEntry, workerOptions);
   const spawnedAt = Date.now();
+  workerBotIds.set(inst.name, botIdOf(inst.token));
   readyWorkers.delete(inst.name);
   lastHeartbeat.set(inst.name, Date.now());
 
@@ -714,6 +743,7 @@ function spawnWorker(inst: ResolvedInstance): Worker {
     // leaving a dead entry there makes it chase an instance that no longer has
     // a restarter to drive.
     workers.delete(inst.name);
+    workerBotIds.delete(inst.name);
     // A dead worker will never answer a preference broadcast. Say so now
     // rather than making the bot that asked wait out the timeout.
     prefsRelay.abandonEverywhere(inst.name);
@@ -741,7 +771,8 @@ function spawnWorker(inst: ResolvedInstance): Worker {
     crashStreaks.set(inst.name, streak);
 
     if (delay === null) {
-      console.error(`[Launcher] ${inst.name} exited unexpectedly ${streak} times in a row — giving up on it (restart the launcher to bring it back)`);
+      console.error(`[Launcher] ${inst.name} exited unexpectedly ${streak} times in a row — giving up on it (restart the launcher, or fix its entry in ${path.basename(configPath)}, to bring it back)`);
+      releaseName(inst.name);
       shutdownIfNothingLeft(code);
       return;
     }
@@ -762,6 +793,76 @@ for (const inst of instances) {
   spawnWorker(inst);
   console.log(`  \u2713 ${inst.name}`);
 }
+
+// ---------------------------------------------------------------------------
+// Live instances.json
+//
+// Edits to instances.json take effect without restarting the launcher, bot by
+// bot: one added to the file starts, one taken out stops, and one whose entry
+// changed (a new token, name or setting) restarts on it and resumes its
+// sessions. The rest carry on untouched. A file that can't be read, or that
+// would leave no bots at all, is ignored until it's fixed, so a half-saved
+// edit can't take everything down with it.
+// ---------------------------------------------------------------------------
+
+function applyConfigChange(): void {
+  if (shuttingDown) return;
+  const file = path.basename(configPath);
+  let next: ResolvedInstance[];
+  try {
+    next = resolveInstances(readFileSync(configPath, 'utf-8'), (warning) => console.warn(`[Launcher] ${warning}`));
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err);
+    console.warn(`[Launcher] ${file} changed but can't be used (${why}) — leaving the running bots as they are`);
+    return;
+  }
+
+  const { added, removed, changed } = diffInstances(instances, next);
+  if (added.length === 0 && removed.length === 0 && changed.length === 0) return;
+  instances.splice(0, instances.length, ...next);
+
+  // Departures first: they free the names arrivals may be taking over.
+  for (const inst of removed) {
+    console.log(`[Launcher] ${inst.name} was taken out of ${file} — stopping it`);
+    // Its respawn finds no entry for it and stands down. One mid-backoff or
+    // still waiting for a name stands down the same way when its turn comes.
+    if (isRunning(inst)) restartWorker(inst.name);
+  }
+
+  for (const { from, to } of changed) {
+    const renamed = to.name !== from.name ? ` as ${to.name}` : '';
+    if (isRunning(from)) {
+      console.log(`[Launcher] ${from.name}'s entry in ${file} changed — restarting it${renamed}`);
+      writeReloadMarkerForToken(to.token, to.name);
+      restartWorker(from.name);
+    } else if (respawning.has(from.name) || isWaiting(from)) {
+      // Comes back as the file reads now when its turn comes.
+      console.log(`[Launcher] ${from.name}'s entry in ${file} changed — it starts that way once it's back`);
+    } else {
+      // Given up on after crashing: a fixed entry is a reason to try again.
+      console.log(`[Launcher] ${from.name}'s entry in ${file} changed — starting it again${renamed}`);
+      crashStreaks.delete(from.name);
+      crashStreaks.delete(to.name);
+      startWhenNameIsFree(to);
+    }
+  }
+
+  for (const inst of added) {
+    crashStreaks.delete(inst.name);
+    const now = startWhenNameIsFree(inst);
+    console.log(`[Launcher] ${inst.name} was added to ${file} — ${now ? 'starting it' : 'it starts once its name is free'}`);
+  }
+}
+
+let configSettleTimer: NodeJS.Timeout | null = null;
+watchFile(configPath, { interval: CONFIG_POLL_MS, persistent: false }, (curr, prev) => {
+  if (curr.mtimeMs === prev.mtimeMs && curr.size === prev.size && curr.ino === prev.ino) return;
+  if (configSettleTimer) clearTimeout(configSettleTimer);
+  configSettleTimer = setTimeout(() => {
+    configSettleTimer = null;
+    applyConfigChange();
+  }, CONFIG_SETTLE_MS);
+});
 
 // ---------------------------------------------------------------------------
 // Heartbeat monitor — detect stuck workers and auto-respawn them

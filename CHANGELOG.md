@@ -5,6 +5,18 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ## Unreleased
 
+### Multiple bots
+
+- **`instances.json` is read while the launcher runs** — adding a bot used to
+  mean restarting the launcher, and with it every bot it ran. It now watches
+  the file: a bot you add starts, one you take out stops, and one whose token,
+  name or settings change restarts on its own and picks its sessions back up.
+  The others carry on. Bots are matched by bot id, so a replaced token is the
+  same bot restarting rather than one leaving and another arriving, and when a
+  bot is taken out of the middle of a `tokens` list, the next one takes over
+  its name once it has stopped. A file that doesn't parse, lists no bots, or
+  gives two bots one name is ignored until it's fixed.
+
 ### Removed
 
 - **`/medium`, `/reddit`, `/vreddit` and `/extract`, and the agent tools behind

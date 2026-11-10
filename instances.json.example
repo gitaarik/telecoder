@@ -1,4 +1,7 @@
 {
+  // The launcher watches this file: a bot you add starts, one you remove stops,
+  // and one whose entry changes restarts with it. No restart of the rest needed.
+
   // Shared defaults applied to ALL instances (layered on top of .env).
   // Any .env variable can go here.
   "defaults": {

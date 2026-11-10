@@ -74,6 +74,7 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 
 ### Multiple Bots
 - Run several bots from one launcher, each with its own sessions and preferences
+- Add, remove or change a bot in `instances.json` while the others keep running
 - Hand a conversation to a sibling bot with `/fork`
 - Apply a setting everywhere with `/model sonnet all`
 - [Setup](#running-several-bots)
@@ -186,6 +187,11 @@ with `/fork`.
 cp instances.json.example instances.json   # add your bot tokens; this file is gitignored
 npm run dev:multi                          # or, after a build: npm run start:multi
 ```
+
+The launcher keeps watching `instances.json` while it runs. Add a token and that bot
+starts; take one out and it stops; change a bot's token or settings and only that bot
+restarts, picking its sessions back up. The rest carry on. A file that doesn't parse, or
+lists no bots, is ignored until it's fixed, so a half-saved edit takes nothing down.
 
 ---
 
