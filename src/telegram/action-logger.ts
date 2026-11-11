@@ -42,6 +42,9 @@ const LIVE_PROMPT_CHARS = 300;
 // How long a log stays open once its turn has ended, so tool results still in
 // flight land in it before it collapses.
 const COLLAPSE_DELAY_MS = 5000;
+// How long a log opened after an answer waits before it posts, so the bot's
+// "✅ You picked" message lands above it rather than under it.
+const ANSWER_SETTLE_MS = 1500;
 
 // `mcp__telecoder-tools__telecoder_send_file` → `telecoder_send_file`
 function stripMcpServerPrefix(toolName: string): string {
@@ -108,6 +111,8 @@ interface ActionLogState {
   entries: ActionEntry[];
   lastUpdate: number;
   rateLimitedUntil: number;
+  /** The log isn't posted before this, to let the bot's own messages land first. */
+  notBefore: number;
   /** Drawn under the newest entry until the turn ends. Absent when the turn has no status line. */
   statusSource?: StatusSource;
   /** The prompt the turn is running, drawn at the very bottom until the turn ends. */
@@ -160,6 +165,7 @@ export class ActionLogger {
       entries: [],
       lastUpdate: Date.now(),
       rateLimitedUntil: 0,
+      notBefore: 0,
       statusSource,
       prompt: prompt === undefined ? undefined : liveLogPrompt(prompt),
       ended: false,
@@ -386,6 +392,7 @@ export class ActionLogger {
       state.messageId === null || immediate ? now : state.lastUpdate + MIN_EDIT_INTERVAL_MS,
       // Respect Telegram's retry_after backoff on 429
       state.rateLimitedUntil,
+      state.notBefore,
     );
     if (due <= now) {
       this.cancelDraw(state);
@@ -594,6 +601,43 @@ export class ActionLogger {
         if (this.logStates.get(sessionKey) === state) this.logStates.delete(sessionKey);
       }
     }, COLLAPSE_DELAY_MS);
+  }
+
+  /**
+   * Close the log where it stands and open a new one below, for a turn that
+   * carries on after the user answered something it asked.
+   *
+   * A question doesn't end the turn: the agent waits on the tool call, and
+   * once the answer comes back it carries on in the same turn — and so in the
+   * same log, which was posted before the question went up. Its next actions
+   * landed above the question and the answer, out of sight, while the bottom
+   * of the chat looked like nothing was happening.
+   *
+   * The closed log collapses like a finished turn's. Its status line and
+   * prompt move to the new one, which is posted with the next action, as the
+   * first log of a turn is — but not within ANSWER_SETTLE_MS, or the agent's
+   * first move, often the question's own result, posts it before the bot has
+   * sent the answer it follows. A log with nothing in it yet has nothing above the
+   * answer to move away from, and is left as it is.
+   */
+  startNewMessage(sessionKey: string): void {
+    const state = this.logStates.get(sessionKey);
+    if (!state || state.ended || state.entries.length === 0) return;
+    this.logStates.set(sessionKey, {
+      ...state,
+      messageId: null,
+      entries: [],
+      lastUpdate: Date.now(),
+      notBefore: Date.now() + ANSWER_SETTLE_MS,
+      dirty: false,
+      drawTimer: null,
+      inFlight: false,
+      lastDrawn: '',
+    });
+    state.ended = true;
+    this.finalize(state).catch((error: unknown) => {
+      console.error('[ActionLogger] Failed to close the log before an answer:', error);
+    });
   }
 
   /**

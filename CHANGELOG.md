@@ -138,6 +138,14 @@ reasoning — the commit bodies are the long form, this is the index.
   counts as a prompt, so the list would soon show nothing else. A background
   turn that says nothing still posts nothing.
 
+- **The action log follows you past a question** — when Claude asked you
+  something mid-turn and you answered, the turn carried on in the action log
+  posted before the question, so its next actions landed above the question
+  and your answer, where you'd scrolled past them, and the bottom of the chat
+  looked like nothing was happening. Answering (or the question timing out,
+  or a secret request settling) now collapses that log and the next action
+  opens a new one under your answer, with the status line and the prompt.
+
 - **The status line names the project** — a bot moves between projects and its
   display name only says where it is now, so scrolling back left you guessing
   which project an older answer belonged to. `📁 telecoder` now leads the stats

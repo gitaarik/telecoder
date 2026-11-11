@@ -1225,8 +1225,12 @@ export class MessageSender {
    * Counterpart to {@link noteQuestionPosted}, called once the question is
    * resolved — by a tap or by timing out — so the bubble drops the waiting
    * notice and goes back to reporting progress.
+   *
+   * What the turn does next goes in a new action log, under the question and
+   * the answer: see {@link ActionLogger.startNewMessage}.
    */
   async noteQuestionAnswered(ctx: Context, sessionKey: string): Promise<void> {
+    actionLogger.startNewMessage(sessionKey);
     await this.refreshQuestionStatus(ctx, sessionKey);
   }
 
