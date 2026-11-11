@@ -36,6 +36,7 @@ export const TOOL_ICONS: Record<string, string> = {
   'mcp__telecoder-tools__telecoder_send_file': '📎',
   'mcp__telecoder-tools__telecoder_list_projects': '📂',
   'mcp__telecoder-tools__telecoder_switch_project': '🔀',
+  'mcp__telecoder-tools__telecoder_create_bot': '🤖',
   'mcp__telecoder-tools__telecoder_publish_telegraph': '📄',
 
   // Status indicators
@@ -360,6 +361,7 @@ export function getToolAction(toolName: string): string {
     'mcp__telecoder-tools__telecoder_send_file': 'Sending file',
     'mcp__telecoder-tools__telecoder_list_projects': 'Listing projects',
     'mcp__telecoder-tools__telecoder_switch_project': 'Switching project',
+    'mcp__telecoder-tools__telecoder_create_bot': 'Creating bot',
     'mcp__telecoder-tools__telecoder_publish_telegraph': 'Publishing Telegraph',
   };
   if (actions[toolName]) return actions[toolName];
@@ -403,6 +405,7 @@ export function extractToolDetail(toolName: string, input: Record<string, unknow
     case 'mcp__telecoder-tools__telecoder_send_file':
       return verbose ? str('file_path') : truncatePath(str('file_path'));
     case 'mcp__telecoder-tools__telecoder_switch_project':
+    case 'mcp__telecoder-tools__telecoder_create_bot':
       return str('project_name');
     case 'mcp__telecoder-tools__telecoder_publish_telegraph':
       return str('title');

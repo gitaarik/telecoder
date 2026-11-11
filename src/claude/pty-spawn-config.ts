@@ -120,6 +120,7 @@ export function buildMcpToolsSystemPromptNote(): string {
   const tools: string[] = [
     '- mcp__telecoder-tools__telecoder_list_projects — list available workspace projects the user can switch to',
     '- mcp__telecoder-tools__telecoder_switch_project — switch the working directory to a different project (call list_projects first). The change takes effect on the next user query.',
+    '- mcp__telecoder-tools__telecoder_create_bot — when the user asks for a bot for a project: sends them a button that opens Telegram\'s create-a-bot screen; once they confirm, the new bot is added and starts in that project. Private chats and admins only. Prefer this over telling them to use BotFather or /newbot.',
     '- mcp__telecoder-tools__telecoder_send_file — send a file from the bot\'s filesystem (within the workspace or /tmp) to the user via Telegram. Use after creating files (reports, SVGs, images, etc.) to deliver them directly. Max 50MB.',
     '- mcp__telecoder-tools__telecoder_ask_user — ask the user a multiple-choice question via a Telegram inline keyboard (2-8 options). Pauses until the user taps a button. Prefer this over the built-in AskUserQuestion whenever you need a decision from the user — AskUserQuestion is for terminal users and does not render correctly through TeleCoder.',
     '- mcp__telecoder-tools__telecoder_poll_user — like ask_user but uses a Telegram poll. Pick this when multiple chat members should vote, when you want visible vote counts, or when you need multi-select. 2-10 options, non-anonymous, resolves on the first vote.',

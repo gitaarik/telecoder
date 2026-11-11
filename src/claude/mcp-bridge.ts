@@ -256,6 +256,19 @@ registerIpcHandler('/mcp/switch_project', async (turn, body) => {
   };
 });
 
+// ── /mcp/create_bot ──────────────────────────────────────────────────
+// Offers the create-a-bot button in this turn's chat. The bot itself is
+// adopted later, when Telegram reports it: see newbot.handler.ts.
+registerIpcHandler('/mcp/create_bot', async (turn, body) => {
+  const projectName = String(body.project_name ?? '').trim();
+  if (!projectName) return { success: false, message: 'Error: project_name is required.' };
+  const ctx = getTelegramCtx(turn.options as unknown);
+  if (!ctx) return { success: false, message: 'Error: no Telegram chat for this turn.' };
+  const { offerNewBotForSession } = await import('../bot/handlers/newbot.handler.js');
+  const result = await offerNewBotForSession(ctx.api, turn.sessionKey, projectName);
+  return { success: result.ok, message: result.message };
+});
+
 // ── /mcp/send_file ───────────────────────────────────────────────────
 // Sends a file from the bot's filesystem (workspace or /tmp) to the user via
 // Telegram. Mirrors the SDK in-process MCP tool in src/claude/mcp-tools.ts but

@@ -15,13 +15,13 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { Context } from 'grammy';
+import type { Api, Context } from 'grammy';
 import { isAdmin } from '../../utils/admins.js';
 import { sanitizeError } from '../../utils/sanitize.js';
 import { addInstance } from '../../utils/instances.js';
 import { InstancesConfigError } from '../../utils/instance-config.js';
 import { getWorkspaceRoot } from '../../utils/workspace-guard.js';
-import { getSessionKeyFromCtx } from '../../utils/session-key.js';
+import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
 import { sessionManager } from '../../claude/session-manager.js';
 import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
 
@@ -49,45 +49,45 @@ export function suggestedBotUsername(project: string): string {
   return `${slug.slice(0, MAX_USERNAME_LENGTH - suffix.length).replace(/_+$/, '')}${suffix}`;
 }
 
-/** The folder `/newbot <args>` means, the way /project reads it. */
-function resolveProject(args: string): string {
-  if (args.startsWith('~')) return path.resolve(path.join(process.env.HOME || '', args.slice(1)));
-  if (args.startsWith('/')) return path.resolve(args);
-  return path.join(getWorkspaceRoot(), args);
-}
+/** What offerNewBot did: the button is up, or why it isn't. */
+export type OfferResult = { ok: true; project: string } | { ok: false; message: string };
 
-export async function handleNewBot(ctx: Context): Promise<void> {
-  if (ctx.chat?.type !== 'private' || !ctx.from) {
-    await ctx.reply('/newbot works in a private chat with the bot.');
-    return;
-  }
-  if (!ctx.me.can_manage_bots) {
-    await ctx.reply(
-      '🤖 This bot can\'t create bots. Turn on Bot Management Mode for it in @BotFather\'s Mini App, then try again.',
-    );
-    return;
-  }
+let canManageBots: boolean | undefined;
 
-  const args = (ctx.message?.text ?? '').split(' ').slice(1).join(' ').trim();
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  const current = keyInfo ? sessionManager.getSession(keyInfo.sessionKey)?.workingDirectory : undefined;
-  const projectPath = args ? resolveProject(args) : current;
-  if (!projectPath) {
-    await ctx.reply('Usage: /newbot <project>, or /newbot alone for the project this chat is in.');
-    return;
+/**
+ * Put the create-a-bot button for `projectPath` in front of `userId`, in
+ * their private chat with this bot (and in `threadId`, when given). Shared by
+ * /newbot and the telecoder_create_bot tool, so asking the agent for a bot
+ * gets the same button: Telegram only creates one when its user confirms.
+ */
+export async function offerNewBot(
+  api: Api,
+  userId: number,
+  projectPath: string,
+  threadId?: number,
+): Promise<OfferResult> {
+  if (!isAdmin(userId)) return { ok: false, message: 'Only an admin of this bot can create bots.' };
+  // Only a yes is kept: a no should notice Bot Management Mode being turned on.
+  if (!canManageBots) canManageBots = (await api.getMe()).can_manage_bots;
+  if (!canManageBots) {
+    return {
+      ok: false,
+      message: 'This bot can\'t create bots. Turn on Bot Management Mode for it in @BotFather\'s Mini App, then try again.',
+    };
   }
   if (!fs.existsSync(projectPath) || !fs.statSync(projectPath).isDirectory()) {
-    await ctx.reply(`📁 There's no project folder at ${projectPath}. Create it with /newproject first.`);
-    return;
+    return { ok: false, message: `There's no project folder at ${projectPath}. Create it with /newproject first.` };
   }
 
   const project = path.basename(projectPath);
-  pending.set(ctx.from.id, { projectPath, at: Date.now() });
-  await ctx.reply(
+  pending.set(userId, { projectPath, at: Date.now() });
+  await api.sendMessage(
+    userId,
     `🤖 Tap the button to create a bot for *${esc(project)}*\\. You can change its name and username on the next screen\\.\n\n` +
       'It starts in that project, and its threads are named without the project in front\\.',
     {
       parse_mode: 'MarkdownV2',
+      ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
       reply_markup: {
         keyboard: [[{
           text: `🤖 Create a bot for ${project}`,
@@ -102,6 +102,53 @@ export async function handleNewBot(ctx: Context): Promise<void> {
       },
     },
   );
+  return { ok: true, project };
+}
+
+/** The folder a project name or path means, the way /project reads it. */
+export function resolveProject(args: string): string {
+  if (args.startsWith('~')) return path.resolve(path.join(process.env.HOME || '', args.slice(1)));
+  if (args.startsWith('/')) return path.resolve(args);
+  return path.join(getWorkspaceRoot(), args);
+}
+
+/**
+ * The telecoder_create_bot tool: offer the button in the chat a turn runs
+ * in. Returns what to tell the agent, which is also what the user is waiting
+ * on: the bot only exists once they tap and confirm.
+ */
+export async function offerNewBotForSession(api: Api, sessionKey: string, projectName: string): Promise<{ ok: boolean; message: string }> {
+  const { chatId, threadId } = parseSessionKey(sessionKey);
+  // A private chat's id is its user's id, and only there can the button go.
+  if (chatId <= 0) return { ok: false, message: 'Bots can only be created from a private chat with this bot.' };
+  const projectPath = resolveProject(projectName.trim());
+  const result = await offerNewBot(api, chatId, projectPath, threadId);
+  if (!result.ok) return result;
+  return {
+    ok: true,
+    message: `Sent the user a button to create a bot for ${result.project}. Nothing exists until they tap it and confirm on Telegram's screen; ` +
+      'then this bot adds it to instances.json, the launcher starts it, and a confirmation follows in this chat.',
+  };
+}
+
+export async function handleNewBot(ctx: Context): Promise<void> {
+  if (ctx.chat?.type !== 'private' || !ctx.from) {
+    await ctx.reply('/newbot works in a private chat with the bot.');
+    return;
+  }
+
+  const args = (ctx.message?.text ?? '').split(' ').slice(1).join(' ').trim();
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  const current = keyInfo ? sessionManager.getSession(keyInfo.sessionKey)?.workingDirectory : undefined;
+  const projectPath = args ? resolveProject(args) : current;
+  if (!projectPath) {
+    await ctx.reply('Usage: /newbot <project>, or /newbot alone for the project this chat is in.');
+    return;
+  }
+
+  const threadId = ctx.message?.is_topic_message ? ctx.message.message_thread_id : undefined;
+  const result = await offerNewBot(ctx.api, ctx.from.id, projectPath, threadId);
+  if (!result.ok) await ctx.reply(`🤖 ${result.message}`);
 }
 
 export async function handleManagedBotCreated(ctx: Context): Promise<void> {
@@ -168,4 +215,5 @@ export async function handleManagedBotCreated(ctx: Context): Promise<void> {
 /** Test hook. */
 export function resetNewBotForTest(): void {
   pending.clear();
+  canManageBots = undefined;
 }

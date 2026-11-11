@@ -222,6 +222,26 @@ server.tool(
   },
 );
 
+// ── telecoder_create_bot (IPC: needs the bot to send the button) ────
+server.tool(
+  'telecoder_create_bot',
+  "Create a Telegram bot for one project: sends the user a button that opens Telegram's create-a-bot screen. Once they confirm, the new bot is added to the launcher and starts in that project. Use when the user asks for a bot for a project. Only from a private chat, and only for an admin.",
+  {
+    project_name: z.string().describe('Project directory name in the workspace, or an absolute path'),
+  },
+  async ({ project_name }) => {
+    try {
+      const result = await ipc<IpcReply>('/mcp/create_bot', { project_name });
+      return toolResult(result);
+    } catch (error) {
+      return {
+        content: [{ type: 'text' as const, text: `Create bot error: ${error instanceof Error ? error.message : String(error)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
 // ── telecoder_send_file (IPC: needs bot for Telegram sendDocument) ──
 server.tool(
   'telecoder_send_file',

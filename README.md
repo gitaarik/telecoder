@@ -197,7 +197,8 @@ lists no bots, is ignored until it's fixed, so a half-saved edit takes nothing d
 
 A bot can also create bots, so a new one for a project costs a tap rather than a
 BotFather chat. Turn on Bot Management Mode for one bot in [@BotFather](https://t.me/BotFather)'s
-Mini App, then send it `/newbot <project>`. It offers a button that opens Telegram's
+Mini App, then send it `/newbot <project>`, or ask Claude for a bot for a project in
+a private chat with it. It offers a button that opens Telegram's
 create-a-bot screen with a name and username filled in; once you confirm, it fetches the
 new bot's token, restricts the bot to you, and adds it to `instances.json` with
 `HOME_PROJECT` set, which the launcher picks up. A bot with a `HOME_PROJECT` starts

@@ -26,7 +26,8 @@ reasoning — the commit bodies are the long form, this is the index.
   Bot Management Mode on in BotFather's Mini App for the bot you send it to,
   and Threaded Mode, which Telegram offers no API for, is still switched on
   there by hand. Only a bot an admin created is adopted: anyone can create one
-  managed by ours through a link.
+  managed by ours through a link. Asking Claude for a bot works too: its
+  `telecoder_create_bot` tool sends the same button.
 - **A bot can have a home project** — `HOME_PROJECT`, which `/newbot` sets. A
   conversation with nothing to restore starts there instead of asking for
   `/project`, and the project is left out of the thread names and the bot's

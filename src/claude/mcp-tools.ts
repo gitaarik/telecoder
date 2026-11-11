@@ -7,6 +7,7 @@
  */
 
 import { z } from 'zod';
+import { sanitizeError } from '../utils/sanitize.js';
 import { createSdkMcpServer, tool, type McpSdkServerConfigWithInstance, type SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk';
 import { InputFile, type Context } from 'grammy';
 import * as fs from 'fs';
@@ -58,6 +59,7 @@ function buildToolList(toolsCtx: McpToolsContext) {
   const tools: SdkMcpToolDefinition<any>[] = [
     listProjectsTool(toolsCtx),
     switchProjectTool(toolsCtx),
+    createBotTool(toolsCtx),
     sendFileTool(toolsCtx),
     askUserTool(toolsCtx),
     requestSecretTool(toolsCtx),
@@ -141,6 +143,26 @@ function switchProjectTool(toolsCtx: McpToolsContext) {
       } catch (error) {
         return {
           content: [{ type: 'text' as const, text: `Error switching project: ${error instanceof Error ? error.message : String(error)}` }],
+          isError: true,
+        };
+      }
+    }
+  );
+}
+
+function createBotTool(toolsCtx: McpToolsContext) {
+  return tool(
+    'telecoder_create_bot',
+    "Create a Telegram bot for one project: sends the user a button that opens Telegram's create-a-bot screen. Once they confirm, the new bot is added to the launcher and starts in that project. Use when the user asks for a bot for a project. Only from a private chat, and only for an admin.",
+    { project_name: z.string().describe('Project directory name in the workspace, or an absolute path') },
+    async ({ project_name }) => {
+      try {
+        const { offerNewBotForSession } = await import('../bot/handlers/newbot.handler.js');
+        const result = await offerNewBotForSession(toolsCtx.telegramCtx.api, toolsCtx.sessionKey, project_name);
+        return { content: [{ type: 'text' as const, text: result.message }], ...(result.ok ? {} : { isError: true }) };
+      } catch (error) {
+        return {
+          content: [{ type: 'text' as const, text: `Error creating bot: ${sanitizeError(error)}` }],
           isError: true,
         };
       }

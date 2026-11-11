@@ -20,13 +20,14 @@ const nb = await import('../../src/bot/handlers/newbot.handler.js');
 function ctxFor(opts: { text?: string; from?: number; canManage?: boolean; created?: { id: number; first_name: string; username?: string } }) {
   const reply = vi.fn().mockResolvedValue({});
   const api = {
+    getMe: vi.fn().mockResolvedValue({ can_manage_bots: opts.canManage ?? true }),
+    sendMessage: vi.fn().mockResolvedValue({}),
     getManagedBotToken: vi.fn().mockResolvedValue('555:secret'),
     setManagedBotAccessSettings: vi.fn().mockResolvedValue(true),
   };
   const ctx = {
     chat: { id: opts.from ?? ADMIN, type: 'private' },
     from: { id: opts.from ?? ADMIN },
-    me: { can_manage_bots: opts.canManage ?? true },
     message: {
       text: opts.text,
       ...(opts.created ? { managed_bot_created: { bot: { is_bot: true, ...opts.created } } } : {}),
@@ -61,18 +62,19 @@ describe('/newbot', () => {
   });
 
   it('offers the create-a-bot button for the project', async () => {
-    const { ctx, reply } = ctxFor({ text: '/newbot sjs' });
+    const { ctx, api } = ctxFor({ text: '/newbot sjs' });
     await nb.handleNewBot(ctx);
 
-    const button = reply.mock.calls[0][1].reply_markup.keyboard[0][0];
+    expect(api.sendMessage.mock.calls[0][0]).toBe(ADMIN);
+    const button = api.sendMessage.mock.calls[0][2].reply_markup.keyboard[0][0];
     expect(button.request_managed_bot).toMatchObject({ suggested_name: 'TeleCoder — sjs', suggested_username: 'sjs_telecoder_bot' });
   });
 
   it("uses the chat's project when none is given", async () => {
-    const { ctx, reply } = ctxFor({ text: '/newbot' });
+    const { ctx, api } = ctxFor({ text: '/newbot' });
     await nb.handleNewBot(ctx);
 
-    expect(reply.mock.calls[0][1].reply_markup.keyboard[0][0].request_managed_bot.suggested_name).toBe('TeleCoder — telecoder');
+    expect(api.sendMessage.mock.calls[0][2].reply_markup.keyboard[0][0].request_managed_bot.suggested_name).toBe('TeleCoder — telecoder');
   });
 
   it('says so on a bot without Bot Management Mode, and for a missing folder', async () => {
@@ -121,5 +123,26 @@ describe('/newbot', () => {
 
     expect(addInstance).toHaveBeenCalledWith(expect.objectContaining({ overrides: {} }));
     expect(reply.mock.calls[0][0]).toMatch(/expired/);
+  });
+
+  it('lets the agent offer the button in the thread it was asked in', async () => {
+    const { api } = ctxFor({});
+    const result = await nb.offerNewBotForSession(api as never, `${ADMIN}:369357`, 'sjs');
+
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/until they tap/);
+    const [chatId, , opts] = api.sendMessage.mock.calls[0];
+    expect(chatId).toBe(ADMIN);
+    expect(opts.message_thread_id).toBe(369357);
+    expect(opts.reply_markup.keyboard[0][0].request_managed_bot.suggested_name).toBe('TeleCoder — sjs');
+  });
+
+  it("won't offer it in a group, to a non-admin, or for a missing folder", async () => {
+    const { api } = ctxFor({});
+
+    expect((await nb.offerNewBotForSession(api as never, '-100123:7', 'sjs')).ok).toBe(false);
+    expect((await nb.offerNewBotForSession(api as never, String(STRANGER), 'sjs')).message).toMatch(/admin/);
+    expect((await nb.offerNewBotForSession(api as never, String(ADMIN), 'nope')).message).toMatch(/no project folder/);
+    expect(api.sendMessage).not.toHaveBeenCalled();
   });
 });
