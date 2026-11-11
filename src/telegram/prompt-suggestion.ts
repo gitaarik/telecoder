@@ -15,7 +15,7 @@
  * and the button beneath it is a fixed short label that cannot be clipped.
  */
 
-import { escapeMarkdownV2 } from './markdown.js';
+import { EntityText, type EntityMessage } from './entities.js';
 import { fitsOnButton } from './button-text.js';
 
 const BULB = '💡';
@@ -46,7 +46,7 @@ export function suggestionFitsOnButton(text: string): boolean {
 }
 
 /**
- * The card body, in MarkdownV2.
+ * The card body: a plain header over the prompt in italics.
  *
  * `sent: true` is the same message rewritten once the button has been tapped.
  * The card is the only place the prompt is written out, so it has to keep
@@ -54,13 +54,8 @@ export function suggestionFitsOnButton(text: string): boolean {
  * question grows a "✅ Answered" footer instead of silently losing its
  * keyboard.
  */
-export function buildSuggestionCardText(text: string, opts: { sent?: boolean } = {}): string {
+export function buildSuggestionCardText(text: string, opts: { sent?: boolean } = {}): EntityMessage {
   const header = opts.sent ? '✅ Sent:' : `${BULB} Suggested next prompt:`;
-  return `${escapeMarkdownV2(header)}\n_${escapeMarkdownV2(flattenSuggestion(text))}_`;
+  return new EntityText().add(header).newline().italic(flattenSuggestion(text)).build();
 }
 
-/** Plain-text fallback for when MarkdownV2 is rejected for the card. */
-export function buildSuggestionCardPlainText(text: string, opts: { sent?: boolean } = {}): string {
-  const header = opts.sent ? '✅ Sent:' : `${BULB} Suggested next prompt:`;
-  return `${header}\n${flattenSuggestion(text)}`;
-}

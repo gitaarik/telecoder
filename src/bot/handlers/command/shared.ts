@@ -2,7 +2,7 @@
  * Helpers shared across the command handlers.
  *
  * These are the pieces that several unrelated command domains all reach for —
- * the MarkdownV2 reply shorthand, the callback-query preamble, the project
+ * the markdown reply shorthand, the callback-query preamble, the project
  * status block. They live here so the domain modules depend on one small
  * shared surface instead of on each other.
  */
@@ -19,7 +19,8 @@ import {
   getActiveProviderName,
   type EffortLevel,
 } from '../../../providers/provider-router.js';
-import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
+import { EntityText, type EntityMessage } from '../../../telegram/entities.js';
+import { replyMarkdown } from '../../../telegram/send.js';
 import { fitsOnButton } from '../../../telegram/button-text.js';
 import { userPreferences } from '../../../providers/user-preferences.js';
 import { getPtyProvider } from '../../../providers/claude-provider.js';
@@ -35,9 +36,13 @@ export function botctlExists(): boolean {
   return fs.existsSync(BOTCTL_PATH);
 }
 
-/** Helper for consistent MarkdownV2 replies */
-export async function replyMd(ctx: Context, text: string): Promise<void> {
-  await ctx.reply(text, { parse_mode: 'MarkdownV2' });
+/**
+ * Reply with standard markdown, sent as entities. For static text only: a
+ * dynamic part (a path, a name, an error) goes through an {@link EntityText}
+ * instead, since nothing escapes it here.
+ */
+export async function replyMd(ctx: Context, markdown: string): Promise<void> {
+  await replyMarkdown(ctx, markdown);
 }
 
 /**
@@ -63,7 +68,7 @@ export function buildFeatureDisabledMessage(feature: string): string {
 }
 
 export async function replyFeatureDisabled(ctx: Context, feature: string): Promise<void> {
-  await ctx.reply(buildFeatureDisabledMessage(feature), { parse_mode: undefined });
+  await ctx.reply(buildFeatureDisabledMessage(feature));
 }
 
 export const EFFORT_LEVELS: { id: EffortLevel; label: string; description: string }[] = [
@@ -82,7 +87,7 @@ export function getEffortLabel(scope: SettingsScope): string | undefined {
 }
 
 /** Build status lines appended to project confirmation messages. */
-export function projectStatusSuffix(sessionKey: string): string {
+export function projectStatusSuffix(sessionKey: string): EntityMessage {
   const { chatId } = parseSessionKey(sessionKey);
   const model = getModel(sessionKey);
   const provider = getActiveProviderName(sessionKey);
@@ -94,19 +99,25 @@ export function projectStatusSuffix(sessionKey: string): string {
   const sessionId = session?.claudeSessionId;
 
   const effortLabel = getEffortLabel(sessionKey) ?? 'Default';
-  let suffix = `\n• *Provider:* ${esc(provider)}\n• *Model:* ${esc(model)}\n• *Effort:* ${esc(effortLabel)}\n• *Created:* ${esc(created)}\n• *Dangerous Mode:* ${esc(dangerous)}`;
+  const suffix = new EntityText()
+    .add('\n• ').bold('Provider:').add(` ${provider}`)
+    .add('\n• ').bold('Model:').add(` ${model}`)
+    .add('\n• ').bold('Effort:').add(` ${effortLabel}`)
+    .add('\n• ').bold('Created:').add(` ${created}`)
+    .add('\n• ').bold('Dangerous Mode:').add(` ${dangerous}`)
+    .add('\n• ').bold('Session ID:').add(' ');
   if (sessionId) {
-    suffix += `\n• *Session ID:* \`${esc(sessionId)}\``;
-    suffix += `\n\n💡 To continue this session from the terminal, copy the command below\\.`;
+    suffix.code(sessionId);
+    suffix.add('\n\n💡 To continue this session from the terminal, copy the command below.');
   } else {
-    suffix += `\n• *Session ID:* _pending — send a message to start_`;
+    suffix.italic('pending — send a message to start');
   }
-  return suffix;
+  return suffix.build();
 }
 
 /** The copyable command sent as a separate message. */
-export function resumeCommandMessage(sessionId: string): string {
-  return `\`claude --resume ${sessionId}\``;
+export function resumeCommandMessage(sessionId: string): EntityMessage {
+  return new EntityText().code(`claude --resume ${sessionId}`).build();
 }
 
 /** Truncate a string to fit within `maxBytes` UTF-8 bytes without splitting a codepoint. */
@@ -145,11 +156,10 @@ export function sessionDisplayName(entry: { projectName: string; topic?: string 
     : name;
 }
 
-/** The message text and reply options for a message carrying the back button. */
+/** The message and reply options for a message carrying the back button. */
 export interface BackToPreviousReply {
-  text: string;
+  text: EntityMessage;
   options: {
-    parse_mode: 'MarkdownV2';
     reply_markup?: { inline_keyboard: { text: string; callback_data: string }[][] };
   };
 }
@@ -174,11 +184,11 @@ export interface BackToPreviousReply {
  * don't offer to return to the session you're already in.
  */
 export function withBackToPrevious(
-  text: string,
+  text: EntityMessage,
   sessionKey: string | undefined,
   excludeConversationId?: string,
 ): BackToPreviousReply {
-  const plain: BackToPreviousReply = { text, options: { parse_mode: 'MarkdownV2' } };
+  const plain: BackToPreviousReply = { text, options: {} };
   if (!sessionKey) return plain;
 
   const history = sessionManager.getSessionHistory(sessionKey, 5);
@@ -193,9 +203,8 @@ export function withBackToPrevious(
   const fits = fitsOnButton(label);
 
   return {
-    text: fits ? text : `${text}\n\n${esc(`↩️ Previous: ${name} (${timeAgo})`)}`,
+    text: fits ? text : new EntityText().append(text).add(`\n\n↩️ Previous: ${name} (${timeAgo})`).build(),
     options: {
-      parse_mode: 'MarkdownV2',
       reply_markup: {
         inline_keyboard: [
           [
@@ -231,5 +240,8 @@ export function needsPtyRestart(scope: SettingsScope): boolean {
   return userPreferences.getMethod(scope) === 'pty';
 }
 
-/** Escaped MarkdownV2 note appended when a pty restart is pending. */
-export const PTY_RESTART_NOTE = '\n\n_Claude Code restarts on your next message to pick this up \\(the conversation is kept\\)\\._';
+/** Note appended when a pty restart is pending. */
+export const PTY_RESTART_NOTE: EntityMessage = new EntityText()
+  .add('\n\n')
+  .italic('Claude Code restarts on your next message to pick this up (the conversation is kept).')
+  .build();

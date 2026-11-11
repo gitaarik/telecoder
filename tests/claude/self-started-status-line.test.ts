@@ -137,10 +137,10 @@ describe('the status line under a reply claude started on its own', () => {
     expect(answered).toBeGreaterThanOrEqual(0);
     // Straight under the reply, and the last thing in the chat.
     expect(chat.slice(answered + 1)).toEqual([[
-      '_▸ Why does checkout fail?_',
-      '_▸ Review the fix in the background_',
+      '▸ Why does checkout fail?',
+      '▸ Review the fix in the background',
       '',
-      '_📁 shop · 🧠 Auto · 🤖 opus\\-5\\-5 · 📊 25% · 💰 $0\\.00_',
+      '📁 shop · 🧠 Auto · 🤖 opus-5-5 · 📊 25% · 💰 $0.00',
     ].join('\n')]);
 
     // And /status and /context now agree with it.

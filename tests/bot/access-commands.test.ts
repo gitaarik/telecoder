@@ -86,6 +86,12 @@ function makeCallbackCtx(data: string, from = ADMIN) {
 /** The single string a handler replied with. */
 const said = (reply: ReturnType<typeof vi.fn>): string => reply.mock.calls[0][0] as string;
 
+/** The text each entity of `type` on that reply covers. */
+const styled = (reply: ReturnType<typeof vi.fn>, type: string): string[] => {
+  const [text, other] = reply.mock.calls[0] as [string, { entities?: { type: string; offset: number; length: number }[] }];
+  return (other?.entities ?? []).filter((e) => e.type === type).map((e) => text.slice(e.offset, e.offset + e.length));
+};
+
 beforeEach(() => {
   fs.rmSync(path.join(testHome, '.telecoder', 'user-roster-123456789.json'), { force: true });
   fs.rmSync(path.join(testHome, '.telecoder'), { recursive: true, force: true });
@@ -159,6 +165,44 @@ describe('/allow', () => {
     await handleAllow(ctx);
     expect(isAllowedUser(555)).toBe(false);
     expect(said(reply)).toMatch(/Usage/);
+  });
+});
+
+describe('formatting', () => {
+  it('shows a name verbatim and sends entities rather than a parse mode', async () => {
+    const { ctx, reply } = makeCtx({
+      text: '/allow',
+      replyTo: { id: 999, first_name: 'Ann_*Lee*', username: 'ann_lee' },
+    });
+    await handleAllow(ctx);
+    expect(said(reply)).toContain('Ann_*Lee*');
+    expect(said(reply)).not.toContain('\\');
+    expect(reply.mock.calls[0][1]).not.toHaveProperty('parse_mode');
+    expect(styled(reply, 'bold')).toEqual(['guest']);
+  });
+
+  it('keeps the space between the name and the rest of the sentence', async () => {
+    const { ctx, reply } = makeCtx({ text: '/allow 2' });
+    await handleAllow(ctx);
+    expect(said(reply)).toMatch(/^✅ \S.* can already use this bot\.$/);
+  });
+
+  it('marks up an unknown handle without reading it as formatting', async () => {
+    const { ctx, reply } = makeCtx({ text: '/allow @some_body_' });
+    await handleAllow(ctx);
+    expect(said(reply)).toContain("I don't know @some_body_.");
+    expect(styled(reply, 'code')).toEqual(['/allow']);
+  });
+
+  it('renders /users headings in bold and ids as code', async () => {
+    admitUser({ id: 999, name: 'New_Comer', username: 'new_comer' }, ADMIN);
+    const { ctx, reply } = makeCtx({ text: '/users' });
+    await handleUsers(ctx);
+    const text = said(reply);
+    expect(text).toContain('• New_Comer @new_comer — 999');
+    expect(text).toContain('Guests admitted here (1)');
+    expect(styled(reply, 'bold')).toEqual(expect.arrayContaining(['Who can use this bot', 'Admins', 'Guests admitted here']));
+    expect(styled(reply, 'code')).toContain('999');
   });
 });
 

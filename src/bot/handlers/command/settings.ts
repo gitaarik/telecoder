@@ -22,7 +22,8 @@ import {
 } from '../../../providers/provider-router.js';
 import { userPreferences } from '../../../providers/user-preferences.js';
 import { getActiveMethod, getPtyProvider } from '../../../providers/claude-provider.js';
-import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
+import { EntityText, joinMessages, type EntityMessage } from '../../../telegram/entities.js';
+import { replyFormatted, editCallbackMessage } from '../../../telegram/send.js';
 import { taskTracker } from '../../../telegram/task-tracker.js';
 import { promptLabel, cutLabel } from '../../../telegram/prompt-label.js';
 import { getTTSSettings, setTTSEnabled, setTTSVoice, setTTSAutoplay } from '../../../tts/tts-settings.js';
@@ -62,6 +63,7 @@ import {
   applyToAllBots,
   buildApplyToAllKeyboard,
   prefsConfirmation,
+  effortResetConfirmation,
   hasSiblings,
 } from './prefs-scope.js';
 
@@ -89,14 +91,7 @@ function buildTTSMenu(sessionKey: string, mode: TTSMenuMode) {
 
   const statusLine = settings.enabled ? 'ON' : 'OFF';
   const autoplayLine = settings.autoplay ? 'ON' : 'OFF';
-  const header = `🔊 *Voice Replies*`;
-  const baseText =
-    `${header}\n\n` +
-    `Provider: *${esc(providerLabel)}*\n` +
-    `Status: *${statusLine}*\n` +
-    `Voice: *${esc(settings.voice)}*\n` +
-    `Autoplay: *${autoplayLine}*\n` +
-    `API key: *${esc(apiStatus)}*`;
+  const header = () => new EntityText().add('🔊 ').bold('Voice Replies').newline(2);
 
   if (mode === 'voices') {
     const voices = getActiveTTSVoices();
@@ -115,9 +110,7 @@ function buildTTSMenu(sessionKey: string, mode: TTSMenuMode) {
       : 'marin, cedar';
 
     return {
-      text:
-        `${header}\n\n` +
-        `Pick a voice\\.\nRecommended: ${esc(recommended)}\\.`,
+      text: header().add(`Pick a voice.\nRecommended: ${recommended}.`).build(),
       keyboard: [
         ...voiceRows,
         [{ text: 'Back', callback_data: 'tts:back' }],
@@ -128,7 +121,13 @@ function buildTTSMenu(sessionKey: string, mode: TTSMenuMode) {
   const autoplayLabel = settings.autoplay ? '✓ Autoplay' : 'Autoplay';
 
   return {
-    text: baseText,
+    text: header()
+      .add('Provider: ').bold(providerLabel).newline()
+      .add('Status: ').bold(statusLine).newline()
+      .add('Voice: ').bold(settings.voice).newline()
+      .add('Autoplay: ').bold(autoplayLine).newline()
+      .add('API key: ').bold(apiStatus)
+      .build(),
     keyboard: [
       [
         { text: settings.enabled ? '✓ On' : 'On', callback_data: 'tts:on' },
@@ -146,17 +145,17 @@ function buildSuggestionsMenu(sessionKey: string) {
   const settings = getSuggestionsSettings(sessionKey);
   const defaultLabel = config.PROMPT_SUGGESTIONS_DEFAULT ? 'on' : 'off';
   const statusLine = settings.enabled ? 'ON' : 'OFF';
-  const header = `💡 *Predicted Next Prompt*`;
-
-  const baseText =
-    `${header}\n\n` +
-    `Status: *${statusLine}*\n` +
-    `Default: *${esc(defaultLabel)}*\n\n` +
-    `_When enabled, TeleCoder surfaces Claude Code's speculative next\\-prompt as an inline button under each response\\. Tap to send it as your next message\\._\n\n` +
-    `_Takes effect on the next session spawn \\(env var is set at spawn time\\)\\._`;
+  const text = new EntityText()
+    .add('💡 ').bold('Predicted Next Prompt').newline(2)
+    .add('Status: ').bold(statusLine).newline()
+    .add('Default: ').bold(defaultLabel).newline(2)
+    .italic("When enabled, TeleCoder surfaces Claude Code's speculative next-prompt as an inline button under each response. Tap to send it as your next message.")
+    .newline(2)
+    .italic('Takes effect on the next session spawn (env var is set at spawn time).')
+    .build();
 
   return {
-    text: baseText,
+    text,
     keyboard: [
       [
         { text: settings.enabled ? '✓ On' : 'On', callback_data: 'sugg:on' },
@@ -172,28 +171,26 @@ export function buildTelegraphMenu(sessionKey: string) {
   const globalStatus = globalEnabled ? 'enabled' : 'disabled';
 
   const statusLine = settings.enabled ? 'ON' : 'OFF';
-  const header = `📄 *Instant View \\(Telegraph\\)*`;
-
-  const baseText =
-    `${header}\n\n` +
-    `Status: *${statusLine}*\n` +
-    `Global config: *${esc(globalStatus)}*\n\n` +
-    `_When enabled, replies over 2500 characters also get an Instant View link under the text\\. The reply itself is always sent in full either way\\._`;
+  const header = () => new EntityText().add('📄 ').bold('Instant View (Telegraph)').newline(2);
 
   // If global config is disabled, show warning and no toggle
   if (!globalEnabled) {
     return {
-      text:
-        `${header}\n\n` +
-        `⚠️ *Disabled globally*\n\n` +
-        `Telegraph is disabled in the bot configuration\\.\n` +
-        `Set \`TELEGRAPH_ENABLED=true\` in \\.env to enable\\.`,
+      text: header()
+        .add('⚠️ ').bold('Disabled globally').newline(2)
+        .add('Telegraph is disabled in the bot configuration.\nSet ')
+        .code('TELEGRAPH_ENABLED=true').add(' in .env to enable.')
+        .build(),
       keyboard: [],
     };
   }
 
   return {
-    text: baseText,
+    text: header()
+      .add('Status: ').bold(statusLine).newline()
+      .add('Global config: ').bold(globalStatus).newline(2)
+      .italic('When enabled, replies over 2500 characters also get an Instant View link under the text. The reply itself is always sent in full either way.')
+      .build(),
     keyboard: [
       [
         { text: settings.enabled ? '✓ On' : 'On', callback_data: 'telegraph:on' },
@@ -217,17 +214,19 @@ export async function handleStreaming(ctx: Context): Promise<void> {
     ],
   ];
 
-  const description = getStreamingMode() === 'streaming'
-    ? '_Updates progressively as Claude types_'
-    : '_Shows complete response when done_';
-
-  await ctx.reply(
-    `⚙️ *Response Mode*\n\nCurrent: *${getStreamingMode()}*\n${description}`,
-    {
-      parse_mode: 'MarkdownV2',
-      reply_markup: { inline_keyboard: keyboard },
-    }
+  await replyFormatted(
+    ctx,
+    new EntityText()
+      .add('⚙️ ').bold('Response Mode').newline(2)
+      .add('Current: ').bold(getStreamingMode()).newline()
+      .italic(streamingModeDescription(getStreamingMode()))
+      .build(),
+    { reply_markup: { inline_keyboard: keyboard } },
   );
+}
+
+function streamingModeDescription(mode: 'streaming' | 'wait'): string {
+  return mode === 'streaming' ? 'Updates progressively as Claude types' : 'Shows complete response when done';
 }
 
 export async function handleModeCallback(ctx: Context): Promise<void> {
@@ -237,14 +236,13 @@ export async function handleModeCallback(ctx: Context): Promise<void> {
   const newMode = data.replace('mode:', '') as 'streaming' | 'wait';
   setStreamingMode(newMode);
 
-  const description = newMode === 'streaming'
-    ? '_Updates progressively as Claude types_'
-    : '_Shows complete response when done_';
-
   await ctx.answerCallbackQuery({ text: `Mode set to ${newMode}!` });
-  await ctx.editMessageText(
-    `✅ Mode set to *${esc(newMode)}*\n\n${description}`,
-    { parse_mode: 'MarkdownV2' }
+  await editCallbackMessage(
+    ctx,
+    new EntityText()
+      .add('✅ Mode set to ').bold(newMode).newline(2)
+      .italic(streamingModeDescription(newMode))
+      .build(),
   );
 }
 
@@ -269,17 +267,21 @@ export async function handleTerminalUI(ctx: Context): Promise<void> {
     ],
   ];
 
-  const description = settings.enabled
-    ? '_Shows spinner animations and tool status during operations_'
-    : '_Classic streaming mode with simple cursor_';
-
-  await ctx.reply(
-    `🖥️ *Terminal UI Mode*\n\nCurrent: *${currentStatus}*\n${description}`,
-    {
-      parse_mode: 'MarkdownV2',
-      reply_markup: { inline_keyboard: keyboard },
-    }
+  await replyFormatted(
+    ctx,
+    new EntityText()
+      .add('🖥️ ').bold('Terminal UI Mode').newline(2)
+      .add('Current: ').bold(currentStatus).newline()
+      .italic(terminalUIDescription(settings.enabled))
+      .build(),
+    { reply_markup: { inline_keyboard: keyboard } },
   );
+}
+
+function terminalUIDescription(enabled: boolean): string {
+  return enabled
+    ? 'Shows spinner animations and tool status during operations'
+    : 'Classic streaming mode with simple cursor';
 }
 
 export async function handleTerminalUICallback(ctx: Context): Promise<void> {
@@ -291,14 +293,14 @@ export async function handleTerminalUICallback(ctx: Context): Promise<void> {
   setTerminalUIEnabled(sessionKey, newState);
 
   const statusText = newState ? 'ON' : 'OFF';
-  const description = newState
-    ? '_Shows spinner animations and tool status during operations_'
-    : '_Classic streaming mode with simple cursor_';
 
   await ctx.answerCallbackQuery({ text: `Terminal UI ${statusText}!` });
-  await ctx.editMessageText(
-    `✅ Terminal UI *${statusText}*\n\n${description}`,
-    { parse_mode: 'MarkdownV2' }
+  await editCallbackMessage(
+    ctx,
+    new EntityText()
+      .add('✅ Terminal UI ').bold(statusText).newline(2)
+      .italic(terminalUIDescription(newState))
+      .build(),
   );
 }
 
@@ -309,8 +311,7 @@ export async function handleTTS(ctx: Context): Promise<void> {
 
   const menu = buildTTSMenu(sessionKey, 'main');
 
-  await ctx.reply(menu.text, {
-    parse_mode: 'MarkdownV2',
+  await replyFormatted(ctx, menu.text, {
     reply_markup: { inline_keyboard: menu.keyboard },
   });
 }
@@ -352,8 +353,7 @@ export async function handleTTSCallback(ctx: Context): Promise<void> {
 
   await ctx.answerCallbackQuery();
   try {
-    await ctx.editMessageText(menu.text, {
-      parse_mode: 'MarkdownV2',
+    await editCallbackMessage(ctx, menu.text, {
       reply_markup: { inline_keyboard: menu.keyboard },
     });
   } catch (error) {
@@ -385,8 +385,7 @@ export async function handleTelegraphCallback(ctx: Context): Promise<void> {
 
   await ctx.answerCallbackQuery();
   try {
-    await ctx.editMessageText(menu.text, {
-      parse_mode: 'MarkdownV2',
+    await editCallbackMessage(ctx, menu.text, {
       reply_markup: { inline_keyboard: menu.keyboard },
     });
   } catch (error) {
@@ -420,32 +419,33 @@ export async function handleEffort(ctx: Context): Promise<void> {
     // Add auto/reset option
     keyboard.push([{ text: currentEffort === 'default' ? '✓ Auto (default)' : 'Auto (default)', callback_data: 'effort:auto' }]);
 
-    const descriptions = EFFORT_LEVELS
-      .map(l => `• *${esc(l.label)}* \\- ${esc(l.description)}`)
-      .join('\n');
+    const picker = new EntityText()
+      .add('🎯 ').bold('Effort Level').newline(2)
+      .italic(`Current: ${currentEffort}`).newline(2);
+    for (const l of EFFORT_LEVELS) {
+      picker.add('• ').bold(l.label).add(` - ${l.description}\n`);
+    }
+    picker.add('• ').bold('Auto').add(' - SDK default');
 
     // Same scoping as /model: the tap sets this bot, the confirmation offers
     // the rest. Stated here so neither scope has to be guessed at.
-    const scopeHint = hasSiblings()
-      ? `\n\nApplies to *${esc(config.BOT_NAME)}* only — add \`all\` \\(\`/effort high all\`\\) or use the button afterwards to set every bot\\.`
-      : '';
+    if (hasSiblings()) {
+      picker.add('\n\nApplies to ').bold(config.BOT_NAME).add(' only — add ').code('all')
+        .add(' (').code('/effort high all').add(') or use the button afterwards to set every bot.');
+    }
 
-    await ctx.reply(
-      `🎯 *Effort Level*\n\n_Current: ${esc(currentEffort)}_\n\n${descriptions}\n• *Auto* \\- SDK default${scopeHint}`,
-      {
-        parse_mode: 'MarkdownV2',
-        reply_markup: { inline_keyboard: keyboard },
-      }
-    );
+    await replyFormatted(ctx, picker.build(), {
+      reply_markup: { inline_keyboard: keyboard },
+    });
     return;
   }
 
   if (args === 'auto' || args === 'default' || args === 'reset') {
     clearEffort(sessionKey);
     const restarted = restartPtyForSettingChange(sessionKey);
-    const where = hasSiblings() ? ` for *${esc(config.BOT_NAME)}*` : '';
-    const confirmation = `✅ Effort reset to *auto* \\(CLI default\\)${where}${restarted ? PTY_RESTART_NOTE : ''}`;
-    await replyWithScope(ctx, sessionKey, confirmation, 'effort', null, 'auto', scope);
+    const confirmation = new EntityText().append(effortResetConfirmation());
+    if (restarted) confirmation.append(PTY_RESTART_NOTE);
+    await replyWithScope(ctx, sessionKey, confirmation.build(), 'effort', null, 'auto', scope);
     return;
   }
 
@@ -454,22 +454,23 @@ export async function handleEffort(ctx: Context): Promise<void> {
   if (args === 'all' || args === 'everywhere') {
     await replyMd(
       ctx,
-      `\`all\` sets every bot, but it needs a level to set them to\\.\n\n` +
-        `Try \`/effort high all\`, or /effort to pick one\\.`,
+      '`all` sets every bot, but it needs a level to set them to.\n\n' +
+        'Try `/effort high all`, or /effort to pick one.',
     );
     return;
   }
 
   if (!isValidEffortLevel(args)) {
-    await replyMd(ctx, `❌ Unknown effort level "${esc(args)}"\\.\n\nValid: low, medium, high, xhigh, max, auto`);
+    await replyFormatted(ctx, `❌ Unknown effort level "${args}".\n\nValid: low, medium, high, xhigh, max, auto`);
     return;
   }
 
   setEffort(sessionKey, args);
   const restarted = restartPtyForSettingChange(sessionKey);
   const info = EFFORT_LEVELS.find(l => l.id === args);
-  const confirmation = `${prefsConfirmation('effort', info?.label || args)}${restarted ? PTY_RESTART_NOTE : ''}`;
-  await replyWithScope(ctx, sessionKey, confirmation, 'effort', args, args, scope);
+  const confirmation = new EntityText().append(prefsConfirmation('effort', info?.label || args));
+  if (restarted) confirmation.append(PTY_RESTART_NOTE);
+  await replyWithScope(ctx, sessionKey, confirmation.build(), 'effort', args, args, scope);
 }
 
 /**
@@ -480,7 +481,7 @@ export async function handleEffort(ctx: Context): Promise<void> {
 async function replyWithScope(
   ctx: Context,
   sessionKey: string,
-  confirmation: string,
+  confirmation: EntityMessage,
   setting: 'model' | 'effort',
   value: string | null,
   buttonValue: string,
@@ -493,13 +494,12 @@ async function replyWithScope(
       value,
       provider: getActiveProviderName(sessionKey),
     });
-    await replyMd(ctx, `${confirmation}${summary}`);
+    await replyFormatted(ctx, new EntityText().append(confirmation).append(summary).build());
     return;
   }
 
   const keyboard = buildApplyToAllKeyboard(setting, buttonValue);
-  await ctx.reply(confirmation, {
-    parse_mode: 'MarkdownV2',
+  await replyFormatted(ctx, confirmation, {
     ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
   });
 }
@@ -518,15 +518,12 @@ export async function handleEffortCallback(ctx: Context): Promise<void> {
     clearEffort(sessionKey);
     const restarted = restartPtyForSettingChange(sessionKey);
     await ctx.answerCallbackQuery({ text: 'Effort reset to auto!' });
-    const where = hasSiblings() ? ` for *${esc(config.BOT_NAME)}*` : '';
     const keyboard = buildApplyToAllKeyboard('effort', 'auto');
-    await ctx.editMessageText(
-      `✅ Effort reset to *auto* \\(CLI default\\)${where}${restarted ? PTY_RESTART_NOTE : ''}`,
-      {
-        parse_mode: 'MarkdownV2',
-        ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
-      },
-    );
+    const confirmation = new EntityText().append(effortResetConfirmation());
+    if (restarted) confirmation.append(PTY_RESTART_NOTE);
+    await editCallbackMessage(ctx, confirmation.build(), {
+      ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
+    });
     return;
   }
 
@@ -543,13 +540,11 @@ export async function handleEffortCallback(ctx: Context): Promise<void> {
 
   await ctx.answerCallbackQuery({ text: `Effort set to ${displayName}!` });
   const keyboard = buildApplyToAllKeyboard('effort', level);
-  await ctx.editMessageText(
-    `${prefsConfirmation('effort', displayName)}${restarted ? PTY_RESTART_NOTE : ''}`,
-    {
-      parse_mode: 'MarkdownV2',
-      ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
-    },
-  );
+  const confirmation = new EntityText().append(prefsConfirmation('effort', displayName));
+  if (restarted) confirmation.append(PTY_RESTART_NOTE);
+  await editCallbackMessage(ctx, confirmation.build(), {
+    ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
+  });
 }
 
 // ── /statusline ─────────────────────────────────────────────────
@@ -580,12 +575,16 @@ const STATUS_LINE_PROMPT_MAX = 300;
  * anything that wasn't a turn, like a /compact, is dropped before the last few
  * are taken, so it doesn't use up one of the lines.
  */
-export function formatRecentPrompts(prompts: string[]): string {
-  return prompts
+export function formatRecentPrompts(prompts: string[]): EntityMessage {
+  const b = new EntityText();
+  prompts
     .flatMap((prompt) => promptLabel(prompt) ?? [])
     .slice(-STATUS_LINE_PROMPTS)
-    .map((label) => `_▸ ${esc(cutLabel(label, STATUS_LINE_PROMPT_MAX))}_`)
-    .join('\n');
+    .forEach((label, i) => {
+      if (i > 0) b.newline();
+      b.italic(`▸ ${cutLabel(label, STATUS_LINE_PROMPT_MAX)}`);
+    });
+  return b.build();
 }
 
 /**
@@ -605,8 +604,7 @@ function recentPrompts(sessionKey: string | undefined, lastPrompt: string | unde
 
 /**
  * The usage footer, if there's a figure to show and /verbosity wants it shown.
- * Plain text: sent alone it goes out as it is, and under the status line it
- * goes through esc() like the rest of that message.
+ * Plain text, whether sent alone or closing the status line.
  */
 function usageFooter(chatId: number, usage: AgentUsage | undefined): string | undefined {
   if (!usage || !resolveVerbosityFlags(chatId).showUsageFooter) return undefined;
@@ -616,7 +614,7 @@ function usageFooter(chatId: number, usage: AgentUsage | undefined): string | un
 }
 
 /**
- * Build the status-line message body in MarkdownV2.
+ * Build the status-line message body.
  * Each enabled line picks its own formatting (italic for topic/stats,
  * mono code span for the resume command so it's easy to copy).
  *
@@ -628,31 +626,30 @@ function usageFooter(chatId: number, usage: AgentUsage | undefined): string | un
  *
  * `brief` leaves the stats and that footer: see StatusLineOptions.
  */
-function buildStatusLineMarkdown(
+function buildStatusLine(
   chatId: number,
   sessionKey?: string,
   usage?: AgentUsage,
   lastPrompt?: string,
   brief = false,
-): string {
-  const sections: string[] = [];
+): EntityMessage {
+  const sections: EntityMessage[] = [];
 
   if (!brief && sessionKey && userPreferences.getShowTopicInStatusLine(chatId)) {
     const topic = getSessionTopic(sessionKey);
-    if (topic) sections.push(`_💬 ${esc(topic)}_`);
+    if (topic) sections.push(new EntityText().italic(`💬 ${topic}`).build());
   }
 
   if (!brief && userPreferences.getShowPromptInStatusLine(chatId)) {
     const formatted = formatRecentPrompts(recentPrompts(sessionKey, lastPrompt));
-    if (formatted) sections.push(formatted);
+    if (formatted.text) sections.push(formatted);
   }
 
-  const tail: string[] = [];
+  const tail = new EntityText();
   if (!brief && sessionKey && userPreferences.getShowSessionInStatusLine(chatId)) {
     const claudeSessionId = sessionManager.getSession(sessionKey)?.claudeSessionId;
     if (claudeSessionId) {
-      // Inside backticks only `\` and `` ` `` need escaping; UUIDs contain neither.
-      tail.push(`🔗 \`claude --resume ${claudeSessionId}\``);
+      tail.add('🔗 ').code(`claude --resume ${claudeSessionId}`).newline();
     }
   }
 
@@ -702,11 +699,11 @@ function buildStatusLineMarkdown(
     }
   }
 
-  tail.push(`_${esc(stats.join(' · '))}_`);
-  if (footer) tail.push(esc(footer));
+  tail.italic(stats.join(' · '));
+  if (footer) tail.newline().add(footer);
 
-  sections.push(tail.join('\n'));
-  return sections.join('\n\n');
+  sections.push(tail.build());
+  return joinMessages(sections);
 }
 
 export interface StatusLineOptions {
@@ -738,8 +735,7 @@ export async function sendStatusLine(
 ): Promise<void> {
   try {
     if (userPreferences.getShowStatusLine(chatId)) {
-      const markdown = buildStatusLineMarkdown(chatId, sessionKey, usage, lastPrompt, brief);
-      await ctx.reply(markdown, { parse_mode: 'MarkdownV2' });
+      await replyFormatted(ctx, buildStatusLine(chatId, sessionKey, usage, lastPrompt, brief));
       return;
     }
     const footer = usageFooter(chatId, usage);
@@ -749,7 +745,7 @@ export async function sendStatusLine(
   }
 }
 
-function buildStatusLineMenu(chatId: number, sessionKey: string): { text: string; keyboard: { text: string; callback_data: string }[][] } {
+function buildStatusLineMenu(chatId: number, sessionKey: string): { text: EntityMessage; keyboard: { text: string; callback_data: string }[][] } {
   const enabled = userPreferences.getShowStatusLine(chatId);
   const showTopic = userPreferences.getShowTopicInStatusLine(chatId);
   const showSession = userPreferences.getShowSessionInStatusLine(chatId);
@@ -774,18 +770,28 @@ function buildStatusLineMenu(chatId: number, sessionKey: string): { text: string
     ],
   ];
 
-  const preview = buildStatusLineMarkdown(chatId, sessionKey, undefined, 'example prompt for preview');
-  const text =
-    `📍 *Status Line*\n\n` +
-    `Status line: *${enabled ? 'ON' : 'OFF'}*\n` +
-    `Show topic: *${showTopic ? 'ON' : 'OFF'}*\n` +
-    `Show last prompts: *${showPrompt ? 'ON' : 'OFF'}*\n` +
-    `Show session: *${showSession ? 'ON' : 'OFF'}*\n\n` +
-    `_Sends a small italic line after each turn so you can see the current state without scrolling\\._ ` +
-    `_Show last prompts lists the last ${STATUS_LINE_PROMPTS} you sent, so an "ok" still shows what it answered\\. ` +
-    `Handy under /verbosity verbose, where the action log can push them off screen\\._ ` +
-    `_The session line shows a copy\\-pasteable \`claude \\-\\-resume\` command for CLI fallback\\._\n\n` +
-    `Preview:\n${preview}`;
+  const preview = buildStatusLine(chatId, sessionKey, undefined, 'example prompt for preview');
+  const onOff = (on: boolean) => (on ? 'ON' : 'OFF');
+  const text = new EntityText()
+    .add('📍 ').bold('Status Line').newline(2)
+    .add('Status line: ').bold(onOff(enabled)).newline()
+    .add('Show topic: ').bold(onOff(showTopic)).newline()
+    .add('Show last prompts: ').bold(onOff(showPrompt)).newline()
+    .add('Show session: ').bold(onOff(showSession)).newline(2)
+    .italic('Sends a small italic line after each turn so you can see the current state without scrolling.')
+    .add(' ')
+    .italic(
+      `Show last prompts lists the last ${STATUS_LINE_PROMPTS} you sent, so an "ok" still shows what it answered. ` +
+      'Handy under /verbosity verbose, where the action log can push them off screen.',
+    )
+    .add(' ')
+    .wrap('italic', (b) => b
+      .add('The session line shows a copy-pasteable ')
+      .code('claude --resume')
+      .add(' command for CLI fallback.'))
+    .add('\n\nPreview:\n')
+    .append(preview)
+    .build();
 
   return { text, keyboard };
 }
@@ -796,8 +802,7 @@ export async function handleStatusLine(ctx: Context): Promise<void> {
   const { chatId, sessionKey } = keyInfo;
 
   const menu = buildStatusLineMenu(chatId, sessionKey);
-  await ctx.reply(menu.text, {
-    parse_mode: 'MarkdownV2',
+  await replyFormatted(ctx, menu.text, {
     reply_markup: { inline_keyboard: menu.keyboard },
   });
 }
@@ -835,8 +840,7 @@ export async function handleStatusLineCallback(ctx: Context): Promise<void> {
 
   const menu = buildStatusLineMenu(chatId, sessionKey);
   await ctx.answerCallbackQuery({ text: toastText });
-  await ctx.editMessageText(menu.text, {
-    parse_mode: 'MarkdownV2',
+  await editCallbackMessage(ctx, menu.text, {
     reply_markup: { inline_keyboard: menu.keyboard },
   });
 }
@@ -849,7 +853,7 @@ export async function handleStatusLineCallback(ctx: Context): Promise<void> {
 // still win over the tier. "Default" clears the chat-specific pref so the
 // env-level VERBOSITY_DEFAULT applies.
 
-function buildVerbosityMenu(chatId: number): { text: string; keyboard: { text: string; callback_data: string }[][] } {
+function buildVerbosityMenu(chatId: number): { text: EntityMessage; keyboard: { text: string; callback_data: string }[][] } {
   const current = getVerbosityLevel(chatId);
   const hasPref = userPreferences.getVerbosity(chatId) !== undefined;
 
@@ -861,17 +865,33 @@ function buildVerbosityMenu(chatId: number): { text: string; keyboard: { text: s
   const defaultLabel = !hasPref ? `✓ Default (${config.VERBOSITY_DEFAULT})` : `Default (${config.VERBOSITY_DEFAULT})`;
   keyboard.push([{ text: defaultLabel, callback_data: 'verbosity:default' }]);
 
-  const descriptions = VERBOSITY_INFO
-    .map((info) => `• *${esc(info.label)}* \\- ${esc(info.description)}`)
-    .join('\n');
+  const text = new EntityText()
+    .add('🎚️ ').bold('Verbosity').newline(2)
+    .add('Current: ').bold(current);
+  if (!hasPref) text.add(' ').italic('(from env default)');
+  text.newline(2);
+  for (const info of VERBOSITY_INFO) {
+    text.add('• ').bold(info.label).add(` - ${info.description}\n`);
+  }
+  text.add('• ').bold('Default').add(' - Use the env-level setting (').code('VERBOSITY_DEFAULT').add(')');
 
-  const text =
-    `🎚️ *Verbosity*\n\n` +
-    `Current: *${esc(current)}*${hasPref ? '' : ' _\\(from env default\\)_'}\n\n` +
-    `${descriptions}\n` +
-    `• *Default* \\- Use the env\\-level setting \\(\`VERBOSITY_DEFAULT\`\\)`;
+  return { text: text.build(), keyboard };
+}
 
-  return { text, keyboard };
+/** "✅ Verbosity reset to env default (**normal**)", for the command and its button. */
+function verbosityResetText(): EntityMessage {
+  return new EntityText()
+    .add('✅ Verbosity reset to env default (').bold(config.VERBOSITY_DEFAULT).add(')')
+    .build();
+}
+
+/** Confirmation for a chosen level, shared by the command and its buttons. */
+function verbositySetText(level: VerbosityLevel): EntityMessage {
+  const info = VERBOSITY_INFO.find((l) => l.id === level);
+  return new EntityText()
+    .add('✅ Verbosity set to ').bold(info?.label ?? level).newline(2)
+    .italic(info?.description ?? '')
+    .build();
 }
 
 export async function handleVerbosity(ctx: Context): Promise<void> {
@@ -883,8 +903,7 @@ export async function handleVerbosity(ctx: Context): Promise<void> {
 
   if (!arg) {
     const { text, keyboard } = buildVerbosityMenu(chatId);
-    await ctx.reply(text, {
-      parse_mode: 'MarkdownV2',
+    await replyFormatted(ctx, text, {
       reply_markup: { inline_keyboard: keyboard },
     });
     return;
@@ -892,27 +911,17 @@ export async function handleVerbosity(ctx: Context): Promise<void> {
 
   if (arg === 'default' || arg === 'reset' || arg === 'auto') {
     userPreferences.clearVerbosity(chatId);
-    await ctx.reply(
-      `✅ Verbosity reset to env default \\(*${esc(config.VERBOSITY_DEFAULT)}*\\)`,
-      { parse_mode: 'MarkdownV2' },
-    );
+    await replyFormatted(ctx, verbosityResetText());
     return;
   }
 
   if (!isValidVerbosityLevel(arg)) {
-    await ctx.reply(
-      `❌ Unknown verbosity level "${esc(arg)}"\\.\n\nValid: quiet, normal, verbose, debug, default`,
-      { parse_mode: 'MarkdownV2' },
-    );
+    await replyFormatted(ctx, `❌ Unknown verbosity level "${arg}".\n\nValid: quiet, normal, verbose, debug, default`);
     return;
   }
 
   userPreferences.setVerbosity(chatId, arg);
-  const info = VERBOSITY_INFO.find((l) => l.id === arg);
-  await ctx.reply(
-    `✅ Verbosity set to *${esc(info?.label ?? arg)}*\n\n_${esc(info?.description ?? '')}_`,
-    { parse_mode: 'MarkdownV2' },
-  );
+  await replyFormatted(ctx, verbositySetText(arg));
 }
 
 export async function handleVerbosityCallback(ctx: Context): Promise<void> {
@@ -928,10 +937,7 @@ export async function handleVerbosityCallback(ctx: Context): Promise<void> {
   if (choice === 'default') {
     userPreferences.clearVerbosity(chatId);
     await ctx.answerCallbackQuery({ text: 'Verbosity reset to default' });
-    await ctx.editMessageText(
-      `✅ Verbosity reset to env default \\(*${esc(config.VERBOSITY_DEFAULT)}*\\)`,
-      { parse_mode: 'MarkdownV2' },
-    );
+    await editCallbackMessage(ctx, verbosityResetText());
     return;
   }
 
@@ -945,10 +951,7 @@ export async function handleVerbosityCallback(ctx: Context): Promise<void> {
   const info = VERBOSITY_INFO.find((l) => l.id === level);
 
   await ctx.answerCallbackQuery({ text: `Verbosity: ${info?.label ?? level}` });
-  await ctx.editMessageText(
-    `✅ Verbosity set to *${esc(info?.label ?? level)}*\n\n_${esc(info?.description ?? '')}_`,
-    { parse_mode: 'MarkdownV2' },
-  );
+  await editCallbackMessage(ctx, verbositySetText(level));
 }
 
 export async function handleMethodCommand(ctx: Context): Promise<void> {
@@ -969,12 +972,13 @@ export async function handleMethodCommand(ctx: Context): Promise<void> {
     return [{ text: label, callback_data: `method:${method}` }];
   });
 
-  const descriptionText = Object.entries(descriptions)
-    .map(([key, value]) => `*${key}*\\: ${esc(value)}`)
-    .join('\n');
+  const descriptionText = new EntityText();
+  Object.entries(descriptions).forEach(([key, value], i) => {
+    if (i > 0) descriptionText.newline();
+    descriptionText.bold(key).add(`: ${value}`);
+  });
 
-  await ctx.reply(`${descriptionText}`, {
-    parse_mode: 'MarkdownV2',
+  await replyFormatted(ctx, descriptionText.build(), {
     reply_markup: {
       inline_keyboard: keyboard,
     },
@@ -996,9 +1000,7 @@ export async function handleMethodCallback(ctx: Context): Promise<void> {
   }
 
   await ctx.answerCallbackQuery();
-  await ctx.editMessageText(`✅ Method set to *${esc(newMethod)}*`, {
-    parse_mode: 'MarkdownV2',
-  });
+  await editCallbackMessage(ctx, new EntityText().add('✅ Method set to ').bold(newMethod).build());
 }
 
 export async function handleSuggestions(ctx: Context): Promise<void> {
@@ -1007,8 +1009,7 @@ export async function handleSuggestions(ctx: Context): Promise<void> {
   const { sessionKey } = keyInfo;
 
   const menu = buildSuggestionsMenu(sessionKey);
-  await ctx.reply(menu.text, {
-    parse_mode: 'MarkdownV2',
+  await replyFormatted(ctx, menu.text, {
     reply_markup: { inline_keyboard: menu.keyboard },
   });
 }
@@ -1030,8 +1031,7 @@ export async function handleSuggestionsCallback(ctx: Context): Promise<void> {
   const menu = buildSuggestionsMenu(sessionKey);
   await ctx.answerCallbackQuery();
   try {
-    await ctx.editMessageText(menu.text, {
-      parse_mode: 'MarkdownV2',
+    await editCallbackMessage(ctx, menu.text, {
       reply_markup: { inline_keyboard: menu.keyboard },
     });
   } catch (error) {
@@ -1066,7 +1066,7 @@ function describeTransportDefault(scope: SettingsScope): { label: string; why: s
 }
 
 function buildPermissionModeMenu(scope: SettingsScope): {
-  text: string;
+  text: EntityMessage;
   keyboard: { text: string; callback_data: string }[][];
 } {
   const current = userPreferences.getPermissionMode(scope);
@@ -1081,37 +1081,42 @@ function buildPermissionModeMenu(scope: SettingsScope): {
     callback_data: 'permmode:default',
   }]);
 
-  const descriptions = PERMISSION_MODES
-    .map((info) => `• *${esc(info.label)}* \\- ${esc(info.description)}`)
-    .join('\n');
-
+  const text = new EntityText().add('🔐 ').bold('Permission mode').add('\n\nCurrent: ');
   // Named the same way whether or not it was chosen: the mode a turn runs in
   // is the useful fact, and "Default" alone never told anyone what that was.
-  const currentLine = current
-    ? `*${esc(permissionModeInfo(current).label)}*`
-    : `*${esc(fallback.label)}* _\\(default — ${esc(fallback.why)}\\)_`;
+  if (current) {
+    text.bold(permissionModeInfo(current).label);
+  } else {
+    text.bold(fallback.label).add(' ').italic(`(default — ${fallback.why})`);
+  }
+  text.newline(2);
+  for (const info of PERMISSION_MODES) {
+    text.add('• ').bold(info.label).add(` - ${info.description}\n`);
+  }
+  text.add('• ').bold('Default').add(' - follow the transport, which here means ')
+    .bold(fallback.label)
+    .newline(2)
+    .italic("Takes effect on your next message. Modes that ask will put Claude Code's own prompts in the chat as buttons.");
 
-  return {
-    text:
-      `🔐 *Permission mode*\n\nCurrent: ${currentLine}\n\n`
-      + `${descriptions}\n• *Default* \\- follow the transport, which here means `
-      + `*${esc(fallback.label)}*\n\n`
-      + '_Takes effect on your next message\\. Modes that ask will put Claude '
-      + "Code's own prompts in the chat as buttons\\._",
-    keyboard,
-  };
+  return { text: text.build(), keyboard };
 }
 
 /** Confirmation text shared by the command and its buttons. */
-function permissionModeSetText(id: PermissionModeId): string {
+function permissionModeSetText(id: PermissionModeId): EntityMessage {
   const info = permissionModeInfo(id);
-  return `✅ Permission mode set to *${esc(info.label)}*\n\n_${esc(info.description)}_`;
+  return new EntityText()
+    .add('✅ Permission mode set to ').bold(info.label).newline(2)
+    .italic(info.description)
+    .build();
 }
 
 /** Same, for the reset — which names the mode it reset *to*, not just "default". */
-function permissionModeResetText(scope: SettingsScope): string {
+function permissionModeResetText(scope: SettingsScope): EntityMessage {
   const { label, why } = describeTransportDefault(scope);
-  return `✅ Permission mode reset to the transport default: *${esc(label)}*\n\n_${esc(why)}_`;
+  return new EntityText()
+    .add('✅ Permission mode reset to the transport default: ').bold(label).newline(2)
+    .italic(why)
+    .build();
 }
 
 export async function handlePermissionMode(ctx: Context): Promise<void> {
@@ -1123,8 +1128,7 @@ export async function handlePermissionMode(ctx: Context): Promise<void> {
 
   if (!arg) {
     const { text, keyboard } = buildPermissionModeMenu(sessionKey);
-    await ctx.reply(text, {
-      parse_mode: 'MarkdownV2',
+    await replyFormatted(ctx, text, {
       reply_markup: { inline_keyboard: keyboard },
     });
     return;
@@ -1133,22 +1137,20 @@ export async function handlePermissionMode(ctx: Context): Promise<void> {
   const lower = arg.toLowerCase();
   if (lower === 'default' || lower === 'reset') {
     userPreferences.clearPermissionMode(sessionKey);
-    await replyMd(ctx, permissionModeResetText(sessionKey));
+    await replyFormatted(ctx, permissionModeResetText(sessionKey));
     return;
   }
 
   const parsed = parsePermissionModeArg(arg);
   if (!parsed) {
-    await replyMd(
-      ctx,
-      `❌ Unknown mode "${esc(arg)}"\\.\n\nValid: `
-      + `${PERMISSION_MODES.map((m) => `\`${esc(m.id)}\``).join(', ')}, \`default\``,
-    );
+    const valid = new EntityText().add(`❌ Unknown mode "${arg}".\n\nValid: `);
+    for (const m of PERMISSION_MODES) valid.code(m.id).add(', ');
+    await replyFormatted(ctx, valid.code('default').build());
     return;
   }
 
   userPreferences.setPermissionMode(sessionKey, parsed);
-  await replyMd(ctx, permissionModeSetText(parsed));
+  await replyFormatted(ctx, permissionModeSetText(parsed));
 }
 
 export async function handlePermissionModeCallback(ctx: Context): Promise<void> {
@@ -1164,12 +1166,12 @@ export async function handlePermissionModeCallback(ctx: Context): Promise<void> 
     userPreferences.clearPermissionMode(sessionKey);
     const { label } = describeTransportDefault(sessionKey);
     await ctx.answerCallbackQuery({ text: `Default: ${label}` });
-    await ctx.editMessageText(permissionModeResetText(sessionKey), { parse_mode: 'MarkdownV2' });
+    await editCallbackMessage(ctx, permissionModeResetText(sessionKey));
     return;
   }
 
   if (!isPermissionModeId(choice)) return;
   userPreferences.setPermissionMode(sessionKey, choice);
   await ctx.answerCallbackQuery({ text: `Mode: ${permissionModeInfo(choice).label}` });
-  await ctx.editMessageText(permissionModeSetText(choice), { parse_mode: 'MarkdownV2' });
+  await editCallbackMessage(ctx, permissionModeSetText(choice));
 }

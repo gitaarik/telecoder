@@ -155,10 +155,6 @@ const envSchema = z.object({
     .default('true')
     .transform((val) => val.toLowerCase() === 'true'),
   CLAUDE_SDK_LOG_LEVEL: z.enum(['off', 'basic', 'verbose', 'trace']).default('basic'),
-  CLAUDE_SDK_INCLUDE_PARTIAL: z
-    .string()
-    .default('false')
-    .transform((val) => val.toLowerCase() === 'true'),
   // Load user-level Claude settings (~/.claude/settings.json: plugins, hooks, MCP servers)
   // into the bot's SDK subprocess. Default false so the bot runs in an isolated env;
   // user-level plugins/MCP servers can otherwise inflate tool counts and trigger the

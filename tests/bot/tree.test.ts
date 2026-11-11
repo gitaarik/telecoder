@@ -7,7 +7,10 @@
  */
 
 import { describe, it, expect, vi, afterAll, beforeEach } from 'vitest';
-import type { Context } from 'grammy';
+import { GrammyError, type Context } from 'grammy';
+import type { MessageEntity } from 'grammy/types';
+import type { EntityMessage } from '../../src/telegram/entities.js';
+import { marked } from '../helpers/entity-marks.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -127,19 +130,36 @@ function chatOn(chatId: number, current: string, history: string[] = []): string
 const nodeRef = (id: string) => `u1:${id}`;
 
 function tap(chatId: number, data: string, messageId = 500) {
+  // An edit of the tapped message, as the bot makes it through ctx.api,
+  // recorded as (text, options) like ctx.editMessageText takes them.
+  const editMessageText = vi.fn(async (_text: string, _options: object) => true);
   return {
     chat: { id: chatId },
     from: { id: 1 },
-    callbackQuery: { data, message: { message_id: messageId } },
+    callbackQuery: { data, message: { message_id: messageId, chat: { id: chatId } } },
     answerCallbackQuery: vi.fn(async () => true),
-    editMessageText: vi.fn(async () => true),
+    editMessageText,
+    api: {
+      editMessageText: (_chat: number, _id: number, text: string, options: object) => editMessageText(text, options),
+    },
     reply: vi.fn(async () => ({ message_id: messageId + 1 })),
   };
 }
 const asCtx = (fake: object) => fake as unknown as Context;
-const plain = (text: string) => text.replace(/\\(.)/g, '$1');
+/** A message as it reads, its bold, italic and code marked. */
+const shown = (message: EntityMessage) => marked(message.text, message.entities);
+/** What a mocked send or edit last put out, marked the same way. */
+const lastSent = (fn: { mock: { lastCall?: unknown[] } }) => {
+  const [text, options] = fn.mock.lastCall as [string, { entities?: MessageEntity[] }];
+  return marked(text, options?.entities);
+};
 /** The lines of the tree a view draws, in its code block. */
-const drawnLines = (text: string) => plain(text).split('```')[1]!.trim().split('\n');
+const drawnLines = (message: EntityMessage) => {
+  const pre = message.entities.find((e) => e.type === 'pre')!;
+  return message.text.slice(pre.offset, pre.offset + pre.length).split('\n');
+};
+/** How a marker goes out: with entities, and its buttons under it. */
+const MARKER_OPTIONS = () => ({ entities: expect.any(Array), reply_markup: BRANCH_MARKER_KEYBOARD });
 
 /** `files` written as transcripts for `body`, and gone again after it, so later tests see the trees they expect. */
 async function withTranscripts(files: Record<string, string>, body: () => unknown): Promise<void> {
@@ -161,7 +181,7 @@ const BRANCH_MARKER_KEYBOARD = {
 describe('renderTree', () => {
   it('draws the whole tree, a letter per point, and marks where the chat is', () => {
     const view = renderTree(treeOf(PROJECT, 'docs')!, 'docs');
-    const drawn = plain(view.text).split('```')[1]!.trim().split('\n');
+    const drawn = drawnLines(view.text);
     expect(drawn).toEqual([
       'A Plan the parser ·1',
       '├B Split it ·1',
@@ -181,7 +201,7 @@ describe('renderTree', () => {
     write('wide-b', lines(rec(id(1), 'user', long), rec(id(2), 'assistant', 'Ok.'), rec(id(5), 'user', long), rec(id(6), 'assistant', 'B.')));
 
     const view = renderTree(treeOf(PROJECT, 'wide-a')!, 'wide-a');
-    for (const line of plain(view.text).split('```')[1]!.trim().split('\n')) {
+    for (const line of drawnLines(view.text)) {
       expect(Array.from(line).length).toBeLessThanOrEqual(32);
     }
     for (const button of view.keyboard.flat()) {
@@ -232,7 +252,7 @@ describe('renderTree', () => {
       expect(root.at(-1)).toMatch(/so what failed first\? ·1$/);
 
       // Its point's view cuts it the same way, the title shorter.
-      const view = plain(renderNode(tree, tree.root, '299').text);
+      const view = shown(renderNode(tree, tree.root, '299').text);
       expect(view).toContain(`*A* · ${cutLabel(long, 60)}\n`);
       expect(view).toContain(`*You:* ${cutLabel(long, 300)}\n`);
     });
@@ -249,8 +269,8 @@ describe('renderTree', () => {
     await withTranscripts(files, () => {
       const view = renderTree(treeOf(PROJECT, 'many-1')!);
       // Within what Telegram takes, and close to it rather than cut to a word each.
-      expect(view.text.length).toBeLessThanOrEqual(4096);
-      expect(view.text.length).toBeGreaterThan(3500);
+      expect(view.text.text.length).toBeLessThanOrEqual(4096);
+      expect(view.text.text.length).toBeGreaterThan(3500);
       expect(view.keyboard.flat()).toHaveLength(31);
       for (const line of drawnLines(view.text)) expect(Array.from(line).length).toBeLessThanOrEqual(32);
 
@@ -269,9 +289,9 @@ describe('/tree', () => {
     const command = { chat: { id: 201 }, message: { message_id: 1, text: '/tree' }, reply: vi.fn(async () => ({})) };
     await handleTreeCommand(asCtx(command));
 
-    const [text, options] = command.reply.mock.lastCall as unknown as [string, { reply_markup: { inline_keyboard: unknown[][] } }];
-    expect(plain(text)).toContain('project* — 3 branches');
-    expect(plain(text)).toContain('│└D Write docs ·1 📍');
+    const [, options] = command.reply.mock.lastCall as unknown as [string, { reply_markup: { inline_keyboard: unknown[][] } }];
+    expect(lastSent(command.reply)).toContain('project* — 3 branches');
+    expect(lastSent(command.reply)).toContain('│└D Write docs ·1 📍');
     expect(options.reply_markup.inline_keyboard.flat()).toHaveLength(5);
   });
 
@@ -280,9 +300,9 @@ describe('/tree', () => {
     const command = { chat: { id: 202 }, message: { message_id: 1, text: '/tree' }, reply: vi.fn(async () => ({})) };
     await handleTreeCommand(asCtx(command));
 
-    const [text, options] = command.reply.mock.lastCall as unknown as [string, { reply_markup: { inline_keyboard: Array<Array<{ callback_data: string }>> } }];
-    expect(plain(text)).toContain("This conversation hasn't been forked yet.");
-    expect(plain(text)).toContain('A. Plan the parser — 3 branches');
+    const [, options] = command.reply.mock.lastCall as unknown as [string, { reply_markup: { inline_keyboard: Array<Array<{ callback_data: string }>> } }];
+    expect(lastSent(command.reply)).toContain("This conversation hasn't been forked yet.");
+    expect(lastSent(command.reply)).toContain('A. Plan the parser — 3 branches');
     expect(options.reply_markup.inline_keyboard.flat()[0]!.callback_data).toBe('tree:f:u1');
   });
 });
@@ -293,11 +313,12 @@ describe('opening a point', () => {
     const open = tap(203, `tree:n:${nodeRef('a2')}`);
     await handleTreeCallback(asCtx(open));
 
-    const [text, options] = open.editMessageText.mock.lastCall as unknown as [string, { reply_markup: { inline_keyboard: Array<Array<{ text: string }>> } }];
-    expect(plain(text)).toContain('*B* · Split it');
-    expect(plain(text)).toContain('Splits into C and D.');
-    expect(plain(text)).toContain('*You:* Split it');
-    expect(plain(text)).toContain('Split into tokenizer.ts and parser.ts.');
+    const [, options] = open.editMessageText.mock.lastCall as unknown as [string, { reply_markup: { inline_keyboard: Array<Array<{ text: string }>> } }];
+    const text = lastSent(open.editMessageText);
+    expect(text).toContain('*B* · Split it');
+    expect(text).toContain('Splits into C and D.');
+    expect(text).toContain('*You:* Split it');
+    expect(text).toContain('Split into tokenizer.ts and parser.ts.');
     // Not a branch end, so there is nothing to carry on — only to branch from.
     expect(options.reply_markup.inline_keyboard.map((row) => row[0]!.text)).toEqual([
       '🌱 New branch from here',
@@ -309,7 +330,7 @@ describe('opening a point', () => {
     chatOn(204, 'docs');
     const open = tap(204, `tree:n:${nodeRef('a5')}`);
     await handleTreeCallback(asCtx(open));
-    expect(plain(open.editMessageText.mock.lastCall![0] as string))
+    expect(lastSent(open.editMessageText))
       .toContain('It lives in Research bot — carrying it on here makes a copy');
   });
 });
@@ -324,9 +345,9 @@ describe('carrying on a branch', () => {
     expect(sessionHistory.getLastSession(key)?.claudeSessionId).toBe('tests');
     expect(carry.editMessageText).toHaveBeenCalledWith(
       expect.stringContaining('Back on a branch'),
-      { parse_mode: 'MarkdownV2', reply_markup: BRANCH_MARKER_KEYBOARD },
+      MARKER_OPTIONS(),
     );
-    expect(plain(carry.editMessageText.mock.lastCall![0] as string)).toContain('Added the tests.');
+    expect(lastSent(carry.editMessageText)).toContain('Added the tests.');
     // The banner's 🍴 forks the branch where it stands.
     expect(messageOffsets.lookup(key, 600)).toMatchObject({ claudeSessionId: 'tests', lineCount: 6 });
   });
@@ -338,7 +359,7 @@ describe('carrying on a branch', () => {
 
     const open = tap(206, `tree:n:${nodeRef('a6')}`);
     await handleTreeCallback(asCtx(open));
-    expect(plain(open.editMessageText.mock.lastCall![0] as string))
+    expect(lastSent(open.editMessageText))
       .toContain("No chat's /resume has it any more. Carrying it on here makes a copy");
 
     const carry = tap(206, `tree:c:${nodeRef('a6')}`);
@@ -375,7 +396,7 @@ describe('carrying on a branch', () => {
     expect(fs.readFileSync(regexFile, 'utf-8')).toBe(before);
     expect(carry.editMessageText).toHaveBeenCalledWith(
       expect.stringContaining('Forked from Research bot'),
-      { parse_mode: 'MarkdownV2', reply_markup: BRANCH_MARKER_KEYBOARD },
+      MARKER_OPTIONS(),
     );
   });
 
@@ -403,10 +424,10 @@ describe('branching from a point', () => {
       .map((line) => (JSON.parse(line) as { uuid: string }).uuid);
     expect(uuids).toEqual(['u1', 'a1', 'u2', 'a2']);
 
-    const [text, options] = branch.editMessageText.mock.lastCall as unknown as [string, object];
-    expect(plain(text)).toContain('New branch');
-    expect(plain(text)).toContain("What's above is the conversation you were in");
-    expect(options).toEqual({ parse_mode: 'MarkdownV2', reply_markup: BRANCH_MARKER_KEYBOARD });
+    const [, options] = branch.editMessageText.mock.lastCall as unknown as [string, object];
+    expect(lastSent(branch.editMessageText)).toContain('New branch');
+    expect(lastSent(branch.editMessageText)).toContain("What's above is the conversation you were in");
+    expect(options).toEqual(MARKER_OPTIONS());
     expect(messageOffsets.lookup(key, 700)).toMatchObject({ claudeSessionId: branched, lineCount: 4 });
 
     // The new branch is part of the tree now, at the point it came from.
@@ -428,7 +449,7 @@ describe('after a restart', () => {
     const command = { chat: { id: 212 }, message: { message_id: 1, text: '/tree' }, reply: vi.fn(async () => ({})) };
     await handleTreeCommand(asCtx(command));
 
-    const text = plain(command.reply.mock.lastCall![0] as unknown as string);
+    const text = lastSent(command.reply);
     expect(text).toContain('│└D Write docs ·1 📍');
     expect(text).toContain('📍 where this chat left off');
     // A standing "Start fresh" counts on nothing being loaded.
@@ -444,13 +465,18 @@ describe('a view Telegram rejects', () => {
   it('goes out as plain text rather than not at all', async () => {
     chatOn(213, 'docs');
     const open = tap(213, `tree:n:${nodeRef('a2')}`);
-    open.editMessageText.mockRejectedValueOnce(new Error("Bad Request: can't parse entities"));
+    open.editMessageText.mockRejectedValueOnce(new GrammyError(
+      "Call to 'editMessageText' failed!",
+      { ok: false, error_code: 400, description: "Bad Request: can't parse entities" },
+      'editMessageText',
+      {},
+    ));
     await handleTreeCallback(asCtx(open));
 
-    const [text, options] = open.editMessageText.mock.lastCall as unknown as [string, { parse_mode?: string }];
-    expect(options.parse_mode).toBeUndefined();
+    expect(open.editMessageText).toHaveBeenCalledTimes(2);
+    const [text, options] = open.editMessageText.mock.lastCall as unknown as [string, { entities: MessageEntity[] }];
+    expect(options.entities).toEqual([]);
     expect(text).toContain('B · Split it');
-    expect(text).not.toMatch(/\\|\*\*>|\|\|$/m);
   });
 });
 

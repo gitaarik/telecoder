@@ -104,6 +104,41 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Agent
 
+- **The reply shows while it is being written** — a reply used to reach the
+  chat only once the turn had ended. It now appears in the status bubble as
+  Claude writes it and is edited every second or two (every few seconds in a
+  group, and less often after Telegram asks the bot to slow down), with the
+  status line, or `✍️ Writing…` without the terminal UI, underneath as the sign
+  that it isn't final yet. A reply that outgrows one message carries on in a
+  silent message below. At the end the final text takes its place; a cancelled
+  turn keeps what was written, with the banner under it. The SDK streams it as
+  it is typed. PTY mode takes finished blocks from the session log and the one
+  being written from the screen, a line at a time, and leaves out tool rows,
+  the spinner and Claude Code's own notices. `CLAUDE_SDK_INCLUDE_PARTIAL` is
+  gone: streaming needs it on.
+
+- **Formatting that can't break a message** — every message used to go out as
+  MarkdownV2, which needs escaping, so an underscore in a path or a backtick in
+  a command could get a reply refused and resent unformatted, and a long reply
+  cut in the middle of bold text or a link broke both halves. Messages now go
+  out as plain text with the formatting alongside as entities, from replies to
+  menus, edits, `/status`, `/project`, `/recap` and the background-task and
+  monitor messages. Nothing needs escaping, and a long reply can be split
+  anywhere: bold, links and code blocks carry on in the next part. A link
+  Telegram won't take, such as `http://localhost:3000`, is written out as text
+  instead of failing the whole message. Code blocks now show their language.
+
+- **The task list is back** — Claude Code stopped using `TodoWrite` and keeps
+  its list with `TaskCreate`, `TaskUpdate`, `TaskList` and `TaskGet` instead, so
+  the live checklist never appeared on a current CLI. The card now reads the
+  list from where Claude Code keeps it (`~/.claude/tasks/<session id>/`), in
+  both transports, and draws it the way the terminal does: a `3 tasks (1 done,
+  1 in progress, 1 open)` header, `✔` struck through for done, `◼` in bold for
+  the one in progress, `◻` for the rest, and `› blocked by #2` while a blocker
+  is open. It is posted on a turn's first change and edited in place after
+  that. A restored session (`/resume`, `/continue`, a restart, going back to a
+  branch in `/tree`) shows its whole list again. `TodoWrite` support is gone.
+
 - **Secrets that stay out of the chat** — a task that needed a key or a token
   used to end in instructions to open a terminal on the machine over SSH and
   type it there, since anything sent in the chat, or run there with `!`, lands

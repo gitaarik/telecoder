@@ -32,7 +32,7 @@ export const VERBOSITY_INFO: VerbosityLevelInfo[] = [
   {
     id: 'normal',
     label: '💬 Normal',
-    description: 'Default. Tool status, todos, background tasks, completion ping.',
+    description: 'Default. Tool status, task list, background tasks, completion ping.',
   },
   {
     id: 'verbose',

@@ -12,7 +12,6 @@ import {
   queueRequest,
   setAbortController,
 } from '../../claude/request-queue.js';
-import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
 import { getStreamingMode } from './command.handler.js';
 import { downloadFileSecure, getTelegramFileUrl } from '../../utils/download.js';
 import { sanitizeError } from '../../utils/sanitize.js';
@@ -159,9 +158,7 @@ export async function handlePhoto(ctx: Context): Promise<void> {
 
   if (fileSizeMB > config.IMAGE_MAX_FILE_SIZE_MB) {
     await ctx.reply(
-      `❌ Image too large \(${esc(fileSizeMB.toFixed(1))}MB\)\.
-\nPlease send images under ${esc(String(config.IMAGE_MAX_FILE_SIZE_MB))}MB\.`,
-      { parse_mode: 'MarkdownV2' }
+      `❌ Image too large (${fileSizeMB.toFixed(1)}MB).\n\nPlease send images under ${config.IMAGE_MAX_FILE_SIZE_MB}MB.`,
     );
     return;
   }
@@ -208,7 +205,7 @@ export async function handlePhoto(ctx: Context): Promise<void> {
   } catch (error) {
     const errorMessage = sanitizeError(error);
     console.error('[Photo] Error:', errorMessage);
-    await ctx.reply(`❌ Image error: ${esc(errorMessage)}`, { parse_mode: 'MarkdownV2' });
+    await ctx.reply(`❌ Image error: ${errorMessage}`);
   }
 }
 
@@ -243,8 +240,7 @@ export async function handleTextDocument(ctx: Context): Promise<void> {
   const fileSizeMB = (document.file_size || 0) / (1024 * 1024);
   if (fileSizeMB > config.DOCUMENT_MAX_FILE_SIZE_MB) {
     await ctx.reply(
-      `❌ Document too large \\(${esc(fileSizeMB.toFixed(1))}MB\\)\\. Limit: ${esc(String(config.DOCUMENT_MAX_FILE_SIZE_MB))}MB\\.`,
-      { parse_mode: 'MarkdownV2' }
+      `❌ Document too large (${fileSizeMB.toFixed(1)}MB). Limit: ${config.DOCUMENT_MAX_FILE_SIZE_MB}MB.`,
     );
     return;
   }
@@ -303,7 +299,7 @@ export async function handleTextDocument(ctx: Context): Promise<void> {
   } catch (error) {
     const errorMessage = sanitizeError(error);
     console.error('[Doc] Error:', errorMessage);
-    await ctx.reply(`❌ Document error: ${esc(errorMessage)}`, { parse_mode: 'MarkdownV2' });
+    await ctx.reply(`❌ Document error: ${errorMessage}`);
   }
 }
 
@@ -339,9 +335,7 @@ export async function handleImageDocument(ctx: Context): Promise<void> {
 
   if (fileSizeMB > config.IMAGE_MAX_FILE_SIZE_MB) {
     await ctx.reply(
-      `❌ Image too large \(${esc(fileSizeMB.toFixed(1))}MB\)\.
-\nPlease send images under ${esc(String(config.IMAGE_MAX_FILE_SIZE_MB))}MB\.`,
-      { parse_mode: 'MarkdownV2' }
+      `❌ Image too large (${fileSizeMB.toFixed(1)}MB).\n\nPlease send images under ${config.IMAGE_MAX_FILE_SIZE_MB}MB.`,
     );
     return;
   }
@@ -377,6 +371,6 @@ export async function handleImageDocument(ctx: Context): Promise<void> {
   } catch (error) {
     const errorMessage = sanitizeError(error);
     console.error('[ImageDoc] Error:', errorMessage);
-    await ctx.reply(`❌ Image error: ${esc(errorMessage)}`, { parse_mode: 'MarkdownV2' });
+    await ctx.reply(`❌ Image error: ${errorMessage}`);
   }
 }

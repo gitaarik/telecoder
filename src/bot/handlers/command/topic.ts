@@ -10,10 +10,11 @@
 
 import { Context } from 'grammy';
 import { config } from '../../../config.js';
-import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
+import { EntityText } from '../../../telegram/entities.js';
+import { replyFormatted, editCallbackMessage } from '../../../telegram/send.js';
 import { getBotNameSettings, setBotNameEnabled } from '../../../telegram/botname-settings.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
-import { replyMd, parseCallback } from './shared.js';
+import { parseCallback } from './shared.js';
 import { pushBotName, setSessionTopic } from './topic-store.js';
 
 export {
@@ -38,7 +39,13 @@ export async function handleTopic(ctx: Context): Promise<void> {
   // setSessionTopic updates in-memory + persistent state but the bot's
   // Telegram-side display name doesn't change, so no setMyName call.
   setSessionTopic(sessionKey, topic);
-  await replyMd(ctx, topic ? `✅ Topic: *${esc(topic)}*` : '✅ Topic cleared');
+  await replyFormatted(ctx, topic ? new EntityText().add('✅ Topic: ').bold(topic).build() : '✅ Topic cleared');
+}
+
+function botNameDescription(enabled: boolean): string {
+  return enabled
+    ? 'Bot name updates to include the active project when switching'
+    : 'Bot name stays as configured in BOT_NAME';
 }
 
 export async function handleBotName(ctx: Context): Promise<void> {
@@ -62,17 +69,13 @@ export async function handleBotName(ctx: Context): Promise<void> {
     ],
   ];
 
-  const description = settings.enabled
-    ? '_Bot name updates to include the active project when switching_'
-    : '_Bot name stays as configured in BOT\\_NAME_';
+  const message = new EntityText()
+    .add('✏️ ').bold('Dynamic Bot Name')
+    .add('\n\nCurrent: ').bold(currentStatus)
+    .newline().italic(botNameDescription(settings.enabled))
+    .build();
 
-  await ctx.reply(
-    `✏️ *Dynamic Bot Name*\n\nCurrent: *${currentStatus}*\n${description}`,
-    {
-      parse_mode: 'MarkdownV2',
-      reply_markup: { inline_keyboard: keyboard },
-    }
-  );
+  await replyFormatted(ctx, message, { reply_markup: { inline_keyboard: keyboard } });
 }
 
 export async function handleBotNameCallback(ctx: Context): Promise<void> {
@@ -84,14 +87,13 @@ export async function handleBotNameCallback(ctx: Context): Promise<void> {
   setBotNameEnabled(sessionKey, newState);
 
   const statusText = newState ? 'ON' : 'OFF';
-  const description = newState
-    ? '_Bot name updates to include the active project when switching_'
-    : '_Bot name stays as configured in BOT\\_NAME_';
-
   await ctx.answerCallbackQuery({ text: `Dynamic bot name ${statusText}!` });
-  await ctx.editMessageText(
-    `✅ Dynamic Bot Name *${statusText}*\n\n${description}`,
-    { parse_mode: 'MarkdownV2' }
+  await editCallbackMessage(
+    ctx,
+    new EntityText()
+      .add('✅ Dynamic Bot Name ').bold(statusText)
+      .newline(2).italic(botNameDescription(newState))
+      .build(),
   );
 
   // Reset bot name to base when disabling

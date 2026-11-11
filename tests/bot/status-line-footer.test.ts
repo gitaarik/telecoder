@@ -14,6 +14,8 @@ import * as os from 'os';
 import * as path from 'path';
 import type { AgentUsage } from '../../src/providers/types.js';
 import type { VerbosityLevel } from '../../src/utils/verbosity.js';
+import type { MessageEntity } from 'grammy/types';
+import { marked } from '../helpers/entity-marks.js';
 
 vi.mock('os', async (importOriginal) => {
   const actual = await importOriginal<typeof import('os')>();
@@ -46,7 +48,6 @@ const USAGE: AgentUsage = {
 };
 
 const FOOTER = '🟢 [█░░░░░░░░░] 12% context · 120.5k/1.0M · $0.1234 · 3 turns';
-const ESCAPED_FOOTER = '🟢 \\[█░░░░░░░░░\\] 12% context · 120\\.5k/1\\.0M · $0\\.1234 · 3 turns';
 
 let nextChat = 7000;
 
@@ -55,11 +56,11 @@ async function closingMessages(
   statusLine: boolean,
   verbosity: VerbosityLevel,
   usage: AgentUsage | null = USAGE,
-): Promise<[string, { parse_mode?: string } | undefined][]> {
+): Promise<[string, { parse_mode?: string; entities?: MessageEntity[] } | undefined][]> {
   const chat = nextChat++;
   userPreferences.setShowStatusLine(chat, statusLine);
   userPreferences.setVerbosity(chat, verbosity);
-  const reply = vi.fn(async (_text: string, _opts?: { parse_mode?: string }) => ({}));
+  const reply = vi.fn(async (_text: string, _opts?: { parse_mode?: string; entities?: MessageEntity[] }) => ({}));
   await sendStatusLine({ reply } as unknown as Context, chat, String(chat), usage ?? undefined, 'a prompt');
   return reply.mock.calls;
 }
@@ -69,13 +70,16 @@ describe('the message that closes a turn', () => {
     const sent = await closingMessages(true, 'verbose');
     expect(sent).toHaveLength(1);
     const [text, options] = sent[0]!;
-    expect(text.split('\n').at(-1)).toBe(ESCAPED_FOOTER);
-    expect(options?.parse_mode).toBe('MarkdownV2');
+    expect(text.split('\n').at(-1)).toBe(FOOTER);
+    expect(options?.parse_mode).toBeUndefined();
+    // Plain, under the italic stats: only the stats line carries an entity.
+    expect(options?.entities?.map((e) => e.type)).toEqual(['italic']);
+    expect(marked(text, options?.entities).split('\n').at(-2)).toMatch(/^_.*_$/);
   });
 
   it('with both on, leaves the context and the cost to the footer', async () => {
     const [[text]] = await closingMessages(true, 'verbose');
-    expect(text).toContain('🤖 opus\\-5\\-5');
+    expect(text).toContain('🤖 opus-5-5');
     expect(text).not.toContain('📊');
     expect(text).not.toContain('💰');
   });
@@ -85,7 +89,7 @@ describe('the message that closes a turn', () => {
     expect(sent).toHaveLength(1);
     const [text] = sent[0]!;
     expect(text).toContain('📊 12%');
-    expect(text).toContain('💰 $0\\.12');
+    expect(text).toContain('💰 $0.12');
     expect(text).not.toContain('% context');
   });
 

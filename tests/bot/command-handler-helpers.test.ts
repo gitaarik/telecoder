@@ -31,7 +31,10 @@ describe('truncateToBytes', () => {
 
 describe('resumeCommandMessage', () => {
   it('wraps the resume command in a code span', () => {
-    expect(resumeCommandMessage('abc-123')).toBe('`claude --resume abc-123`');
+    expect(resumeCommandMessage('abc-123')).toEqual({
+      text: 'claude --resume abc-123',
+      entities: [{ type: 'code', offset: 0, length: 23 }],
+    });
   });
 });
 

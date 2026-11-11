@@ -18,6 +18,8 @@ import * as os from 'os';
 import * as path from 'path';
 import type { AgentUsage } from '../../src/providers/types.js';
 import type { VerbosityLevel } from '../../src/utils/verbosity.js';
+import type { MessageEntity } from 'grammy/types';
+import { marked } from '../helpers/entity-marks.js';
 
 vi.mock('os', async (importOriginal) => {
   const actual = await importOriginal<typeof import('os')>();
@@ -55,7 +57,6 @@ const USAGE: AgentUsage = {
 };
 
 const FOOTER = '🟢 [█░░░░░░░░░] 12% context · 120.5k/1.0M · $0.1234 · 3 turns';
-const ESCAPED_FOOTER = '🟢 \\[█░░░░░░░░░\\] 12% context · 120\\.5k/1\\.0M · $0\\.1234 · 3 turns';
 
 const SESSION_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 let nextChat = 9000;
@@ -84,16 +85,21 @@ function chat(statusLine: boolean, verbosity: VerbosityLevel): { chatId: number;
   return { chatId, key };
 }
 
-/** What a turn closes with in that chat: each message, and how it was sent. */
+type SendOptions = { parse_mode?: string; entities?: MessageEntity[] };
+
+/**
+ * What a turn closes with in that chat: each message, its formatting marked
+ * as `_x_` and so on, and how it was sent.
+ */
 async function closing(
   statusLine: boolean,
   verbosity: VerbosityLevel,
   brief: boolean,
-): Promise<[text: string, opts?: { parse_mode?: string }][]> {
+): Promise<[text: string, opts?: SendOptions][]> {
   const { chatId, key } = chat(statusLine, verbosity);
-  const reply = vi.fn(async (_text: string, _opts?: { parse_mode?: string }) => ({}));
+  const reply = vi.fn(async (_text: string, _opts?: SendOptions) => ({}));
   await sendStatusLine({ reply } as unknown as Context, chatId, key, USAGE, 'check the deploy', { brief });
-  return reply.mock.calls;
+  return reply.mock.calls.map(([text, opts]) => [marked(text, opts?.entities), opts]);
 }
 
 describe('the short status line', () => {
@@ -102,15 +108,15 @@ describe('the short status line', () => {
     expect(sent).toHaveLength(1);
     const [text, options] = sent[0]!;
     expect(text.split('\n')).toEqual([
-      '_📁 shop · 🧠 Auto · 🤖 opus\\-5\\-5_',
-      ESCAPED_FOOTER,
+      '_📁 shop · 🧠 Auto · 🤖 opus-5-5_',
+      FOOTER,
     ]);
-    expect(options?.parse_mode).toBe('MarkdownV2');
+    expect(options?.parse_mode).toBeUndefined();
   });
 
   it('is the stats alone in a chat that shows no footer, with the context and the cost on them', async () => {
     const [[text]] = await closing(true, 'normal', true);
-    expect(text).toBe('_📁 shop · 🧠 Auto · 🤖 opus\\-5\\-5 · 📊 12% · 💰 $0\\.12_');
+    expect(text).toBe('_📁 shop · 🧠 Auto · 🤖 opus-5-5 · 📊 12% · 💰 $0.12_');
   });
 
   it('leaves out what the whole one shows in the same chat', async () => {
@@ -123,8 +129,8 @@ describe('the short status line', () => {
       '_▸ check the deploy_',
       '',
       `🔗 \`claude --resume ${SESSION_ID}\``,
-      '_📁 shop · 🧠 Auto · 🤖 opus\\-5\\-5_',
-      ESCAPED_FOOTER,
+      '_📁 shop · 🧠 Auto · 🤖 opus-5-5_',
+      FOOTER,
     ]);
   });
 

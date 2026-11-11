@@ -18,11 +18,11 @@
  */
 
 import { GrammyError, type Api, type Context } from 'grammy';
-import { escapeMarkdownV2 } from './markdown.js';
 import { EntityText, type EntityMessage } from './entities.js';
 import { promptLabel, cutLabel } from './prompt-label.js';
 import { getToolIcon, extractToolDetail, elideToolOutput, stripAnsi } from './terminal-renderer.js';
 import { createTelegraphPage, fitsTelegraphPage } from './telegraph.js';
+import { editFormatted } from './send.js';
 import { isTelegraphEnabled } from './telegraph-settings.js';
 import type { ToolResultEvent, EditDiffEvent } from '../providers/types.js';
 import type { TaskState } from './task-tracker.js';
@@ -663,8 +663,7 @@ export class ActionLogger {
     try {
       if (pageUrl) {
         const summary = this.renderCollapsedSummary(state.entries, pageUrl);
-        await state.api.editMessageText(state.chatId, state.messageId, summary, {
-          parse_mode: 'MarkdownV2',
+        await editFormatted(state.api, state.chatId, state.messageId, summary, {
           link_preview_options: { is_disabled: true },
         });
         return;
@@ -762,14 +761,14 @@ export class ActionLogger {
   /**
    * Render the collapsed in-chat summary line that replaces the live log.
    */
-  private renderCollapsedSummary(entries: ActionEntry[], pageUrl: string): string {
+  private renderCollapsedSummary(entries: ActionEntry[], pageUrl: string): EntityMessage {
     const completed = entries.filter(e => e.status === 'completed').length;
     const errors = entries.filter(e => e.status === 'error').length;
     const counts = [`${entries.length} action${entries.length === 1 ? '' : 's'}`];
     if (errors > 0) counts.push(`${errors} error${errors === 1 ? '' : 's'}`);
     else if (completed < entries.length) counts.push(`${completed} completed`);
     const summary = counts.join(' · ');
-    return `📋 _${escapeMarkdownV2(summary)}_ · [view full log](${escapeMarkdownV2(pageUrl)})`;
+    return new EntityText().add('📋 ').italic(summary).add(' · ').link('view full log', pageUrl).build();
   }
 
   /**

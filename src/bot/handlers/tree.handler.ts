@@ -56,7 +56,9 @@ import {
   type ForkTree,
 } from '../../claude/fork-tree.js';
 import { clearConversation } from '../../providers/provider-router.js';
-import { escapeMarkdownV2 as esc, escapeMarkdownV2Code } from '../../telegram/markdown.js';
+import { EntityText, joinMessages, plain } from '../../telegram/entities.js';
+import { replyFormatted } from '../../telegram/send.js';
+import { taskListDisplay } from '../../telegram/task-list.js';
 import {
   buildLetterKeyboard,
   buildLetteredKeyboard,
@@ -73,8 +75,8 @@ import {
   buildBackOnBranchMarker,
   loadFork,
   postMarker,
-  promptLine,
   replyQuote,
+  youLine,
 } from './fork.handler.js';
 
 /**
@@ -228,20 +230,21 @@ export function renderTree(tree: ForkTree, hereSessionId?: string, leftOff = fal
     tail: `·${turnsIn(node)}${node === here ? ' 📍' : node.endsHere.length > 0 ? ' ▸' : ''}`,
   }));
   const draw = (cap: number) => points
-    .flatMap((p) => treeLines(p.node, p.letter, cutLabel(p.label, cap), p.tail))
-    .map(escapeMarkdownV2Code);
+    .flatMap((p) => treeLines(p.node, p.letter, cutLabel(p.label, cap), p.tail));
   const drawn = draw(capToFit(draw));
   const hidden = nodes.length - shown.length;
 
-  const text = [
-    `🌳 *${esc(path.basename(tree.projectPath))}* — ${ends} ${ends === 1 ? 'branch' : 'branches'}`,
-    '```',
-    ...drawn,
-    '```',
-    ...(hidden > 0 ? [esc(`${hidden} more ${hidden === 1 ? 'point isn’t' : 'points aren’t'} drawn.`)] : []),
-    `_${esc(`·N turns · ▸ branch end${here ? ` · 📍 ${leftOff ? 'where this chat left off' : 'you are here'}` : ''}`)}_`,
-    esc('Tap a letter to open that point.'),
-  ].join('\n');
+  const text = joinMessages([
+    new EntityText()
+      .add('🌳 ').bold(path.basename(tree.projectPath)).add(` — ${ends} ${ends === 1 ? 'branch' : 'branches'}`)
+      .build(),
+    new EntityText().pre(drawn.join('\n')).build(),
+    ...(hidden > 0 ? [plain(`${hidden} more ${hidden === 1 ? 'point isn’t' : 'points aren’t'} drawn.`)] : []),
+    new EntityText()
+      .italic(`·N turns · ▸ branch end${here ? ` · 📍 ${leftOff ? 'where this chat left off' : 'you are here'}` : ''}`)
+      .build(),
+    plain('Tap a letter to open that point.'),
+  ], '\n');
 
   const keyboard = buildLetterKeyboard(shown.map((node) => `tree:n:${rootKey(tree)}:${node.id}`));
   return { text, keyboard };
@@ -317,21 +320,21 @@ export function renderNode(tree: ForkTree, node: ForkNode, sessionKey: string, h
   const upTo = transcriptUpTo(tree, node);
   const exchange = upTo ? lastExchangeIn(upTo) : undefined;
 
-  const text = [
-    `🌳 *${esc(letterOf(node))}* · ${esc(cutLabel(nodeLabel(node), NODE_TITLE_LEN))}`,
-    `_${esc(facts.join(' · '))}_`,
-    ...(carry ? [esc(describeCarryOn(carry))] : []),
-    ...(node.children.length > 0 ? [esc(`Splits into ${listLetters(node.children.map(letterOf))}.`)] : []),
+  const text = joinMessages([
+    new EntityText().add('🌳 ').bold(letterOf(node)).add(` · ${cutLabel(nodeLabel(node), NODE_TITLE_LEN)}`).build(),
+    new EntityText().italic(facts.join(' · ')).build(),
+    ...(carry ? [plain(describeCarryOn(carry))] : []),
+    ...(node.children.length > 0 ? [plain(`Splits into ${listLetters(node.children.map(letterOf))}.`)] : []),
     ...(exchange
       ? [
-          '',
-          `*You:* ${esc(promptLine(exchange.user, PROMPT_MAX))}`,
+          plain(''),
+          youLine(exchange.user, PROMPT_MAX),
           // Cut without pointing at /recap: that shows the chat's conversation,
           // which this point may not be on.
           ...replyQuote(exchange.assistant, NODE_REPLY_LEN, null),
         ]
       : []),
-  ].join('\n');
+  ], '\n');
 
   const ref = `${rootKey(tree)}:${node.id}`;
   const keyboard: Keyboard = [
@@ -347,16 +350,16 @@ export function renderNode(tree: ForkTree, node: ForkNode, sessionKey: string, h
  * the chat is on one that was never forked, or on none at all.
  */
 export function renderTreeList(projectPath: string, intro?: string): View {
-  const project = esc(path.basename(projectPath));
+  const project = path.basename(projectPath);
   const conversations = forkedConversations(projectPath).slice(0, MAX_LISTED_TREES);
   if (conversations.length === 0) {
     return {
-      text: [
-        ...(intro ? [esc(intro), ''] : []),
-        `🌳 No conversation in *${project}* has been forked yet\\.`,
-        '',
-        esc('Tap 🍴 Fork under a reply to branch one.'),
-      ].join('\n'),
+      text: joinMessages([
+        ...(intro ? [plain(intro), plain('')] : []),
+        new EntityText().add('🌳 No conversation in ').bold(project).add(' has been forked yet.').build(),
+        plain(''),
+        plain('Tap 🍴 Fork under a reply to branch one.'),
+      ], '\n'),
       keyboard: [],
     };
   }
@@ -366,12 +369,12 @@ export function renderTreeList(projectPath: string, intro?: string): View {
     description: `${c.sessionIds.length} branches · ${formatTimeAgo(new Date(c.lastActiveMs))}`,
   }));
   return {
-    text: [
-      ...(intro ? [esc(intro), ''] : []),
-      `🌳 *Forked conversations* · ${project}`,
-      '',
-      ...letteredOptionLines(options).map((line) => esc(line)),
-    ].join('\n'),
+    text: joinMessages([
+      ...(intro ? [plain(intro), plain('')] : []),
+      new EntityText().add('🌳 ').bold('Forked conversations').add(` · ${project}`).build(),
+      plain(''),
+      ...letteredOptionLines(options).map(plain),
+    ], '\n'),
     keyboard: buildLetteredKeyboard(
       options.map((o, i) => ({ label: o.label, callbackData: `tree:f:${conversations[i]!.rootId}` })),
     ),
@@ -404,7 +407,7 @@ export async function handleTreeCommand(ctx: Context): Promise<void> {
   if (!keyInfo) return;
   const view = currentView(keyInfo.sessionKey);
   if (!view) {
-    await ctx.reply(NO_PROJECT_MESSAGE, { parse_mode: 'MarkdownV2' });
+    await replyFormatted(ctx, NO_PROJECT_MESSAGE);
     return;
   }
   await sendView(ctx, view, 'reply');
@@ -424,7 +427,7 @@ export async function handleTreeCallback(ctx: Context): Promise<void> {
       await ctx.answerCallbackQuery();
       const view = currentView(sessionKey);
       if (!view) {
-        await ctx.reply(NO_PROJECT_MESSAGE, { parse_mode: 'MarkdownV2' });
+        await replyFormatted(ctx, NO_PROJECT_MESSAGE);
         return;
       }
       await sendView(ctx, view, 'reply');
@@ -513,6 +516,7 @@ async function onCarryOn(
     buildBackOnBranchMarker({ projectPath: tree.projectPath, topic: getSessionTopic(sessionKey), jsonl }),
     { claudeSessionId: carry.sessionId, projectPath: tree.projectPath, lineCount: countJsonlLines(file) },
   );
+  await taskListDisplay.showRestored(ctx.api, sessionKey, carry.sessionId);
   await ctx.answerCallbackQuery({ text: 'Back on that branch.' });
 }
 

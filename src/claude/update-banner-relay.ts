@@ -1,6 +1,6 @@
 import type { Bot } from 'grammy';
 import { parseSessionKey } from '../utils/session-key.js';
-import { convertToTelegramMarkdown } from '../telegram/markdown.js';
+import { sendMarkdown } from '../telegram/send.js';
 
 /**
  * One-shot relay of Claude Code's startup update banner. Claude prints a
@@ -31,15 +31,10 @@ export async function relayUpdateBanner(sessionKey: string, banner: string): Pro
   const { chatId, threadId } = parseSessionKey(sessionKey);
   const threadOpts = threadId !== undefined ? { message_thread_id: threadId } : {};
   const text = `🔔 Claude Code: ${banner}`;
-  const converted = convertToTelegramMarkdown(text);
   try {
-    await botRef.api.sendMessage(chatId, converted, { ...threadOpts, parse_mode: 'MarkdownV2' });
-  } catch {
-    try {
-      await botRef.api.sendMessage(chatId, text, threadOpts);
-    } catch (err) {
-      console.error('[UpdateBanner] send failed:', err instanceof Error ? err.message : err);
-    }
+    await sendMarkdown(botRef.api, chatId, text, threadOpts);
+  } catch (err) {
+    console.error('[UpdateBanner] send failed:', err instanceof Error ? err.message : err);
   }
 }
 

@@ -12,7 +12,8 @@ import { config } from '../../../config.js';
 import { sessionManager } from '../../../claude/session-manager.js';
 import { clearConversation } from '../../../providers/provider-router.js';
 import { projectFavorites } from '../../../providers/project-favorites.js';
-import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
+import { EntityText, type EntityMessage } from '../../../telegram/entities.js';
+import { replyFormatted, editCallbackMessage } from '../../../telegram/send.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../../../utils/workspace-guard.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 import {
@@ -63,17 +64,26 @@ async function selectProjectFromCallback(ctx: Context, sessionKey: string, proje
 
   const newConv = sessionManager.getSession(sessionKey)?.conversationId;
   const back = withBackToPrevious(
-    `✅ Project: *${esc(path.basename(projectPath))}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`,
+    projectOpenedMessage('✅ Project: ', path.basename(projectPath), sessionKey),
     sessionKey,
     newConv,
   );
 
-  await ctx.editMessageText(back.text, back.options);
+  await editCallbackMessage(ctx, back.text, back.options);
 
   const s = sessionManager.getSession(sessionKey);
   if (s?.claudeSessionId) {
-    await replyMd(ctx, resumeCommandMessage(s.claudeSessionId));
+    await replyFormatted(ctx, resumeCommandMessage(s.claudeSessionId));
   }
+}
+
+/** "<lead><name>", the chat-now line and the project status block. */
+function projectOpenedMessage(lead: string, name: string, sessionKey: string): EntityMessage {
+  return new EntityText()
+    .add(lead).bold(name)
+    .add('\n\nYou can now chat with Claude about this project!')
+    .append(projectStatusSuffix(sessionKey))
+    .build();
 }
 
 export async function handleProjectCallback(ctx: Context): Promise<void> {
@@ -263,17 +273,16 @@ function shortenName(name: string, maxLength: number = 24): string {
   return `${name.slice(0, maxLength - 1)}…`;
 }
 
-function buildProjectBrowserText(state: ProjectBrowserState, totalDirs: number, totalPages: number): string {
+function buildProjectBrowserText(state: ProjectBrowserState, totalDirs: number, totalPages: number): EntityMessage {
   const pageNumber = totalPages === 0 ? 1 : state.page + 1;
-  const safePath = esc(state.current);
 
-  return (
-    `📁 *Project Browser*\n\n` +
-    `*Current:* \`${safePath}\`\n` +
-    `*Folders:* ${totalDirs}\n` +
-    `*Page:* ${pageNumber}/${Math.max(totalPages, 1)}\n\n` +
-    `Select a folder below, or use the current folder\\.`
-  );
+  return new EntityText()
+    .add('📁 ').bold('Project Browser')
+    .add('\n\n').bold('Current:').add(' ').code(state.current)
+    .newline().bold('Folders:').add(` ${totalDirs}`)
+    .newline().bold('Page:').add(` ${pageNumber}/${Math.max(totalPages, 1)}`)
+    .add('\n\nSelect a folder below, or use the current folder.')
+    .build();
 }
 
 function buildProjectBrowserKeyboard(state: ProjectBrowserState, entries: string[], totalPages: number, sessionKey: string): { inline_keyboard: { text: string; callback_data: string }[][] } {
@@ -342,33 +351,33 @@ async function sendProjectBrowser(ctx: Context, sessionKey: string, state: Proje
 
   if (edit) {
     try {
-      await ctx.editMessageText(text, { parse_mode: 'MarkdownV2', reply_markup: replyMarkup });
+      await editCallbackMessage(ctx, text, { reply_markup: replyMarkup });
       return;
     } catch {
       // fall through to send new message
     }
   }
 
-  await ctx.reply(text, { parse_mode: 'MarkdownV2', reply_markup: replyMarkup });
+  await replyFormatted(ctx, text, { reply_markup: replyMarkup });
 }
 
 const FAVORITES_DISPLAY_MAX = 12;
 
-function buildFavoritesScreen(sessionKey: string): { text: string; reply_markup: { inline_keyboard: { text: string; callback_data: string }[][] } } {
+function buildFavoritesScreen(sessionKey: string): { text: EntityMessage; reply_markup: { inline_keyboard: { text: string; callback_data: string }[][] } } {
   const favorites = projectFavorites.list(sessionKey).slice(0, FAVORITES_DISPLAY_MAX);
   const session = sessionManager.getSession(sessionKey);
   const currentPath = session?.workingDirectory;
   const currentIsFav = currentPath ? projectFavorites.has(sessionKey, currentPath) : false;
 
-  const lines = ['⭐ *Project Favorites*'];
+  const text = new EntityText().add('⭐ ').bold('Project Favorites');
   if (currentPath) {
-    lines.push('', `*Current:* \`${esc(currentPath)}\``);
+    text.add('\n\n').bold('Current:').add(' ').code(currentPath);
   }
-  if (favorites.length === 0) {
-    lines.push('', '_No favorites yet\\. Browse the workspace or enter a path, then tap ⭐ to save it here\\._');
-  } else {
-    lines.push('', '_Pick a favorite, or use the buttons below\\._');
-  }
+  text.add('\n\n').italic(
+    favorites.length === 0
+      ? 'No favorites yet. Browse the workspace or enter a path, then tap ⭐ to save it here.'
+      : 'Pick a favorite, or use the buttons below.',
+  );
 
   const rows: { text: string; callback_data: string }[][] = [];
   for (let i = 0; i < favorites.length; i++) {
@@ -388,20 +397,20 @@ function buildFavoritesScreen(sessionKey: string): { text: string; reply_markup:
   actionRow.push({ text: '✍️ Enter path', callback_data: 'project:manual' });
   rows.push(actionRow);
 
-  return { text: lines.join('\n'), reply_markup: { inline_keyboard: rows } };
+  return { text: text.build(), reply_markup: { inline_keyboard: rows } };
 }
 
 async function sendFavoritesScreen(ctx: Context, sessionKey: string, edit: boolean): Promise<void> {
   const { text, reply_markup } = buildFavoritesScreen(sessionKey);
   if (edit) {
     try {
-      await ctx.editMessageText(text, { parse_mode: 'MarkdownV2', reply_markup });
+      await editCallbackMessage(ctx, text, { reply_markup });
       return;
     } catch {
       // fall through
     }
   }
-  await ctx.reply(text, { parse_mode: 'MarkdownV2', reply_markup });
+  await replyFormatted(ctx, text, { reply_markup });
 }
 
 async function sendProjectManualPrompt(ctx: Context): Promise<void> {
@@ -409,21 +418,19 @@ async function sendProjectManualPrompt(ctx: Context): Promise<void> {
   if (!keyInfo) return;
   const { sessionKey } = keyInfo;
   const session = sessionManager.getSession(sessionKey);
-  const currentInfo = session
-    ? `\n\n_Current: ${esc(path.basename(session.workingDirectory))}_`
-    : '';
+  const prompt = new EntityText().add('📁 ').bold('Set Project Directory');
+  if (session) {
+    prompt.add('\n\n').italic(`Current: ${path.basename(session.workingDirectory)}`);
+  }
+  prompt.add('\n\n👇 ').italic('Enter the path below:');
 
-  await ctx.reply(
-    `📁 *Set Project Directory*${currentInfo}\n\n👇 _Enter the path below:_`,
-    {
-      parse_mode: 'MarkdownV2',
-      reply_markup: {
-        force_reply: true,
-        input_field_placeholder: '/home/user/projects/myapp',
-        selective: true,
-      },
-    }
-  );
+  await replyFormatted(ctx, prompt.build(), {
+    reply_markup: {
+      force_reply: true,
+      input_field_placeholder: '/home/user/projects/myapp',
+      selective: true,
+    },
+  });
 }
 
 function getProjectState(sessionKey: string): ProjectBrowserState {
@@ -500,12 +507,18 @@ export async function handleProject(ctx: Context): Promise<void> {
   }
 
   if (!fs.existsSync(projectPath)) {
-    await replyMd(ctx, `📁 Project "${esc(args)}" doesn't exist\\.\n\nCreate it? Use: \`/newproject ${esc(args)}\``);
+    await replyFormatted(
+      ctx,
+      new EntityText()
+        .add(`📁 Project "${args}" doesn't exist.\n\nCreate it? Use: `)
+        .code(`/newproject ${args}`)
+        .build(),
+    );
     return;
   }
 
   if (!fs.statSync(projectPath).isDirectory()) {
-    await replyMd(ctx, `❌ Path is not a directory: \`${esc(projectPath)}\``);
+    await replyFormatted(ctx, new EntityText().add('❌ Path is not a directory: ').code(projectPath).build());
     return;
   }
 
@@ -514,16 +527,12 @@ export async function handleProject(ctx: Context): Promise<void> {
   await clearTopicAndRefreshBotName(ctx, sessionKey);
 
   const newConv = sessionManager.getSession(sessionKey)?.conversationId;
-  const back = withBackToPrevious(
-    `✅ Project: *${esc(args)}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`,
-    sessionKey,
-    newConv,
-  );
-  await ctx.reply(back.text, back.options);
+  const back = withBackToPrevious(projectOpenedMessage('✅ Project: ', args, sessionKey), sessionKey, newConv);
+  await replyFormatted(ctx, back.text, back.options);
 
   const s = sessionManager.getSession(sessionKey);
   if (s?.claudeSessionId) {
-    await replyMd(ctx, resumeCommandMessage(s.claudeSessionId));
+    await replyFormatted(ctx, resumeCommandMessage(s.claudeSessionId));
   }
 }
 
@@ -541,14 +550,21 @@ export async function handleNewProject(ctx: Context): Promise<void> {
   }
 
   if (!/^[a-zA-Z0-9_-]+$/.test(args)) {
-    await replyMd(ctx, '❌ Project name can only contain letters, numbers, dashes and underscores\\.');
+    await replyMd(ctx, '❌ Project name can only contain letters, numbers, dashes and underscores.');
     return;
   }
 
   const projectPath = path.join(config.WORKSPACE_DIR, args);
 
   if (fs.existsSync(projectPath)) {
-    await replyMd(ctx, `❌ Project "${esc(args)}" already exists\\. Use \`/project ${esc(args)}\` to open it\\.`);
+    await replyFormatted(
+      ctx,
+      new EntityText()
+        .add(`❌ Project "${args}" already exists. Use `)
+        .code(`/project ${args}`)
+        .add(' to open it.')
+        .build(),
+    );
     return;
   }
 
@@ -558,16 +574,12 @@ export async function handleNewProject(ctx: Context): Promise<void> {
   await clearTopicAndRefreshBotName(ctx, sessionKey);
 
   const newConv = sessionManager.getSession(sessionKey)?.conversationId;
-  const back = withBackToPrevious(
-    `✅ Created and opened: *${esc(args)}*\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`,
-    sessionKey,
-    newConv,
-  );
-  await ctx.reply(back.text, back.options);
+  const back = withBackToPrevious(projectOpenedMessage('✅ Created and opened: ', args, sessionKey), sessionKey, newConv);
+  await replyFormatted(ctx, back.text, back.options);
 
   const s = sessionManager.getSession(sessionKey);
   if (s?.claudeSessionId) {
-    await replyMd(ctx, resumeCommandMessage(s.claudeSessionId));
+    await replyFormatted(ctx, resumeCommandMessage(s.claudeSessionId));
   }
 }
 

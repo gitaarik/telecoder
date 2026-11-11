@@ -44,13 +44,14 @@ import {
 } from '../../claude/session-jsonl.js';
 import { splitsAlong, transcriptDir, treeOf, type ForkTree } from '../../claude/fork-tree.js';
 import type { PendingFork } from '../../claude/pending-forks.js';
-import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
+import { EntityText, joinMessages, plain, type EntityMessage } from '../../telegram/entities.js';
+import { replyFormatted } from '../../telegram/send.js';
 import { buildLetterKeyboard, optionLetter } from '../../telegram/lettered-options.js';
 import { cutLabel, promptLabel } from '../../telegram/prompt-label.js';
 import { getSessionTopic } from './command.handler.js';
-import { formatTimeAgo, replyMd } from './command/shared.js';
+import { formatTimeAgo } from './command/shared.js';
 import { NO_PROJECT_MESSAGE, whereChatIs } from './session-guard.js';
-import { LEFT_ABOVE, loadFork, promptLine, replyQuote } from './fork.handler.js';
+import { LEFT_ABOVE, loadFork, replyQuote, youLine } from './fork.handler.js';
 import { showTreeButton } from './tree.handler.js';
 import { refuseWhileBusy, sendView, type Keyboard, type View } from './view.js';
 
@@ -174,9 +175,12 @@ function cutAfter(conversation: Conversation, prompt: Prompt): string {
 const timeOf = (prompt: Prompt) => (prompt.timestamp ? formatTimeAgo(new Date(prompt.timestamp)) : 'earlier');
 
 /** A prompt's line in the list. Its marks sit by the time, where a long prompt doesn't bury them. */
-function listLine(prompt: Prompt, letter: string): string {
+function listLine(prompt: Prompt, letter: string): EntityMessage {
   const marks = `${prompt.branched ? ' 🌿' : ''}${prompt.pending ? ' ⏳' : ''}`;
-  return `*${esc(letter)}* · _${esc(timeOf(prompt))}_${marks} — ${esc(cutLabel(prompt.label, PROMPTS_MAX_CHARS))}`;
+  return new EntityText()
+    .bold(letter).add(' · ').italic(timeOf(prompt))
+    .add(`${marks} — ${cutLabel(prompt.label, PROMPTS_MAX_CHARS)}`)
+    .build();
 }
 
 /**
@@ -193,7 +197,7 @@ function listed(conversation: Conversation, n: number): Prompt[] {
   let from = recent.length;
   let used = 0;
   while (from > 0) {
-    const length = listLine(recent[from - 1]!, 'A').length + 1;
+    const length = listLine(recent[from - 1]!, 'A').text.length + 1;
     if (from < recent.length && used + length > PROMPTS_BUDGET_CHARS) break;
     used += length;
     from--;
@@ -208,8 +212,9 @@ function listed(conversation: Conversation, n: number): Prompt[] {
  */
 export function renderPrompts(conversation: Conversation, n: number): View {
   const shown = listed(conversation, n);
-  const project = esc(path.basename(conversation.projectPath));
-  if (shown.length === 0) return { text: `💬 *${project}* — no prompts yet\\.`, keyboard: [] };
+  const project = path.basename(conversation.projectPath);
+  const heading = new EntityText().add('💬 ').bold(project);
+  if (shown.length === 0) return { text: heading.add(' — no prompts yet.').build(), keyboard: [] };
 
   const noun = shown.length === 1 ? 'prompt' : 'prompts';
   const count = shown.length === conversation.prompts.length ? `${shown.length} ${noun}` : `last ${shown.length} ${noun}`;
@@ -219,14 +224,14 @@ export function renderPrompts(conversation: Conversation, n: number): View {
     ...(shown.some((p) => p.pending) ? ['⏳ no reply'] : []),
   ];
 
-  const text = [
-    `💬 *${project}* — ${esc(count)}${dropped > 0 ? esc(` (${dropped} older trimmed to fit)`) : ''}`,
-    '',
+  const text = joinMessages([
+    heading.add(` — ${count}${dropped > 0 ? ` (${dropped} older trimmed to fit)` : ''}`).build(),
+    plain(''),
     ...shown.map((p, i) => listLine(p, optionLetter(i))),
-    '',
-    ...(legend.length > 0 ? [`_${esc(legend.join(' · '))}_`] : []),
-    esc('Tap a letter to open that prompt.'),
-  ].join('\n');
+    plain(''),
+    ...(legend.length > 0 ? [new EntityText().italic(legend.join(' · ')).build()] : []),
+    plain('Tap a letter to open that prompt.'),
+  ], '\n');
 
   const keyboard: Keyboard = [
     ...buildLetterKeyboard(shown.map((p) => `prompts:o:${session8Of(conversation)}:${n}:${p.uuid}`)),
@@ -247,15 +252,17 @@ export function renderPrompt(conversation: Conversation, prompt: Prompt, n: numb
   if (prompt.pending) facts.push(running ? 'being answered now' : 'no reply');
   const reply = prompt.pending ? undefined : lastExchangeIn(cutAfter(conversation, prompt))?.assistant;
 
-  const text = [
-    `💬 ${index >= 0 ? `*${esc(optionLetter(index))}* · ` : ''}${esc(facts.join(' · '))}`,
-    ...(prompt.branched ? [esc('🌿 Another branch splits off here.')] : []),
-    '',
-    `*You:* ${esc(promptLine(prompt.text, PROMPTS_MAX_CHARS))}`,
+  const title = new EntityText().add('💬 ');
+  if (index >= 0) title.bold(optionLetter(index)).add(' · ');
+  const text = joinMessages([
+    title.add(facts.join(' · ')).build(),
+    ...(prompt.branched ? [plain('🌿 Another branch splits off here.')] : []),
+    plain(''),
+    youLine(prompt.text, PROMPTS_MAX_CHARS),
     // Cut without pointing at /recap: that shows the last few exchanges, which
     // this one may not be among.
     ...(reply ? replyQuote(reply, PROMPT_REPLY_LEN, null) : []),
-  ].join('\n');
+  ], '\n');
 
   const keyboard: Keyboard = [
     // A prompt with no reply has no end to its exchange to branch from.
@@ -283,23 +290,26 @@ export async function handlePromptsCommand(ctx: Context): Promise<void> {
 
   const n = countOf((ctx.message?.text || '').split(' ').slice(1).join(' ').trim());
   if (n === undefined) {
-    await replyMd(ctx, `⚠️ Usage: \`/prompts [N]\` where N is the number of prompts \\(default ${PROMPTS_DEFAULT_N}, max ${PROMPTS_MAX_N}\\)\\.`);
+    await replyFormatted(ctx, new EntityText()
+      .add('⚠️ Usage: ').code('/prompts [N]')
+      .add(` where N is the number of prompts (default ${PROMPTS_DEFAULT_N}, max ${PROMPTS_MAX_N}).`)
+      .build());
     return;
   }
 
   // Read, never loaded: after a restart it's where the chat left off, as /tree draws it.
   const where = whereChatIs(keyInfo.sessionKey);
   if (!where) {
-    await ctx.reply(NO_PROJECT_MESSAGE, { parse_mode: 'MarkdownV2' });
+    await replyFormatted(ctx, NO_PROJECT_MESSAGE);
     return;
   }
   if (!where.sessionId) {
-    await replyMd(ctx, 'ℹ️ This session has no recorded messages yet\\.');
+    await replyFormatted(ctx, 'ℹ️ This session has no recorded messages yet.');
     return;
   }
   const conversation = readConversation(where.projectPath, where.sessionId);
   if (!conversation || conversation.prompts.length === 0) {
-    await replyMd(ctx, 'ℹ️ No prompts found in this session yet\\.');
+    await replyFormatted(ctx, 'ℹ️ No prompts found in this session yet.');
     return;
   }
 

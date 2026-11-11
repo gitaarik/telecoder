@@ -5,40 +5,32 @@
  */
 
 import { Context } from 'grammy';
-import { sanitizeError } from '../../utils/sanitize.js';
 import { isProcessing } from '../../claude/request-queue.js';
-import { plainMarker } from './fork.handler.js';
+import type { EntityMessage } from '../../telegram/entities.js';
+import { editCallbackMessage, replyFormatted } from '../../telegram/send.js';
 
 export type Keyboard = { text: string; callback_data: string }[][];
 
 export interface View {
-  text: string;
+  text: EntityMessage;
   keyboard: Keyboard;
 }
 
 /**
  * Send `view` as a reply, or put it in place of the tapped message. A view
- * Telegram won't parse goes out as plain text instead, so a formatting slip
- * costs the formatting and not the view.
+ * Telegram won't format goes out as plain text instead (the send helpers
+ * retry it), so a formatting slip costs the formatting and not the view.
  */
 export async function sendView(ctx: Context, view: View, how: 'reply' | 'edit'): Promise<void> {
   const reply_markup = { inline_keyboard: view.keyboard };
-  const send = (text: string, parse_mode?: 'MarkdownV2') => how === 'edit'
-    ? ctx.editMessageText(text, { parse_mode, reply_markup })
-    : ctx.reply(text, { parse_mode, reply_markup });
   try {
-    await send(view.text, 'MarkdownV2');
+    if (how === 'edit') await editCallbackMessage(ctx, view.text, { reply_markup });
+    else await replyFormatted(ctx, view.text, { reply_markup });
   } catch (err) {
     // "message is not modified": the same view, tapped again. Nothing to do.
     if (err instanceof Error && err.message.includes('not modified')) return;
-    console.error('[View] MarkdownV2 send failed, falling back to plain text:', sanitizeError(err));
-    await send(plainView(view.text));
+    throw err;
   }
-}
-
-/** A view as plain text: a tree's code fences dropped, then unmarked like a banner. */
-function plainView(text: string): string {
-  return plainMarker(text.split('\n').filter((line) => line !== '```').join('\n'));
 }
 
 /**

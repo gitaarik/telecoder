@@ -53,8 +53,8 @@ export function optionLetter(index: number): string {
 
 /**
  * One body line per option — `A. Label — description` — for the caller to put
- * under whatever heading it is asking beneath. Returned unescaped: a caller
- * sending MarkdownV2 escapes the lines, one sending plain text does not.
+ * under whatever heading it is asking beneath. Returned as plain text, to go
+ * out verbatim (or into an `EntityText`).
  */
 export function letteredOptionLines(options: LetteredOption[]): string[] {
   return options.map((o, idx) => {

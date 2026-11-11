@@ -114,7 +114,10 @@ describe('/newbot', () => {
       overrides: { HOME_PROJECT: path.join(workspace, 'sjs') },
     });
     const [text, opts] = reply.mock.calls[0];
-    expect(text).toContain('t.me/sjs_telecoder_bot');
+    expect(text).toContain('✅ @sjs_telecoder_bot is set up for sjs');
+    expect(opts.entities).toContainEqual(expect.objectContaining({
+      type: 'text_link', offset: 2, length: '@sjs_telecoder_bot'.length, url: 'https://t.me/sjs_telecoder_bot',
+    }));
     expect(text).not.toContain('secret');
     expect(opts.reply_markup).toEqual({ remove_keyboard: true });
   });

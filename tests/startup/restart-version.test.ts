@@ -31,7 +31,7 @@ const { autoResumeAfterReload } = await import('../../src/startup/auto-resume.js
 const { notifyRestartComplete } = await import('../../src/startup/notices.js');
 const { handleBotStatus } = await import('../../src/bot/handlers/command/admin.js');
 
-/** A subject with what MarkdownV2 rejects unescaped. */
+/** A subject with what markdown would read as formatting. */
 const BUILD = 'abc1234 fix: keep (some) things_tidy. (built just now)';
 
 const sendMessage = vi.fn(async (..._args: unknown[]) => ({ message_id: 1 }));
@@ -62,15 +62,16 @@ afterAll(() => {
 });
 
 describe('the session recap after a restart', () => {
-  it('names the build, escaped for MarkdownV2', async () => {
+  it('names the build verbatim, with no parse mode', async () => {
     recentChat('1');
     leaveReloadMarker();
 
     await autoResumeAfterReload(bot, new Set());
 
     const header = sentTexts().find((text) => text.startsWith('✅ Reloaded'));
-    expect(header).toContain('\nVersion: abc1234 fix: keep \\(some\\) things\\_tidy\\. \\(built just now\\)');
-    expect(sendMessage.mock.calls[0][2]).toMatchObject({ parse_mode: 'MarkdownV2' });
+    expect(header).toContain(`\nVersion: ${BUILD}`);
+    expect(sendMessage.mock.calls[0][2]).not.toHaveProperty('parse_mode');
+    expect(sendMessage.mock.calls[0][2]).toMatchObject({ entities: [] });
   });
 
   it('leaves the line out when the build is not stamped', async () => {
@@ -111,8 +112,16 @@ describe('/botstatus', () => {
     return reply.mock.calls[0][0] as string;
   };
 
-  it('names the build, escaped for MarkdownV2', async () => {
-    expect(await botStatus()).toContain('*Version:* abc1234 fix: keep \\(some\\) things\\_tidy\\. \\(built just now\\)\n');
+  it('names the build verbatim, with only the label in bold', async () => {
+    const reply = vi.fn(async (..._args: unknown[]) => ({}));
+    await handleBotStatus({ reply, chat: { id: 1, type: 'private' } } as unknown as Context);
+    const [text, other] = reply.mock.calls[0] as [string, { entities: { type: string; offset: number; length: number }[] }];
+
+    expect(text).toContain(`\nVersion: ${BUILD}\n`);
+    expect(other).not.toHaveProperty('parse_mode');
+    const bold = other.entities.filter((e) => e.type === 'bold').map((e) => text.slice(e.offset, e.offset + e.length));
+    expect(bold).toContain('Version:');
+    expect(bold.some((t) => t.includes('abc1234'))).toBe(false);
   });
 
   it('leaves the line out when the build is not stamped', async () => {

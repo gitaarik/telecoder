@@ -16,7 +16,8 @@ import { Context } from 'grammy';
 import { consumeSuggestion } from '../../claude/pending-suggestions.js';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
 import { sessionManager } from '../../claude/session-manager.js';
-import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
+import { EntityText } from '../../telegram/entities.js';
+import { editCallbackMessage, replyFormatted } from '../../telegram/send.js';
 import { buildSuggestionCardText } from '../../telegram/prompt-suggestion.js';
 
 export async function handleSuggestionTapCallback(ctx: Context): Promise<void> {
@@ -54,9 +55,7 @@ export async function handleSuggestionTapCallback(ctx: Context): Promise<void> {
     // rewritten to say it was sent, which drops the keyboard in the same
     // edit. Echoing underneath would just repeat the line above it.
     try {
-      await ctx.editMessageText(buildSuggestionCardText(entry.text, { sent: true }), {
-        parse_mode: 'MarkdownV2',
-      });
+      await editCallbackMessage(ctx, buildSuggestionCardText(entry.text, { sent: true }));
     } catch (err) {
       console.debug('[Suggestion] card edit failed:', err instanceof Error ? err.message : err);
       // Fall back to at least taking the button away, so the card can't be
@@ -68,7 +67,7 @@ export async function handleSuggestionTapCallback(ctx: Context): Promise<void> {
 
     // Echo what we're sending so the chat scroll reads like a real conversation.
     try {
-      await ctx.reply(`💡 _${esc(entry.text)}_`, { parse_mode: 'MarkdownV2' });
+      await replyFormatted(ctx, new EntityText().add('💡 ').italic(entry.text).build());
     } catch (err) {
       console.debug('[Suggestion] echo failed:', err instanceof Error ? err.message : err);
     }

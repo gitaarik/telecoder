@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   SUGGESTION_CARD_BUTTON,
-  buildSuggestionCardPlainText,
   buildSuggestionCardText,
   flattenSuggestion,
   formatSuggestionLabel,
@@ -55,29 +54,27 @@ describe('suggestionFitsOnButton', () => {
 });
 
 describe('buildSuggestionCardText', () => {
+  const italic = (text: string, offset: number) => [{ type: 'italic', offset, length: text.length - offset }];
+
   it('puts the full prompt in the body, where nothing clips it', () => {
-    const text = buildSuggestionCardText(LONG);
-    expect(text).toBe(`💡 Suggested next prompt:\n_${LONG}_`);
+    const card = buildSuggestionCardText(LONG);
+    expect(card.text).toBe(`💡 Suggested next prompt:\n${LONG}`);
+    expect(card.entities).toEqual(italic(card.text, '💡 Suggested next prompt:\n'.length));
   });
 
-  it('escapes MarkdownV2 specials in the prompt', () => {
-    const text = buildSuggestionCardText('fix src/a-b.ts (the _slow_ one)');
-    expect(text).toBe('💡 Suggested next prompt:\n_fix src/a\\-b\\.ts \\(the \\_slow\\_ one\\)_');
+  it('keeps markdown specials in the prompt verbatim', () => {
+    const card = buildSuggestionCardText('fix src/a-b.ts (the _slow_ one)');
+    expect(card.text).toBe('💡 Suggested next prompt:\nfix src/a-b.ts (the _slow_ one)');
   });
 
   it('rewrites to a sent form that still shows the prompt', () => {
-    const text = buildSuggestionCardText('run the tests', { sent: true });
-    expect(text).toBe('✅ Sent:\n_run the tests_');
+    const card = buildSuggestionCardText('run the tests', { sent: true });
+    expect(card.text).toBe('✅ Sent:\nrun the tests');
+    expect(card.entities).toEqual(italic(card.text, '✅ Sent:\n'.length));
   });
 
   it('flattens the same way the button label does', () => {
-    expect(buildSuggestionCardText('run  the\ntests')).toBe('💡 Suggested next prompt:\n_run the tests_');
-  });
-});
-
-describe('buildSuggestionCardPlainText', () => {
-  it('keeps the prompt unescaped for the no-markdown fallback', () => {
-    expect(buildSuggestionCardPlainText('fix src/a-b.ts')).toBe('💡 Suggested next prompt:\nfix src/a-b.ts');
+    expect(buildSuggestionCardText('run  the\ntests').text).toBe('💡 Suggested next prompt:\nrun the tests');
   });
 });
 

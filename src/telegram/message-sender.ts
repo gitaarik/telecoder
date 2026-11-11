@@ -1,6 +1,8 @@
 import { Context, Api, InputFile, GrammyError } from 'grammy';
 import { config } from '../config.js';
-import { processMessageForTelegram, escapeMarkdownV2, splitMessage } from './markdown.js';
+import { formatMarkdown, markdownToEntities, splitEntityMessage, MAX_MESSAGE_LENGTH } from './markdown.js';
+import { editFormatted, replyFormatted } from './send.js';
+import { stripReasoningSummary } from '../utils/reasoning-summary.js';
 import { shouldPublishTelegraph, createTelegraphPage, createTelegraphFromFile } from './telegraph.js';
 import { isTerminalUIEnabled } from './terminal-settings.js';
 import {
@@ -17,7 +19,8 @@ import {
   TOOL_ICONS,
 } from './terminal-renderer.js';
 import { taskTracker, type TaskState } from './task-tracker.js';
-import { EntityText, clip, type EntityMessage } from './entities.js';
+import { taskListDisplay } from './task-list.js';
+import { EntityText, clip, plain, type EntityMessage } from './entities.js';
 import type { TaskEvent, ToolResultEvent, EditDiffEvent } from '../providers/types.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../utils/session-key.js';
 import { resolveVerbosityFlags } from '../utils/verbosity.js';
@@ -28,7 +31,6 @@ import { messageOffsets, countJsonlLines } from '../claude/message-offsets.js';
 import { storeSuggestion } from '../claude/pending-suggestions.js';
 import {
   SUGGESTION_CARD_BUTTON,
-  buildSuggestionCardPlainText,
   buildSuggestionCardText,
   flattenSuggestion,
   formatSuggestionLabel,
@@ -116,9 +118,24 @@ interface StreamState {
   threadId?: number;
   sessionKey: string;
   messageId: number | null;
+  /** The reply as written so far: every text block of the turn, in markdown. */
   content: string;
+  /** When `content` last changed: the status line says "Writing" for a while after. */
+  contentChangedAt: number;
+  /** `content` as the live messages last showed it. */
+  shownContent: string;
+  /**
+   * What each live message last showed, the bubble first, as a key of its text
+   * and entities: an edit that would change nothing is skipped.
+   */
+  shown: string[];
+  /** Messages the live reply overflowed into below the bubble, in order. */
+  overflowIds: number[];
+  /** A refresh held back by the edit throttle, due when the throttle allows. */
+  flushTimer: NodeJS.Timeout | null;
+  /** Gap between edits that show new text; grows after Telegram rate-limits us. */
+  streamIntervalMs: number;
   lastUpdate: number;
-  updateScheduled: boolean;
   typingInterval: NodeJS.Timeout | null;
   // Terminal UI mode additions
   terminalMode: boolean;
@@ -128,30 +145,36 @@ interface StreamState {
   operationStartTime: number;
   rateLimitedUntil: number;
   lastRateLimitDurationMs: number;
-  // The bubble reads LOG_POINTER_LINE: the action log carries the status line.
-  bubblePointsAtLog: boolean;
   // Claude Code's live spinner tip (PTY mode), mirrored under the status line.
   // Null when no tip is currently on screen.
   tip: string | null;
-  // TodoWrite live-checklist rendering: id of the per-turn message we
-  // edit on every TodoWrite call. Reset to null at the start of each turn
-  // so the next TodoWrite posts a fresh checklist below the prior one.
-  todoMessageId: number | null;
-  todoLastRendered: string;
   // Action logging for verbose mode
   actionLogEnabled: boolean;
   // What the turn was sent, drawn at the bottom of the action log.
   prompt: string;
 }
 
-interface TodoItem {
-  content: string;
-  activeForm?: string;
-  status: 'pending' | 'in_progress' | 'completed' | string;
-}
-
 const TYPING_INTERVAL_MS = 4000; // Send typing every 4 seconds
-const MIN_EDIT_INTERVAL_MS = 10000; // Minimum time between message edits (~5 edits/min safe zone)
+const MIN_EDIT_INTERVAL_MS = 10000; // Minimum time between status-only edits (~5 edits/min safe zone)
+
+/**
+ * Minimum time between edits that show more of the reply. Telegram allows a
+ * bot about one message a second in a private chat and twenty a minute in a
+ * group, edits included, and the status line and action log draw on the same
+ * allowance. A 429 doubles the gap, up to {@link MAX_STREAM_EDIT_INTERVAL_MS}.
+ */
+const STREAM_EDIT_INTERVAL_MS = 1500;
+const GROUP_STREAM_EDIT_INTERVAL_MS = 3500;
+const MAX_STREAM_EDIT_INTERVAL_MS = 15000;
+
+/** How long after new text the status line keeps saying "Writing". */
+const WRITING_WINDOW_MS = 4000;
+
+/**
+ * Under a reply that is still being written, where the status line would be
+ * without the terminal UI: the text above it isn't final yet.
+ */
+const STREAMING_INDICATOR = '✍️ Writing…';
 const MONITOR_TASK_TYPE = 'monitor_mcp';
 
 /**
@@ -165,12 +188,12 @@ const MONITOR_TASK_TYPE = 'monitor_mcp';
  * publish-or-nothing flow did when it swapped the text out for a 200-character
  * stub and the link then failed to render.
  */
-async function publishTelegraphFooter(text: string, sessionKey?: string): Promise<string | null> {
+async function publishTelegraphFooter(text: string, sessionKey?: string): Promise<EntityMessage | null> {
   if (!shouldPublishTelegraph(text, sessionKey)) return null;
   try {
     const pageUrl = await createTelegraphPage('Claude Response', text);
     if (!pageUrl) return null;
-    return `📄 [Open in Instant View](${escapeMarkdownV2(pageUrl)})`;
+    return new EntityText().add('📄 ').link('Open in Instant View', pageUrl).build();
   } catch (error) {
     console.error('[Telegraph] Failed to publish page:', error instanceof Error ? error.message : error);
     return null;
@@ -184,12 +207,11 @@ async function publishTelegraphFooter(text: string, sessionKey?: string): Promis
  * Exported for tests: the boundary is the whole point of the function, and it
  * is the one place a bug would silently cost a chunk.
  */
-export function withTelegraphFooter(parts: string[], footer: string | null): string[] {
+export function withTelegraphFooter(parts: EntityMessage[], footer: EntityMessage | null): EntityMessage[] {
   if (!footer) return parts;
-  const suffix = `\n\n${footer}`;
   const last = parts[parts.length - 1];
-  if (last !== undefined && last.length + suffix.length <= config.MAX_MESSAGE_LENGTH) {
-    return [...parts.slice(0, -1), last + suffix];
+  if (last !== undefined && last.text.length + 2 + footer.text.length <= config.MAX_MESSAGE_LENGTH) {
+    return [...parts.slice(0, -1), new EntityText().append(last).newline(2).append(footer).build()];
   }
   return [...parts, footer];
 }
@@ -214,20 +236,6 @@ function stripWorkingDir(filePath: string): string {
   return filePath;
 }
 
-function formatTodoList(todos: TodoItem[]): string {
-  const lines = ['📝 Todos'];
-  for (const todo of todos) {
-    if (todo.status === 'completed') {
-      lines.push(`✅ ${todo.content}`);
-    } else if (todo.status === 'in_progress') {
-      lines.push(`⏳ ${todo.activeForm || todo.content}`);
-    } else {
-      lines.push(`☐ ${todo.content}`);
-    }
-  }
-  return lines.join('\n');
-}
-
 /** Everything one refresh of the live status bubble shows. */
 export interface StatusBubbleView {
   /** An ask_user question is waiting on a tap. */
@@ -243,6 +251,8 @@ export interface StatusBubbleView {
   tip: string | null;
   /** Background-task footer; empty when nothing runs in the background. */
   footer: string;
+  /** The reply has grown in the last few seconds: say "Writing", not "Thinking". */
+  writing?: boolean;
 }
 
 /**
@@ -278,6 +288,8 @@ export function renderStatusBubble(view: StatusBubbleView): EntityMessage {
     // Bash commands render their (possibly multi-line) command in a separate
     // block below the header so the timer stays on a clean single line.
     if (operation.commandBlock) b.newline().pre(operation.commandBlock, 'bash');
+  } else if (view.writing) {
+    b.add(`${getSpinnerFrame(view.spinnerIndex)} ${STREAMING_INDICATOR}`);
   } else {
     b.add(`${getSpinnerFrame(view.spinnerIndex)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...`);
   }
@@ -292,10 +304,15 @@ export function renderStatusBubble(view: StatusBubbleView): EntityMessage {
   return b.build();
 }
 
+/** A message's text and formatting as one comparable string. */
+function messageKey(message: EntityMessage): string {
+  return `${message.text}\u0000${JSON.stringify(message.entities)}`;
+}
+
 export class MessageSender {
   private streamStates: Map<string, StreamState> = new Map();
-  // Per-stream counter of new chat messages posted during the turn (TodoWrite
-  // first render, monitor armed/events, sub-turn echoes, backgrounded task
+  // Per-stream counter of new chat messages posted during the turn (task
+  // list first render, monitor armed/events, sub-turn echoes, backgrounded task
   // completions). Drives two behaviors when > 0:
   //   - finishStreaming posts the final response as a fresh bottom message
   //     and reduces the original "Processing..." bubble to a pointer, so the
@@ -305,6 +322,12 @@ export class MessageSender {
   // Reset on startStreaming.
   private interveningPostsThisStream: Map<string, number> = new Map();
 
+  constructor() {
+    // A task-list card is posted by a timer as often as by a tool call, so it
+    // is counted where it is posted rather than where it was asked for.
+    taskListDisplay.onPost((sessionKey) => this.noteInterveningPost(sessionKey));
+  }
+
   private noteInterveningPost(sessionKey: string | undefined): void {
     if (!sessionKey) return;
     const prev = this.interveningPostsThisStream.get(sessionKey) ?? 0;
@@ -312,9 +335,10 @@ export class MessageSender {
   }
 
   /**
-   * Send a message with hybrid approach:
-   * - Short content: MarkdownV2 inline
-   * - Long content or tables: Telegraph page link
+   * Send markdown — the model's own text, usually — as however many messages
+   * it takes, with an Instant View link under the last when the reply is long
+   * enough to be worth a page. The text always goes out in full: the page is a
+   * second way to read it, not a replacement for it.
    *
    * Returns the message_id of the last Telegram message posted, or null if
    * nothing was sent (every attempt failed). Callers that want to attach the
@@ -322,35 +346,24 @@ export class MessageSender {
    */
   async sendMessage(ctx: Context, text: string): Promise<number | null> {
     const keyInfo = getSessionKeyFromCtx(ctx);
-    let lastMessageId: number | null = null;
-
-    // MarkdownV2 with chunking, plus an Instant View footer when the reply is
-    // long enough to be worth one. The text always goes out in full — the page
-    // is a second way to read it, not a replacement for it.
     const parts = withTelegraphFooter(
-      processMessageForTelegram(text, config.MAX_MESSAGE_LENGTH),
+      formatMarkdown(text, config.MAX_MESSAGE_LENGTH),
       await publishTelegraphFooter(text, keyInfo?.sessionKey),
     );
+    return this.sendParts(ctx, parts);
+  }
 
+  /** Post `parts` in order; the id of the last one that went out. */
+  private async sendParts(ctx: Context, parts: EntityMessage[]): Promise<number | null> {
+    let lastMessageId: number | null = null;
     for (const part of parts) {
       try {
-        const sent = await ctx.reply(part, { parse_mode: 'MarkdownV2' });
-        lastMessageId = sent.message_id;
+        lastMessageId = (await replyFormatted(ctx, part)).message_id;
       } catch (error) {
-        // MarkdownV2 failed for this part — fallback to plain text for just this part
-        console.error('MarkdownV2 send failed for part, falling back to plain text:', error);
+        console.error('[Send] Failed to send part:', error instanceof Error ? error.message : error);
         try {
-          // Try to send this specific part as plain text
-          const sent = await ctx.reply(part.replace(/\\(.)/g, '$1'), { parse_mode: undefined });
-          lastMessageId = sent.message_id;
-        } catch (plainError) {
-          console.error('Plain text send also failed for part:', plainError);
-          // Last resort: send error message
-          try {
-            const sent = await ctx.reply('⚠️ Message formatting error', { parse_mode: undefined });
-            lastMessageId = sent.message_id;
-          } catch { /* give up */ }
-        }
+          lastMessageId = (await ctx.reply('⚠️ Message formatting error')).message_id;
+        } catch { /* give up */ }
       }
     }
     return lastMessageId;
@@ -432,21 +445,13 @@ export class MessageSender {
       inline_keyboard: [[{ text: SUGGESTION_CARD_BUTTON, callback_data: `sgt:${suggestion.id}` }]],
     };
     try {
-      await ctx.reply(buildSuggestionCardText(suggestion.text), {
-        parse_mode: 'MarkdownV2',
+      await replyFormatted(ctx, buildSuggestionCardText(suggestion.text), {
         reply_markup,
         disable_notification: true,
       });
     } catch (err) {
-      console.debug('[Suggestion] card send failed, retrying plain:', err instanceof Error ? err.message : err);
-      try {
-        await ctx.reply(buildSuggestionCardPlainText(suggestion.text), {
-          reply_markup,
-          disable_notification: true,
-        });
-      } catch {
-        // The answer itself already landed; a missing suggestion is cosmetic.
-      }
+      // The answer itself already landed; a missing suggestion is cosmetic.
+      console.debug('[Suggestion] card send failed:', err instanceof Error ? err.message : err);
     }
   }
 
@@ -464,10 +469,7 @@ export class MessageSender {
       const fileBuffer = fs.readFileSync(filePath);
       const inputFile = new InputFile(fileBuffer, fileName);
 
-      await ctx.replyWithDocument(inputFile, {
-        caption: caption ? escapeMarkdownV2(caption) : undefined,
-        parse_mode: caption ? 'MarkdownV2' : undefined
-      });
+      await ctx.replyWithDocument(inputFile, { caption });
 
       return true;
     } catch (error) {
@@ -500,9 +502,12 @@ export class MessageSender {
         const pageUrl = await createTelegraphFromFile(filePath);
 
         if (pageUrl) {
-          const message = `📄 *${escapeMarkdownV2(fileName)}*\n\n[Open in Instant View](${escapeMarkdownV2(pageUrl)})`;
+          const message = new EntityText()
+            .add('📄 ').bold(fileName).newline(2)
+            .link('Open in Instant View', pageUrl)
+            .build();
 
-          await ctx.reply(message, { parse_mode: 'MarkdownV2' });
+          await replyFormatted(ctx, message);
 
           // Also send as document if requested
           if (sendAsDocument) {
@@ -538,7 +543,7 @@ export class MessageSender {
 
 
     const initialText = `${getSpinnerFrame(0)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...`;
-    const message = await ctx.reply(initialText, { parse_mode: undefined });
+    const message = await ctx.reply(initialText);
 
     // "typing…" only for a turn with no live status line. Terminal mode has
     // one — in the bubble, then at the bottom of the action log — and Telegram
@@ -553,8 +558,13 @@ export class MessageSender {
       sessionKey,
       messageId: message.message_id,
       content: '',
+      contentChangedAt: 0,
+      shownContent: '',
+      shown: [],
+      overflowIds: [],
+      flushTimer: null,
+      streamIntervalMs: ctx.chat?.type === 'private' ? STREAM_EDIT_INTERVAL_MS : GROUP_STREAM_EDIT_INTERVAL_MS,
       lastUpdate: now,
-      updateScheduled: false,
       typingInterval,
       // Terminal UI mode
       terminalMode,
@@ -564,10 +574,7 @@ export class MessageSender {
       operationStartTime: now,
       rateLimitedUntil: 0,
       lastRateLimitDurationMs: 0,
-      bubblePointsAtLog: false,
       tip: null,
-      todoMessageId: null,
-      todoLastRendered: '',
       actionLogEnabled,
       prompt,
     };
@@ -578,6 +585,8 @@ export class MessageSender {
     // find the stream and the "typing…" interval ticks forever.
     this.streamStates.set(sessionKey, state);
     this.interveningPostsThisStream.set(sessionKey, 0);
+    // The task list's next change posts a fresh card, under this turn's prompt.
+    taskListDisplay.startTurn(sessionKey);
 
     // Initialize action logging if enabled. Cosmetic, so a failure here
     // degrades to a turn without an action log rather than no turn at all.
@@ -594,7 +603,7 @@ export class MessageSender {
       state.spinnerInterval = setInterval(() => {
         state.spinnerIndex += 1;
         if (ctx) {
-          this.flushTerminalUpdate(ctx, state).catch(() => {});
+          this.flushLive(ctx, state).catch(() => {});
         }
       }, MIN_EDIT_INTERVAL_MS);
     }
@@ -604,6 +613,10 @@ export class MessageSender {
     if (state.spinnerInterval) {
       clearInterval(state.spinnerInterval);
       state.spinnerInterval = null;
+    }
+    if (state.flushTimer) {
+      clearTimeout(state.flushTimer);
+      state.flushTimer = null;
     }
   }
 
@@ -637,13 +650,10 @@ export class MessageSender {
     const state = this.streamStates.get(sessionKey);
     if (!state) return;
 
-    // TodoWrite gets a dedicated live-checklist message instead of the
-    // generic terminal-UI status bubble — render and skip the normal path.
-    if (toolName === 'TodoWrite' && ctx && Array.isArray((input as { todos?: unknown })?.todos)) {
-      this.renderTodoWrite(ctx, state, (input as { todos: TodoItem[] }).todos).catch((err) => {
-        console.error('[TodoWrite] Render failed:', err);
-      });
-      return;
+    // TaskCreate and TaskUpdate change the task list on disk; its card is
+    // redrawn from there once the write has landed.
+    if (ctx) {
+      taskListDisplay.noteToolStart(ctx.api, sessionKey, toolName, sessionManager.getSession(sessionKey)?.claudeSessionId);
     }
 
     if (!state.terminalMode) return;
@@ -664,42 +674,7 @@ export class MessageSender {
     state.spinnerIndex += 1;
 
     if (ctx) {
-      this.flushTerminalUpdate(ctx, state).catch(() => {});
-    }
-  }
-
-  /**
-   * Render TodoWrite as a single Telegram message that we edit in place
-   * for every subsequent TodoWrite call in the same turn.
-   */
-  private async renderTodoWrite(ctx: Context, state: StreamState, todos: TodoItem[]): Promise<void> {
-    const text = formatTodoList(todos);
-    if (text === state.todoLastRendered) return;
-
-    const sendOpts = state.threadId !== undefined ? { message_thread_id: state.threadId } : {};
-
-    if (state.todoMessageId === null) {
-      const sent = await ctx.api.sendMessage(state.chatId, text, sendOpts);
-      state.todoMessageId = sent.message_id;
-      state.todoLastRendered = text;
-      this.noteInterveningPost(state.sessionKey);
-      return;
-    }
-
-    try {
-      await ctx.api.editMessageText(state.chatId, state.todoMessageId, text);
-      state.todoLastRendered = text;
-    } catch (err) {
-      const description = err instanceof GrammyError ? err.description : '';
-      if (description.includes('message is not modified')) {
-        state.todoLastRendered = text;
-        return;
-      }
-      // Message gone or unreachable — fall back to posting a fresh one.
-      const sent = await ctx.api.sendMessage(state.chatId, text, sendOpts);
-      state.todoMessageId = sent.message_id;
-      state.todoLastRendered = text;
-      this.noteInterveningPost(state.sessionKey);
+      this.flushLive(ctx, state).catch(() => {});
     }
   }
 
@@ -707,6 +682,7 @@ export class MessageSender {
    * Clear the current tool operation (terminal UI mode)
    */
   clearToolOperation(sessionKey: string): void {
+    taskListDisplay.noteToolEnd(sessionKey);
     const state = this.streamStates.get(sessionKey);
     if (!state) return;
     state.currentOperation = null;
@@ -735,7 +711,7 @@ export class MessageSender {
     const streamState = this.streamStates.get(sessionKey);
     if (streamState && streamState.terminalMode) {
       streamState.spinnerIndex += 1;
-      this.flushTerminalUpdate(ctx, streamState).catch(() => {});
+      this.flushLive(ctx, streamState).catch(() => {});
     }
   }
 
@@ -744,19 +720,12 @@ export class MessageSender {
     const description = task.description.length > 100
       ? task.description.substring(0, 97) + '...'
       : task.description;
-    const text = `📡 Monitor "${escapeMarkdownV2(description)}" armed`;
-    let posted: { message_id: number } | null = null;
     try {
-      posted = await ctx.reply(text, { parse_mode: 'MarkdownV2' });
-    } catch (error) {
-      console.error('[Task] Failed to post monitor armed:', error instanceof Error ? error.message : error);
-      try {
-        posted = await ctx.reply(`📡 Monitor "${task.description}" armed`);
-      } catch { /* ignore */ }
-    }
-    if (posted) {
+      const posted = await replyFormatted(ctx, `📡 Monitor "${description}" armed`);
       task.armedMessageId = posted.message_id;
       this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
+    } catch (error) {
+      console.error('[Task] Failed to post monitor armed:', error instanceof Error ? error.message : error);
     }
   }
 
@@ -775,19 +744,12 @@ export class MessageSender {
     const truncated = eventText.length > 1000
       ? eventText.substring(0, 997) + '...'
       : eventText;
-    const text = `📡 Monitor event: ${escapeMarkdownV2(truncated)}`;
-    let posted = false;
     try {
-      await ctx.reply(text, { parse_mode: 'MarkdownV2' });
-      posted = true;
+      await replyFormatted(ctx, `📡 Monitor event: ${truncated}`);
+      this.noteInterveningPost(sessionKey);
     } catch (error) {
       console.error('[Task] Failed to post monitor event:', error instanceof Error ? error.message : error);
-      try {
-        await ctx.reply(`📡 Monitor event: ${eventText.substring(0, 1000)}`);
-        posted = true;
-      } catch { /* ignore */ }
     }
-    if (posted) this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
   }
 
   /**
@@ -798,17 +760,14 @@ export class MessageSender {
    */
   async postScheduledFire(ctx: Context, label: string, prompt: string): Promise<void> {
     const preview = prompt.length > 100 ? prompt.substring(0, 97) + '...' : prompt;
-    const headline = label
-      ? `🔔 *Scheduled* — ${escapeMarkdownV2(label)}`
-      : `🔔 *Scheduled fire*`;
-    const text = `${headline}\n\`${escapeMarkdownV2(preview)}\``;
+    const b = new EntityText().add('🔔 ');
+    if (label) b.bold('Scheduled').add(` — ${label}`);
+    else b.bold('Scheduled fire');
+    b.newline().code(preview);
     try {
-      await ctx.reply(text, { parse_mode: 'MarkdownV2' });
+      await replyFormatted(ctx, b.build());
     } catch (error) {
       console.error('[Schedule] Failed to post scheduled header:', error instanceof Error ? error.message : error);
-      try {
-        await ctx.reply(`🔔 Scheduled${label ? ` — ${label}` : ''}\n${preview}`);
-      } catch { /* ignore */ }
     }
     this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
   }
@@ -816,31 +775,13 @@ export class MessageSender {
   /**
    * Post the model's text response from an SDK-driven sub-turn (monitor
    * event echoes, post-task_notification commentary) as its own Telegram
-   * message. Routed through the MarkdownV2 formatter so the model's
-   * intended formatting renders, with a per-part fallback to plain text
-   * for chunks that fail to parse (raw log content can contain unescaped
-   * `_*[]`).
+   * message, its markdown rendered as for any reply.
    */
   async postSubTurnResponse(ctx: Context, text: string): Promise<void> {
     const trimmed = text.trim();
     if (!trimmed) return;
-    const parts = processMessageForTelegram(trimmed, config.MAX_MESSAGE_LENGTH);
-    const sessionKey = getSessionKeyFromCtx(ctx)?.sessionKey;
-    for (const part of parts) {
-      try {
-        await ctx.reply(part, { parse_mode: 'MarkdownV2' });
-      } catch (error) {
-        console.error('[Task] MarkdownV2 sub-turn send failed, falling back to plain text:', error instanceof Error ? error.message : error);
-        try {
-          // Remove escaping for plain text fallback
-          await ctx.reply(part.replace(/\\(.)/g, '$1'), { parse_mode: undefined });
-        } catch (plainError) {
-          console.error('[Task] Plain-text sub-turn send failed:', plainError instanceof Error ? plainError.message : plainError);
-          await ctx.reply('⚠️ Message formatting error', { parse_mode: undefined });
-        }
-      }
-    }
-    this.noteInterveningPost(sessionKey);
+    await this.sendParts(ctx, formatMarkdown(trimmed, config.MAX_MESSAGE_LENGTH));
+    this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
   }
 
   /**
@@ -881,9 +822,8 @@ export class MessageSender {
    * Post a truncated preview of a tool's result. In action log mode, adds to
    * the consolidated log; otherwise sends as its own Telegram message.
    * Sent only when the chat's verbosity tier resolves `showToolResults: true`
-   * (caller is responsible for the gate). Uses plain text — tool output can
-   * contain anything, and trying to escape it into MarkdownV2 invites parse
-   * errors. The streaming bubble is pushed below via `noteInterveningPost`.
+   * (caller is responsible for the gate). Plain text: tool output is shown as
+   * it came. The streaming bubble is pushed below via `noteInterveningPost`.
    */
   async postToolResult(
     ctx: Context,
@@ -916,7 +856,7 @@ export class MessageSender {
 
     const text = `${icon} ${label} ${verb}\n${detailLine}${body}`;
     try {
-      await ctx.reply(text, { parse_mode: undefined });
+      await replyFormatted(ctx, text);
       this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
     } catch (err) {
       console.error('[ToolResult] Failed to post:', err instanceof Error ? err.message : err);
@@ -927,8 +867,7 @@ export class MessageSender {
    * Post a before/after preview for a successful Edit or Write call. In action
    * log mode, adds to the consolidated log; otherwise sends as its own message.
    * Each side is independently capped at `maxLines` and prefixed with `-`/`+`.
-   * Write (new file) skips the `-` side. Plain-text rendering — tool output
-   * can contain anything that would break MarkdownV2 parsing.
+   * Write (new file) skips the `-` side. Plain text, shown as it came.
    */
   async postEditDiff(ctx: Context, event: EditDiffEvent, maxLines: number): Promise<void> {
     if (await this.routeToActionLog(ctx, (sk) => actionLogger.addEditDiff(sk, event, maxLines))) {
@@ -958,7 +897,7 @@ export class MessageSender {
 
     const text = lines.join('\n');
     try {
-      await ctx.reply(text, { parse_mode: undefined });
+      await replyFormatted(ctx, text);
       this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
     } catch (err) {
       console.error('[EditDiff] Failed to post:', err instanceof Error ? err.message : err);
@@ -1003,17 +942,10 @@ export class MessageSender {
     // Single-line format matching Claude Code's TUI:
     //   ✅ Background task "<description>" completed in 54s
     //   📡 Monitor "<description>" stream ended after 12s
-    const headline = isMonitor
-      ? `${statusIcon} Monitor "${escapeMarkdownV2(description)}" ${escapeMarkdownV2(verb)} after ${escapeMarkdownV2(duration)}`
-      : `${statusIcon} Background task "${escapeMarkdownV2(description)}" ${verb} in ${escapeMarkdownV2(duration)}`;
-    const lines: string[] = [headline];
-    if (task.error) {
-      lines.push(`⚠️ ${escapeMarkdownV2(task.error)}`);
-    }
-    const body = lines.join('\n');
-    const fallbackBody = isMonitor
-      ? `${statusIcon} Monitor "${task.description}" ${verb} after ${duration}${task.error ? `\n⚠️ ${task.error}` : ''}`
-      : `${statusIcon} Background task "${task.description}" ${verb} in ${duration}${task.error ? `\n⚠️ ${task.error}` : ''}`;
+    const body = isMonitor
+      ? `${statusIcon} Monitor "${description}" ${verb} after ${duration}`
+      : `${statusIcon} Background task "${description}" ${verb} in ${duration}`;
+    const text = task.error ? `${body}\n⚠️ ${task.error}` : body;
 
     // If we still know the armed-message id, edit it in place so the chat
     // doesn't keep showing a stale "armed" line. Only post a fresh message
@@ -1028,34 +960,23 @@ export class MessageSender {
 
     if (shouldEdit) {
       try {
-        await ctx.api.editMessageText(chatId!, task.armedMessageId!, body, { parse_mode: 'MarkdownV2' });
+        await editFormatted(ctx.api, chatId!, task.armedMessageId!, text);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
-        // "message is not modified" is benign; everything else falls back to
-        // posting a fresh message so the user still learns about completion.
-        if (!/not modified/i.test(msg)) {
-          console.error('[Task] Failed to edit armed message:', msg);
-          try {
-            await ctx.api.editMessageText(chatId!, task.armedMessageId!, fallbackBody);
-          } catch { /* fall through to fresh post if posting was already gated */ }
-        }
+        // "message is not modified" is benign; anything else still leaves the
+        // fresh post below to tell the user, when posting is called for.
+        if (!/not modified/i.test(msg)) console.error('[Task] Failed to edit armed message:', msg);
       }
     }
 
     if (!shouldPostFresh) return;
 
-    let posted = false;
     try {
-      await ctx.reply(body, { parse_mode: 'MarkdownV2' });
-      posted = true;
+      await replyFormatted(ctx, text);
+      this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
     } catch (error) {
       console.error('[Task] Failed to post completion message:', error instanceof Error ? error.message : error);
-      try {
-        await ctx.reply(fallbackBody);
-        posted = true;
-      } catch { /* ignore */ }
     }
-    if (posted) this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
   }
 
   /** What the status line shows right now. */
@@ -1068,6 +989,7 @@ export class MessageSender {
       pausedMs: state.lastRateLimitDurationMs > 0 ? state.lastRateLimitDurationMs : undefined,
       tip: state.tip,
       footer: renderBackgroundFooter(taskTracker.getBackgroundedTasks(state.sessionKey)),
+      writing: Date.now() - state.contentChangedAt < WRITING_WINDOW_MS,
     };
   }
 
@@ -1094,96 +1016,166 @@ export class MessageSender {
   }
 
   /**
-   * Swap the bubble's status line for a pointer to the action log, once the log
-   * carries the status line.
+   * The line under the live reply that says it isn't final: the status line
+   * with the terminal UI on, a pointer down to the action log once that
+   * carries the status line, or a plain "Writing" otherwise.
    */
-  private async pointBubbleAtLog(ctx: Context, state: StreamState): Promise<void> {
-    if (state.bubblePointsAtLog || !state.messageId || Date.now() < state.rateLimitedUntil) return;
-    state.bubblePointsAtLog = true;
-    try {
-      await ctx.api.editMessageText(state.chatId, state.messageId, LOG_POINTER_LINE, { parse_mode: undefined });
-      state.lastUpdate = Date.now();
-    } catch (error: unknown) {
-      if (error instanceof GrammyError && error.error_code === 429) {
-        // Point it on a later refresh, once the backoff is over.
-        state.bubblePointsAtLog = false;
-        state.rateLimitedUntil = Date.now() + (error.parameters.retry_after ?? 60) * 1000;
-        return;
-      }
-      // Anything else is cosmetic: the bubble keeps its last status line.
+  private liveFooter(state: StreamState): EntityMessage {
+    if (state.terminalMode) {
+      if (actionLogger.showsStatus(state.sessionKey)) return plain(LOG_POINTER_LINE);
+      return renderStatusBubble(this.statusView(state));
     }
+    if (hasPendingQuestionForSession(state.sessionKey)) return plain(AWAITING_ANSWER_LINE);
+    if (!state.content.trim()) {
+      return plain(`${getSpinnerFrame(state.spinnerIndex)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...`);
+    }
+    return new EntityText().italic(STREAMING_INDICATOR).build();
   }
 
   /**
-   * Refresh the live status line. `immediate` skips the edit throttle, for a
+   * The live messages: the reply so far, split where it outgrows one message,
+   * with `footer` under the last. The bubble shows the first; the rest
+   * overflow into messages of their own below it.
+   */
+  private liveMessages(state: StreamState, footer: EntityMessage): EntityMessage[] {
+    const prose = stripReasoningSummary(state.content).trim();
+    if (!prose) return [footer];
+    const room = MAX_MESSAGE_LENGTH - footer.text.length - 2;
+    const parts = splitEntityMessage(markdownToEntities(prose), room, { markers: false });
+    if (parts.length === 0) return [footer];
+    const last = parts.length - 1;
+    return parts.map((part, i) => (i === last ? new EntityText().append(part).newline(2).append(footer).build() : part));
+  }
+
+  /**
+   * Bring the live messages up to date: the bubble, and any it overflowed
+   * into. An edit that only moves the status line waits
+   * {@link MIN_EDIT_INTERVAL_MS} since the last; one that shows more of the
+   * reply waits the much shorter stream interval, and is scheduled for when
+   * that has passed rather than dropped. `immediate` skips the wait, for a
    * change the user has to see now.
    */
-  private async flushTerminalUpdate(ctx: Context, state: StreamState, immediate = false): Promise<void> {
+  private async flushLive(ctx: Context, state: StreamState, immediate = false): Promise<void> {
     // Verify state is still active
     const currentState = this.streamStates.get(state.sessionKey);
-    if (!currentState || currentState !== state || !state.messageId || !state.terminalMode) {
-      return;
-    }
+    if (!currentState || currentState !== state || !state.messageId) return;
 
-    // Once the action log is in the chat it carries the status line, which
-    // it redraws on its own throttle. The bubble just points down at it.
-    if (actionLogger.showsStatus(state.sessionKey)) {
-      await this.pointBubbleAtLog(ctx, state);
+    // Once the action log is in the chat it carries the status line, which it
+    // redraws on its own throttle. The bubble's footer just points down at it.
+    if (state.terminalMode && actionLogger.showsStatus(state.sessionKey)) {
       await actionLogger.refreshStatus(state.sessionKey, immediate);
-      return;
     }
 
-    // Respect Telegram's retry_after backoff on 429
     const now = Date.now();
-    if (now < state.rateLimitedUntil) {
+    const newText = state.content !== state.shownContent;
+    const interval = newText ? state.streamIntervalMs : MIN_EDIT_INTERVAL_MS;
+    const wait = Math.max(state.rateLimitedUntil - now, immediate ? 0 : state.lastUpdate + interval - now);
+    if (wait > 0) {
+      // New text is worth coming back for; a status-only change is picked up
+      // by the next spinner tick.
+      if (newText) this.scheduleFlush(ctx, state, wait);
       return;
     }
 
-    // Throttle edits to avoid rate limits
-    const timeSinceLastUpdate = now - state.lastUpdate;
-    if (!immediate && timeSinceLastUpdate < MIN_EDIT_INTERVAL_MS) {
-      return;
-    }
-
-    const { text, entities } = renderStatusBubble(this.statusView(state));
-
-    try {
-      await ctx.api.editMessageText(state.chatId, state.messageId, text, { entities });
-      state.lastUpdate = Date.now();
-      state.bubblePointsAtLog = false;
+    const content = state.content;
+    state.lastUpdate = now;
+    if (await this.showLive(ctx, state, this.liveMessages(state, this.liveFooter(state)))) {
+      state.shownContent = content;
       // Successful edit — clear any rate-limit annotation after it's been shown once
       state.lastRateLimitDurationMs = 0;
-    } catch (error: unknown) {
+    } else if (newText && state.rateLimitedUntil > Date.now()) {
+      // The reply may have stopped growing, so nothing else would bring the
+      // text that was refused back once the backoff is over.
+      this.scheduleFlush(ctx, state, state.rateLimitedUntil - Date.now());
+    }
+  }
+
+  private scheduleFlush(ctx: Context, state: StreamState, wait: number): void {
+    if (state.flushTimer) return;
+    state.flushTimer = setTimeout(() => {
+      state.flushTimer = null;
+      this.flushLive(ctx, state).catch(() => {});
+    }, wait);
+  }
+
+  /**
+   * Edit the bubble and its overflow messages to `messages`, posting overflow
+   * messages that don't exist yet and deleting ones no longer needed. False if
+   * Telegram rate-limited us; the throttle is widened and a retry scheduled
+   * by the caller's next refresh.
+   */
+  private async showLive(ctx: Context, state: StreamState, messages: EntityMessage[]): Promise<boolean> {
+    try {
+      for (let i = 0; i < messages.length; i++) {
+        const key = messageKey(messages[i]);
+        if (state.shown[i] === key) continue;
+        const id = i === 0 ? state.messageId : state.overflowIds[i - 1];
+        if (id) {
+          await this.editLive(ctx, state.chatId, id, messages[i]);
+        } else {
+          // Silent: the bubble above already raised the turn's notification,
+          // and the final reply raises its own.
+          const sent = await replyFormatted(ctx, messages[i], { disable_notification: true });
+          state.overflowIds[i - 1] = sent.message_id;
+        }
+        state.shown[i] = key;
+      }
+      await this.dropOverflow(ctx, state, messages.length - 1);
+      return true;
+    } catch (error) {
       if (error instanceof GrammyError && error.error_code === 429) {
         const retryAfter = error.parameters.retry_after ?? 60;
         state.rateLimitedUntil = Date.now() + retryAfter * 1000;
         state.lastRateLimitDurationMs = retryAfter * 1000;
-        console.warn(`[Terminal] Rate limited, backing off for ${retryAfter}s (session:${state.sessionKey})`);
-        return;
+        state.streamIntervalMs = Math.min(state.streamIntervalMs * 2, MAX_STREAM_EDIT_INTERVAL_MS);
+        console.warn(`[Stream] Rate limited, backing off for ${retryAfter}s (session:${state.sessionKey})`);
+        return false;
       }
-      // Ignore "message not modified" and "message ID invalid" errors
-      // The latter happens when streaming ends and message is replaced
-      if (error instanceof Error) {
-        const msg = error.message.toLowerCase();
-        if (!msg.includes('message is not modified') && !msg.includes('message_id_invalid')) {
-          console.error('Error updating terminal stream:', error);
-        }
+      // The bubble was deleted, or the turn ended under us: cosmetic either way.
+      const msg = error instanceof Error ? error.message.toLowerCase() : '';
+      if (!msg.includes('message to edit not found') && !msg.includes('message_id_invalid')) {
+        console.error('[Stream] Error updating live message:', error);
       }
+      return false;
+    }
+  }
+
+  /** Edit one message, treating "message is not modified" as done. */
+  private async editLive(ctx: Context, chatId: number, messageId: number, message: EntityMessage): Promise<void> {
+    try {
+      await editFormatted(ctx.api, chatId, messageId, message);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('message is not modified')) return;
+      throw error;
+    }
+  }
+
+  /** Delete the overflow messages past the first `keep`. */
+  private async dropOverflow(ctx: Context, state: StreamState, keep: number): Promise<void> {
+    while (state.overflowIds.length > keep) {
+      const id = state.overflowIds.pop()!;
+      state.shown.length = Math.min(state.shown.length, state.overflowIds.length + 1);
+      try {
+        await ctx.api.deleteMessage(state.chatId, id);
+      } catch { /* already gone */ }
     }
   }
 
   /**
-   * Accumulate streamed text content internally without triggering Telegram edits.
-   * The full content is only displayed when finishStreaming() is called.
+   * The reply so far — the whole of it, every text block of the turn in
+   * markdown — shown live in the bubble above the status line, and updated as
+   * it grows until {@link finishStreaming} puts the final text in its place.
    */
-  updateStream(_ctx: Context, content: string): void {
-    const keyInfo = getSessionKeyFromCtx(_ctx);
+  updateStream(ctx: Context, content: string): void {
+    const keyInfo = getSessionKeyFromCtx(ctx);
     if (!keyInfo) return;
 
     const state = this.streamStates.get(keyInfo.sessionKey);
-    if (!state || !state.messageId) return;
+    if (!state || !state.messageId || content === state.content) return;
 
     state.content = content;
+    state.contentChangedAt = Date.now();
+    this.flushLive(ctx, state).catch(() => {});
   }
 
   /**
@@ -1201,7 +1193,7 @@ export class MessageSender {
     if (state.tip === tip) return;
 
     state.tip = tip;
-    this.flushTerminalUpdate(ctx, state).catch(() => {});
+    this.flushLive(ctx, state).catch(() => {});
   }
 
   /**
@@ -1218,7 +1210,7 @@ export class MessageSender {
    */
   async noteQuestionPosted(ctx: Context, sessionKey: string): Promise<void> {
     this.noteInterveningPost(sessionKey);
-    await this.refreshQuestionStatus(ctx, sessionKey);
+    await this.refreshQuestionStatus(sessionKey, ctx);
   }
 
   /**
@@ -1231,36 +1223,21 @@ export class MessageSender {
    */
   async noteQuestionAnswered(ctx: Context, sessionKey: string): Promise<void> {
     actionLogger.startNewMessage(sessionKey);
-    await this.refreshQuestionStatus(ctx, sessionKey);
+    await this.refreshQuestionStatus(sessionKey, ctx);
   }
 
   /**
-   * Re-render the status bubble to match the session's current pending-question
+   * Re-render the bubble to match the session's current pending-question
    * state. Reads the registry rather than tracking a flag of its own, so the
    * bubble cannot disagree with it — overlapping asks and timeouts both land
    * on the right text without extra bookkeeping.
    */
-  private async refreshQuestionStatus(ctx: Context, sessionKey: string): Promise<void> {
+  private async refreshQuestionStatus(sessionKey: string, ctx: Context): Promise<void> {
     const state = this.streamStates.get(sessionKey);
     if (!state || !state.messageId) return;
-
-    if (state.terminalMode) {
-      // Bypass the edit throttle: the point of the notice is that it lands
-      // now, not up to MIN_EDIT_INTERVAL_MS later on the next spinner tick.
-      await this.flushTerminalUpdate(ctx, state, true).catch(() => {});
-      return;
-    }
-
-    // Non-terminal mode never re-renders the bubble on its own — updateStream
-    // only accumulates text for finishStreaming — so edit it directly.
-    const text = hasPendingQuestionForSession(sessionKey)
-      ? AWAITING_ANSWER_LINE
-      : `${getSpinnerFrame(state.spinnerIndex)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...`;
-    try {
-      await ctx.api.editMessageText(state.chatId, state.messageId, text, { parse_mode: undefined });
-    } catch {
-      // Cosmetic — a failed edit just leaves the previous status text in place.
-    }
+    // Bypass the edit throttle: the point of the notice is that it lands
+    // now, not up to MIN_EDIT_INTERVAL_MS later on the next spinner tick.
+    await this.flushLive(ctx, state, true).catch(() => {});
   }
 
   async finishStreaming(
@@ -1275,7 +1252,7 @@ export class MessageSender {
     const state = this.streamStates.get(sessionKey);
     if (!state) return;
 
-    // Stop typing indicator and spinner
+    // Stop typing indicator, spinner and any held-back refresh
     this.stopTypingIndicator(state);
     this.stopSpinnerAnimation(state);
     state.currentOperation = null;
@@ -1290,6 +1267,9 @@ export class MessageSender {
     // button pointing at it.
     const suggestion = planSuggestion(sessionKey, options.nextPromptSuggestion);
 
+    // A card posted at the very end of the turn still counts as an intervening post.
+    await taskListDisplay.flush(sessionKey);
+
     if (state.messageId) {
       const hasInterveningPosts = (this.interveningPostsThisStream.get(sessionKey) ?? 0) > 0;
       const actionLogWasActive = actionLogger.isActive(sessionKey);
@@ -1298,58 +1278,41 @@ export class MessageSender {
       // post the final answer as a new message for better visibility.
       if (hasInterveningPosts || actionLogWasActive) {
         const trimmedFinal = finalContent.trim();
-        if (!trimmedFinal) {
-          try {
-            await ctx.api.editMessageText(chatId, state.messageId, '✅ Done', { parse_mode: undefined });
-          } catch (err) {
-            console.debug('[Stream] Done edit failed:', err instanceof Error ? err.message : err);
-          }
-        } else {
-          try {
-            await ctx.api.editMessageText(
-              chatId,
-              state.messageId,
-              '✅ Done — full response below ↓',
-              { parse_mode: undefined },
-            );
-          } catch (err) {
-            console.debug('[Stream] Pointer edit failed:', err instanceof Error ? err.message : err);
-          }
+        await this.dropOverflow(ctx, state, 0);
+        try {
+          await editFormatted(ctx.api, chatId, state.messageId, trimmedFinal ? '✅ Done — full response below ↓' : '✅ Done');
+        } catch (err) {
+          console.debug('[Stream] Pointer edit failed:', err instanceof Error ? err.message : err);
+        }
+        if (trimmedFinal) {
           const sentId = await this.sendMessage(ctx, finalContent);
           if (sentId) lastMessageId = sentId;
         }
       } else {
-        // Original behavior: No intervening posts, so edit the main message directly.
-        const parts = withTelegraphFooter(
-          processMessageForTelegram(finalContent, config.MAX_MESSAGE_LENGTH),
+        // No intervening posts: the live messages become the answer, edited in place.
+        let parts = withTelegraphFooter(
+          formatMarkdown(finalContent, config.MAX_MESSAGE_LENGTH),
           await publishTelegraphFooter(finalContent, sessionKey),
         );
+        if (parts.length === 0) parts = [plain('Done.')];
         try {
-          const firstPart = parts[0] || 'Done\\.';
-          await ctx.api.editMessageText(chatId, state.messageId, firstPart, { parse_mode: 'MarkdownV2' });
-
-          for (let i = 1; i < parts.length; i++) {
-            try {
-              const sent = await ctx.reply(parts[i], { parse_mode: 'MarkdownV2' });
-              lastMessageId = sent.message_id;
-            } catch (partError) {
-              console.error(`MarkdownV2 failed for part ${i + 1}:`, partError);
-              const sent = await ctx.reply(parts[i].replace(/\\(.)/g, '$1'), { parse_mode: undefined });
-              lastMessageId = sent.message_id;
+          const ids = [state.messageId, ...state.overflowIds];
+          for (let i = 0; i < parts.length; i++) {
+            if (i < ids.length) {
+              await this.editLive(ctx, chatId, ids[i], parts[i]);
+              lastMessageId = ids[i];
+            } else {
+              lastMessageId = (await replyFormatted(ctx, parts[i])).message_id;
             }
           }
-        } catch (mdError) {
-            const errMsg = mdError instanceof Error ? mdError.message : '';
-            if (errMsg.includes('message is not modified')) {
-              console.debug('[Stream] Edit skipped — content unchanged');
-            } else {
-              console.error('MarkdownV2 edit failed, falling back to sendMessage:', mdError);
-              try {
-                await ctx.api.deleteMessage(chatId, state.messageId);
-              } catch { /* ignore */ }
-              const sentId = await this.sendMessage(ctx, finalContent);
-              lastMessageId = sentId ?? null;
-            }
+          await this.dropOverflow(ctx, state, parts.length - 1);
+        } catch (error) {
+          console.error('[Stream] Final edit failed, sending the answer fresh:', error);
+          await this.dropOverflow(ctx, state, 0);
+          try {
+            await ctx.api.deleteMessage(chatId, state.messageId);
+          } catch { /* ignore */ }
+          lastMessageId = await this.sendMessage(ctx, finalContent);
         }
       }
     }
@@ -1365,11 +1328,12 @@ export class MessageSender {
   }
 
   /**
-   * Edit the in-flight streaming message to a cancel/error banner and tear
-   * down the per-turn streaming state. `reason` is either an explicit banner
-   * string or the Error that ended the turn; an Error whose `name` is
-   * `ClaudeApiError` gets a distinct banner so users can tell a Claude Code
-   * API failure apart from a /stop they initiated themselves.
+   * Put a cancel/error banner where the status line was, under whatever of the
+   * reply had been written, and tear down the per-turn streaming state.
+   * `reason` is either an explicit banner string or the Error that ended the
+   * turn; an Error whose `name` is `ClaudeApiError` gets a distinct banner so
+   * users can tell a Claude Code API failure apart from a /stop they initiated
+   * themselves.
    */
   async cancelStreaming(ctx: Context, reason: string | Error = '⚠️ Request cancelled'): Promise<void> {
     const banner = typeof reason === 'string'
@@ -1378,7 +1342,7 @@ export class MessageSender {
 
     const keyInfo = getSessionKeyFromCtx(ctx);
     if (!keyInfo) return;
-    const { chatId, sessionKey } = keyInfo;
+    const { sessionKey } = keyInfo;
 
     const state = this.streamStates.get(sessionKey);
     if (state) {
@@ -1387,16 +1351,9 @@ export class MessageSender {
       this.stopSpinnerAnimation(state);
 
       if (state.messageId) {
-        try {
-          await ctx.api.editMessageText(
-            chatId,
-            state.messageId,
-            banner,
-            { parse_mode: undefined }
-          );
-        } catch (error) {
-          console.error('Error cancelling stream:', error);
-        }
+        // Shown in full, unthrottled: this is the last edit the turn makes.
+        state.shown = [];
+        await this.showLive(ctx, state, this.liveMessages(state, plain(banner)));
       }
     }
 
@@ -1434,7 +1391,7 @@ export class MessageSender {
       const duration = seconds >= 60
         ? `${Math.floor(seconds / 60)}m ${seconds % 60}s`
         : `${seconds}s`;
-      await ctx.reply(`✅ Done (${duration})`, { parse_mode: undefined });
+      await ctx.reply(`✅ Done (${duration})`);
     } catch (error) {
       console.error('[Notification] Failed to send completion notification:', error);
     }

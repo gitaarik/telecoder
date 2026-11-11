@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { _isPossiblyStale, _renderTasksList } from '../../src/bot/handlers/command/tasks.js';
+import { _isPossiblyStale, _renderTasksList, _renderTaskDetail } from '../../src/bot/handlers/command/tasks.js';
 import { taskTracker, type TaskState } from '../../src/telegram/task-tracker.js';
 
 const SESSION_KEY = 'staleness-test';
@@ -46,7 +46,7 @@ describe('isPossiblyStale', () => {
 
 describe('renderTasksList staleness annotation', () => {
   it('marks the stale row and explains the marker once', () => {
-    const { text } = _renderTasksList(SESSION_KEY, [
+    const { message: { text } } = _renderTasksList(SESSION_KEY, [
       task({ id: 'a', description: 'fresh agent', taskType: 'local_agent' }),
       task({ id: 'b', description: 'quiet agent', taskType: 'local_agent' }, STALE_AFTER_MS + 1),
     ]);
@@ -58,7 +58,7 @@ describe('renderTasksList staleness annotation', () => {
   });
 
   it('omits the explanation when nothing is flagged', () => {
-    const { text } = _renderTasksList(SESSION_KEY, [
+    const { message: { text } } = _renderTasksList(SESSION_KEY, [
       task({ id: 'a', description: 'fresh agent', taskType: 'local_agent' }),
     ]);
     expect(text).not.toContain('⚠️');
@@ -66,12 +66,45 @@ describe('renderTasksList staleness annotation', () => {
   });
 
   it('still lists a stale task rather than hiding it', () => {
-    const { text, keyboard } = _renderTasksList(SESSION_KEY, [
+    const { message: { text }, keyboard } = _renderTasksList(SESSION_KEY, [
       task({ id: 'a', description: 'quiet agent', taskType: 'local_agent' }, STALE_AFTER_MS + 1),
     ]);
     expect(text).toContain('quiet agent');
     // The numbered button for the task must survive, or it can't be inspected.
     expect(keyboard.flat().some((b) => b.callback_data === 'tasks:view:a')).toBe(true);
+  });
+});
+
+describe('task rendering as entities', () => {
+  /** The text each entity of `type` covers. */
+  const covered = (m: { text: string; entities: { type: string; offset: number; length: number }[] }, type: string) =>
+    m.entities.filter((e) => e.type === type).map((e) => m.text.slice(e.offset, e.offset + e.length));
+
+  it('shows a description verbatim, with the headings in bold', () => {
+    const { message } = _renderTasksList(SESSION_KEY, [
+      task({ id: 'a', description: 'fix *this* (now) [1]_x_', taskType: 'local_agent' }),
+    ]);
+    expect(message.text).toContain('fix *this* (now) [1]_x_');
+    expect(message.text).not.toContain('\\');
+    expect(covered(message, 'bold')).toContain('Active background tasks');
+    expect(message.text).toContain('Active background tasks (1)');
+    expect(covered(message, 'italic')).toContain('Tap a number to view details.');
+  });
+
+  it('renders the detail view with bold labels, code values and a quoted summary', () => {
+    const { message } = _renderTaskDetail(
+      task({
+        description: 'deploy_v2 (prod)',
+        taskType: 'local_bash',
+        lastProgress: { lastToolName: 'Bash', summary: 'step 1. done!' },
+      } as Partial<TaskState>),
+    );
+    expect(message.text).toMatch(/^💻 Shell: deploy_v2 \(prod\)\n\n• Status: running/);
+    expect(covered(message, 'bold')).toEqual(
+      expect.arrayContaining(['deploy_v2 (prod)', 'Status:', 'Type:', 'Last tool:', 'Latest progress:']),
+    );
+    expect(covered(message, 'code')).toEqual(['local_bash', 'Bash']);
+    expect(covered(message, 'blockquote')).toEqual(['step 1. done!']);
   });
 });
 

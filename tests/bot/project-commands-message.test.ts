@@ -1,37 +1,24 @@
 import { describe, it, expect } from 'vitest';
+import type { MessageEntity } from 'grammy/types';
 import { buildProjectCommandsMessage } from '../../src/bot/handlers/command.handler.js';
+import type { EntityMessage } from '../../src/telegram/entities.js';
+
+/** The text each entity of `type` covers, in order. */
+function spans(msg: EntityMessage, type: MessageEntity['type']): string[] {
+  return msg.entities
+    .filter((e) => e.type === type)
+    .map((e) => msg.text.slice(e.offset, e.offset + e.length));
+}
 
 /**
- * A MarkdownV2 message that breaks these rules is rejected by Telegram with a
- * 400 at send time, which no amount of local typechecking catches. The checks
- * mirror the Bot API rules for the constructs this message actually uses:
- * code spans, bold, italic and one link.
+ * Telegram refuses a whole message over an entity that runs off the end of the
+ * text or covers nothing, which no amount of local typechecking catches.
  */
-function assertValidMarkdownV2(text: string): void {
-  // Backticks delimit code spans and must pair up. Counting via regex rather
-  // than by index: the message contains emoji, whose surrogate pairs make
-  // array positions and string positions disagree.
-  const ticks = text.match(/(?<!\\)`/g)?.length ?? 0;
-  expect(ticks % 2, `unbalanced backticks in:\n${text}`).toBe(0);
-
-  const segments = text.split(/(?<!\\)`/);
-  segments.forEach((segment, i) => {
-    if (i % 2 === 1) {
-      // Inside a code span a backslash is literal, so an escape here would
-      // render as a visible backslash.
-      expect(segment.includes('\\'), `stray backslash in code span: ${segment}`).toBe(false);
-      return;
-    }
-    // Outside code spans every reserved character must be escaped. `*` and `_`
-    // are formatting markers here, and `[` `]` `(` `)` appear in the one link.
-    const withoutLinks = segment.replace(/\[[^\]]*\]\([^)]*\)/g, '');
-    const unescaped = withoutLinks.match(/(?<!\\)[.\-!+=|{}~>#()[\]]/g) ?? [];
-    expect(unescaped, `unescaped specials in: ${segment}`).toEqual([]);
-
-    // Bold and italic markers must pair within the non-code text.
-    const stars = segment.match(/(?<!\\)\*/g)?.length ?? 0;
-    expect(stars % 2, `unbalanced bold markers in: ${segment}`).toBe(0);
-  });
+function assertEntitiesInBounds(msg: EntityMessage): void {
+  for (const e of msg.entities) {
+    expect(e.length, `empty ${e.type} entity`).toBeGreaterThan(0);
+    expect(e.offset + e.length, `${e.type} entity past the end`).toBeLessThanOrEqual(msg.text.length);
+  }
 }
 
 const SNAPSHOT = {
@@ -50,28 +37,17 @@ describe('buildProjectCommandsMessage', () => {
       snapshot: SNAPSHOT,
       botCommandNames: BOT_NAMES,
     });
-    expect(msg).toContain('`/code-review`');
-    expect(msg).toContain('Skills');
-    expect(msg).toContain('Shadowed by TeleCoder');
+    expect(spans(msg, 'code')).toContain('/code-review');
+    expect(spans(msg, 'bold')).toContain('Skills:');
+    expect(spans(msg, 'bold')).toContain('Shadowed by TeleCoder');
     // Shadowed names appear only under the warning, never as passthrough.
-    const [passthroughPart, shadowedPart] = msg.split('Shadowed by TeleCoder');
+    const [passthroughPart, shadowedPart] = msg.text.split('Shadowed by TeleCoder');
     expect(passthroughPart).not.toContain('/loop');
     expect(shadowedPart).toContain('/loop');
     expect(shadowedPart).toContain('/clear');
   });
 
-  it('leaves hyphenated command names unescaped inside code spans', () => {
-    const msg = buildProjectCommandsMessage({
-      directory: 'telecoder',
-      projectCommands: [],
-      snapshot: SNAPSHOT,
-      botCommandNames: new Set<string>(),
-    });
-    expect(msg).toContain('`/code-review`');
-    expect(msg).not.toContain('code\\-review');
-  });
-
-  it('produces valid MarkdownV2 with project commands, plugins and shadowing', () => {
+  it('sends names and descriptions verbatim, with no parse mode to escape for', () => {
     const msg = buildProjectCommandsMessage({
       directory: 'my.project-dir',
       projectCommands: [
@@ -81,22 +57,27 @@ describe('buildProjectCommandsMessage', () => {
       snapshot: SNAPSHOT,
       botCommandNames: BOT_NAMES,
     });
-    assertValidMarkdownV2(msg);
-    expect(msg).toContain('`/deploy-prod`');
-    expect(msg).toContain('Ship it \\(carefully\\!\\)');
+    assertEntitiesInBounds(msg);
+    expect(msg.text).not.toContain('\\');
+    expect(spans(msg, 'code')).toEqual(expect.arrayContaining(['my.project-dir', '/deploy-prod', '/lint']));
+    expect(msg.text).toContain('• /deploy-prod — Ship it (carefully!)');
+    expect(msg.text).toContain('• /lint\n');
   });
 
-  it('produces valid MarkdownV2 when the command list is unavailable', () => {
+  it('still says how to add project commands when the command list is unavailable', () => {
     const msg = buildProjectCommandsMessage({
       directory: 'telecoder',
       projectCommands: [],
       snapshot: undefined,
       botCommandNames: BOT_NAMES,
     });
-    assertValidMarkdownV2(msg);
-    expect(msg).toContain('unavailable');
-    // Still tells the user how to add project commands.
-    expect(msg).toContain('.claude/commands/');
+    assertEntitiesInBounds(msg);
+    expect(spans(msg, 'italic')).toEqual(["Claude Code's own command list is unavailable right now."]);
+    expect(spans(msg, 'code')).toContain('.claude/commands/');
+    expect(msg.entities).toContainEqual(expect.objectContaining({
+      type: 'text_link',
+      url: 'https://docs.claude.com/en/docs/claude-code/slash-commands',
+    }));
   });
 
   it('separates plugin commands from built-ins', () => {
@@ -106,13 +87,12 @@ describe('buildProjectCommandsMessage', () => {
       snapshot: SNAPSHOT,
       botCommandNames: new Set<string>(),
     });
-    assertValidMarkdownV2(msg);
-    expect(msg).toContain('Plugin');
-    expect(msg).toContain('`/ctx:doctor`');
-    expect(msg).toContain('Built\\-in');
+    assertEntitiesInBounds(msg);
+    expect(spans(msg, 'bold')).toEqual(expect.arrayContaining(['Plugin:', 'Built-in:']));
+    expect(spans(msg, 'code')).toContain('/ctx:doctor');
   });
 
-  it('drops whole lines rather than cutting one mid-escape when over budget', () => {
+  it('drops whole lines rather than cutting one when over budget', () => {
     const many = Array.from({ length: 400 }, (_, i) => `command-number-${i}`);
     const msg = buildProjectCommandsMessage({
       directory: 'telecoder',
@@ -120,7 +100,9 @@ describe('buildProjectCommandsMessage', () => {
       snapshot: { slashCommands: many, skills: many, recordedAtMs: Date.now() },
       botCommandNames: new Set<string>(),
     });
-    expect(Buffer.byteLength(msg, 'utf8')).toBeLessThanOrEqual(3900);
-    assertValidMarkdownV2(msg);
+    expect(msg.text.length).toBeLessThanOrEqual(3900);
+    expect(msg.text.endsWith('…list truncated.')).toBe(true);
+    expect(spans(msg, 'italic')).toContain('…list truncated.');
+    assertEntitiesInBounds(msg);
   });
 });

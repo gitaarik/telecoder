@@ -19,7 +19,8 @@ import {
 } from '../../../providers/provider-router.js';
 import { isPassthroughModelId } from '../../../claude/model-catalog.js';
 import { switchProvider, switchRequiresConfirm } from '../../../providers/provider-switch.js';
-import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
+import { EntityText, type EntityMessage } from '../../../telegram/entities.js';
+import { replyFormatted, editCallbackMessage } from '../../../telegram/send.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 import { replyMd, parseCallback, restartPtyForSettingChange, PTY_RESTART_NOTE } from './shared.js';
 import {
@@ -61,28 +62,30 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
       keyboard.push(buttons.slice(i, i + 2));
     }
 
-    const descriptions = models
-      .map(m => `• *${esc(m.label)}* \\- ${esc(m.description || '')}`)
-      .join('\n');
+    const picker = new EntityText()
+      .add('🤖 ').bold('Select Model').add(` (${providerName})`)
+      .newline(2)
+      .italic(`Current: ${currentModel}`)
+      .newline(2);
+    models.forEach((m, i) => {
+      if (i > 0) picker.newline();
+      picker.add('• ').bold(m.label).add(` - ${m.description || ''}`);
+    });
+    picker.add('\n\nOr ').code('/model <full-id>').add(' to pin an exact release, e.g. ')
+      .code('claude-opus-4-8').add('.');
 
     // Picking from the keyboard applies to this bot; the confirmation then
     // offers the fan-out. Say so up front so nobody assumes either scope.
-    const scopeHint = hasSiblings()
-      ? `\n\nApplies to *${esc(config.BOT_NAME)}* only — add \`all\` \\(\`/model sonnet all\`\\) or use the button afterwards to set every bot\\.`
-      : '';
+    if (hasSiblings()) {
+      picker.add('\n\nApplies to ').bold(config.BOT_NAME).add(' only — add ').code('all')
+        .add(' (').code('/model sonnet all').add(') or use the button afterwards to set every bot.');
+    }
 
-    await ctx.reply(
-      `🤖 *Select Model* \\(${esc(providerName)}\\)\n\n_Current: ${esc(currentModel)}_\n\n${descriptions}\n\n` +
-        // No escaping inside the code spans — MarkdownV2 only escapes ` and \
-        // there, so a \\- would render as a literal backslash.
-        `Or \`/model <full-id>\` to pin an exact release, e\\.g\\. \`claude-opus-4-8\`\\.${scopeHint}`,
-      {
-        parse_mode: 'MarkdownV2',
-        reply_markup: {
-          inline_keyboard: keyboard,
-        },
-      }
-    );
+    await replyFormatted(ctx, picker.build(), {
+      reply_markup: {
+        inline_keyboard: keyboard,
+      },
+    });
     return;
   }
 
@@ -92,8 +95,8 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
   if (args === 'all' || args === 'everywhere') {
     await replyMd(
       ctx,
-      `\`all\` sets every bot, but it needs a model to set them to\\.\n\n` +
-        `Try \`/model sonnet all\`, or /model to pick one\\.`,
+      '`all` sets every bot, but it needs a model to set them to.\n\n' +
+        'Try `/model sonnet all`, or /model to pick one.',
     );
     return;
   }
@@ -104,11 +107,13 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
   // pretending the choice was checked.
   const known = validIds.includes(args);
   if (!known && !isPassthroughModelId(rawArg)) {
-    await replyMd(
+    await replyFormatted(
       ctx,
-      `❌ "${esc(rawArg)}" isn't a usable model name\\.\n\n` +
-        `Aliases: ${esc(validIds.join(', '))}\n` +
-        `Or pass a full model ID \\(e\\.g\\. \`claude-opus-5\`\\)\\.`,
+      new EntityText()
+        .add(`❌ "${rawArg}" isn't a usable model name.\n\n`)
+        .add(`Aliases: ${validIds.join(', ')}\n`)
+        .add('Or pass a full model ID (e.g. ').code('claude-opus-5').add(').')
+        .build(),
     );
     return;
   }
@@ -116,10 +121,13 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
   const chosen = known ? args : rawArg;
   setModel(sessionKey, chosen);
   const restarted = restartPtyForSettingChange(keyInfo.sessionKey);
-  const caution = known
-    ? ''
-    : `\n\n⚠️ Not a known alias — passed to the CLI as\\-is\\. If your install can't serve it, the next turn fails; /model to pick again\\.`;
-  const confirmation = `${prefsConfirmation('model', chosen)}${restarted ? PTY_RESTART_NOTE : ''}${caution}`;
+  const confirmation = new EntityText().append(prefsConfirmation('model', chosen));
+  if (restarted) confirmation.append(PTY_RESTART_NOTE);
+  if (!known) {
+    confirmation.add(
+      "\n\n⚠️ Not a known alias — passed to the CLI as-is. If your install can't serve it, the next turn fails; /model to pick again.",
+    );
+  }
 
   if (scope === 'all') {
     const summary = await applyToAllBots({
@@ -128,13 +136,12 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
       value: chosen,
       provider: providerName,
     });
-    await replyMd(ctx, `${confirmation}${summary}`);
+    await replyFormatted(ctx, confirmation.append(summary).build());
     return;
   }
 
   const keyboard = buildApplyToAllKeyboard('model', chosen);
-  await ctx.reply(confirmation, {
-    parse_mode: 'MarkdownV2',
+  await replyFormatted(ctx, confirmation.build(), {
     ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
   });
 }
@@ -163,18 +170,16 @@ export async function handleModelCallback(ctx: Context): Promise<void> {
 
   await ctx.answerCallbackQuery({ text: `Model set to ${displayName}!` });
   const keyboard = buildApplyToAllKeyboard('model', model);
-  await ctx.editMessageText(
-    `${prefsConfirmation('model', displayName)}${restarted ? PTY_RESTART_NOTE : ''}`,
-    {
-      parse_mode: 'MarkdownV2',
-      ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
-    },
-  );
+  const confirmation = new EntityText().append(prefsConfirmation('model', displayName));
+  if (restarted) confirmation.append(PTY_RESTART_NOTE);
+  await editCallbackMessage(ctx, confirmation.build(), {
+    ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
+  });
 }
 
 const PROVIDER_DESCRIPTIONS: Record<ProviderName, string> = {
-  claude: '*claude* \\- Claude Code SDK \\(Anthropic / Max\\)',
-  ccr: '*ccr* \\- Routed via Claude Code Router \\(alt providers\\)',
+  claude: 'Claude Code SDK (Anthropic / Max)',
+  ccr: 'Routed via Claude Code Router (alt providers)',
 };
 
 export async function handleProviderCommand(ctx: Context): Promise<void> {
@@ -190,17 +195,21 @@ export async function handleProviderCommand(ctx: Context): Promise<void> {
     return [{ text: label, callback_data: `provider:${p}` }];
   });
 
-  const descriptions = providers.map((p) => `• ${PROVIDER_DESCRIPTIONS[p]}`).join('\n');
+  const picker = new EntityText()
+    .add('🔌 ').bold('Select Provider')
+    .newline(2)
+    .italic(`Current: ${active}`)
+    .newline(2);
+  providers.forEach((p, i) => {
+    if (i > 0) picker.newline();
+    picker.add('• ').bold(p).add(` - ${PROVIDER_DESCRIPTIONS[p]}`);
+  });
 
-  await ctx.reply(
-    `🔌 *Select Provider*\n\n_Current: ${esc(active)}_\n\n${descriptions}`,
-    {
-      parse_mode: 'MarkdownV2',
-      reply_markup: {
-        inline_keyboard: keyboard,
-      },
-    }
-  );
+  await replyFormatted(ctx, picker.build(), {
+    reply_markup: {
+      inline_keyboard: keyboard,
+    },
+  });
 }
 
 /**
@@ -216,7 +225,7 @@ export async function handleCcrCommand(ctx: Context): Promise<void> {
   if (!config.CCR_ENABLED) {
     await replyMd(
       ctx,
-      '⚠️ CCR is not enabled\\. Set `CCR_ENABLED=true` in `.env` and restart the bot\\.',
+      '⚠️ CCR is not enabled. Set `CCR_ENABLED=true` in `.env` and restart the bot.',
     );
     return;
   }
@@ -227,8 +236,7 @@ export async function handleCcrCommand(ctx: Context): Promise<void> {
   // If a live session owned by the other backend would be abandoned, confirm
   // first (switching starts a fresh session — sessions can't cross backends).
   if (switchRequiresConfirm(sessionKey, next)) {
-    await ctx.reply(buildSwitchConfirmText(sessionKey, next), {
-      parse_mode: 'MarkdownV2',
+    await replyFormatted(ctx, buildSwitchConfirmText(sessionKey, next), {
       reply_markup: { inline_keyboard: buildSwitchConfirmKeyboard(next) },
     });
     return;
@@ -240,8 +248,8 @@ export async function handleCcrCommand(ctx: Context): Promise<void> {
   // Clear model — Claude and CCR share labels but CCR's mapping is different.
   clearModel(sessionKey);
 
-  const label = next === 'ccr' ? 'CCR \\(routed\\)' : 'Claude \\(Max\\)';
-  await replyMd(ctx, `🔌 Switched provider to *${label}*\\.\n\n_Sticky — use /ccr again or /provider to switch back\\._`);
+  const label = next === 'ccr' ? 'CCR (routed)' : 'Claude (Max)';
+  await replyMd(ctx, `🔌 Switched provider to **${label}**.\n\n_Sticky — use /ccr again or /provider to switch back._`);
 }
 
 export async function handleProviderCallback(ctx: Context): Promise<void> {
@@ -270,8 +278,7 @@ export async function handleProviderCallback(ctx: Context): Promise<void> {
   // first — switching starts a fresh session (sessions can't cross backends).
   if (switchRequiresConfirm(sessionKey, provider)) {
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText(buildSwitchConfirmText(sessionKey, provider), {
-      parse_mode: 'MarkdownV2',
+    await editCallbackMessage(ctx, buildSwitchConfirmText(sessionKey, provider), {
       reply_markup: { inline_keyboard: buildSwitchConfirmKeyboard(provider) },
     });
     return;
@@ -282,22 +289,31 @@ export async function handleProviderCallback(ctx: Context): Promise<void> {
   clearModel(sessionKey); // Models differ between providers
 
   await ctx.answerCallbackQuery({ text: `Switched to ${provider}!` });
-  await ctx.editMessageText(
-    `✅ Provider set to *${esc(provider)}*\n\n_Model selection cleared \\— use /model to pick a model\\._`,
-    { parse_mode: 'MarkdownV2' }
+  await editCallbackMessage(
+    ctx,
+    new EntityText()
+      .add('✅ Provider set to ').bold(provider)
+      .newline(2)
+      .italic(MODEL_CLEARED_NOTE)
+      .build(),
   );
 }
 
-/** MarkdownV2 confirmation body shown before a destructive provider switch. */
-function buildSwitchConfirmText(sessionKey: string, target: ProviderName): string {
+const MODEL_CLEARED_NOTE = 'Model selection cleared — use /model to pick a model.';
+
+/** Confirmation body shown before a destructive provider switch. */
+function buildSwitchConfirmText(sessionKey: string, target: ProviderName): EntityMessage {
   const current = getActiveProviderName(sessionKey);
-  return (
-    `🔀 *Switch to ${esc(target)}?*\n\n` +
-    `Your current conversation runs on *${esc(current)}*\\. Sessions can't move ` +
-    `between model backends, so I'll start a *fresh session* on ${esc(target)} and ` +
-    `carry over a short summary of this conversation for continuity\\.\n\n` +
-    `Continue?`
-  );
+  return new EntityText()
+    .add('🔀 ').bold(`Switch to ${target}?`)
+    .newline(2)
+    .add('Your current conversation runs on ').bold(current)
+    .add(". Sessions can't move between model backends, so I'll start a ")
+    .bold('fresh session')
+    .add(` on ${target} and carry over a short summary of this conversation for continuity.`)
+    .newline(2)
+    .add('Continue?')
+    .build();
 }
 
 function buildSwitchConfirmKeyboard(target: ProviderName) {
@@ -336,8 +352,13 @@ export async function handleProviderSwitchCallback(ctx: Context): Promise<void> 
   clearModel(sessionKey);
 
   await ctx.answerCallbackQuery({ text: `Switched to ${provider}!` });
-  await ctx.editMessageText(
-    `✅ Provider set to *${esc(provider)}*\\. Started a fresh session with a summary of the previous conversation carried over\\.\n\n_Model selection cleared \\— use /model to pick a model\\._`,
-    { parse_mode: 'MarkdownV2' }
+  await editCallbackMessage(
+    ctx,
+    new EntityText()
+      .add('✅ Provider set to ').bold(provider)
+      .add('. Started a fresh session with a summary of the previous conversation carried over.')
+      .newline(2)
+      .italic(MODEL_CLEARED_NOTE)
+      .build(),
   );
 }

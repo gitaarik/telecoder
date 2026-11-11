@@ -815,7 +815,7 @@ describe('setting a message aside', () => {
     expect(turns.get('first')!.cancelled).toBe(true);
     expect(started).toEqual(['first']);
     // Only the third was dropped.
-    expect(textsSent()).toContain('🛑 Cancelled\\. \\(1 queued request cleared\\)');
+    expect(textsSent()).toContain('🛑 Cancelled. (1 queued request cleared)');
     expect(remindersFor(id)).toHaveLength(1);
   });
 
@@ -1124,7 +1124,7 @@ describe('/cancel', () => {
 
     expect(turns.get('first')!.cancelled).toBe(true);
     expect(started).toEqual(['first']);
-    expect(textsSent()).toContain('🛑 Cancelled\\. \\(2 queued requests cleared\\)');
+    expect(textsSent()).toContain('🛑 Cancelled. (2 queued requests cleared)');
     expect(callsTo('editMessageText').map((c) => c.payload.text)).toEqual([
       '🛑 Cancelled before it reached Claude.',
       '🛑 Cancelled before it reached Claude.',
@@ -1175,14 +1175,14 @@ describe('/cancel', () => {
 
     expect(started).toEqual(['first']);
     expect(acksFor(101)).toEqual([]);
-    expect(textsSent()).toContain('🛑 Cancelled\\. \\(1 queued request cleared\\)');
+    expect(textsSent()).toContain('🛑 Cancelled. (1 queued request cleared)');
   });
 
   it('says there was nothing to cancel when there was not', async () => {
     send('/cancel');
     await advance();
 
-    expect(textsSent()).toEqual(['ℹ️ Nothing to cancel\\.']);
+    expect(textsSent()).toEqual(['ℹ️ Nothing to cancel.']);
   });
 });
 
@@ -1231,7 +1231,7 @@ describe('a turn Claude started itself', () => {
 
     expect(interrupt).toHaveBeenCalledOnce();
     expect(started).toEqual([]);
-    expect(textsSent()).toContain('🛑 Cancelled\\. \\(1 queued request cleared\\)');
+    expect(textsSent()).toContain('🛑 Cancelled. (1 queued request cleared)');
   });
 
   it('is stopped by /cancel with nothing waiting, too', async () => {
@@ -1239,7 +1239,7 @@ describe('a turn Claude started itself', () => {
     send('/cancel');
     await advance();
 
-    expect(textsSent()).toEqual(['🛑 Cancelled\\.']);
+    expect(textsSent()).toEqual(['🛑 Cancelled.']);
   });
 
   it("lets go after the ceiling, so the provider's wait can report a turn that never ends", async () => {

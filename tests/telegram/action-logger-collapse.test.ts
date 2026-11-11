@@ -75,6 +75,27 @@ describe('ActionLogger.endTurn', () => {
     expect(logger.isActive(SESSION)).toBe(false);
   });
 
+  it('collapses into a summary carrying entities, with the page as a link', async () => {
+    const logger = new ActionLogger();
+    const { ctx, api } = fakeChat();
+    await logger.initialize(ctx, SESSION);
+    await logger.addToolResult(SESSION, bash('ls'), 20, 2000);
+
+    logger.endTurn(SESSION);
+    await vi.advanceTimersByTimeAsync(5000);
+
+    const [, , text, opts] = api.editMessageText.mock.calls.at(-1) as unknown as [
+      number, number, string, { parse_mode?: string; entities: { type: string; offset: number; length: number; url?: string }[] },
+    ];
+    expect(text).toBe('📋 1 action · view full log');
+    expect(opts.parse_mode).toBeUndefined();
+    const span = (e: { offset: number; length: number }) => text.slice(e.offset, e.offset + e.length);
+    expect(opts.entities.map((e) => [e.type, span(e), e.url])).toEqual([
+      ['italic', '1 action', undefined],
+      ['text_link', 'view full log', 'https://telegra.ph/log'],
+    ]);
+  });
+
   it("collapses a turn's log even once the next turn has started", async () => {
     const logger = new ActionLogger();
     const { ctx, collapsed } = fakeChat();

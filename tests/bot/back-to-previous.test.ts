@@ -15,6 +15,10 @@ vi.mock('../../src/claude/session-manager.js', () => ({
 }));
 
 const { withBackToPrevious } = await import('../../src/bot/handlers/command/shared.js');
+const { EntityText, plain } = await import('../../src/telegram/entities.js');
+
+// A message with formatting, so a test can see the entities survive the append.
+const cleared = () => new EntityText().add('🔄 ').bold('Cleared').add('.').build();
 
 const HOUR = 3600_000;
 const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
@@ -30,15 +34,15 @@ beforeEach(() => {
 
 describe('withBackToPrevious', () => {
   it('leaves the message alone when there is nothing to go back to', () => {
-    const back = withBackToPrevious('🔄 Cleared\\.', 'chat:1');
-    expect(back.text).toBe('🔄 Cleared\\.');
+    const back = withBackToPrevious(cleared(), 'chat:1');
+    expect(back.text).toEqual(cleared());
     expect(back.options.reply_markup).toBeUndefined();
   });
 
   it('names the session on the button while the name fits', () => {
     seed({ conversationId: 'c1', projectName: 'telecoder', claudeSessionId: 's1', lastActivity: ago(2 * HOUR) });
-    const back = withBackToPrevious('🔄 Cleared\\.', 'chat:1');
-    expect(back.text).toBe('🔄 Cleared\\.');
+    const back = withBackToPrevious(cleared(), 'chat:1');
+    expect(back.text).toEqual(cleared());
     expect(back.options.reply_markup?.inline_keyboard).toEqual([
       [{ text: '↩️ Back to telecoder (2h ago)', callback_data: 'resume:c1' }],
     ]);
@@ -52,10 +56,12 @@ describe('withBackToPrevious', () => {
       claudeSessionId: 's1',
       lastActivity: ago(2 * HOUR),
     });
-    const back = withBackToPrevious('🔄 Cleared\\.', 'chat:1');
-    expect(back.text).toBe(
-      '🔄 Cleared\\.\n\n↩️ Previous: telecoder · resume picker readability \\(2h ago\\)',
+    const back = withBackToPrevious(cleared(), 'chat:1');
+    expect(back.text.text).toBe(
+      '🔄 Cleared.\n\n↩️ Previous: telecoder · resume picker readability (2h ago)',
     );
+    // The name is the reader's text, not formatting, and the original bold stays put.
+    expect(back.text.entities).toEqual(cleared().entities);
     expect(back.options.reply_markup?.inline_keyboard).toEqual([
       [{ text: '↩️ Back to previous', callback_data: 'resume:c1' }],
     ]);
@@ -66,18 +72,18 @@ describe('withBackToPrevious', () => {
       { conversationId: 'c1', projectName: 'telecoder', claudeSessionId: 's1', lastActivity: ago(HOUR) },
       { conversationId: 'c2', projectName: 'sjs-dev', claudeSessionId: 's2', lastActivity: ago(3 * HOUR) },
     );
-    const back = withBackToPrevious('msg', 'chat:1', 'c1');
+    const back = withBackToPrevious(plain('msg'), 'chat:1', 'c1');
     expect(back.options.reply_markup?.inline_keyboard[0][0].callback_data).toBe('resume:c2');
   });
 
   it('skips a session that was never chatted in', () => {
     seed({ conversationId: 'c1', projectName: 'telecoder', lastActivity: ago(HOUR) });
-    expect(withBackToPrevious('msg', 'chat:1').options.reply_markup).toBeUndefined();
+    expect(withBackToPrevious(plain('msg'), 'chat:1').options.reply_markup).toBeUndefined();
   });
 
   it('is a plain message when there is no session key at all', () => {
     seed({ conversationId: 'c1', projectName: 'telecoder', claudeSessionId: 's1', lastActivity: ago(HOUR) });
-    const back = withBackToPrevious('msg', undefined);
-    expect(back).toEqual({ text: 'msg', options: { parse_mode: 'MarkdownV2' } });
+    const back = withBackToPrevious(plain('msg'), undefined);
+    expect(back).toEqual({ text: plain('msg'), options: {} });
   });
 });

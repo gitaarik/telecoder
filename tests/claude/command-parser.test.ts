@@ -102,37 +102,33 @@ describe('isNativeCompactCommand', () => {
 
 describe('getAvailableCommands', () => {
   it('lists always-on sections and core commands', () => {
-    const out = getAvailableCommands();
-    expect(out).toContain('Claude Commands');
-    expect(out).toContain('/plan');
-    expect(out).toContain('/clear');
-    expect(out).toContain('Bot Commands');
+    const { text } = getAvailableCommands();
+    expect(text).toContain('Claude Commands');
+    expect(text).toContain('/plan');
+    expect(text).toContain('/clear');
+    expect(text).toContain('Bot Commands');
   });
 
   it('tells the user which native commands pass through and which are shadowed', () => {
-    const out = getAvailableCommands();
-    expect(out).toContain('/code-review');
-    expect(out).toContain('the bot wins');
-    expect(out).toContain('/projectcommands');
+    const { text } = getAvailableCommands();
+    expect(text).toContain('/code-review');
+    expect(text).toContain('the bot wins');
+    expect(text).toContain('/projectcommands');
   });
 
-  it('is valid MarkdownV2 — Telegram rejects the whole message otherwise', () => {
-    const out = getAvailableCommands();
-    const ticks = out.match(/(?<!\\)`/g)?.length ?? 0;
-    expect(ticks % 2, 'unbalanced backticks').toBe(0);
+  it('carries its formatting as entities, with no markup left in the text', () => {
+    const { text, entities } = getAvailableCommands();
+    expect(text).not.toMatch(/[`\\]/);
+    expect(text).not.toContain('*');
 
-    out.split(/(?<!\\)`/).forEach((segment, i) => {
-      if (i % 2 === 1) {
-        // A backslash inside a code span renders literally, so escaping there
-        // is what put a visible `\\-` in the middle of `/code-review`.
-        expect(segment.includes('\\'), `stray backslash in code span: ${segment}`).toBe(false);
-        return;
-      }
-      const unescaped = segment.match(/(?<!\\)[.\-!+=|{}~>#()[\]]/g) ?? [];
-      expect(unescaped, `unescaped specials in: ${segment}`).toEqual([]);
-      const stars = segment.match(/(?<!\\)\*/g)?.length ?? 0;
-      expect(stars % 2, `unbalanced bold markers in: ${segment}`).toBe(0);
-    });
+    const spans = (type: string) =>
+      entities.filter((e) => e.type === type).map((e) => text.slice(e.offset, e.offset + e.length));
+    expect(spans('bold')).toContain('Claude Commands:');
+    expect(spans('code')).toContain('/plan <task>');
+    // Code spans hold the command and nothing else: a stray escape there is
+    // what once put a visible `\-` in the middle of `/code-review`.
+    expect(spans('code')).toContain('/code-review');
+    expect(text).toContain('• /rebuildbot - Rebuild and restart with auto-resume;');
   });
 });
 

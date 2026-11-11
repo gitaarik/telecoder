@@ -513,11 +513,11 @@ async function listSetAside(ctx: Context, sessionKey: SessionKey): Promise<void>
     .filter((message) => message.sessionKey === sessionKey)
     .sort((a, b) => a.messageId - b.messageId);
   if (mine.length === 0) {
-    await ctx.reply(NOTHING_SET_ASIDE, { parse_mode: undefined });
+    await ctx.reply(NOTHING_SET_ASIDE);
     return;
   }
   const lines = mine.map((message, i) => `${i + 1}. ${describeSetAside(message)}`);
-  await ctx.reply([LIST_HEADING, ...lines, '', LIST_FOOTER].join('\n'), { parse_mode: undefined });
+  await ctx.reply([LIST_HEADING, ...lines, '', LIST_FOOTER].join('\n'));
 }
 
 /**

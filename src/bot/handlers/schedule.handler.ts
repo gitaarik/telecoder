@@ -3,39 +3,37 @@ import { Cron } from 'croner';
 import { sessionManager } from '../../claude/session-manager.js';
 import { scheduler, HARD_LIMITS, type ScheduleSpec, type Schedule } from '../../claude/scheduler.js';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
-import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
+import { EntityText, joinMessages, type EntityMessage } from '../../telegram/entities.js';
+import { replyFormatted } from '../../telegram/send.js';
 
-async function replyMd(ctx: Context, text: string): Promise<void> {
-  try {
-    await ctx.reply(text, { parse_mode: 'MarkdownV2' });
-  } catch (err) {
-    // MarkdownV2 is strict — any missed escape silently swallows the reply
-    // because grammy's bot.catch eats it. Fall back to plain text with
-    // escapes stripped so the user always sees feedback.
-    console.error('[Schedule] MarkdownV2 reply failed, falling back to plain:', err instanceof Error ? err.message : err);
-    await ctx.reply(text.replace(/\\(.)/g, '$1'), { parse_mode: undefined });
-  }
+/** Text with `inline code` spans and nothing else — the parser errors below are written that way. */
+function withCode(text: string): EntityMessage {
+  const b = new EntityText();
+  text.split(/(`[^`]+`)/).forEach((part, i) => (i % 2 === 1 ? b.code(part.slice(1, -1)) : b.add(part)));
+  return b.build();
 }
 
-const USAGE = [
-  '*Usage:* `/schedule <when> <prompt>`',
-  '',
-  '*Examples:*',
-  '`/schedule every 5m check the dev server`',
-  '`/schedule every 1h summarize git log since last hour`',
-  '`/schedule daily 9am give me my morning standup`',
-  '`/schedule weekdays 14:00 ping team about standups`',
-  '`/schedule mon,wed,fri 10:30 review open PRs`',
-  '`/schedule 0 9 \\* \\* \\* morning summary` \\(raw cron\\)',
-  '',
-  '*Options* \\(append at the end\\):',
-  '`--max-runs N` cap total fires \\(default 50, max 500\\)',
-  '`--label "..."` short title shown in the fire header',
-  '',
-  `Hard limits: max ${HARD_LIMITS.MAX_PER_SESSION} active schedules per chat, ` +
-    `${HARD_LIMITS.MIN_INTERVAL_MS / 1000}s minimum interval, ` +
-    `${HARD_LIMITS.DEFAULT_MAX_RUNS} fires by default\\.`,
-].join('\n');
+const EXAMPLES = [
+  '/schedule every 5m check the dev server',
+  '/schedule every 1h summarize git log since last hour',
+  '/schedule daily 9am give me my morning standup',
+  '/schedule weekdays 14:00 ping team about standups',
+  '/schedule mon,wed,fri 10:30 review open PRs',
+];
+
+const USAGE: EntityMessage = (() => {
+  const b = new EntityText().bold('Usage:').add(' ').code('/schedule <when> <prompt>').newline(2);
+  b.bold('Examples:').newline();
+  for (const example of EXAMPLES) b.code(example).newline();
+  b.code('/schedule 0 9 * * * morning summary').add(' (raw cron)').newline(2);
+  b.bold('Options').add(' (append at the end):').newline();
+  b.code('--max-runs N').add(' cap total fires (default 50, max 500)').newline();
+  b.code('--label "..."').add(' short title shown in the fire header').newline(2);
+  b.add(`Hard limits: max ${HARD_LIMITS.MAX_PER_SESSION} active schedules per chat, `
+    + `${HARD_LIMITS.MIN_INTERVAL_MS / 1000}s minimum interval, `
+    + `${HARD_LIMITS.DEFAULT_MAX_RUNS} fires by default.`);
+  return b.build();
+})();
 
 type ParsedWhen =
   | { kind: 'interval'; intervalMs: number; humanDescription: string }
@@ -183,16 +181,19 @@ function parseWhen(tokens: string[]): { parsed: ParsedWhen; consumed: number } |
   return { error: `Couldn't parse schedule. Type \`/schedule\` with no args to see examples.` };
 }
 
-function formatSchedule(s: Schedule): string {
-  const status = s.disabled ? ' \\(disabled\\)' : '';
+function formatSchedule(s: Schedule): EntityMessage {
+  const status = s.disabled ? ' (disabled)' : '';
   const when = s.kind === 'interval'
     ? `every ${Math.round((s.intervalMs ?? 0) / 1000)}s`
     : (s.cronExpr ?? '?');
   const next = scheduler.nextFireAt(s.id);
-  const nextLine = next ? `\nnext: ${esc(new Date(next).toLocaleString())}` : '';
-  const labelLine = s.label ? `\nlabel: ${esc(s.label)}` : '';
+  const nextLine = next ? `\nnext: ${new Date(next).toLocaleString()}` : '';
+  const labelLine = s.label ? `\nlabel: ${s.label}` : '';
   const promptPreview = s.prompt.length > 80 ? s.prompt.slice(0, 77) + '...' : s.prompt;
-  return `\`${esc(s.id)}\`${status}\n${esc(when)}${labelLine}\nruns: ${s.runs}/${s.maxRuns}${nextLine}\nprompt: ${esc(promptPreview)}`;
+  return new EntityText()
+    .code(s.id)
+    .add(`${status}\n${when}${labelLine}\nruns: ${s.runs}/${s.maxRuns}${nextLine}\nprompt: ${promptPreview}`)
+    .build();
 }
 
 export async function handleSchedule(ctx: Context): Promise<void> {
@@ -203,7 +204,7 @@ export async function handleSchedule(ctx: Context): Promise<void> {
   const text = (ctx.message?.text ?? '').trim();
   const stripped = text.replace(/^\/schedule(?:@\w+)?\s*/i, '');
   if (!stripped) {
-    await replyMd(ctx, USAGE);
+    await replyFormatted(ctx, USAGE);
     return;
   }
 
@@ -211,7 +212,7 @@ export async function handleSchedule(ctx: Context): Promise<void> {
   const session = sessionManager.getSession(sessionKey)
     ?? sessionManager.getOrRestoreSession(sessionKey).session;
   if (!session) {
-    await replyMd(ctx, '⚠️ No project set\\. Use `/project` or `/continue` first, then create the schedule\\.');
+    await replyFormatted(ctx, withCode('⚠️ No project set. Use `/project` or `/continue` first, then create the schedule.'));
     return;
   }
 
@@ -233,7 +234,7 @@ export async function handleSchedule(ctx: Context): Promise<void> {
   const whenTokens = whenPart.split(/\s+/).filter(Boolean);
   const parseResult = parseWhen(whenTokens);
   if ('error' in parseResult) {
-    await replyMd(ctx, `❌ ${esc(parseResult.error)}\n\n${USAGE}`);
+    await replyFormatted(ctx, joinMessages([withCode(`❌ ${parseResult.error}`), USAGE]));
     return;
   }
   const { parsed, consumed } = parseResult;
@@ -243,7 +244,7 @@ export async function handleSchedule(ctx: Context): Promise<void> {
     promptPart = whenTokens.slice(consumed).join(' ').trim();
   }
   if (!promptPart) {
-    await replyMd(ctx, '❌ Missing prompt\\. After the schedule spec, add the prompt to run on each fire\\.');
+    await replyFormatted(ctx, '❌ Missing prompt. After the schedule spec, add the prompt to run on each fire.');
     return;
   }
 
@@ -263,21 +264,19 @@ export async function handleSchedule(ctx: Context): Promise<void> {
   try {
     created = scheduler.createSchedule(spec);
   } catch (err) {
-    await replyMd(ctx, `❌ ${esc(err instanceof Error ? err.message : String(err))}`);
+    await replyFormatted(ctx, `❌ ${err instanceof Error ? err.message : String(err)}`);
     return;
   }
 
   const next = scheduler.nextFireAt(created.id);
-  const nextLine = next ? `\nNext fire: \`${esc(new Date(next).toLocaleString())}\`` : '';
-  await replyMd(
-    ctx,
-    `✅ *Schedule created*\n` +
-    `id: \`${esc(created.id)}\`\n` +
-    `when: ${esc(parsed.humanDescription)}\n` +
-    `max runs: ${created.maxRuns}` +
-    nextLine + `\n\n` +
-    `Use \`/schedules\` to list, \`/unschedule ${esc(created.id)}\` to remove\\.`,
-  );
+  const b = new EntityText()
+    .add('✅ ').bold('Schedule created').newline()
+    .add('id: ').code(created.id).newline()
+    .add(`when: ${parsed.humanDescription}\n`)
+    .add(`max runs: ${created.maxRuns}`);
+  if (next) b.add('\nNext fire: ').code(new Date(next).toLocaleString());
+  b.newline(2).add('Use ').code('/schedules').add(' to list, ').code(`/unschedule ${created.id}`).add(' to remove.');
+  await replyFormatted(ctx, b.build());
 }
 
 export async function handleSchedules(ctx: Context): Promise<void> {
@@ -287,12 +286,12 @@ export async function handleSchedules(ctx: Context): Promise<void> {
 
   const list = scheduler.listSchedules(sessionKey);
   if (list.length === 0) {
-    await replyMd(ctx, 'No active schedules\\. Create one with `/schedule <when> <prompt>`\\.');
+    await replyFormatted(ctx, withCode('No active schedules. Create one with `/schedule <when> <prompt>`.'));
     return;
   }
 
-  const sections = list.map(formatSchedule).join('\n\n');
-  await replyMd(ctx, `📋 *Schedules* \\(${list.length}\\)\n\n${sections}`);
+  const heading = new EntityText().add('📋 ').bold('Schedules').add(` (${list.length})`).build();
+  await replyFormatted(ctx, joinMessages([heading, ...list.map(formatSchedule)]));
 }
 
 export async function handleUnschedule(ctx: Context): Promise<void> {
@@ -303,16 +302,16 @@ export async function handleUnschedule(ctx: Context): Promise<void> {
   const text = (ctx.message?.text ?? '').trim();
   const id = text.replace(/^\/unschedule(?:@\w+)?\s*/i, '').trim();
   if (!id) {
-    await replyMd(ctx, 'Usage: `/unschedule <id>`\\. Use `/schedules` to see ids\\.');
+    await replyFormatted(ctx, withCode('Usage: `/unschedule <id>`. Use `/schedules` to see ids.'));
     return;
   }
 
   const target = scheduler.getSchedule(id);
   if (!target || target.sessionKey !== sessionKey) {
-    await replyMd(ctx, `❌ No schedule \`${esc(id)}\` in this chat\\.`);
+    await replyFormatted(ctx, new EntityText().add('❌ No schedule ').code(id).add(' in this chat.').build());
     return;
   }
 
   scheduler.deleteSchedule(id);
-  await replyMd(ctx, `✅ Removed schedule \`${esc(id)}\`\\.`);
+  await replyFormatted(ctx, new EntityText().add('✅ Removed schedule ').code(id).add('.').build());
 }

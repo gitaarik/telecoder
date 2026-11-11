@@ -14,6 +14,7 @@ import { sessionHistory } from '../claude/session-history.js';
 import { consumeAllInFlight } from '../claude/in-flight-tracker.js';
 import { parseSessionKey } from '../utils/session-key.js';
 import { describeRunningBuild } from '../utils/build-info.js';
+import { taskListDisplay } from '../telegram/task-list.js';
 import { allowedChatIds, threadOpts, sendBlockWithPlainFallback } from './shared.js';
 
 /**
@@ -31,6 +32,8 @@ export async function notifyInterruptedSessions(bot: Bot, notified: Set<string>)
   for (const entry of interrupted) {
     const { chatId, threadId } = parseSessionKey(entry.sessionKey);
     if (!allowedIds.has(chatId)) continue;
+    // Auto-resume already showed this session's task list with its recap.
+    const listShown = notified.has(entry.sessionKey);
 
     // Make sure the session is live in memory so the user can immediately reply.
     if (!sessionManager.getSession(entry.sessionKey)) {
@@ -38,10 +41,9 @@ export async function notifyInterruptedSessions(bot: Bot, notified: Set<string>)
     }
 
     const opts = threadOpts(threadId);
-    const text =
-      `⚠️ I was interrupted while running a task\\. The last action may not have completed\\.`;
+    const text = '⚠️ I was interrupted while running a task. The last action may not have completed.';
     try {
-      await bot.api.sendMessage(chatId, text, { parse_mode: 'MarkdownV2', ...opts });
+      await bot.api.sendMessage(chatId, text, opts);
       notified.add(entry.sessionKey);
     } catch (err) {
       console.error(`[InFlight] Failed to notify ${entry.sessionKey}:`, err);
@@ -56,6 +58,11 @@ export async function notifyInterruptedSessions(bot: Bot, notified: Set<string>)
       } catch (err) {
         console.error(`[InFlight] Failed to deliver prompt for ${entry.sessionKey}:`, err);
       }
+    }
+
+    if (!listShown) {
+      const claudeSessionId = sessionManager.getSession(entry.sessionKey)?.claudeSessionId;
+      await taskListDisplay.showRestored(bot.api, entry.sessionKey, claudeSessionId);
     }
   }
 }
@@ -109,8 +116,7 @@ export async function notifyRestartComplete(bot: Bot, notified: Set<string>): Pr
   const opts = threadOpts(threadId);
   const build = describeRunningBuild();
   try {
-    // Plain text, no parse_mode: BOT_NAME is user-supplied and would otherwise
-    // need escaping to survive the MarkdownV2 parser.
+    // Plain text, no formatting to carry.
     await bot.api.sendMessage(
       chatId,
       `✅ ${config.BOT_NAME} restarted and is ready.` + (build ? `\nVersion: ${build}` : ''),

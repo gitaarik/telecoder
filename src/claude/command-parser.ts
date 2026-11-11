@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { hasGuestUsers } from '../utils/admins.js';
+import { EntityText, type EntityMessage } from '../telegram/entities.js';
 
 export interface ParsedCommand {
   command: string | null;
@@ -64,58 +65,61 @@ export function isNativeCompactCommand(text: string): boolean {
   return /^\/compact(?:@\w+)?(?:\s|$)/.test(text.trim());
 }
 
-// Returns MarkdownV2 escaped command list
-export function getAvailableCommands(): string {
+/**
+ * The /commands list. Each line is written with `backticks` around what shows
+ * as code; section titles go out bold.
+ */
+export function getAvailableCommands(): EntityMessage {
   // Only worth saying on a bot that actually has guests — on a solo bot every
   // user is an admin, so the tag would mark every line without narrowing
   // anything.
-  const adminTag = hasGuestUsers() ? ' \\(admin\\)' : '';
+  const adminTag = hasGuestUsers() ? ' (admin)' : '';
   // Opening an auto-approve window sits with the people who answer prompts,
   // which is a wider set than the people who own the bot.
-  const approverTag = hasGuestUsers() ? ' \\(admin / approver\\)' : '';
+  const approverTag = hasGuestUsers() ? ' (admin / approver)' : '';
   const sections: Array<{ title: string; commands: string[] }> = [
     {
       title: 'Claude Commands',
       commands: [
-        '• `/plan <task>` \\- Enter plan mode for complex tasks',
-        '• `/explore <question>` \\- Use explore agent for codebase questions',
-        '• `/loop <task>` \\- Run iteratively until task complete',
-        '• `/model [name]` \\- Show or set AI model',
-        "• `/later [text]` \\- Set an idea aside, and be asked about it after Claude's turn",
-        ...(config.CCR_ENABLED ? [`• \`/provider\` \\- Switch AI provider \\(Claude / CCR\\)${adminTag}`] : []),
-        '• `/commands` \\- Show this list',
+        '• `/plan <task>` - Enter plan mode for complex tasks',
+        '• `/explore <question>` - Use explore agent for codebase questions',
+        '• `/loop <task>` - Run iteratively until task complete',
+        '• `/model [name]` - Show or set AI model',
+        "• `/later [text]` - Set an idea aside, and be asked about it after Claude's turn",
+        ...(config.CCR_ENABLED ? [`• \`/provider\` - Switch AI provider (Claude / CCR)${adminTag}`] : []),
+        '• `/commands` - Show this list',
       ],
     },
     {
       title: 'Session Commands',
       commands: [
-        '• `/project <path>` \\- Set working directory',
-        '• `/newproject <name>` \\- Create a new project',
-        '• `/newbot [project]` \\- Create a bot for a project, named after it and starting in it',
-        '• `/resume` \\- Pick from recent sessions to resume',
-        '• `/continue` \\- Resume most recent session',
-        '• `/sessions` \\- List all sessions',
-        '• `/teleport` \\- Move session to terminal \\(forked\\)',
-        '• `/clear` \\- Clear session and start fresh',
-        '• `/status` \\- Show current session info',
-        '• `/fork` \\- Fork current conversation to another bot',
-        '• `/tree` \\- Show where this conversation branched, and jump between branches',
-        '• `/accept` \\- Accept a pending fork from another bot',
-        '• `/decline` \\- Discard a pending fork',
+        '• `/project <path>` - Set working directory',
+        '• `/newproject <name>` - Create a new project',
+        '• `/newbot [project]` - Create a bot for a project, named after it and starting in it',
+        '• `/resume` - Pick from recent sessions to resume',
+        '• `/continue` - Resume most recent session',
+        '• `/sessions` - List all sessions',
+        '• `/teleport` - Move session to terminal (forked)',
+        '• `/clear` - Clear session and start fresh',
+        '• `/status` - Show current session info',
+        '• `/fork` - Fork current conversation to another bot',
+        '• `/tree` - Show where this conversation branched, and jump between branches',
+        '• `/accept` - Accept a pending fork from another bot',
+        '• `/decline` - Discard a pending fork',
       ],
     },
     {
       title: 'File Commands',
       commands: [
-        '• `/file <path>` \\- Download a file from project',
-        '• `/telegraph <path>` \\- View markdown with Instant View',
+        '• `/file <path>` - Download a file from project',
+        '• `/telegraph <path>` - View markdown with Instant View',
       ],
     },
   ];
 
   const mediaCommands: string[] = [];
   if (config.TRANSCRIBE_ENABLED) {
-    mediaCommands.push('• `/transcribe` \\- Transcribe audio to text \\(reply to voice/audio, or ForceReply\\)');
+    mediaCommands.push('• `/transcribe` - Transcribe audio to text (reply to voice/audio, or ForceReply)');
   }
   if (mediaCommands.length > 0) {
     sections.push({ title: 'Media Commands', commands: mediaCommands });
@@ -124,23 +128,23 @@ export function getAvailableCommands(): string {
   sections.push({
     title: 'Bot Commands',
     commands: [
-      '• `/tts` \\- Toggle voice replies',
-      '• `/context` \\- Show Claude context usage',
-      '• `/cost` \\- Show usage limits and cost from Claude Code',
-      '• `/compact` \\- Compact the context window \\(reports the token reduction\\)',
-      '• `/botstatus` \\- Show bot process status',
-      '• `/version` \\- Show the running version and whether it\'s the latest',
-      `• \`/restartbot\` \\- Restart the bot process${adminTag}`,
-      `• \`/rebuildbot\` \\- Rebuild and restart with auto\\-resume; \`/rebuildbot idle\` waits for each bot to finish first${adminTag}`,
-      '• `/ping` \\- Check if bot is responsive',
-      '• `/cancel` \\- Stop the current request and drop anything queued',
-      '• `/mode` \\- How much Claude asks before acting',
-      `• \`/autoapprove [30m|off|status]\` \\- Let the gate approve instead of asking, for a while${approverTag}`,
-      '• `/streaming` \\- Toggle streaming / wait replies',
-      '• `/verbosity` \\- Pick verbosity tier \\(quiet / normal / verbose / debug\\)',
-      '• `/terminalui` \\- Toggle terminal\\-style display',
-      '• `/botname` \\- Toggle dynamic bot name',
-      '• `/topic <text>` \\- Set current work topic in bot name',
+      '• `/tts` - Toggle voice replies',
+      '• `/context` - Show Claude context usage',
+      '• `/cost` - Show usage limits and cost from Claude Code',
+      '• `/compact` - Compact the context window (reports the token reduction)',
+      '• `/botstatus` - Show bot process status',
+      '• `/version` - Show the running version and whether it\'s the latest',
+      `• \`/restartbot\` - Restart the bot process${adminTag}`,
+      `• \`/rebuildbot\` - Rebuild and restart with auto-resume; \`/rebuildbot idle\` waits for each bot to finish first${adminTag}`,
+      '• `/ping` - Check if bot is responsive',
+      '• `/cancel` - Stop the current request and drop anything queued',
+      '• `/mode` - How much Claude asks before acting',
+      `• \`/autoapprove [30m|off|status]\` - Let the gate approve instead of asking, for a while${approverTag}`,
+      '• `/streaming` - Toggle streaming / wait replies',
+      '• `/verbosity` - Pick verbosity tier (quiet / normal / verbose / debug)',
+      '• `/terminalui` - Toggle terminal-style display',
+      '• `/botname` - Toggle dynamic bot name',
+      '• `/topic <text>` - Set current work topic in bot name',
     ],
   });
 
@@ -149,31 +153,36 @@ export function getAvailableCommands(): string {
     commands: [
       'Claude Code\'s own slash commands pass straight through — `/code-review`,',
       '`/security-review`, `/simplify`, `/init`, `/run` and any `.claude/commands/`',
-      'command all work by typing them here\\.',
+      'command all work by typing them here.',
       '',
       '⚠️ Where a bot command shares the name, the bot wins — `/loop` and',
-      '`/schedule` are TeleCoder\'s, not Claude Code\'s\\. The overlap shifts with',
-      'each Claude Code release, so `/projectcommands` reports the current one\\.',
+      '`/schedule` are TeleCoder\'s, not Claude Code\'s. The overlap shifts with',
+      'each Claude Code release, so `/projectcommands` reports the current one.',
       '',
-      '• `/projectcommands` \\- List everything this project offers, shadowing included',
+      '• `/projectcommands` - List everything this project offers, shadowing included',
     ],
   });
 
   sections.push({
     title: 'Group Access',
     commands: [
-      '• `/members` \\- Show who may prompt the agent in this group',
-      '• `/allow` \\- Let someone prompt the agent here \\(reply to them, or pass @handle / id\\)',
-      '• `/deny` \\- Make someone a spectator here \\(admin only\\)',
+      '• `/members` - Show who may prompt the agent in this group',
+      '• `/allow` - Let someone prompt the agent here (reply to them, or pass @handle / id)',
+      '• `/deny` - Make someone a spectator here (admin only)',
     ],
   });
 
-  const lines: string[] = [];
-  for (const section of sections) {
-    lines.push(`*${section.title}:*`, '', ...section.commands, '');
-  }
-
-  return lines.join('\n').trimEnd();
+  const b = new EntityText();
+  sections.forEach((section, i) => {
+    if (i > 0) b.newline(2);
+    b.bold(`${section.title}:`).newline(2);
+    section.commands.forEach((line, j) => {
+      if (j > 0) b.newline();
+      // Odd segments between backticks are code.
+      line.split('`').forEach((segment, k) => (k % 2 === 1 ? b.code(segment) : b.add(segment)));
+    });
+  });
+  return b.build();
 }
 
 /**

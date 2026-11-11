@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { EntityText, clip } from '../../src/telegram/entities.js';
+import { EntityText, clip, indentMessage, isLinkableUrl, sliceMessage, trimMessage } from '../../src/telegram/entities.js';
 
 describe('EntityText', () => {
   it('records offsets against the text it has already appended', () => {
@@ -83,5 +83,61 @@ describe('clip', () => {
     const out = clip('abcdefghij', 5);
     expect(out).toBe('abcd…');
     expect(out.length).toBe(5);
+  });
+});
+
+describe('EntityText.link', () => {
+  it('writes a link Telegram would refuse out as text, so the message still goes', () => {
+    const m = new EntityText().link('the app', 'http://localhost:3000').build();
+    expect(m).toEqual({ text: 'the app (http://localhost:3000)', entities: [] });
+  });
+
+  it('does not repeat an address that is its own label', () => {
+    expect(new EntityText().link('http://localhost:3000', 'http://localhost:3000').build().text).toBe('http://localhost:3000');
+  });
+});
+
+describe('isLinkableUrl', () => {
+  it('takes a web address with a real top-level domain, and tg: links', () => {
+    expect(isLinkableUrl('https://telegra.ph/abc')).toBe(true);
+    expect(isLinkableUrl('https://xn--bcher-kva.example.xn--p1ai/')).toBe(true);
+    expect(isLinkableUrl('tg://user?id=1')).toBe(true);
+  });
+
+  it('refuses localhost, bare IPs, single-label hosts and other schemes', () => {
+    for (const url of ['http://localhost:3000', 'http://127.0.0.1/', 'http://devbox:8080', 'file:///etc/passwd', 'ftp://a.com', 'not a url']) {
+      expect(isLinkableUrl(url)).toBe(false);
+    }
+  });
+});
+
+describe('EntityText.wrap', () => {
+  it('opens one entity around nested ones, the outer first', () => {
+    const m = new EntityText().add('x ').wrap('bold', (b) => b.add('a ').italic('b')).build();
+    expect(m.entities).toEqual([
+      { type: 'bold', offset: 2, length: 3 },
+      { type: 'italic', offset: 4, length: 1 },
+    ]);
+  });
+});
+
+describe('sliceMessage and trimMessage', () => {
+  const m = new EntityText().add('  ').bold('hello world').add('\n').build();
+
+  it('cuts entities at the edges of a slice', () => {
+    expect(sliceMessage(m, 4, 9)).toEqual({ text: 'llo w', entities: [{ type: 'bold', offset: 0, length: 5 }] });
+  });
+
+  it('strips outer whitespace and moves the entities with the text', () => {
+    expect(trimMessage(m)).toEqual({ text: 'hello world', entities: [{ type: 'bold', offset: 0, length: 11 }] });
+  });
+});
+
+describe('indentMessage', () => {
+  it('indents every line but the first, keeping entities on their characters', () => {
+    const m = new EntityText().bold('one\ntwo').build();
+    const out = indentMessage(m, '  ', true);
+    expect(out.text).toBe('one\n  two');
+    expect(out.entities).toEqual([{ type: 'bold', offset: 0, length: 9 }]);
   });
 });

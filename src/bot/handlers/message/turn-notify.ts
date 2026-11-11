@@ -17,7 +17,8 @@ import { getPtyProvider } from '../../../providers/claude-provider.js';
 import { getCachedUsage } from '../../../providers/provider-router.js';
 import type { AgentResponse } from '../../../providers/types.js';
 import { messageSender } from '../../../telegram/message-sender.js';
-import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
+import { EntityText } from '../../../telegram/entities.js';
+import { replyFormatted } from '../../../telegram/send.js';
 import { resolveVerbosityFlags } from '../../../utils/verbosity.js';
 import { fmtTokens } from '../../../utils/format.js';
 import { stripReasoningSummary } from '../../../utils/reasoning-summary.js';
@@ -77,7 +78,7 @@ export async function relayCatchUpIfMissed(
       return;
     }
 
-    await ctx.reply('📨 *Catch\\-up* — recovered from session log', { parse_mode: 'MarkdownV2' });
+    await replyFormatted(ctx, new EntityText().add('📨 ').bold('Catch-up').add(' — recovered from session log').build());
     await messageSender.sendMessage(ctx, missing);
     sessionManager.setLastRelayedAssistantText(sessionKey, jsonlText);
   } catch (err) {
@@ -98,24 +99,15 @@ async function sendCompactionNotification(
   const emoji = c.trigger === 'auto' ? '⚠️' : 'ℹ️';
   const triggerLabel = c.trigger === 'auto' ? 'Auto-compacted' : 'Manually compacted';
   try {
-    const msg = `${emoji} *Context Compacted*\n\n`
-      + `${esc(triggerLabel)} — previous context was ${esc(fmtTokens(c.preTokens))} tokens\\.\n`
-      + `The agent now has a summarized version of your conversation\\.\n\n`
-      + `_Tip: Use /handoff before compaction to save a detailed context document\\._`;
-    await ctx.reply(msg, { parse_mode: 'MarkdownV2' });
+    // replyFormatted already retries unformatted if Telegram refuses the entities.
+    await replyFormatted(ctx, new EntityText()
+      .add(`${emoji} `).bold('Context Compacted').newline(2)
+      .add(`${triggerLabel} — previous context was ${fmtTokens(c.preTokens)} tokens.\n`)
+      .add('The agent now has a summarized version of your conversation.').newline(2)
+      .italic('Tip: Use /handoff before compaction to save a detailed context document.')
+      .build());
   } catch (err) {
     console.error('[Compaction] Failed to send notification:', err);
-    // Fallback to plain text if MarkdownV2 fails
-    try {
-      await ctx.reply(
-        `${emoji} Context Compacted\n\n`
-        + `${triggerLabel} — previous context was ${fmtTokens(c.preTokens)} tokens.\n`
-        + `The agent now has a summarized version of your conversation.`,
-        { parse_mode: undefined }
-      );
-    } catch (fallbackErr) {
-      console.error('[Compaction] Fallback notification also failed:', fallbackErr);
-    }
   }
 }
 
@@ -130,11 +122,12 @@ async function sendSessionInitNotification(
   if (!resolveVerbosityFlags(chatId).notifyCompaction) return;
   const previousSessionId = sessionManager.getSession(sessionKey)?.claudeSessionId;
   if (previousSessionId && sessionInit.sessionId !== previousSessionId) {
-    const msg = `🔄 *New Agent Session*\n\n`
-      + `A new agent session has started \\(previous context may be summarized\\)\\.\n`
-      + `Model: \`${esc(sessionInit.model)}\`\n\n`
-      + `_The agent may not remember earlier details\\. Consider sharing context\\._`;
-    await ctx.reply(msg, { parse_mode: 'MarkdownV2' });
+    await replyFormatted(ctx, new EntityText()
+      .add('🔄 ').bold('New Agent Session').newline(2)
+      .add('A new agent session has started (previous context may be summarized).\n')
+      .add('Model: ').code(sessionInit.model).newline(2)
+      .italic('The agent may not remember earlier details. Consider sharing context.')
+      .build());
   }
 }
 

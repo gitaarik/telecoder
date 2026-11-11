@@ -5,8 +5,9 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
-import { claudeSessionFileExists, describeLogTail, readCommandReply, readLastApiErrorFromJsonl, readLastAssistantTurnText, readLastCompactionFromJsonl, readLastUsageFromJsonl, readLastUserPromptMarker, sessionJsonlMtimeMs, sessionJsonlSize, type CompactionInfo, type UserPromptMarker } from './session-jsonl.js';
+import { claudeSessionFileExists, describeLogTail, sessionJsonlPath, readCommandReply, readLastApiErrorFromJsonl, readLastAssistantTurnText, readLastCompactionFromJsonl, readLastUsageFromJsonl, readLastUserPromptMarker, sessionJsonlMtimeMs, sessionJsonlSize, type CompactionInfo, type UserPromptMarker } from './session-jsonl.js';
 import { clearDeliveredProse, getDeliveredProse, stripDeliveredPrefix } from './turn-prose.js';
+import { PtyTurnStream, TurnProseReader } from './pty-stream.js';
 import { isNativeCompactCommand } from './command-parser.js';
 import { isCancelled } from './request-queue.js';
 import { getWorkspaceRoot } from '../utils/workspace-guard.js';
@@ -118,6 +119,13 @@ const IDLE_MS = 1200;
  * sometimes capture a half-rendered screen. 200ms is enough in practice.
  */
 const POST_STOP_SETTLE_MS = 200;
+
+/**
+ * How often a running turn's live prose is brought up to date (pty-stream.ts).
+ * Often enough to catch a streaming block's growth before its head scrolls off
+ * the screen; the Telegram side throttles the edits on its own.
+ */
+const STREAM_TICK_MS = 500;
 /**
  * Absolute wall-clock cap for a single turn — safety net for a genuinely
  * wedged pty. Substantive investigative turns (multi-step Bash, deep code
@@ -329,12 +337,17 @@ interface PtySession {
   endOfTurnRejector: ((err: Error) => void) | null;
   idleTimer: NodeJS.Timeout | null;
   hardTimer: NodeJS.Timeout | null;
+  /**
+   * Receives the turn's assistant prose so far, whole each time, while the
+   * turn runs. Fed by `stream` below, never by a raw screen diff.
+   */
   onProgress?: (progress: string) => void;
+  /** The running turn's live prose, and the timer that keeps it current. */
+  stream: { prose: PtyTurnStream; timer: NodeJS.Timeout } | null;
   /** Forwards Claude Code's live spinner tip to the Telegram status line. */
   onTip?: (tip: string | null) => void;
   /** Last tip value pushed via onTip; gates redundant callbacks. */
   lastTip: string | null;
-  lastScreenText: string;
   /**
    * True once the current turn's Stop hook has fired. While true, the
    * end-of-turn check uses POST_STOP_SETTLE_MS instead of IDLE_MS and stops
@@ -892,11 +905,6 @@ export class PtyProvider implements Provider {
       await this._applyPermissionMode(session, sessionKey);
       await this._clearAfterEsc(session);
 
-      // Snapshot the screen before submitting so the progress diff and the
-      // end-of-turn extraction only see content produced by this turn — the
-      // pty stays alive across turns to preserve conversation state, so the
-      // buffer holds the cumulative history.
-      session.lastScreenText = this._getScreenText(session);
       // Baseline for the idle fallback: capture both wall-clock and the
       // session-log mtime now, so _checkEndOfTurn can tell whether claude has
       // actually produced output for *this* prompt (mtime advanced) or we're
@@ -1009,6 +1017,7 @@ export class PtyProvider implements Provider {
       }
       session.submittedPasteId = pasteId;
       session.term.write('\r');
+      this._startStream(session, sessionKey);
       await this._confirmSubmitted(session, sessionKey, prompt, abortSignal);
 
       // From here until the turn ends, a dialog can open with nobody holding
@@ -1016,6 +1025,7 @@ export class PtyProvider implements Provider {
       session.turnRelay = { sessionKey, options };
       return await this._awaitEndOfTurn(session);
     } finally {
+      this._stopStream(session);
       session.turnRelay = null;
       if (abortKillTimer) clearTimeout(abortKillTimer);
       abortSignal?.removeEventListener('abort', abortHandler);
@@ -1186,9 +1196,9 @@ export class PtyProvider implements Provider {
       idleTimer: null,
       hardTimer: null,
       onProgress: options?.onProgress,
+      stream: null,
       onTip: options?.onTip,
       lastTip: null,
-      lastScreenText: '',
       stopReceived: false,
       inflightTools: 0,
       submitTimeMs: 0,
@@ -1238,23 +1248,9 @@ export class PtyProvider implements Provider {
     session.lastChunkAt = Date.now();
     session.xterm.write(chunk);
 
-    if (session.onProgress) {
-        const newScreenText = this._getScreenText(session);
-        if(newScreenText.length > session.lastScreenText.length) {
-            const diff = newScreenText.substring(session.lastScreenText.length);
-            // We only care about assistant output, not user prompts or UI elements
-            const cleanDiff = diff.replace(/^●\s*/, '').replace('❯', '').trim();
-            if(cleanDiff.length > 0) {
-                 session.onProgress(cleanDiff);
-            }
-        }
-        session.lastScreenText = newScreenText;
-    }
-
     // Mirror Claude Code's live spinner tip into the Telegram status line.
-    // The tip is drawn in place at the bottom of the TUI, so it doesn't reach
-    // the append-only onProgress diff above — scrape it directly and only fire
-    // when it actually changes (including when it clears to null).
+    // The tip is drawn in place at the bottom of the TUI — scrape it directly
+    // and only fire when it actually changes (including when it clears to null).
     if (session.onTip) {
       const tip = scrapeTip(session.xterm);
       if (tip !== session.lastTip) {
@@ -1401,9 +1397,7 @@ export class PtyProvider implements Provider {
 
   private _awaitEndOfTurn(session: PtySession): Promise<string> {
     return new Promise((resolve, reject) => {
-      // Intentionally NOT resetting xterm / lastScreenText: the pty is shared
-      // across turns, and _runPtyTurn snapshotted lastScreenText right before
-      // writing the prompt so the diff & extraction logic see only new content.
+      // Intentionally NOT resetting xterm: the pty is shared across turns.
       // stopReceived MUST be reset — it's per-turn state and the previous turn
       // left it true. inflightTools should already be 0 at end-of-turn but
       // reset defensively in case a Pre→Post pair was skipped (e.g. claude
@@ -1987,6 +1981,48 @@ export class PtyProvider implements Provider {
     });
   }
 
+  /**
+   * Start feeding the turn's live prose to onProgress (pty-stream.ts): the
+   * records the turn writes to the log from submit on, and the text block it
+   * is streaming on screen. Started once the prompt is submitted and stopped
+   * when the turn settles either way, so a turn claude starts on its own — which
+   * monitor-relay delivers whole when it closes — never streams.
+   */
+  private _startStream(session: PtySession, sessionKey: string): void {
+    this._stopStream(session);
+    if (!session.onProgress) return;
+    const botSession = sessionManager.getSession(sessionKey);
+    if (!botSession?.claudeSessionId) return;
+    const reader = new TurnProseReader(
+      sessionJsonlPath(botSession.workingDirectory, botSession.claudeSessionId),
+      session.jsonlSizeAtSubmit,
+      session.submittedSlashCommand,
+    );
+    const prose = new PtyTurnStream(
+      reader,
+      (text) => session.onProgress?.(text),
+      () => getDeliveredProse(sessionKey),
+    );
+    const timer = setInterval(() => {
+      try {
+        // Text only streams while the turn runs and nothing is asked of the
+        // user; the log still has records to bring in either way.
+        const screenMayStream = !session.stopReceived && !session.relayingModal;
+        prose.tick(screenMayStream ? this._getScreenText(session) : undefined, session.xterm.cols);
+      } catch (err) {
+        console.warn('[PtyProvider] live prose tick failed:', err instanceof Error ? err.message : err);
+      }
+    }, STREAM_TICK_MS);
+    timer.unref?.();
+    session.stream = { prose, timer };
+  }
+
+  private _stopStream(session: PtySession): void {
+    if (!session.stream) return;
+    clearInterval(session.stream.timer);
+    session.stream = null;
+  }
+
   private _getScreenText(session: PtySession): string {
     const buffer = session.xterm.buffer.active;
     let text = '';
@@ -2006,6 +2042,7 @@ export class PtyProvider implements Provider {
       }
       if(session.idleTimer) clearTimeout(session.idleTimer);
       if(session.hardTimer) clearTimeout(session.hardTimer);
+      this._stopStream(session);
       this.sessions.delete(sessionKey);
       unregisterSessionChat(session.claudeSessionId);
     }
@@ -2088,6 +2125,8 @@ export class PtyProvider implements Provider {
       try {
         const response = await this.sendToAgent(sessionKey, currentPrompt, {
           ...options,
+          // `text` is this iteration's prose so far, whole, so the live message
+          // is the iterations before it plus this one as it grows.
           onProgress: (text) => onProgress?.(combinedText + text),
         });
 

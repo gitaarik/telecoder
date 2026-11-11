@@ -13,6 +13,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { AgentUsage } from '../../src/providers/types.js';
+import type { MessageEntity } from 'grammy/types';
+import { marked } from '../helpers/entity-marks.js';
 
 vi.mock('os', async (importOriginal) => {
   const actual = await importOriginal<typeof import('os')>();
@@ -60,12 +62,13 @@ function chat(): { chatId: number; key: string } {
   return { chatId, key: String(chatId) };
 }
 
-/** The status line a turn closes with. */
+/** The status line a turn closes with, its italics marked as `_x_`. */
 async function statusLine(chatId: number, key: string, usage?: AgentUsage): Promise<string> {
-  const reply = vi.fn(async (_text: string, _opts?: unknown) => ({}));
+  const reply = vi.fn(async (_text: string, _opts?: { entities?: MessageEntity[] }) => ({}));
   await sendStatusLine({ reply } as unknown as Context, chatId, key, usage);
   expect(reply).toHaveBeenCalledTimes(1);
-  return reply.mock.calls[0]![0];
+  const [text, opts] = reply.mock.calls[0]!;
+  return marked(text, opts?.entities);
 }
 
 describe('the project on the status line', () => {
@@ -74,7 +77,7 @@ describe('the project on the status line', () => {
     sessionManager.createSession(key, projectDir('telecoder'));
 
     expect(await statusLine(chatId, key, USAGE))
-      .toBe('_📁 telecoder · 🧠 Auto · 🤖 opus\\-5\\-5 · 📊 12% · 💰 $0\\.12_');
+      .toBe('_📁 telecoder · 🧠 Auto · 🤖 opus-5-5 · 📊 12% · 💰 $0.12_');
   });
 
   it('is on the line before a turn has given it any figures', async () => {
@@ -84,11 +87,11 @@ describe('the project on the status line', () => {
     expect(await statusLine(chatId, key)).toBe('_📁 telecoder · 🧠 Auto_');
   });
 
-  it('is escaped, so a name full of punctuation still sends', async () => {
+  it('is shown verbatim, punctuation and all', async () => {
     const { chatId, key } = chat();
     sessionManager.createSession(key, projectDir('my_app.v2 (old)'));
 
-    expect(await statusLine(chatId, key)).toBe('_📁 my\\_app\\.v2 \\(old\\) · 🧠 Auto_');
+    expect(await statusLine(chatId, key)).toBe('_📁 my_app.v2 (old) · 🧠 Auto_');
   });
 
   it('follows a switch, naming where the next message goes', async () => {

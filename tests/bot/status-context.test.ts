@@ -8,6 +8,7 @@
 
 import { describe, it, expect, vi, afterAll } from 'vitest';
 import type { Context } from 'grammy';
+import type { MessageEntity } from 'grammy/types';
 import type { AgentUsage } from '../../src/providers/types.js';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -32,6 +33,15 @@ const { handleStatus } = await import('../../src/bot/handlers/command.handler.js
 const { sessionManager } = await import('../../src/claude/session-manager.js');
 const { sessionJsonlPath } = await import('../../src/claude/session-jsonl.js');
 const { userPreferences } = await import('../../src/providers/user-preferences.js');
+
+/** The reply's text, after checking its label went out bold. */
+function contextLine(reply: ReturnType<typeof vi.fn>): string {
+  const [text, opts] = reply.mock.calls[0]! as [string, { entities?: MessageEntity[]; parse_mode?: string }];
+  expect(opts.parse_mode).toBeUndefined();
+  const at = text.indexOf('Context:');
+  expect(opts.entities).toContainEqual({ type: 'bold', offset: at, length: 'Context:'.length });
+  return text;
+}
 
 afterAll(() => {
   delete process.env.TELECODER_TEST_HOME;
@@ -63,8 +73,7 @@ describe('/status', () => {
     const reply = vi.fn(async (_text: string, _opts?: unknown) => ({}));
     await handleStatus({ chat: { id: chat }, message: { text: '/status' }, reply } as unknown as Context);
 
-    const [text] = reply.mock.calls[0]!;
-    expect(text).toContain('📐 *Context:* 54% \\(535\\.5k/1\\.0M\\)');
+    expect(contextLine(reply)).toContain('📐 Context: 54% (535.5k/1.0M)');
   });
 
   it('reads it from the session log when no turn has cached one, as after a jump', async () => {
@@ -90,7 +99,6 @@ describe('/status', () => {
     const reply = vi.fn(async (_text: string, _opts?: unknown) => ({}));
     await handleStatus({ chat: { id: chat }, message: { text: '/status' }, reply } as unknown as Context);
 
-    const [text] = reply.mock.calls[0]!;
-    expect(text).toContain('📐 *Context:* 30% \\(300\\.0k/1\\.0M\\)');
+    expect(contextLine(reply)).toContain('📐 Context: 30% (300.0k/1.0M)');
   });
 });

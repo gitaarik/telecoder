@@ -29,7 +29,9 @@
 
 import { Context } from 'grammy';
 import { config } from '../../../config.js';
-import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
+import { EntityText, joinMessages, plain, type EntityMessage } from '../../../telegram/entities.js';
+import { markdownToEntities } from '../../../telegram/markdown.js';
+import { replyFormatted } from '../../../telegram/send.js';
 import { getAdminIds, getApproverIds, isApprover, isAdmin } from '../../../utils/admins.js';
 import {
   admitUser,
@@ -100,13 +102,38 @@ function targetOf(ctx: Context): { user?: UserIdentity; query?: string } {
 }
 
 /** What to say when a handle names nobody the bot has ever seen. */
-function unresolvedMessage(query: string): string {
-  return (
-    `❌ I don't know ${esc(query)}\\.\n\n` +
-    'Telegram gives bots no way to look up a username, so I can only match ' +
-    'people I have already seen post here\\. Ask them to send a message in the ' +
-    'group — then reply to it with `/allow`, which is exact\\.'
-  );
+function unresolvedMessage(query: string): EntityMessage {
+  return new EntityText()
+    .add(`❌ I don't know ${query}.`)
+    .newline(2)
+    .add(
+      'Telegram gives bots no way to look up a username, so I can only match ' +
+        'people I have already seen post here. Ask them to send a message in the ' +
+        'group — then reply to it with ',
+    )
+    .code('/allow')
+    .add(', which is exact.')
+    .build();
+}
+
+/**
+ * A reply that opens with someone's name. The name is theirs to choose, so it
+ * goes in as text; `rest` (standard markdown, static) carries the formatting.
+ */
+function aboutUser(prefix: string, user: UserIdentity, rest: string): EntityMessage {
+  return new EntityText()
+    .add(`${prefix} ${describeUser(user)}`)
+    .append(inlineMarkdown(rest))
+    .build();
+}
+
+/**
+ * Static markdown rendered inline, keeping the leading space a paragraph would
+ * lose: `rest` in {@link aboutUser} continues a sentence.
+ */
+function inlineMarkdown(markdown: string): EntityMessage {
+  const lead = markdown.match(/^ */)?.[0] ?? '';
+  return new EntityText().add(lead).append(markdownToEntities(markdown)).build();
 }
 
 export async function handleAllow(ctx: Context): Promise<void> {
@@ -114,13 +141,13 @@ export async function handleAllow(ctx: Context): Promise<void> {
 
   if (!user) {
     if (query) {
-      await replyMd(ctx, unresolvedMessage(query));
+      await replyFormatted(ctx, unresolvedMessage(query));
       return;
     }
     await replyMd(
       ctx,
-      'Usage: reply to their message with `/allow`, or `/allow @username`\\.\n\n' +
-        'Replying is exact and works for people with no username\\.',
+      'Usage: reply to their message with `/allow`, or `/allow @username`.\n\n' +
+        'Replying is exact and works for people with no username.',
     );
     return;
   }
@@ -136,19 +163,23 @@ export async function handleAllow(ctx: Context): Promise<void> {
       console.log(`[access] ${by} made ${describeUser(user)} a contributor in ${chatId}`);
       const already =
         previous === 'contributor'
-          ? ' They already could — now it survives a change of default\\.'
+          ? ' They already could — now it survives a change of default.'
           : '';
-      await replyMd(
+      await replyFormatted(
         ctx,
-        `✅ ${esc(describeUser(user))} can send prompts to the agent in this chat\\.${already}\n\n` +
-          '⚠️ That means running commands on this machine, in whichever project the ' +
-          'session is pointed at\\.',
+        aboutUser(
+          '✅',
+          user,
+          ` can send prompts to the agent in this chat.${already}\n\n` +
+            '⚠️ That means running commands on this machine, in whichever project the ' +
+            'session is pointed at.',
+        ),
       );
     } catch (error) {
       // The store rethrows a failed write precisely so this doesn't confirm a
       // change that won't survive the next restart.
       console.error('[access] grant failed:', sanitizeError(error));
-      await replyMd(ctx, '❌ Could not save that — nothing changed\\. Check the bot logs\\.');
+      await replyMd(ctx, '❌ Could not save that — nothing changed. Check the bot logs.');
     }
     return;
   }
@@ -157,18 +188,22 @@ export async function handleAllow(ctx: Context): Promise<void> {
     const result = admitUser(user, by);
     clearAccessCooldown(user.id);
     if (result === 'already-allowed') {
-      await replyMd(ctx, `✅ ${esc(describeUser(user))} can already use this bot\\.`);
+      await replyFormatted(ctx, aboutUser('✅', user, ' can already use this bot.'));
       return;
     }
     console.log(`[access] ${by} admitted ${describeUser(user)}`);
-    await replyMd(
+    await replyFormatted(
       ctx,
-      `✅ ${esc(describeUser(user))} is in — as a *guest*, so their requests go ` +
-        'through the charter judge and the permission gate\\.',
+      aboutUser(
+        '✅',
+        user,
+        ' is in — as a **guest**, so their requests go ' +
+          'through the charter judge and the permission gate.',
+      ),
     );
   } catch (error) {
     console.error('[access] admit failed:', sanitizeError(error));
-    await replyMd(ctx, '❌ Could not save the roster — they are *not* allowed in\\. Check the bot logs\\.');
+    await replyMd(ctx, '❌ Could not save the roster — they are **not** allowed in. Check the bot logs.');
   }
 }
 
@@ -177,18 +212,22 @@ export async function handleDeny(ctx: Context): Promise<void> {
 
   if (!user) {
     if (query) {
-      await replyMd(ctx, unresolvedMessage(query));
+      await replyFormatted(ctx, unresolvedMessage(query));
       return;
     }
-    await replyMd(ctx, 'Usage: reply to their message with `/deny`, or `/deny @username`\\.');
+    await replyMd(ctx, 'Usage: reply to their message with `/deny`, or `/deny @username`.');
     return;
   }
 
   if (isAdmin(user.id)) {
-    await replyMd(
+    await replyFormatted(
       ctx,
-      `🔒 ${esc(describeUser(user))} is an *admin*\\. Remove them from ` +
-        '`ADMIN_USER_IDS` and `ALLOWED_USER_IDS` in the bot\'s `.env`, then restart\\.',
+      aboutUser(
+        '🔒',
+        user,
+        ' is an **admin**. Remove them from ' +
+          '`ADMIN_USER_IDS` and `ALLOWED_USER_IDS` in the bot\'s `.env`, then restart.',
+      ),
     );
     return;
   }
@@ -200,16 +239,20 @@ export async function handleDeny(ctx: Context): Promise<void> {
       revokeAccess(chatId, user.id, { username: user.username, grantedBy: by });
       clearAccessCooldown(user.id);
       console.log(`[access] ${by} made ${describeUser(user)} a spectator in ${chatId}`);
-      await replyMd(
+      await replyFormatted(
         ctx,
-        `🚫 ${esc(describeUser(user))} is a *spectator* here — they can read along and talk ` +
-          'to everyone, but the bot will ignore anything they address to it\\.\n\n' +
-          'This covers *this chat*\\. If they are on the bot\'s global roster, `/deny` them in ' +
-          'a DM to take that away too\\.',
+        aboutUser(
+          '🚫',
+          user,
+          ' is a **spectator** here — they can read along and talk ' +
+            'to everyone, but the bot will ignore anything they address to it.\n\n' +
+            'This covers **this chat**. If they are on the bot\'s global roster, `/deny` them in ' +
+            'a DM to take that away too.',
+        ),
       );
     } catch (error) {
       console.error('[access] revoke failed:', sanitizeError(error));
-      await replyMd(ctx, '❌ Could not save that — they *still* have access here\\. Check the bot logs\\.');
+      await replyMd(ctx, '❌ Could not save that — they **still** have access here. Check the bot logs.');
     }
     return;
   }
@@ -218,36 +261,50 @@ export async function handleDeny(ctx: Context): Promise<void> {
     const result = revokeUser(user.id);
     clearAccessCooldown(user.id);
     if (result === 'env-configured') {
-      await replyMd(
+      await replyFormatted(
         ctx,
-        `🔒 ${esc(describeUser(user))} is allowed by the bot's \`.env\`, which I can't ` +
-          'edit\\. Remove their id from `ALLOWED_USER_IDS`' +
-          (isApprover(user.id) ? ' *and* `APPROVER_USER_IDS`' : '') +
-          ' and restart\\.' +
-          (isApprover(user.id)
-            ? '\n\nBoth lines matter: an id left in `APPROVER_USER_IDS` that ' +
-              '`ALLOWED_USER_IDS` no longer carries stops the bot from starting\\.'
-            : ''),
+        aboutUser(
+          '🔒',
+          user,
+          ' is allowed by the bot\'s `.env`, which I can\'t ' +
+            'edit. Remove their id from `ALLOWED_USER_IDS`' +
+            (isApprover(user.id) ? ' **and** `APPROVER_USER_IDS`' : '') +
+            ' and restart.' +
+            (isApprover(user.id)
+              ? '\n\nBoth lines matter: an id left in `APPROVER_USER_IDS` that ' +
+                '`ALLOWED_USER_IDS` no longer carries stops the bot from starting.'
+              : ''),
+        ),
       );
       return;
     }
     if (result === 'not-allowed') {
-      await replyMd(ctx, `✅ ${esc(describeUser(user))} already had no access\\.`);
+      await replyFormatted(ctx, aboutUser('✅', user, ' already had no access.'));
       return;
     }
     console.log(`[access] ${ctx.from?.id} revoked ${describeUser(user)}`);
-    await replyMd(ctx, `🚫 ${esc(describeUser(user))} is out\\.`);
+    await replyFormatted(ctx, aboutUser('🚫', user, ' is out.'));
   } catch (error) {
     console.error('[access] revoke failed:', sanitizeError(error));
-    await replyMd(ctx, '❌ Could not save the roster — they *still* have access\\. Check the bot logs\\.');
+    await replyMd(ctx, '❌ Could not save the roster — they **still** have access. Check the bot logs.');
   }
 }
 
 /** One roster line: name, handle and the id that is the real identity. */
-function userLine(user: { id: number; username?: string; name?: string }): string {
+function userLine(b: EntityText, user: { id: number; username?: string; name?: string }): void {
   const label = user.name ?? (user.username ? `@${user.username}` : `id ${user.id}`);
   const handle = user.name && user.username ? ` @${user.username}` : '';
-  return `• ${esc(label)}${esc(handle)} — \`${user.id}\``;
+  b.newline().add(`• ${label}${handle} — `).code(String(user.id));
+}
+
+/** A blank line, then a bold section heading with its count. */
+function section(b: EntityText, heading: string, count: number): EntityText {
+  return b.newline(2).bold(heading).add(` (${count})`);
+}
+
+/** A roster line for a bare id, marking the reader's own. */
+function idLine(b: EntityText, id: number, self: number | undefined): void {
+  b.newline().add('• ').code(String(id)).add(id === self ? ' — you' : '');
 }
 
 export async function handleUsers(ctx: Context): Promise<void> {
@@ -256,41 +313,42 @@ export async function handleUsers(ctx: Context): Promise<void> {
   const env = envAllowedIds().filter((id) => !admins.includes(id) && !approvers.includes(id));
   const admitted = listAdmitted();
   const pending = listPending();
+  const self = ctx.from?.id;
 
-  const lines: string[] = ['*Who can use this bot*'];
+  const b = new EntityText().bold('Who can use this bot');
 
-  lines.push('', `*Admins* \\(${admins.length}\\)`);
-  for (const id of admins) lines.push(`• \`${id}\`${id === ctx.from?.id ? ' — you' : ''}`);
+  section(b, 'Admins', admins.length);
+  for (const id of admins) idLine(b, id, self);
 
   if (approvers.length > 0) {
-    lines.push('', `*Approvers* \\(${approvers.length}\\)`);
-    for (const id of approvers) lines.push(`• \`${id}\`${id === ctx.from?.id ? ' — you' : ''}`);
-    lines.push('_Guests who can answer someone else’s approval prompt, but not their own\\._');
+    section(b, 'Approvers', approvers.length);
+    for (const id of approvers) idLine(b, id, self);
+    b.newline().italic('Guests who can answer someone else’s approval prompt, but not their own.');
   }
 
   if (env.length > 0) {
-    lines.push('', `*Guests from \`.env\`* \\(${env.length}\\)`);
-    for (const id of env) lines.push(`• \`${id}\``);
+    b.newline(2).wrap('bold', (h) => h.add('Guests from ').code('.env')).add(` (${env.length})`);
+    for (const id of env) idLine(b, id, undefined);
   }
 
-  lines.push('', `*Guests admitted here* \\(${admitted.length}\\)`);
+  section(b, 'Guests admitted here', admitted.length);
   if (admitted.length === 0) {
-    lines.push('_none yet_');
+    b.newline().italic('none yet');
   } else {
-    for (const user of admitted) lines.push(userLine(user));
+    for (const user of admitted) userLine(b, user);
   }
 
   if (pending.length > 0) {
     const shown = pending.slice(0, 10);
-    lines.push('', `*Seen but not allowed* \\(${pending.length}\\)`);
-    for (const user of shown) lines.push(userLine(user));
+    section(b, 'Seen but not allowed', pending.length);
+    for (const user of shown) userLine(b, user);
     if (pending.length > shown.length) {
-      lines.push(`_…and ${pending.length - shown.length} more_`);
+      b.newline().italic(`…and ${pending.length - shown.length} more`);
     }
-    lines.push('', 'Reply to one of their messages with `/allow` to let them in\\.');
+    b.newline(2).add('Reply to one of their messages with ').code('/allow').add(' to let them in.');
   }
 
-  await replyMd(ctx, lines.join('\n'));
+  await replyFormatted(ctx, b.build());
 }
 
 /** Who may drive the agent in this one group. The per-group half of /users. */
@@ -299,15 +357,17 @@ export async function handleMembers(ctx: Context): Promise<void> {
   if (chatId === undefined) {
     await replyMd(
       ctx,
-      '`/members` lists access for one group chat — run it in the group itself\\.\n\n' +
-        'Use `/users` for who can reach the bot at all\\.',
+      '`/members` lists access for one group chat — run it in the group itself.\n\n' +
+        'Use `/users` for who can reach the bot at all.',
     );
     return;
   }
 
   const { allow, deny } = listGroupAccess(chatId);
-  const label = (m: { userId: number; username?: string }) =>
-    m.username ? `@${esc(m.username)} \\(\`${m.userId}\`\\)` : `\`${m.userId}\``;
+  const label = (m: { userId: number; username?: string }): EntityMessage =>
+    m.username
+      ? new EntityText().add(`@${m.username} (`).code(String(m.userId)).add(')').build()
+      : new EntityText().code(String(m.userId)).build();
 
   // Anyone on the global roster is a contributor here without an entry in the
   // store, so /members has to add them back in or it under-reports who can
@@ -316,27 +376,42 @@ export async function handleMembers(ctx: Context): Promise<void> {
   const listed = new Set([...allow, ...deny].map((m) => m.userId));
   const implicit = [...envAllowedIds(), ...listAdmitted().map((u) => u.id)]
     .filter((id) => !admins.includes(id) && !listed.has(id) && resolveRole(chatId, id) === 'contributor')
-    .map((id) => `\`${id}\` \\(roster\\)`);
+    .map((id) => new EntityText().code(String(id)).add(' (roster)').build());
   const contributors = [...allow.map(label), ...implicit];
 
-  const lines = [
-    `*Access in this chat* \\(\`${chatId}\`\\)`,
-    '',
-    `Default for anyone not listed: *${groupDefaultIsContributor() ? 'contributor' : 'spectator'}*`,
-    '',
-    `*Admins:* ${admins.map((id) => `\`${id}\``).join(', ') || '—'}`,
-    `*Contributors:* ${contributors.join(', ') || '—'}`,
-    `*Spectators \\(explicit\\):* ${deny.map(label).join(', ') || '—'}`,
-  ];
+  /** `items` comma-separated, or a dash for none. */
+  const list = (items: EntityMessage[]): EntityMessage =>
+    items.length > 0 ? joinMessages(items, ', ') : plain('—');
+
+  const b = new EntityText()
+    .bold('Access in this chat')
+    .add(' (')
+    .code(String(chatId))
+    .add(')')
+    .newline(2)
+    .add('Default for anyone not listed: ')
+    .bold(groupDefaultIsContributor() ? 'contributor' : 'spectator')
+    .newline(2)
+    .bold('Admins:')
+    .add(' ')
+    .append(list(admins.map((id) => new EntityText().code(String(id)).build())))
+    .newline()
+    .bold('Contributors:')
+    .add(' ')
+    .append(list(contributors))
+    .newline()
+    .bold('Spectators (explicit):')
+    .add(' ')
+    .append(list(deny.map(label)));
 
   if (!groupDefaultIsContributor() && allow.length === 0) {
-    lines.push(
-      '',
-      'Nobody has been granted here yet\\. Reply to someone with `/allow` to let them prompt the agent\\.',
-    );
+    b.newline(2)
+      .add('Nobody has been granted here yet. Reply to someone with ')
+      .code('/allow')
+      .add(' to let them prompt the agent.');
   }
 
-  await replyMd(ctx, lines.join('\n'));
+  await replyFormatted(ctx, b.build());
 }
 
 /**

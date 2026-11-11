@@ -15,6 +15,8 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vites
 import * as fs from 'fs';
 import * as path from 'path';
 import { Api, type Bot } from 'grammy';
+import type { MessageEntity } from 'grammy/types';
+import { marked } from '../helpers/entity-marks.js';
 import type { AgentUsage } from '../../src/providers/types.js';
 import type { FireHandler, Schedule } from '../../src/claude/scheduler.js';
 
@@ -112,7 +114,7 @@ const WAIT = { timeout: 5_000, interval: 20 };
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
 
 /** The stats every status line carries, in a chat that shows no usage footer. */
-const STATS = '_📁 shop · 🧠 Auto · 🤖 opus\\-5\\-5 · 📊 12% · 💰 $0\\.12_';
+const STATS = '_📁 shop · 🧠 Auto · 🤖 opus-5-5 · 📊 12% · 💰 $0.12_';
 
 let bot: Bot;
 let fire: FireHandler;
@@ -187,9 +189,10 @@ beforeAll(async () => {
     has_main_web_app: false,
   } as never;
   bot.api.config.use(async (_prev, method, payload) => {
-    const text = (payload as { text?: unknown }).text;
+    const { text, entities } = payload as { text?: unknown; entities?: MessageEntity[] };
     if ((method === 'sendMessage' || method === 'editMessageText') && typeof text === 'string') {
-      fx.posts.push({ method, text });
+      // Its bold, italic and code marked, so a line reads as one string.
+      fx.posts.push({ method, text: marked(text, entities) });
     }
     if (method === 'sendMessage') {
       return { ok: true, result: { message_id: fx.nextId++, date: 0, chat: { id: CHAT, type: 'private' } } } as never;
@@ -238,7 +241,7 @@ describe.each(['streaming', 'wait'] as const)('a turn, with replies in %s mode',
     ['a typed message', () => receive({ text: 'why does checkout fail?' }), 'why does checkout fail?'],
     ['a voice note', () => receive(voiceNote), 'what the voice note said'],
     ['a photo', () => { fx.download = PNG; return receive(photo); }, '📷 Image — what is this?'],
-    ['a file', () => receive(file), '📎 notes\\.txt'],
+    ['a file', () => receive(file), '📎 notes.txt'],
   ])('started by %s ends with the status line', async (_name, start, prompt) => {
     const posted = await endOfTurn(start);
 

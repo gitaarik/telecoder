@@ -4,7 +4,7 @@ import { sessionJsonlPath } from './session-jsonl.js';
 import { isSubagentTool } from './subagent-tools.js';
 import { buildSyntheticCtx } from './synthetic-ctx.js';
 import { parseSessionKey } from '../utils/session-key.js';
-import { convertToTelegramMarkdown } from '../telegram/markdown.js';
+import { sendMarkdown } from '../telegram/send.js';
 import { taskTracker } from '../telegram/task-tracker.js';
 import {
   setBackgroundCardBot,
@@ -179,10 +179,10 @@ const states = new Map<string, MonitorState>();
 let botRef: Bot | null = null;
 
 /**
- * Send a relay message with MarkdownV2 formatting, falling back to plain text
- * if the converted output is rejected by Telegram. Mirrors the turn pipeline
- * in messageSender.sendMessage so monitor/push messages render bold, code,
- * links, etc. instead of arriving as a wall of escaped text.
+ * Send a relay message, its markdown converted to entities (split if long;
+ * a part Telegram refuses the formatting of goes out as plain text). Mirrors
+ * the turn pipeline in messageSender.sendMessage so monitor/push messages
+ * render bold, code, links, etc.
  */
 async function sendFormatted(
   chatId: number,
@@ -191,16 +191,10 @@ async function sendFormatted(
   context: string,
 ): Promise<void> {
   if (!botRef) return;
-  const converted = convertToTelegramMarkdown(text);
   try {
-    await botRef.api.sendMessage(chatId, converted, { ...threadOpts, parse_mode: 'MarkdownV2' });
-  } catch (mdErr) {
-    console.error(`[Monitor] MarkdownV2 send failed (${context}), falling back to plain text:`, mdErr instanceof Error ? mdErr.message : mdErr);
-    try {
-      await botRef.api.sendMessage(chatId, text, threadOpts);
-    } catch (plainErr) {
-      console.error(`[Monitor] plain text send also failed (${context}):`, plainErr instanceof Error ? plainErr.message : plainErr);
-    }
+    await sendMarkdown(botRef.api, chatId, text, threadOpts);
+  } catch (err) {
+    console.error(`[Monitor] send failed (${context}):`, err instanceof Error ? err.message : err);
   }
 }
 

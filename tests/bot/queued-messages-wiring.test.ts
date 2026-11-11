@@ -241,7 +241,7 @@ describe('the bot as assembled', () => {
     await Promise.all(pending);
 
     expect(fx.prompts).toEqual(['first']);
-    expect(callsTo('sendMessage').map((c) => c.payload.text)).toContain('🛑 Cancelled\\. \\(1 queued request cleared\\)');
+    expect(callsTo('sendMessage').map((c) => c.payload.text)).toContain('🛑 Cancelled. (1 queued request cleared)');
   });
 
   it('answers the take-back button while the turn is still running', async () => {

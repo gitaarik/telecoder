@@ -12,6 +12,8 @@ import type { Context } from 'grammy';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import type { MessageEntity } from 'grammy/types';
+import { marked } from '../helpers/entity-marks.js';
 
 vi.mock('os', async (importOriginal) => {
   const actual = await importOriginal<typeof import('os')>();
@@ -28,6 +30,12 @@ const { formatRecentPrompts, sendStatusLine } = await import('../../src/bot/hand
 const { userPreferences } = await import('../../src/providers/user-preferences.js');
 const { sessionManager } = await import('../../src/claude/session-manager.js');
 const { sessionJsonlPath } = await import('../../src/claude/session-jsonl.js');
+
+/** formatRecentPrompts' message, its italics marked as `_x_`. */
+function fmt(prompts: string[]): string {
+  const msg = formatRecentPrompts(prompts);
+  return marked(msg.text, msg.entities);
+}
 
 afterAll(() => {
   delete process.env.TELECODER_TEST_HOME;
@@ -60,15 +68,16 @@ function converse(key: string, sessionId: string, lines?: string[]): void {
  * task that reported back.
  */
 async function promptLines(chatId: number, key: string, lastPrompt?: string): Promise<string[]> {
-  const reply = vi.fn(async (_text: string, _opts?: unknown) => ({}));
+  const reply = vi.fn(async (_text: string, _opts?: { entities?: MessageEntity[] }) => ({}));
   await sendStatusLine({ reply } as unknown as Context, chatId, key, undefined, lastPrompt);
   expect(reply).toHaveBeenCalledTimes(1);
-  return reply.mock.calls[0]![0].split('\n').filter((line) => line.startsWith('_▸ '));
+  const [text, opts] = reply.mock.calls[0]!;
+  return marked(text, opts?.entities).split('\n').filter((line) => line.startsWith('_▸ '));
 }
 
 describe('formatRecentPrompts', () => {
   it('lists the last five prompts, oldest first, a line each', () => {
-    expect(formatRecentPrompts(['one', 'two', 'three', 'four', 'five', 'six']).split('\n')).toEqual([
+    expect(fmt(['one', 'two', 'three', 'four', 'five', 'six']).split('\n')).toEqual([
       '_▸ two_',
       '_▸ three_',
       '_▸ four_',
@@ -89,7 +98,7 @@ describe('formatRecentPrompts', () => {
       'ok',
       'yeah',
     ];
-    expect(formatRecentPrompts(prompts).split('\n')).toEqual([
+    expect(fmt(prompts).split('\n')).toEqual([
       '_▸ Plan the parser_',
       '_▸ Split it_',
       '_▸ Now add tests_',
@@ -99,7 +108,7 @@ describe('formatRecentPrompts', () => {
   });
 
   it('shows a paste or an upload the way /tree labels it', () => {
-    expect(formatRecentPrompts([
+    expect(fmt([
       '<pasted_content id="a43f">Build log:\nall green</pasted_content id="a43f">',
       'User uploaded an image to the project.\nSaved at: /x.png\nCaption: "this one"',
     ]).split('\n')).toEqual([
@@ -109,21 +118,22 @@ describe('formatRecentPrompts', () => {
   });
 
   it('shows a prompt whole up to 300 characters', () => {
-    expect(formatRecentPrompts(['word '.repeat(60)])).toBe(`_▸ ${'word '.repeat(59)}word_`);
+    expect(fmt(['word '.repeat(60)])).toBe(`_▸ ${'word '.repeat(59)}word_`);
   });
 
   it('shows a longer one by its start and its end, where the question usually is', () => {
-    expect(formatRecentPrompts([`${'word '.repeat(80)}what do you think?`]))
+    expect(fmt([`${'word '.repeat(80)}what do you think?`]))
       .toBe(`_▸ ${'word '.repeat(38)}word … ${'word '.repeat(16)}what do you think?_`);
   });
 
-  it('escapes MarkdownV2 so a prompt full of punctuation still sends', () => {
-    expect(formatRecentPrompts(['fix src/a_b.ts (the *bold* one!)']))
-      .toBe('_▸ fix src/a\\_b\\.ts \\(the \\*bold\\* one\\!\\)_');
+  it('keeps a prompt full of punctuation verbatim, in one italic run', () => {
+    const msg = formatRecentPrompts(['fix src/a_b.ts (the *bold* one!)']);
+    expect(msg.text).toBe('▸ fix src/a_b.ts (the *bold* one!)');
+    expect(msg.entities).toEqual([{ type: 'italic', offset: 0, length: msg.text.length }]);
   });
 
   it('is empty when nothing was a turn', () => {
-    expect(formatRecentPrompts(['/compact'])).toBe('');
+    expect(fmt(['/compact'])).toBe('');
   });
 });
 

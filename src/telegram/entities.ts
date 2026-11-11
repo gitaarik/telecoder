@@ -1,11 +1,12 @@
 /**
  * Plain-text messages carrying explicit Telegram entities.
  *
- * Everywhere else TeleCoder formats with MarkdownV2, which means escaping, and
- * escaping is exactly what fails when the text being formatted came from the
- * model or from a shell command — a stray underscore in a URL parameter or an
- * unbalanced backtick in a `sed` script turns a `sendMessage` into a 400. The
- * existing workaround is a try/catch that re-sends the whole message unstyled.
+ * Every message TeleCoder sends is formatted this way; nothing goes out with a
+ * parse mode. MarkdownV2 meant escaping, and escaping is exactly what fails
+ * when the text being formatted came from the model or from a shell command — a
+ * stray underscore in a URL parameter or an unbalanced backtick in a `sed`
+ * script turned a `sendMessage` into a 400. It also could not be split: a long
+ * reply cut in the middle of a bold run or a link broke both halves.
  *
  * Entities sidestep that: the text is sent verbatim with no parse mode, and the
  * formatting rides alongside as offsets. Nothing in the payload can be
@@ -84,9 +85,54 @@ export class EntityText {
     }));
   }
 
-  /** `text` as a link to `url`, which the reader doesn't have to see spelled out. */
+  strikethrough(text: string): this {
+    return this.styled(text, (offset, length) => ({ type: 'strikethrough', offset, length }));
+  }
+
+  underline(text: string): this {
+    return this.styled(text, (offset, length) => ({ type: 'underline', offset, length }));
+  }
+
+  spoiler(text: string): this {
+    return this.styled(text, (offset, length) => ({ type: 'spoiler', offset, length }));
+  }
+
+  /**
+   * `text` as a link to `url`, which the reader doesn't have to see spelled out.
+   *
+   * Telegram refuses the whole message over a link it won't accept — one to
+   * `http://localhost:3000`, say, which has no TLD. Such a link goes out as
+   * plain text instead, with the address after it when the label hides it.
+   */
   link(text: string, url: string): this {
-    return this.styled(text, (offset, length) => ({ type: 'text_link', offset, length, url }));
+    if (!isLinkableUrl(url)) return this.add(text === url || !text ? url : `${text} (${url})`);
+    return this.styled(text || url, (offset, length) => ({ type: 'text_link', offset, length, url }));
+  }
+
+  /**
+   * A quote; `expandable` collapses it to its first lines until tapped. Telegram
+   * does not nest quotes, so callers must not open one inside another.
+   */
+  quote(text: string | EntityMessage, expandable = false): this {
+    const type = expandable ? 'expandable_blockquote' : 'blockquote';
+    return this.wrap(type, (b) => (typeof text === 'string' ? b.add(text) : b.append(text)));
+  }
+
+  /**
+   * Wrap whatever `build` appends in one entity of `type`, so it can carry
+   * entities of its own: bold inside a link, code inside a quote.
+   */
+  wrap(type: WrapType, build: (b: this) => void, extra: Partial<MessageEntity> = {}): this {
+    const start = this.offset;
+    const at = this.entities.length;
+    build(this);
+    const length = this.offset - start;
+    if (length > 0) {
+      // Before the entities appended inside it, so a reader of the list meets
+      // the outer one first, as Telegram itself orders them.
+      this.entities.splice(at, 0, { type, offset: start, length, ...extra } as MessageEntity);
+    }
+    return this;
   }
 
   /**
@@ -149,5 +195,127 @@ export class EntityText {
  */
 export function clip(text: string, max: number): string {
   if (text.length <= max) return text;
-  return text.slice(0, Math.max(0, max - 1)) + '…';
+  // Never between the halves of a surrogate pair: half an emoji is invalid
+  // UTF-16, which Telegram refuses.
+  let cut = Math.max(0, max - 1);
+  if (cut > 0 && isHighSurrogate(text.charCodeAt(cut - 1))) cut--;
+  return text.slice(0, cut) + '…';
 }
+
+/** Entity types that {@link EntityText.wrap} may open around nested content. */
+export type WrapType =
+  | 'bold' | 'italic' | 'underline' | 'strikethrough' | 'spoiler'
+  | 'text_link' | 'blockquote' | 'expandable_blockquote';
+
+export function isHighSurrogate(code: number): boolean {
+  return code >= 0xd800 && code <= 0xdbff;
+}
+
+/**
+ * Whether Telegram accepts `url` on a `text_link`. It wants a web address with
+ * a real top-level domain (no `localhost`, no bare IP, no single-label
+ * intranet host) or one of its own `tg:` links; anything else makes it refuse
+ * the entire message.
+ */
+export function isLinkableUrl(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol === 'tg:') return true;
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  const labels = parsed.hostname.split('.');
+  if (labels.length < 2 || labels.some((l) => !l)) return false;
+  const tld = labels[labels.length - 1];
+  return /^(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})$/i.test(tld);
+}
+
+/** Plain text, no formatting. */
+export function plain(text: string): EntityMessage {
+  return { text, entities: [] };
+}
+
+/** Join messages with `separator`, shifting each one's entities into place. */
+export function joinMessages(messages: EntityMessage[], separator = '\n\n'): EntityMessage {
+  const b = new EntityText();
+  messages.forEach((m, i) => {
+    if (i > 0) b.add(separator);
+    b.append(m);
+  });
+  return b.build();
+}
+
+/**
+ * The slice `[start, end)` of a message, with its entities cut to fit. An
+ * entity running across either edge keeps the part inside, which is what lets
+ * a long reply be split in the middle of a bold run or a code block and keep
+ * the formatting on both sides.
+ */
+export function sliceMessage(message: EntityMessage, start: number, end = message.text.length): EntityMessage {
+  const entities: MessageEntity[] = [];
+  for (const e of message.entities) {
+    const from = Math.max(e.offset, start);
+    const to = Math.min(e.offset + e.length, end);
+    if (to <= from) continue;
+    entities.push({ ...e, offset: from - start, length: to - from });
+  }
+  return { text: message.text.slice(start, end), entities: dropBlankEntities(message.text.slice(start, end), entities) };
+}
+
+/**
+ * Strip leading and trailing whitespace, as Telegram does to every message on
+ * arrival. It strips it *before* applying the offsets, so a message that
+ * starts with a newline would otherwise have all its formatting shifted one
+ * character to the left — or refused, when an entity then runs off the end.
+ */
+export function trimMessage(message: EntityMessage): EntityMessage {
+  const start = message.text.length - message.text.trimStart().length;
+  const end = message.text.trimEnd().length;
+  if (start === 0 && end === message.text.length) return message;
+  if (end <= start) return plain('');
+  return sliceMessage(message, start, end);
+}
+
+/**
+ * Drop entities with nothing visible in them. Telegram rejects a message with
+ * an entity over whitespace alone ("text must be non-empty") for some types,
+ * and a slice can leave one behind at either edge.
+ */
+function dropBlankEntities(text: string, entities: MessageEntity[]): MessageEntity[] {
+  return entities.filter((e) => e.length > 0 && (e.type === 'pre' || text.slice(e.offset, e.offset + e.length).trim() !== ''));
+}
+
+/**
+ * Prefix every line of `message` with `prefix`, keeping its entities on the
+ * same characters. For list items: a nested paragraph or sub-list lines up
+ * under its bullet.
+ */
+export function indentMessage(message: EntityMessage, prefix: string, skipFirstLine = false): EntityMessage {
+  if (!prefix) return message;
+  const { text } = message;
+  // shift[i] is how far character i moves: one prefix for every line start at
+  // or before it.
+  const shift = new Array<number>(text.length + 1);
+  let added = 0;
+  let out = '';
+  for (let i = 0; i <= text.length; i++) {
+    const lineStart = i === 0 ? !skipFirstLine : text[i - 1] === '\n';
+    if (lineStart && i < text.length && text[i] !== '\n') {
+      out += prefix;
+      added += prefix.length;
+    }
+    shift[i] = added;
+    if (i < text.length) out += text[i];
+  }
+  const entities = message.entities.map((e) => {
+    const from = e.offset + shift[e.offset];
+    // The end keeps the shift of the last character inside the entity, so a
+    // prefix inserted at the next line's start stays outside it.
+    const lastShift = e.length > 0 ? shift[e.offset + e.length - 1] : shift[e.offset];
+    return { ...e, offset: from, length: e.offset + e.length + lastShift - from };
+  });
+  return { text: out, entities };
+}
+

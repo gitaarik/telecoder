@@ -13,11 +13,11 @@ import { execFile, spawn } from 'child_process';
 import { isMainThread } from 'worker_threads';
 import { config, getReloadMarkerPath } from '../../../config.js';
 import { getModel } from '../../../providers/provider-router.js';
-import { messageSender } from '../../../telegram/message-sender.js';
-import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
+import { EntityText, type EntityMessage } from '../../../telegram/entities.js';
+import { replyFormatted, replyParts } from '../../../telegram/send.js';
 import { sanitizeError } from '../../../utils/sanitize.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
-import { replyMd, botctlExists, PROJECT_ROOT, BOTCTL_PATH } from './shared.js';
+import { botctlExists, PROJECT_ROOT, BOTCTL_PATH } from './shared.js';
 import { handleResume, handleContinue, handleClear } from './session.js';
 import {
   requestRestart,
@@ -156,20 +156,26 @@ export async function handleUpdateCallback(ctx: Context): Promise<void> {
   if (data !== 'update:confirm') return;
 
   const chatId = ctx.chat?.id;
-  const ack = await ctx.reply('⬆️ Updating Claude Code…', { parse_mode: undefined });
+  const ack = await ctx.reply('⬆️ Updating Claude Code…');
 
   try {
     const raw = await runClaudeUpdate();
     const body = raw || 'Update finished — no output.';
-    await messageSender.sendMessage(ctx, `## ⬆️ Claude Code Update\n\n\`\`\`\n${body}\n\`\`\``);
+    await replyParts(ctx, new EntityText().bold('⬆️ Claude Code Update').newline(2).pre(body).build());
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    const hint = /not found|enoent/i.test(message)
-      ? '\n\nThe `claude` executable could not be found on PATH. Check `CLAUDE_EXECUTABLE_PATH`.'
-      : /npm|installed via/i.test(message)
-        ? '\n\nThis install may be managed by npm — update it there instead.'
-        : '';
-    await messageSender.sendMessage(ctx, `❌ Update failed:\n\n\`\`\`\n${message}\n\`\`\`${hint}`);
+    const b = new EntityText().add('❌ Update failed:').newline(2).pre(message);
+    if (/not found|enoent/i.test(message)) {
+      b.newline(2)
+        .add('The ')
+        .code('claude')
+        .add(' executable could not be found on PATH. Check ')
+        .code('CLAUDE_EXECUTABLE_PATH')
+        .add('.');
+    } else if (/npm|installed via/i.test(message)) {
+      b.newline(2).add('This install may be managed by npm — update it there instead.');
+    }
+    await replyParts(ctx, b.build());
   } finally {
     if (chatId !== undefined) {
       try {
@@ -204,18 +210,19 @@ export async function handleBotStatus(ctx: Context): Promise<void> {
   const warning = await staleLauncherWarning();
   const build = describeRunningBuild();
 
-  const msg =
-    `🟢 *${esc(config.BOT_NAME)} is running*\n\n` +
-    `*Mode:* ${esc(mode)}\n` +
-    (build ? `*Version:* ${esc(build)}\n` : '') +
-    `*Uptime:* ${esc(uptimeStr)}\n` +
-    `*PID:* ${pid}\n` +
-    `*Memory:* ${esc(memMB)} MB\n` +
-    `*Model:* ${esc(model)}\n` +
-    `*Streaming:* ${esc(streaming)}` +
-    (warning ? `\n\n${esc(warning)}` : '');
+  const msg = new EntityText().add('🟢 ').bold(`${config.BOT_NAME} is running`).newline(2);
+  /** A `Label: value` line; every one but the last ends in a newline. */
+  const field = (label: string, value: string) => msg.bold(`${label}:`).add(` ${value}`);
+  field('Mode', mode).newline();
+  if (build) field('Version', build).newline();
+  field('Uptime', uptimeStr).newline();
+  field('PID', String(pid)).newline();
+  field('Memory', `${memMB} MB`).newline();
+  field('Model', model).newline();
+  field('Streaming', streaming);
+  if (warning) msg.newline(2).add(warning);
 
-  await replyMd(ctx, msg);
+  await replyFormatted(ctx, msg.build());
 }
 
 export async function handleVersion(ctx: Context): Promise<void> {
@@ -231,7 +238,7 @@ export async function handleVersion(ctx: Context): Promise<void> {
     .filter(Boolean)
     .join('\n');
 
-  // Plain text, no parse_mode: a commit subject would otherwise need escaping.
+  // Plain text: a commit subject goes out exactly as written.
   await ctx.reply(warning ? `${answer}\n\n${warning}` : answer);
 }
 
@@ -250,10 +257,10 @@ type RestartPlan =
  * known to be possible. Announcing one that then fails is how the bot ends up
  * silently dead with a "restarting..." message as its last word.
  *
- * Returns an error string (MarkdownV2, pre-escaped) when there is no way to
- * come back, in which case the bot keeps running.
+ * Returns an error message when there is no way to come back, in which case
+ * the bot keeps running.
  */
-async function planRestart(): Promise<{ plan: RestartPlan } | { error: string }> {
+async function planRestart(): Promise<{ plan: RestartPlan } | { error: EntityMessage }> {
   if (isSystemdService()) {
     // botctl is not an option here: it would be reaped with us (see
     // utils/systemd.ts). Exiting and letting systemd restart us is, but only
@@ -261,26 +268,45 @@ async function planRestart(): Promise<{ plan: RestartPlan } | { error: string }>
     const unit = getSystemdUnit();
     if (!unit) {
       return {
-        error:
-          'Running under systemd, but the unit name could not be read from `/proc/self/cgroup`\\.\n\n' +
-          'Restart it by hand: `systemctl \\-\\-user restart telecoder`',
+        error: new EntityText()
+          .add('Running under systemd, but the unit name could not be read from ')
+          .code('/proc/self/cgroup')
+          .add('.')
+          .newline(2)
+          .add('Restart it by hand: ')
+          .code('systemctl --user restart telecoder')
+          .build(),
       };
     }
 
     const behaviour = await getRestartBehaviour(unit);
     if (behaviour === null) {
       return {
-        error:
-          `Running as *${esc(unit.name)}*, but \`systemctl show\` did not answer, ` +
-          'so there is no way to confirm the bot would come back\\.\n\n' +
-          `Restart it by hand: \`${esc(manualRestartCommand(unit))}\``,
+        error: new EntityText()
+          .add('Running as ')
+          .bold(unit.name)
+          .add(', but ')
+          .code('systemctl show')
+          .add(' did not answer, so there is no way to confirm the bot would come back.')
+          .newline(2)
+          .add('Restart it by hand: ')
+          .code(manualRestartCommand(unit))
+          .build(),
       };
     }
     if (!willRestartOnRequestedExit(behaviour)) {
       return {
-        error:
-          `*${esc(unit.name)}* has \`Restart=${esc(behaviour.policy)}\`, so systemd would not start the bot again\\.\n\n` +
-          `Set \`Restart=always\` in the unit, or restart by hand: \`${esc(manualRestartCommand(unit))}\``,
+        error: new EntityText()
+          .bold(unit.name)
+          .add(' has ')
+          .code(`Restart=${behaviour.policy}`)
+          .add(', so systemd would not start the bot again.')
+          .newline(2)
+          .add('Set ')
+          .code('Restart=always')
+          .add(' in the unit, or restart by hand: ')
+          .code(manualRestartCommand(unit))
+          .build(),
       };
     }
 
@@ -289,7 +315,13 @@ async function planRestart(): Promise<{ plan: RestartPlan } | { error: string }>
 
   if (!botctlExists()) {
     return {
-      error: 'Bot control script not found\\.\n\nExpected at `scripts/telecoder\\-botctl\\.sh`\\.',
+      error: new EntityText()
+        .add('Bot control script not found.')
+        .newline(2)
+        .add('Expected at ')
+        .code('scripts/telecoder-botctl.sh')
+        .add('.')
+        .build(),
     };
   }
   return { plan: { kind: 'botctl' } };
@@ -330,13 +362,13 @@ async function performRestart(ctx: Context, scope: RestartScope): Promise<void> 
     // A restart can't make the launcher stale — only a build does that — but
     // it is the moment someone concludes everything is running current code.
     const warning = await staleLauncherWarning();
-    const note = warning ? `\n\n${esc(warning)}` : '';
+    const note = warning ? `\n\n${warning}` : '';
 
     if (scope === 'all') {
       if (config.AUTO_RESTORE_SESSION) {
-        await replyMd(ctx, `🔁 Restarting all bot instances\\.\n\n⏳ Sessions will be restored automatically\\.${note}`);
+        await ctx.reply(`🔁 Restarting all bot instances.\n\n⏳ Sessions will be restored automatically.${note}`);
       } else {
-        await replyMd(ctx, `🔁 Restarting all bot instances\\.\n\n⏳ Please wait ~10 seconds\\.${note}`);
+        await ctx.reply(`🔁 Restarting all bot instances.\n\n⏳ Please wait ~10 seconds.${note}`);
         await sendRestoreButtons(ctx);
       }
       // Marker writing for sibling bots happens in the launcher — it has the
@@ -346,10 +378,10 @@ async function performRestart(ctx: Context, scope: RestartScope): Promise<void> 
     }
 
     if (config.AUTO_RESTORE_SESSION) {
-      await replyMd(ctx, `🔁 Restarting this bot instance\\.\n\n⏳ Session will be restored automatically\\.${note}`);
+      await ctx.reply(`🔁 Restarting this bot instance.\n\n⏳ Session will be restored automatically.${note}`);
       writeReloadMarker();
     } else {
-      await replyMd(ctx, `🔁 Restarting this bot instance\\.\n\n⏳ Other bots will not be affected\\. Please wait ~10 seconds\\.${note}`);
+      await ctx.reply(`🔁 Restarting this bot instance.\n\n⏳ Other bots will not be affected. Please wait ~10 seconds.${note}`);
       await sendRestoreButtons(ctx);
     }
 
@@ -360,15 +392,24 @@ async function performRestart(ctx: Context, scope: RestartScope): Promise<void> 
   // Single-instance mode — systemd restarts us, or botctl starts a successor
   const planned = await planRestart();
   if ('error' in planned) {
-    await replyMd(ctx, `❌ Cannot restart\\.\n\n${planned.error}`);
+    await replyFormatted(ctx, new EntityText().add('❌ Cannot restart.').newline(2).append(planned.error).build());
     return;
   }
 
   if (config.AUTO_RESTORE_SESSION) {
-    await replyMd(ctx, '🔁 Restarting bot\\.\n\n⏳ Session will be restored automatically\\.');
+    await ctx.reply('🔁 Restarting bot.\n\n⏳ Session will be restored automatically.');
     writeReloadMarker();
   } else {
-    await replyMd(ctx, '🔁 Restarting bot\\.\n\n⏳ Please wait at least *10\\-15 seconds* before checking status or resuming\\.');
+    await replyFormatted(
+      ctx,
+      new EntityText()
+        .add('🔁 Restarting bot.')
+        .newline(2)
+        .add('⏳ Please wait at least ')
+        .bold('10-15 seconds')
+        .add(' before checking status or resuming.')
+        .build(),
+    );
     await sendRestoreButtons(ctx);
   }
 
@@ -382,9 +423,23 @@ export async function handleRestartBot(ctx: Context): Promise<void> {
   if (args && !isMainThread && args.toLowerCase() !== 'all' && args.toLowerCase() !== 'one' && args.toLowerCase() !== 'this') {
     const result = await requestSiblingRestart(args, config.AUTO_RESTORE_SESSION);
     if (result.success) {
-      await replyMd(ctx, `🔁 Restarting *${esc(result.name ?? args)}*\\.\\.\\. it should be back in ~10 seconds\\.`);
+      await replyFormatted(
+        ctx,
+        new EntityText()
+          .add('🔁 Restarting ')
+          .bold(result.name ?? args)
+          .add('... it should be back in ~10 seconds.')
+          .build(),
+      );
     } else {
-      await replyMd(ctx, `❌ Could not restart *${esc(args)}*: ${esc(result.reason ?? 'unknown error')}`);
+      await replyFormatted(
+        ctx,
+        new EntityText()
+          .add('❌ Could not restart ')
+          .bold(args)
+          .add(`: ${result.reason ?? 'unknown error'}`)
+          .build(),
+      );
     }
     return;
   }
@@ -488,8 +543,8 @@ function runBuild(): Promise<void> {
  * the copy this process started with, which stays true for every later build
  * until someone restarts it.
  *
- * Empty whenever the launcher is current or can't be asked, and in plain text:
- * callers that reply in MarkdownV2 escape it themselves.
+ * Empty whenever the launcher is current or can't be asked. Plain text, which
+ * callers append as it is.
  */
 async function staleLauncherWarning(): Promise<string> {
   if (!await launcherIsStale()) return '';
@@ -546,7 +601,14 @@ async function performRebuild(ctx: Context, scope: RebuildScope): Promise<void> 
   // still alive to say it.
   const planned = await planRestart();
   if ('error' in planned) {
-    await replyMd(ctx, `✅ Build succeeded, but the bot cannot restart itself\\.\n\n${planned.error}`);
+    await replyFormatted(
+      ctx,
+      new EntityText()
+        .add('✅ Build succeeded, but the bot cannot restart itself.')
+        .newline(2)
+        .append(planned.error)
+        .build(),
+    );
     return;
   }
 

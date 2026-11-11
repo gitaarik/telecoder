@@ -3,13 +3,13 @@
  *
  * Each of auto-resume, auto-continue, the interrupted-task notice and the
  * restart confirmation had its own copy of the allowlist set and the
- * thread-options object, and three of them repeated the same
- * try-MarkdownV2-then-fall-back-to-plain-text delivery loop.
+ * thread-options object, and three of them repeated the same chunked
+ * delivery loop.
  */
 
 import type { Bot } from 'grammy';
 import { config } from '../config.js';
-import { splitMessage, escapeMarkdownV2, processMessageForTelegram } from '../telegram/markdown.js';
+import { sendParts, sendMarkdown } from '../telegram/send.js';
 
 /** Options spread into a sendMessage call to keep a reply in its forum thread. */
 export type ThreadOpts = { message_thread_id?: number };
@@ -28,16 +28,14 @@ export function threadOpts(threadId: number | undefined): ThreadOpts {
 }
 
 /**
- * Deliver a possibly-long block of text, preferring MarkdownV2 and falling
- * back to unformatted chunks if Telegram rejects the markup.
+ * Deliver a possibly-long block of text, split into as many messages as it
+ * needs.
  *
- * `mode` picks how the text becomes MarkdownV2: 'escape' treats it as literal
- * user input (so a stray `*` stays a `*`), 'render' runs it through the same
- * formatter normal assistant responses use, preserving bold/code/links.
- *
- * On the first parse failure it abandons the formatted attempt entirely and
- * re-sends the whole text as plain chunks, rather than continuing to push
- * parts that will fail the same way.
+ * `mode` picks how the text is formatted: 'escape' treats it as literal user
+ * input (so a stray `*` stays a `*`), 'render' runs it through the same
+ * markdown-to-entities conversion normal assistant responses use, preserving
+ * bold/code/links. A part whose formatting Telegram refuses goes out again as
+ * plain text (see ../telegram/send.ts).
  */
 export async function sendBlockWithPlainFallback(
   bot: Bot,
@@ -47,19 +45,11 @@ export async function sendBlockWithPlainFallback(
   label: string,
   mode: 'escape' | 'render' = 'escape',
 ): Promise<void> {
-  const parts = mode === 'render'
-    ? processMessageForTelegram(text)
-    : splitMessage(escapeMarkdownV2(text));
-
-  for (const part of parts) {
-    try {
-      await bot.api.sendMessage(chatId, part, { parse_mode: 'MarkdownV2', ...opts });
-    } catch (error) {
-      console.error(`[${label}] MarkdownV2 send failed, falling back to plain text:`, error);
-      for (const chunk of splitMessage(text)) {
-        await bot.api.sendMessage(chatId, chunk, opts);
-      }
-      return;
-    }
+  try {
+    if (mode === 'render') await sendMarkdown(bot.api, chatId, text, opts);
+    else await sendParts(bot.api, chatId, text, opts);
+  } catch (error) {
+    console.error(`[${label}] Failed to deliver block:`, error);
+    throw error;
   }
 }

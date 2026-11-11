@@ -45,27 +45,27 @@ describe('replyTooLargeToFetch', () => {
   it('names the size and the limit', async () => {
     await replyTooLargeToFetch(harness.ctx, 'Audio file', 172 * MB);
 
-    // The size arrives MarkdownV2-escaped; the escaping itself is asserted below.
     const [text, opts] = harness.reply.mock.calls[0];
-    expect(text).toContain('172');
+    expect(text).toContain('(172.0MB)');
     expect(text).toContain(String(TELEGRAM_DOWNLOAD_LIMIT_MB));
-    expect(opts).toEqual({ parse_mode: 'MarkdownV2' });
+    expect(opts.parse_mode).toBeUndefined();
   });
 
-  it('escapes the MarkdownV2 metacharacters in the size', async () => {
+  it('bolds the title with an entity rather than markup', async () => {
     await replyTooLargeToFetch(harness.ctx, 'Audio file', 172 * MB);
 
-    // Unescaped '(' or '.' makes Telegram reject the whole message with a 400,
-    // which would put us right back to sending nothing.
-    const [text] = harness.reply.mock.calls[0];
-    expect(text).toContain('\\(172\\.0MB\\)');
+    const [text, opts] = harness.reply.mock.calls[0];
+    expect(text).not.toContain('*');
+    expect(text).not.toContain('\\');
+    const bold = opts.entities.find((e: { type: string }) => e.type === 'bold');
+    expect(text.slice(bold.offset, bold.offset + bold.length)).toBe('Audio file too large');
   });
 
   it('omits the size when Telegram did not supply one', async () => {
     await replyTooLargeToFetch(harness.ctx, 'Audio file', undefined);
 
     const [text] = harness.reply.mock.calls[0];
-    expect(text).not.toContain('MB\\)');
+    expect(text).not.toContain('MB)');
   });
 });
 

@@ -12,12 +12,16 @@ import { Context } from 'grammy';
 import * as path from 'path';
 import { sessionManager, type Session } from '../../claude/session-manager.js';
 import { sessionHistory } from '../../claude/session-history.js';
-import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
+import { EntityText, type EntityMessage } from '../../telegram/entities.js';
+import { replyFormatted } from '../../telegram/send.js';
+import { taskListDisplay } from '../../telegram/task-list.js';
 import { homeProject } from '../../utils/home-project.js';
 
 /** Shown when a handler needs a working directory and no session supplies one. */
-export const NO_PROJECT_MESSAGE =
-  '⚠️ No project set\\.\n\nIf the bot restarted, use `/continue` or `/resume` to restore your last session\\.\nOr use `/project` to open a project first\\.';
+export const NO_PROJECT_MESSAGE: EntityMessage = new EntityText()
+  .add('⚠️ No project set.\n\nIf the bot restarted, use ').code('/continue').add(' or ').code('/resume')
+  .add(' to restore your last session.\nOr use ').code('/project').add(' to open a project first.')
+  .build();
 
 /**
  * Where the chat is: the conversation it's on — or, when a restart dropped
@@ -45,7 +49,7 @@ export function whereChatIs(sessionKey: string): { projectPath: string; sessionI
 export async function requireActiveSession(ctx: Context, sessionKey: string): Promise<Session | null> {
   const session = sessionManager.getSession(sessionKey);
   if (!session) {
-    await ctx.reply(NO_PROJECT_MESSAGE, { parse_mode: 'MarkdownV2' });
+    await replyFormatted(ctx, NO_PROJECT_MESSAGE);
     return null;
   }
   return session;
@@ -67,14 +71,15 @@ export async function requireSession(ctx: Context, sessionKey: string): Promise<
   const home = restoredSession ? undefined : homeProject();
   const session = restoredSession ?? (home ? sessionManager.createSession(sessionKey, home) : undefined);
   if (!session) {
-    await ctx.reply(NO_PROJECT_MESSAGE, { parse_mode: 'MarkdownV2' });
+    await replyFormatted(ctx, NO_PROJECT_MESSAGE);
     return null;
   }
   if (restored) {
-    await ctx.reply(
-      `↩️ Resumed previous session: *${esc(path.basename(session.workingDirectory))}*`,
-      { parse_mode: 'MarkdownV2' },
+    await replyFormatted(
+      ctx,
+      new EntityText().add('↩️ Resumed previous session: ').bold(path.basename(session.workingDirectory)).build(),
     );
+    await taskListDisplay.showRestored(ctx.api, sessionKey, session.claudeSessionId);
   }
   return session;
 }

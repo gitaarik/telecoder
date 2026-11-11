@@ -405,52 +405,57 @@ export function readLastAssistantTurnText(
  * than on disk — a fork's cut of one, which has no file until it is loaded.
  */
 export function lastAssistantTurnText(raw: string): string | undefined {
-  const lines = raw.split('\n');
-
-  // Walk forward; remember where the last real user prompt sits, then collect
-  // text from every assistant record after it. extractText filters out
-  // tool_use / tool_result / thinking blocks so we only keep prose.
-  //
-  // Crucial subtlety: `type:'user'` records aren't only user prompts — every
-  // tool_result is also delivered as a user-role record. If we treated each
-  // user record as a turn boundary we'd slice from the LAST tool_result,
-  // dropping all assistant text emitted earlier in the same turn. Filtering
-  // user records by `text.length > 0` discards tool_result-only records
-  // (extractText returns '' for those) and isolates real prompts.
-  //
-  // Prose alone isn't enough to prove a record is a prompt, though: a
-  // background task reporting in writes a user-role record full of text.
-  // isSyntheticUserRecord keeps those from stealing the boundary.
-  let lastPromptIdx = -1;
-  const records: { role: 'user' | 'assistant'; text: string }[] = [];
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    let rec: JsonlRecord;
-    try { rec = JSON.parse(line) as JsonlRecord; }
-    catch { continue; }
-    const role = rec.type === 'user' ? 'user' : rec.type === 'assistant' ? 'assistant' : null;
-    if (!role) continue;
-    // Synthetic API-error records carry the "API Error: ..." string as a
-    // plain text block — drop them so the error doesn't get joined into the
-    // assistant response shown to the user. The caller surfaces the error
-    // separately via readLastApiErrorFromJsonl.
-    if (isApiErrorRecord(rec)) continue;
-    const text = extractText(rec.message?.content);
-    records.push({ role, text });
-    if (role === 'user' && text.length > 0 && !isSyntheticUserRecord(rec)) {
-      lastPromptIdx = records.length - 1;
-    }
+  // Walk forward; every real user prompt starts the collection over, so what
+  // is left at the end is the text of every assistant record after the last
+  // one. turnRecordIn decides which records count as which.
+  let texts: string[] | undefined;
+  for (const line of raw.split('\n')) {
+    const rec = turnRecordIn(line);
+    if (rec?.kind === 'prompt') texts = [];
+    else if (rec?.kind === 'text') texts?.push(rec.text);
   }
+  if (!texts || texts.length === 0) return undefined;
+  return texts.join('\n\n');
+}
 
-  if (lastPromptIdx === -1) return undefined;
+/** What one log line means to a read of the turn's prose. */
+export type TurnRecord = { kind: 'prompt' } | { kind: 'text'; text: string };
 
-  const assistantTexts = records
-    .slice(lastPromptIdx + 1)
-    .filter((r) => r.role === 'assistant' && r.text.length > 0)
-    .map((r) => r.text);
-
-  if (assistantTexts.length === 0) return undefined;
-  return assistantTexts.join('\n\n');
+/**
+ * Classify one line of the log for {@link lastAssistantTurnText}: a real user
+ * prompt, which starts a turn, an assistant record carrying prose, or neither.
+ * Exported so the PTY stream (pty-stream.ts) reads a turn's records as they
+ * land by exactly the rules the end-of-turn read uses — the live message then
+ * converges on the final one rather than disagreeing with it.
+ *
+ * Crucial subtlety: `type:'user'` records aren't only user prompts — every
+ * tool_result is also delivered as a user-role record. If we treated each
+ * user record as a turn boundary we'd slice from the LAST tool_result,
+ * dropping all assistant text emitted earlier in the same turn. Requiring
+ * prose (extractText returns '' for tool_result-only records) isolates real
+ * prompts.
+ *
+ * Prose alone isn't enough to prove a record is a prompt, though: a
+ * background task reporting in writes a user-role record full of text.
+ * isSyntheticUserRecord keeps those from stealing the boundary.
+ *
+ * Synthetic API-error records carry the "API Error: ..." string as a plain
+ * text block — they are neither, so the error doesn't get joined into the
+ * assistant response shown to the user. The caller surfaces the error
+ * separately via readLastApiErrorFromJsonl.
+ */
+export function turnRecordIn(line: string): TurnRecord | undefined {
+  if (!line.trim()) return undefined;
+  let rec: JsonlRecord;
+  try { rec = JSON.parse(line) as JsonlRecord; }
+  catch { return undefined; }
+  if (rec.type !== 'user' && rec.type !== 'assistant') return undefined;
+  if (isApiErrorRecord(rec)) return undefined;
+  // extractText filters out tool_use / tool_result / thinking blocks.
+  const text = extractText(rec.message?.content);
+  if (!text) return undefined;
+  if (rec.type === 'assistant') return { kind: 'text', text };
+  return isSyntheticUserRecord(rec) ? undefined : { kind: 'prompt' };
 }
 
 /**

@@ -12,7 +12,6 @@ import {
   queueRequest,
   setAbortController,
 } from '../../claude/request-queue.js';
-import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
 import { getStreamingMode } from './command.handler.js';
 import { maybeSendVoiceReply } from '../../tts/voice-reply.js';
 import { transcribeFile } from '../../audio/transcribe.js';
@@ -62,14 +61,13 @@ export async function handleVoice(ctx: Context): Promise<void> {
   const fileSizeMB = fileSizeBytes / (1024 * 1024);
   if (fileSizeMB > config.VOICE_MAX_FILE_SIZE_MB) {
     await ctx.reply(
-      `❌ Voice note too large \\(${esc(fileSizeMB.toFixed(1))}MB\\)\\.\n\nPlease send shorter notes \\(max ${config.VOICE_MAX_FILE_SIZE_MB}MB\\)\\.`,
-      { parse_mode: 'MarkdownV2' }
+      `❌ Voice note too large (${fileSizeMB.toFixed(1)}MB).\n\nPlease send shorter notes (max ${config.VOICE_MAX_FILE_SIZE_MB}MB).`,
     );
     return;
   }
 
   // Acknowledge receipt
-  const ackMsg = await ctx.reply('🎤 Transcribing...', { parse_mode: undefined });
+  const ackMsg = await ctx.reply('🎤 Transcribing...');
 
   let tempFilePath: string | null = null;
 
@@ -102,12 +100,7 @@ export async function handleVoice(ctx: Context): Promise<void> {
     // Show full transcript if configured (uses smart Telegram chunking)
     if (config.VOICE_SHOW_TRANSCRIPT) {
       try {
-        await ctx.api.editMessageText(
-          chatId,
-          ackMsg.message_id,
-          '🎤 Transcript received\\.',
-          { parse_mode: 'MarkdownV2' }
-        );
+        await ctx.api.editMessageText(chatId, ackMsg.message_id, '🎤 Transcript received.');
       } catch {
         try {
           await ctx.api.deleteMessage(chatId, ackMsg.message_id);
@@ -163,14 +156,9 @@ export async function handleVoice(ctx: Context): Promise<void> {
 
     // Try to update ack message with error
     try {
-      await ctx.api.editMessageText(
-        chatId,
-        ackMsg.message_id,
-        `❌ ${errorMessage}`,
-        { parse_mode: undefined }
-      );
+      await ctx.api.editMessageText(chatId, ackMsg.message_id, `❌ ${errorMessage}`);
     } catch {
-      await ctx.reply(`❌ Voice error: ${esc(errorMessage)}`, { parse_mode: 'MarkdownV2' });
+      await ctx.reply(`❌ Voice error: ${errorMessage}`);
     }
   } finally {
     // Clean up temp file
@@ -195,7 +183,7 @@ async function handleTranscribeOnly(
   messageId: number,
   voice: { file_id: string; file_size?: number; mime_type?: string }
 ): Promise<void> {
-  const ackMsg = await ctx.reply('🎤 Transcribing...', { parse_mode: undefined });
+  const ackMsg = await ctx.reply('🎤 Transcribing...');
 
   let tempFilePath: string | null = null;
 
@@ -230,9 +218,9 @@ async function handleTranscribeOnly(
     const errorMessage = sanitizeError(error);
     console.error('[Transcribe] Voice ForceReply error:', errorMessage);
     try {
-      await ctx.api.editMessageText(chatId, ackMsg.message_id, `❌ ${errorMessage}`, { parse_mode: undefined });
+      await ctx.api.editMessageText(chatId, ackMsg.message_id, `❌ ${errorMessage}`);
     } catch {
-      await ctx.reply(`❌ Transcription error: ${esc(errorMessage)}`, { parse_mode: 'MarkdownV2' });
+      await ctx.reply(`❌ Transcription error: ${errorMessage}`);
     }
   } finally {
     if (tempFilePath && fs.existsSync(tempFilePath)) {

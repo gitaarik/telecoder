@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { Context } from 'grammy';
+import { GrammyError, type Context } from 'grammy';
 import { messageSender } from '../../src/telegram/message-sender.js';
 import { SUGGESTION_CARD_BUTTON } from '../../src/telegram/prompt-suggestion.js';
 
@@ -42,9 +42,23 @@ describe('sendSuggestionCard', () => {
     expect(ctx._reply).not.toHaveBeenCalled();
   });
 
-  it('retries unformatted when MarkdownV2 is rejected, keeping the button', async () => {
+  it('goes out with entities, never a parse mode', async () => {
+    const ctx = fakeCtx();
+    await messageSender.sendSuggestionCard(ctx, { id: 'abc', text: LONG, onButton: false });
+    const [, opts] = ctx._reply.mock.calls[0];
+    expect(opts.parse_mode).toBeUndefined();
+    expect(Array.isArray(opts.entities)).toBe(true);
+  });
+
+  it('retries unformatted when Telegram refuses the entities, keeping the button', async () => {
+    const refused = new GrammyError(
+      "Call to 'sendMessage' failed!",
+      { ok: false, error_code: 400, description: "Bad Request: can't parse entities" },
+      'sendMessage',
+      {},
+    );
     const reply = vi.fn()
-      .mockRejectedValueOnce(new Error("Bad Request: can't parse entities"))
+      .mockRejectedValueOnce(refused)
       .mockResolvedValueOnce({ message_id: 2 });
     const ctx = fakeCtx(reply);
 
@@ -53,7 +67,7 @@ describe('sendSuggestionCard', () => {
     expect(reply).toHaveBeenCalledTimes(2);
     const [text, opts] = reply.mock.calls[1];
     expect(text).toContain(LONG);
-    expect(opts.parse_mode).toBeUndefined();
+    expect(opts.entities).toEqual([]);
     expect(opts.reply_markup.inline_keyboard[0][0].callback_data).toBe('sgt:abc');
   });
 

@@ -401,12 +401,11 @@ export async function sendToAgent(
       logAt('basic', `[Claude] Resuming session ${existingSessionId} for session ${sessionKey}`);
     }
 
-    // The curated set for non-dangerous mode. Current CLIs dropped TodoWrite for
-    // the Task* list tools, and a CLI ignores tool names it doesn't know — so
-    // both are listed, and either side of that change keeps a todo tool.
+    // The curated set for non-dangerous mode. The Task* tools keep Claude Code's
+    // task list, which the chat mirrors (telegram/task-list.ts).
     const explicitTools = [
       'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Task', 'Skill',
-      'TodoWrite', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate',
+      'TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate',
       'WebFetch', 'WebSearch', 'NotebookEdit',
     ];
 
@@ -575,7 +574,8 @@ export async function sendToAgent(
       resume: existingSessionId,
       ...(permissionMode === 'bypassPermissions' ? { allowDangerouslySkipPermissions: true } : {}),
       ...(sdkExecutable ? { pathToClaudeCodeExecutable: sdkExecutable } : {}),
-      includePartialMessages: config.CLAUDE_SDK_INCLUDE_PARTIAL || getLogLevel() === 'trace',
+      // Text deltas, so the reply can be shown while it is being written.
+      includePartialMessages: true,
       hooks,
       ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
       stderr: (data: string) => {
@@ -638,13 +638,14 @@ export async function sendToAgent(
     const backgroundedToolUseIds = new Set<string>();
     // Track tool_use_id → tool name so we can label tool_result blocks that
     // arrive later on user messages. Tools whose results we never want to
-    // surface (TodoWrite has a dedicated UI; topic/ask_user return noise)
+    // surface (the Task* list tools have a dedicated card; topic/ask_user
+    // return noise)
     // are kept in `silentToolUseIds` and skipped at emit-time.
     const toolUseIdToName = new Map<string, string>();
     const toolUseIdToInput = new Map<string, Record<string, unknown>>();
     const silentToolUseIds = new Set<string>();
     const SILENT_TOOL_NAMES = new Set([
-      'TodoWrite',
+      'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet',
       'mcp__telecoder-tools__telecoder_set_topic',
       'mcp__telecoder-tools__telecoder_ask_user',
     ]);
@@ -686,6 +687,9 @@ export async function sendToAgent(
     // we send tool calls to the action log, so without this the narration
     // collapses into one wall of text.
     let pendingTextSeparator = false;
+    // The text block being streamed right now, from its deltas. The finished
+    // block arrives in the assistant message and replaces it in fullText.
+    let partialText = '';
 
     // Process response messages
     for await (const responseMessage of response) {
@@ -734,6 +738,7 @@ export async function sendToAgent(
                 fullText += '\n\n───\n\n';
               }
               pendingTextSeparator = false;
+              partialText = '';
               fullText += block.text;
               onProgress?.(fullText);
               // Flush immediately on first text so early restarts have something
@@ -997,6 +1002,18 @@ export async function sendToAgent(
         logAt('basic', '[Claude] Auth status', responseMessage);
       } else if (responseMessage.type === 'stream_event') {
         logAt('trace', '[Claude] Stream event', responseMessage.event);
+        // The main thread's text as it is typed; a sub-agent's and a sub-turn's
+        // are not part of the reply.
+        const event = responseMessage.event;
+        if (!inSubTurn && responseMessage.parent_tool_use_id === null) {
+          if (event.type === 'content_block_start') {
+            partialText = '';
+          } else if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+            partialText += event.delta.text;
+            const separator = pendingTextSeparator && fullText.length > 0 ? '\n\n───\n\n' : '';
+            onProgress?.(fullText + separator + partialText);
+          }
+        }
       } else if (responseMessage.type === 'result') {
         watchdog?.stop();
         // SDK ≥ v0.2.91 exposes terminal_reason on result messages; surface it

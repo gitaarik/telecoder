@@ -10,6 +10,8 @@
 
 import { describe, it, expect, vi, afterAll, beforeEach } from 'vitest';
 import type { Context } from 'grammy';
+import type { MessageEntity } from 'grammy/types';
+import { marked } from '../helpers/entity-marks.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -99,23 +101,30 @@ function chatWith(lines: string[]): { chat: number; key: string; sessionId: stri
 
 type Button = { text: string; callback_data: string };
 type Sent = { text: string; keyboard: Button[][] };
+type SentOptions = { entities?: MessageEntity[]; reply_markup?: { inline_keyboard: Button[][] } };
 
 /** Send `command` in `chat`; the message it answers with comes back. */
 async function send(chat: number, command = '/prompts'): Promise<Sent> {
-  const reply = vi.fn(async (_text: string, _opts?: { reply_markup?: { inline_keyboard: Button[][] } }) => ({ message_id: 900 }));
+  const reply = vi.fn(async (_text: string, _opts?: SentOptions) => ({ message_id: 900 }));
   await handlePromptsCommand({ chat: { id: chat }, message: { text: command }, reply } as unknown as Context);
   expect(reply).toHaveBeenCalledTimes(1);
   const [text, options] = reply.mock.calls[0]!;
-  return { text, keyboard: options?.reply_markup?.inline_keyboard ?? [] };
+  return { text: marked(text, options?.entities), keyboard: options?.reply_markup?.inline_keyboard ?? [] };
 }
 
 function tap(chat: number, data: string, messageId = 500) {
+  // An edit of the tapped message, as the bot makes it through ctx.api,
+  // recorded as (text, options) like ctx.editMessageText takes them.
+  const editMessageText = vi.fn(async (_text: string, _opts?: SentOptions) => true);
   return {
     chat: { id: chat },
     from: { id: 1 },
-    callbackQuery: { data, message: { message_id: messageId } },
+    callbackQuery: { data, message: { message_id: messageId, chat: { id: chat } } },
     answerCallbackQuery: vi.fn(async (_opts?: { text?: string; show_alert?: boolean }) => true),
-    editMessageText: vi.fn(async (_text: string, _opts?: { reply_markup?: { inline_keyboard: Button[][] } }) => true),
+    editMessageText,
+    api: {
+      editMessageText: (_chat: number, _id: number, text: string, opts?: SentOptions) => editMessageText(text, opts),
+    },
     reply: vi.fn(async () => ({ message_id: messageId + 1 })),
   };
 }
@@ -125,12 +134,11 @@ async function press(chat: number, data: string, messageId = 500): Promise<Sent 
   const fake = tap(chat, data, messageId);
   await handlePromptsCallback(fake as unknown as Context);
   const [text, options] = fake.editMessageText.mock.lastCall ?? ['', undefined];
-  return { text, keyboard: options?.reply_markup?.inline_keyboard ?? [], fake };
+  return { text: marked(text, options?.entities), keyboard: options?.reply_markup?.inline_keyboard ?? [], fake };
 }
 
-const plain = (text: string) => text.replace(/\\(.)/g, '$1');
 /** The list's lines, a prompt each. */
-const lines = (text: string) => plain(text).split('\n').filter((line) => /^\*[A-Z]\* · /.test(line));
+const lines = (text: string) => text.split('\n').filter((line) => /^\*[A-Z]\* · /.test(line));
 const button = (sent: Sent, text: string) => sent.keyboard.flat().find((b) => b.text === text)!.callback_data;
 const buttonTexts = (sent: Sent) => sent.keyboard.map((row) => row.map((b) => b.text));
 const uuidsIn = (sessionId: string) => fs.readFileSync(sessionJsonlPath(PROJECT, sessionId), 'utf-8').trim().split('\n')
@@ -205,10 +213,10 @@ describe('opening a prompt', () => {
     const list = await send(chat);
     const opened = await press(chat, button(list, 'B'));
 
-    expect(plain(opened.text)).toContain('💬 *B* · earlier\n');
-    expect(plain(opened.text)).toContain('*You:* Split it');
-    expect(plain(opened.text)).toContain('Split into tokenizer.ts and parser.ts.');
-    expect(plain(opened.text)).not.toContain('Added the tests.');
+    expect(opened.text).toContain('💬 *B* · earlier\n');
+    expect(opened.text).toContain('*You:* Split it');
+    expect(opened.text).toContain('Split into tokenizer.ts and parser.ts.');
+    expect(opened.text).not.toContain('Added the tests.');
     expect(buttonTexts(opened)).toEqual([['🌱 New branch from here'], ['⬅️ Back to the prompts']]);
 
     // And back again, the same list.
@@ -226,7 +234,7 @@ describe('opening a prompt', () => {
     const list = await send(chat);
     const opened = await press(chat, button(list, 'B'));
 
-    expect(plain(opened.text)).toContain('💬 *B* · earlier · being answered now');
+    expect(opened.text).toContain('💬 *B* · earlier · being answered now');
     expect(buttonTexts(opened)).toEqual([['⬅️ Back to the prompts']]);
   });
 });
@@ -250,9 +258,9 @@ describe('branching from a prompt', () => {
     expect(fs.readFileSync(sessionJsonlPath(PROJECT, sessionId), 'utf-8')).toBe(before);
 
     // The banner where the branch starts, with its own 🍴 and 🌳.
-    expect(plain(branch.text)).toContain('New branch');
-    expect(plain(branch.text)).toContain('*You:* Plan the parser');
-    expect(plain(branch.text)).toContain("What's above is the conversation you branched from");
+    expect(branch.text).toContain('New branch');
+    expect(branch.text).toContain('*You:* Plan the parser');
+    expect(branch.text).toContain("What's above is the conversation you branched from");
     expect(buttonTexts(branch)).toEqual([['🍴 Fork', '🌳 Tree']]);
     expect(messageOffsets.lookup(key, 700)).toMatchObject({ claudeSessionId: branched, lineCount: 3 });
     expect(branch.fake.answerCallbackQuery).toHaveBeenCalledWith({ text: 'Branched.' });
@@ -266,11 +274,11 @@ describe('branching from a prompt', () => {
       '*A* · _earlier_ 🌿 — Plan the parser',
       '*B* · _earlier_ — Split it',
     ]);
-    expect(plain(original.text)).toContain('_🌿 a branch splits off here_');
+    expect(original.text).toContain('_🌿 a branch splits off here_');
     expect(button(original, '🌳 Show the tree')).toBe('tree:f:p1');
 
     const split = await press(chat, button(original, 'A'));
-    expect(plain(split.text)).toContain('🌿 Another branch splits off here.');
+    expect(split.text).toContain('🌿 Another branch splits off here.');
     expect(buttonTexts(split)).toEqual([['🌱 New branch from here'], ['🌳 Show the tree'], ['⬅️ Back to the prompts']]);
   });
 
@@ -283,14 +291,14 @@ describe('branching from a prompt', () => {
     const opened = await press(chat, button(await send(chat), 'B'));
     await press(chat, button(opened, '🌱 New branch from here'));
 
-    const reply = vi.fn(async (_text: string, _opts?: unknown) => ({}));
+    const reply = vi.fn(async (_text: string, _opts?: SentOptions) => ({}));
     await handleRecap({ chat: { id: chat }, message: { text: '/recap' }, reply } as unknown as Context);
-    const sent = reply.mock.calls.map(([text]) => plain(text).trim());
+    const sent = reply.mock.calls.map(([text, opts]) => marked(text, opts?.entities).trim());
     expect(sent).toEqual([
       '📋 *Recap* — last 2 exchanges',
-      '>*You:* Plan the parser',
+      '*You:* Plan the parser',
       'Two stages: tokenize, then parse.',
-      '>*You:* Split it',
+      '*You:* Split it',
       'Split into tokenizer.ts and parser.ts.',
     ]);
   });
@@ -321,7 +329,7 @@ describe('branching from a prompt', () => {
     const branched = sessionManager.getSession(key)!.claudeSessionId!;
     expect(branched).not.toBe(sessionId);
     expect(uuidsIn(branched)).toEqual(['m1', 'n1']);
-    expect(plain(branch.text)).toContain("What's above is the conversation you were in");
+    expect(branch.text).toContain("What's above is the conversation you were in");
   });
 });
 
@@ -341,7 +349,7 @@ describe('a stale button', () => {
 
     const opened = await press(chat, button(list, 'A'));
     // Still that prompt, though the last one of the list is a newer one now.
-    expect(plain(opened.text)).toMatch(/^💬 earlier\n/);
-    expect(plain(opened.text)).toContain('*You:* second');
+    expect(opened.text).toMatch(/^💬 earlier\n/);
+    expect(opened.text).toContain('*You:* second');
   });
 });

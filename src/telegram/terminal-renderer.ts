@@ -20,7 +20,12 @@ export const TOOL_ICONS: Record<string, string> = {
   Bash: '💻',
   Task: '📋',
   Skill: '🛠️',
-  TodoWrite: '📝',
+
+  // Task list (Claude Code's checklist, mirrored by telegram/task-list.ts)
+  TaskCreate: '📝',
+  TaskUpdate: '📝',
+  TaskList: '📝',
+  TaskGet: '📝',
 
   // Web
   WebFetch: '🌐',
@@ -352,7 +357,10 @@ export function getToolAction(toolName: string): string {
     Glob: 'Finding files',
     Task: 'Running task',
     Skill: 'Running skill',
-    TodoWrite: 'Todos',
+    TaskCreate: 'Adding task',
+    TaskUpdate: 'Updating task',
+    TaskList: 'Listing tasks',
+    TaskGet: 'Reading task',
     WebFetch: 'Fetching',
     WebSearch: 'Searching web',
     NotebookEdit: 'Editing notebook',
@@ -398,6 +406,17 @@ export function extractToolDetail(toolName: string, input: Record<string, unknow
     case 'Task':
     case 'Agent': // subagent tool — renamed Task→Agent in newer Claude Code builds
       return verbose ? str('description') : truncateCommand(str('description'));
+    case 'TaskCreate':
+      return verbose ? str('subject') : truncateCommand(str('subject'));
+    case 'TaskUpdate': {
+      const id = str('taskId');
+      const status = str('status')?.replace('_', ' ');
+      return id ? `#${id}${status ? ` ${status}` : ''}` : undefined;
+    }
+    case 'TaskGet': {
+      const id = str('taskId');
+      return id ? `#${id}` : undefined;
+    }
     case 'mcp__telecoder-tools__telecoder_ask_user':
       return verbose ? str('question') : truncateCommand(str('question'));
     case 'mcp__telecoder-tools__telecoder_set_topic':

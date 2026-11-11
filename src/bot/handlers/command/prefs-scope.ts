@@ -12,7 +12,8 @@
  */
 
 import { Context } from 'grammy';
-import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
+import { EntityText, type EntityMessage } from '../../../telegram/entities.js';
+import { editCallbackMessage } from '../../../telegram/send.js';
 import {
   broadcastPrefsChange,
   siblingBotNames,
@@ -73,22 +74,28 @@ export function buildApplyToAllKeyboard(
 }
 
 /**
- * Relay a change to the other instances and describe what happened, as an
- * escaped MarkdownV2 block to append to the local confirmation.
+ * Relay a change to the other instances and describe what happened, as a
+ * block (opening with a blank line) to append to the local confirmation.
  */
-export async function applyToAllBots(change: PrefsChange): Promise<string> {
+export async function applyToAllBots(change: PrefsChange): Promise<EntityMessage> {
   const result = await broadcastPrefsChange(change);
   return formatBroadcastResult(result);
 }
 
 /** Render a broadcast outcome. Exported for tests. */
-export function formatBroadcastResult(result: PrefsBroadcastResult): string {
-  const nothingElse = '\n\n_This is the only bot running, so there was nothing else to apply it to\\._';
+export function formatBroadcastResult(result: PrefsBroadcastResult): EntityMessage {
+  const nothingElse = new EntityText()
+    .add('\n\n')
+    .italic('This is the only bot running, so there was nothing else to apply it to.')
+    .build();
   if (!result.multiInstance) return nothingElse;
 
   if (result.timedOut) {
-    return '\n\n⚠️ The launcher didn\'t answer, so the other bots were *not* changed\\. ' +
-      'It may be running code from before fleet\\-wide settings existed — /restartbot all picks it up\\.';
+    return new EntityText()
+      .add('\n\n⚠️ The launcher didn\'t answer, so the other bots were ')
+      .bold('not')
+      .add(' changed. It may be running code from before fleet-wide settings existed — /restartbot all picks it up.')
+      .build();
   }
 
   // A launcher with a one-instance config: multi-instance plumbing, nobody on
@@ -97,35 +104,38 @@ export function formatBroadcastResult(result: PrefsBroadcastResult): string {
     return nothingElse;
   }
 
-  const lines: string[] = [];
+  // Each line opens with its own newline; this one more sets the block off
+  // from the confirmation with a blank line.
+  const b = new EntityText().add('\n');
 
   if (result.applied.length > 0) {
-    const names = result.applied.map((o) => esc(o.name)).join(', ');
-    lines.push(`🌐 Also applied to *${result.applied.length}* other bot${result.applied.length === 1 ? '' : 's'}: ${names}`);
+    const names = result.applied.map((o) => o.name).join(', ');
+    b.add('\n🌐 Also applied to ')
+      .bold(String(result.applied.length))
+      .add(` other bot${result.applied.length === 1 ? '' : 's'}: ${names}`);
 
     // A bot mid-turn keeps its running session on the old value; say so rather
     // than let the next answer from it look like the setting didn't take.
     const busy = result.applied.filter((o) => (o.busy ?? 0) > 0);
     if (busy.length > 0) {
-      lines.push(
-        `_${busy.map((o) => esc(o.name)).join(', ')} ${busy.length === 1 ? 'is' : 'are'} mid\\-turn — ` +
-        `the running session keeps the old value until it restarts\\._`,
+      b.add('\n').italic(
+        `${busy.map((o) => o.name).join(', ')} ${busy.length === 1 ? 'is' : 'are'} mid-turn — ` +
+        'the running session keeps the old value until it restarts.',
       );
     }
   } else {
-    lines.push('🌐 No other bot took the change\\.');
+    b.add('\n🌐 No other bot took the change.');
   }
 
   for (const o of result.skipped) {
-    lines.push(`⚠️ Not applied to *${esc(o.name)}*${o.reason ? ` — ${esc(o.reason)}` : ''}\\.`);
+    b.add('\n⚠️ Not applied to ').bold(o.name).add(`${o.reason ? ` — ${o.reason}` : ''}.`);
   }
 
   if (result.unreachable.length > 0) {
-    const names = result.unreachable.map((n) => esc(n)).join(', ');
-    lines.push(`⚠️ Not running, so unchanged: ${names}\\.`);
+    b.add(`\n⚠️ Not running, so unchanged: ${result.unreachable.join(', ')}.`);
   }
 
-  return `\n\n${lines.join('\n')}`;
+  return b.build();
 }
 
 /**
@@ -137,14 +147,23 @@ export function hasSiblings(): boolean {
 }
 
 /**
- * "✅ Model set to *opus*", plus " for *TeleCoder 2*" once there is more than
- * one bot it could have meant. Shared so the confirmation reads the same
+ * "✅ Model set to **opus**", plus " for **TeleCoder 2**" once there is more
+ * than one bot it could have meant. Shared so the confirmation reads the same
  * whether it was typed, tapped, or rebuilt after a fan-out.
  */
-export function prefsConfirmation(setting: PrefsChange['setting'], displayLabel: string): string {
+export function prefsConfirmation(setting: PrefsChange['setting'], displayLabel: string): EntityMessage {
   const what = setting === 'model' ? 'Model set to' : 'Effort set to';
-  const where = hasSiblings() ? ` for *${esc(config.BOT_NAME)}*` : '';
-  return `✅ ${what} *${esc(displayLabel)}*${where}`;
+  return withBotName(new EntityText().add(`✅ ${what} `).bold(displayLabel)).build();
+}
+
+/** The confirmation for clearing the effort preference, worded like {@link prefsConfirmation}. */
+export function effortResetConfirmation(): EntityMessage {
+  return withBotName(new EntityText().add('✅ Effort reset to ').bold('auto').add(' (CLI default)')).build();
+}
+
+/** " for **<bot>**" when there are siblings it could be confused with. */
+function withBotName(b: EntityText): EntityText {
+  return hasSiblings() ? b.add(' for ').bold(config.BOT_NAME) : b;
 }
 
 /** Human-readable name for a value, matching what the pickers show. */
@@ -202,10 +221,11 @@ export async function handlePrefsAllCallback(ctx: Context): Promise<void> {
 
   const label = await describeValue(sessionKey, setting, value);
   const confirmation = value === null && setting === 'effort'
-    ? `✅ Effort reset to *auto* \\(CLI default\\)${hasSiblings() ? ` for *${esc(config.BOT_NAME)}*` : ''}`
+    ? effortResetConfirmation()
     : prefsConfirmation(setting, label);
-  const restartNote = needsPtyRestart(sessionKey) ? PTY_RESTART_NOTE : '';
   const summary = await applyToAllBots(change);
 
-  await ctx.editMessageText(`${confirmation}${restartNote}${summary}`, { parse_mode: 'MarkdownV2' });
+  const message = new EntityText().append(confirmation);
+  if (needsPtyRestart(sessionKey)) message.append(PTY_RESTART_NOTE);
+  await editCallbackMessage(ctx, message.append(summary).build());
 }

@@ -58,7 +58,8 @@ import {
 import { sessionManager } from '../../claude/session-manager.js';
 import { clearConversation } from '../../providers/provider-router.js';
 import { isAllowedUser } from '../../utils/user-roster.js';
-import { escapeMarkdownV2 as esc, buildExpandableSyntax } from '../../telegram/markdown.js';
+import { EntityText, joinMessages, plain, type EntityMessage } from '../../telegram/entities.js';
+import { editCallbackMessage, replyFormatted, sendFormatted } from '../../telegram/send.js';
 import { cutLabel, promptLabel } from '../../telegram/prompt-label.js';
 import { restoreTopicAndRefreshBotName } from './command.handler.js';
 import { getSessionTopic } from './command.handler.js';
@@ -92,7 +93,7 @@ function canForkToThread(ctx: Context): boolean {
 }
 
 interface ForkOfferTexts {
-  text: string;
+  text: EntityMessage;
   keyboard: { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> };
 }
 
@@ -129,7 +130,7 @@ export function buildTargetPicker(anchorMsgId: number): {
   ];
 
   return {
-    lines: letteredOptionLines(targets).map((line) => esc(line)),
+    lines: letteredOptionLines(targets),
     keyboard: [
       ...buildLetteredKeyboard(targets),
       [{ text: 'Cancel', callback_data: 'fork:cancel' }],
@@ -144,20 +145,20 @@ export function buildTargetPicker(anchorMsgId: number): {
  */
 function buildForkOffer(fork: PendingFork, mode: 'lazy' | 'proactive'): ForkOfferTexts {
   const projectLabel = path.basename(fork.projectPath);
-  const topicLine = fork.topic ? `\n*Topic:* ${esc(fork.topic)}` : '';
-  const previewLine = fork.assistantPreview
-    ? `\n\n_Last assistant message:_\n${esc(fork.assistantPreview.substring(0, 200))}`
-    : '';
-
-  const tail = mode === 'lazy'
-    ? `\n\n_Your message was held back so it doesn't get attached to the wrong context\\. Re\\-send it after deciding\\._`
-    : '';
+  const text = new EntityText()
+    .add('📦 ').bold(`Fork received from ${fork.fromBotName}`).newline(2)
+    .add('Project: ').bold(projectLabel);
+  if (fork.topic) text.newline().bold('Topic:').add(` ${fork.topic}`);
+  if (fork.assistantPreview) {
+    text.newline(2).italic('Last assistant message:').newline().add(fork.assistantPreview.substring(0, 200));
+  }
+  text.newline(2).add("Accepting will replace this bot's current conversation (saved to /resume history). Decline to discard the fork.");
+  if (mode === 'lazy') {
+    text.newline(2).italic("Your message was held back so it doesn't get attached to the wrong context. Re-send it after deciding.");
+  }
 
   return {
-    text:
-      `📦 *Fork received from ${esc(fork.fromBotName)}*\n\n` +
-      `Project: *${esc(projectLabel)}*${topicLine}${previewLine}\n\n` +
-      `Accepting will replace this bot's current conversation \\(saved to /resume history\\)\\. Decline to discard the fork\\.${tail}`,
+    text: text.build(),
     keyboard: {
       inline_keyboard: [
         [
@@ -222,11 +223,14 @@ async function onPick(ctx: Context): Promise<void> {
   const projectLabel = path.basename(offset.projectPath);
 
   const picker = buildTargetPicker(msgId);
-  await ctx.reply(
-    `🍴 *Fork conversation*\n\nFrom this point in *${esc(projectLabel)}* — pick where to branch it:\n\n` +
-      picker.lines.join('\n'),
+  await replyFormatted(
+    ctx,
+    new EntityText()
+      .add('🍴 ').bold('Fork conversation').newline(2)
+      .add('From this point in ').bold(projectLabel).add(' — pick where to branch it:').newline(2)
+      .add(picker.lines.join('\n'))
+      .build(),
     {
-      parse_mode: 'MarkdownV2',
       reply_parameters: { message_id: msgId },
       reply_markup: { inline_keyboard: picker.keyboard },
     },
@@ -256,22 +260,27 @@ async function onTo(ctx: Context, targetBotId: string, sourceMsgId: number): Pro
 
   const projectLabel = path.basename(offset.projectPath);
   const isSelf = targetBotId === BOT_ID;
-  const text = toThread
-    ? `🍴 *Fork into a new thread?*\n\n` +
-      `This copies *${esc(projectLabel)}* up to that point into a new thread, with this thread's settings\\. ` +
-      `This thread carries on unchanged\\.`
-    : isSelf
-    ? `🍴 *Branch into a new conversation?*\n\n` +
-      `This copies *${esc(projectLabel)}* up to that point into a fresh conversation on this bot\\. ` +
-      `Your current conversation is saved to /resume history, and you continue from the branch point\\.`
-    : `🍴 *Fork to ${esc(target!.name)}?*\n\n` +
-      `This will copy the conversation in *${esc(projectLabel)}* up to that point and hand it off to *${esc(target!.name)}*\\.\n\n` +
-      `When you open *${esc(target!.name)}* and send any message, you'll get a prompt to accept the fork\\. ` +
-      `Accepting replaces *${esc(target!.name)}*'s current conversation \\(saved to its /resume history\\)\\.`;
+  const text = new EntityText();
+  if (toThread) {
+    text.add('🍴 ').bold('Fork into a new thread?').newline(2)
+      .add('This copies ').bold(projectLabel)
+      .add(" up to that point into a new thread, with this thread's settings. This thread carries on unchanged.");
+  } else if (isSelf) {
+    text.add('🍴 ').bold('Branch into a new conversation?').newline(2)
+      .add('This copies ').bold(projectLabel)
+      .add(' up to that point into a fresh conversation on this bot. '
+        + 'Your current conversation is saved to /resume history, and you continue from the branch point.');
+  } else {
+    const name = target!.name;
+    text.add('🍴 ').bold(`Fork to ${name}?`).newline(2)
+      .add('This will copy the conversation in ').bold(projectLabel)
+      .add(' up to that point and hand it off to ').bold(name).add('.').newline(2)
+      .add('When you open ').bold(name).add(" and send any message, you'll get a prompt to accept the fork. ")
+      .add('Accepting replaces ').bold(name).add("'s current conversation (saved to its /resume history).");
+  }
 
   try {
-    await ctx.editMessageText(text, {
-      parse_mode: 'MarkdownV2',
+    await editCallbackMessage(ctx, text.build(), {
       reply_markup: {
         inline_keyboard: [
           [{ text: '✅ Confirm fork', callback_data: `fork:confirm:${targetBotId}:${sourceMsgId}` }],
@@ -342,11 +351,16 @@ async function onConfirm(ctx: Context, targetBotId: string, sourceMsgId: number)
 
   const projectLabel = path.basename(offset.projectPath);
   try {
-    await ctx.editMessageText(
-      `✅ *Forked to ${esc(target!.name)}*\n\n` +
-        `Open *${esc(target!.name)}* and send any message — you'll get the option to accept the forked conversation \\(${esc(projectLabel)}\\)\\.\n\n` +
-        `_This conversation carries on here unchanged\\._`,
-      { parse_mode: 'MarkdownV2', reply_markup: FORK_KEYBOARD },
+    await editCallbackMessage(
+      ctx,
+      new EntityText()
+        .add('✅ ').bold(`Forked to ${target!.name}`).newline(2)
+        .add('Open ').bold(target!.name)
+        .add(` and send any message — you'll get the option to accept the forked conversation (${projectLabel}).`)
+        .newline(2)
+        .italic('This conversation carries on here unchanged.')
+        .build(),
+      { reply_markup: FORK_KEYBOARD },
     );
     // This confirmation stands for the same point as the message the fork was
     // taken from, and it's the one at the bottom of the chat — so it gets that
@@ -473,19 +487,19 @@ async function forkIntoThread(
   });
 
   const link = ctx.me?.username ? `https://t.me/${ctx.me.username}/${threadId}` : undefined;
-  const text =
-    `✅ *Forked into a new thread*\n\n` +
-    (link ? `[${esc(name)}](${link})` : `*${esc(name)}*`) +
-    ` carries on from that point in *${esc(projectLabel)}*\\.\n\n` +
-    `_This thread carries on here unchanged\\._`;
+  const b = new EntityText().add('✅ ').bold('Forked into a new thread').newline(2);
+  if (link) b.link(name, link);
+  else b.bold(name);
+  b.add(' carries on from that point in ').bold(projectLabel).add('.').newline(2)
+    .italic('This thread carries on here unchanged.');
+  const text = b.build();
   try {
     const anchorId = opts.replyTo
-      ? (await ctx.reply(text, {
-          parse_mode: 'MarkdownV2',
+      ? (await replyFormatted(ctx, text, {
           reply_markup: FORK_KEYBOARD,
           reply_parameters: { message_id: opts.replyTo },
         })).message_id
-      : (await ctx.editMessageText(text, { parse_mode: 'MarkdownV2', reply_markup: FORK_KEYBOARD }),
+      : (await editCallbackMessage(ctx, text, { reply_markup: FORK_KEYBOARD }),
         ctx.callbackQuery?.message?.message_id);
     // Same as a fork to another bot: this message stands for the point the
     // fork was taken from, so it can be forked again from here.
@@ -517,10 +531,7 @@ export async function offerPendingForkIfAny(ctx: Context): Promise<boolean> {
   if (!fork) return false;
 
   const offer = buildForkOffer(fork, 'lazy');
-  await ctx.reply(offer.text, {
-    parse_mode: 'MarkdownV2',
-    reply_markup: offer.keyboard,
-  });
+  await replyFormatted(ctx, offer.text, { reply_markup: offer.keyboard });
   markForkOffered(BOT_ID, userId);
   return true;
 }
@@ -614,13 +625,14 @@ export async function handleForkCommand(ctx: Context): Promise<void> {
   const projectLabel = path.basename(session.workingDirectory);
 
   const picker = buildTargetPicker(anchorMsgId);
-  await ctx.reply(
-    `🍴 *Fork conversation*\n\nFrom the current state of *${esc(projectLabel)}* — pick where to branch it:\n\n` +
-      picker.lines.join('\n'),
-    {
-      parse_mode: 'MarkdownV2',
-      reply_markup: { inline_keyboard: picker.keyboard },
-    },
+  await replyFormatted(
+    ctx,
+    new EntityText()
+      .add('🍴 ').bold('Fork conversation').newline(2)
+      .add('From the current state of ').bold(projectLabel).add(' — pick where to branch it:').newline(2)
+      .add(picker.lines.join('\n'))
+      .build(),
+    { reply_markup: { inline_keyboard: picker.keyboard } },
   );
 }
 
@@ -742,25 +754,23 @@ export async function loadFork(
  * the conversation has done since. Its 🌳 button opens the tree the
  * conversation is part of.
  *
- * A marker Telegram won't parse still has to land in plain text: left
+ * A marker Telegram won't format still has to land in plain text: left
  * unedited, the message would go on offering the buttons that made the switch.
+ * The send helpers retry it unformatted.
  */
 export async function postMarker(
   ctx: Context,
   sessionKey: string,
-  marker: string,
+  marker: EntityMessage,
   point: { claudeSessionId: string; projectPath: string; lineCount: number },
 ): Promise<void> {
-  const plain = plainMarker(marker);
   try {
     let anchorId: number | undefined;
     if (ctx.callbackQuery) {
-      await ctx.editMessageText(marker, { parse_mode: 'MarkdownV2', reply_markup: BRANCH_MARKER_KEYBOARD })
-        .catch(() => ctx.editMessageText(plain, { reply_markup: BRANCH_MARKER_KEYBOARD }));
+      await editCallbackMessage(ctx, marker, { reply_markup: BRANCH_MARKER_KEYBOARD });
       anchorId = ctx.callbackQuery.message?.message_id;
     } else {
-      const sent = await ctx.reply(marker, { parse_mode: 'MarkdownV2', reply_markup: BRANCH_MARKER_KEYBOARD })
-        .catch(() => ctx.reply(plain, { reply_markup: BRANCH_MARKER_KEYBOARD }));
+      const sent = await replyFormatted(ctx, marker, { reply_markup: BRANCH_MARKER_KEYBOARD });
       anchorId = sent.message_id;
     }
     if (anchorId) {
@@ -797,7 +807,7 @@ export interface ForkMarkerOptions {
 }
 
 /**
- * The message a loaded fork leaves in its chat, in MarkdownV2: a banner where
+ * The message a loaded fork leaves in its chat: a banner where
  * one conversation ends and another begins.
  *
  * Scrolled back through, the messages on either side of it would otherwise
@@ -810,7 +820,7 @@ export interface ForkMarkerOptions {
  * leave it in the other bot's chat, and a branch taken here would leave the
  * last reply above your next message one the branch never had.
  */
-export function buildForkMarker(fork: PendingFork, opts: ForkMarkerOptions = {}): string {
+export function buildForkMarker(fork: PendingFork, opts: ForkMarkerOptions = {}): EntityMessage {
   const isBranch = fork.fromBotId === BOT_ID;
   return buildMarker({
     title: isBranch ? '🌱 New branch' : `🍴 Forked from ${fork.fromBotName}`,
@@ -829,7 +839,7 @@ export function buildForkMarker(fork: PendingFork, opts: ForkMarkerOptions = {})
  * in the chat as a fork's, except the conversation below it isn't new — it
  * carries on from the exchange shown.
  */
-export function buildBackOnBranchMarker(branch: { projectPath: string; topic?: string; jsonl: string }): string {
+export function buildBackOnBranchMarker(branch: { projectPath: string; topic?: string; jsonl: string }): EntityMessage {
   return buildMarker({
     title: '↪️ Back on a branch',
     name: sessionDisplayName({ projectName: path.basename(branch.projectPath), topic: branch.topic }),
@@ -847,24 +857,29 @@ function buildMarker(parts: {
   after: string;
   exchange?: RecapExchange;
   above: string;
-}): string {
+}): EntityMessage {
   const { title, name, lead, after, exchange, above } = parts;
-  return [
-    MARKER_RULE,
-    `*${esc(title)}*`,
-    MARKER_RULE,
-    esc(name),
-    '',
+  return joinMessages([
+    plain(MARKER_RULE),
+    new EntityText().bold(title).build(),
+    plain(MARKER_RULE),
+    plain(name),
+    plain(''),
     ...(exchange
       ? [
-          esc(`${lead} ${after}`),
-          `*You:* ${esc(promptLine(exchange.user, MARKER_PROMPT_LEN))}`,
+          plain(`${lead} ${after}`),
+          youLine(exchange.user, MARKER_PROMPT_LEN),
           ...replyQuote(exchange.assistant),
         ]
-      : [esc(lead)]),
-    '',
-    `_${esc(above)}_`,
-  ].join('\n');
+      : [plain(lead)]),
+    plain(''),
+    new EntityText().italic(above).build(),
+  ], '\n');
+}
+
+/** `You: <prompt>`, the prompt on one line: how a banner or a node names what was asked. */
+export function youLine(user: string, max: number): EntityMessage {
+  return new EntityText().bold('You:').add(` ${promptLine(user, max)}`).build();
 }
 
 /**
@@ -891,40 +906,29 @@ function sliceWhole(text: string, end: number): string {
  * The reply as a collapsed quote. A quote holds plain text only, so markdown
  * markers go rather than show up as stray asterisks, backticks and hashes. A
  * reply longer than `max` is cut at a line or word, followed by `rest` — by
- * default, naming /recap, which shows the reply whole, formatted.
+ * default, naming /recap, which shows the reply whole, formatted. One message
+ * per line of the result.
  */
 export function replyQuote(
   reply: string,
   max: number = MARKER_REPLY_LEN,
   rest: string | null = 'The rest of the reply is in /recap.',
-): string[] {
+): EntityMessage[] {
   const text = reply
     .replace(/^\s*```.*$/gm, '')
     .replace(/^#{1,6}\s+/gm, '')
     .replace(/\*\*|__|`/g, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-  if (text.length <= max) return [buildExpandableSyntax(text)];
+  const collapsed = (body: string) => new EntityText().quote(body, true).build();
+  if (text.length <= max) return [collapsed(text)];
 
   const cut = sliceWhole(text, max);
   const end = Math.max(cut.lastIndexOf('\n'), cut.lastIndexOf(' '));
   return [
-    buildExpandableSyntax(`${(end > 0 ? cut.slice(0, end) : cut).trimEnd()} …`),
-    ...(rest ? [esc(rest)] : []),
+    collapsed(`${(end > 0 ? cut.slice(0, end) : cut).trimEnd()} …`),
+    ...(rest ? [plain(rest)] : []),
   ];
-}
-
-/**
- * The marker as plain text, for when Telegram won't parse it: markup dropped
- * and escapes undone. esc() escapes every marker character in the content, so
- * only the markup's own bare `*`, `_`, `>` and `||` match here.
- */
-export function plainMarker(marker: string): string {
-  return marker
-    .replace(/^\*\*>|^>/gm, '')
-    .replace(/(?<!\\)\|\|$/gm, '')
-    .replace(/(?<!\\)[*_]/g, '')
-    .replace(/\\(.)/g, '$1');
 }
 
 /**
@@ -983,10 +987,7 @@ async function scanAndOffer(bot: Bot): Promise<void> {
 
     const offer = buildForkOffer(fork, 'proactive');
     try {
-      await bot.api.sendMessage(userId, offer.text, {
-        parse_mode: 'MarkdownV2',
-        reply_markup: offer.keyboard,
-      });
+      await sendFormatted(bot.api, userId, offer.text, { reply_markup: offer.keyboard });
       markForkOffered(BOT_ID, userId);
     } catch (err) {
       // 403 "bot can't initiate conversation with a user" / "chat not found"

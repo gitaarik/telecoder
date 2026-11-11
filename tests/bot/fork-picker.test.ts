@@ -17,8 +17,8 @@ describe('buildTargetPicker', () => {
     siblings = [{ name: 'Research bot', botId: 'b2' }];
     const { lines } = buildTargetPicker(42);
     expect(lines).toEqual([
-      'A\\. 🌱 New branch here — TeleCoder',
-      'B\\. Research bot',
+      'A. 🌱 New branch here — TeleCoder',
+      'B. Research bot',
     ]);
   });
 

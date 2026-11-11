@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { renderPrompts, type Conversation } from '../../src/bot/handlers/prompts.handler.js';
 import { promptLabel, summarizeUserPrompt, cutLabel } from '../../src/telegram/prompt-label.js';
+import type { View } from '../../src/bot/handlers/view.js';
+import { marked } from '../helpers/entity-marks.js';
 
 const minsAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
 
@@ -27,6 +29,9 @@ const conversation = (...prompts: Conversation['prompts']): Conversation => ({
   prompts,
 });
 
+/** A view's text with its bold, italic and code marked, so a line reads as one string. */
+const shown = (view: View) => marked(view.text.text, view.text.entities);
+
 /** The list's lines, a prompt each. */
 const listLines = (text: string) => text.split('\n').filter((l) => /^\*[A-Z]\* · /.test(l));
 
@@ -35,13 +40,13 @@ describe('renderPrompts', () => {
     const older = prompt('older one', 90);
     const newer = prompt('newer one', 30);
     const view = renderPrompts(conversation(older, newer), 15);
-    expect(view.text.split('\n')).toEqual([
+    expect(shown(view).split('\n')).toEqual([
       '💬 *parser* — 2 prompts',
       '',
       '*A* · _1h ago_ — older one',
       '*B* · _30m ago_ — newer one',
       '',
-      'Tap a letter to open that prompt\\.',
+      'Tap a letter to open that prompt.',
     ]);
     expect(view.keyboard).toEqual([[
       { text: 'A', callback_data: `prompts:o:0f1e2d3c:15:${older.uuid}` },
@@ -51,61 +56,63 @@ describe('renderPrompts', () => {
 
   it('says it shows the last few when the conversation has more', () => {
     const view = renderPrompts(conversation(prompt('one', 3), prompt('two', 2), prompt('three', 1)), 2);
-    expect(view.text).toMatch(/^💬 \*parser\* — last 2 prompts$/m);
-    expect(listLines(view.text).map((l) => l.split(' — ')[1])).toEqual(['two', 'three']);
+    expect(shown(view)).toMatch(/^💬 \*parser\* — last 2 prompts$/m);
+    expect(listLines(shown(view)).map((l) => l.split(' — ')[1])).toEqual(['two', 'three']);
   });
 
   it('marks a prompt with no reply yet, and says what the mark means', () => {
     const view = renderPrompts(conversation(prompt('still running', 0, true)), 15);
-    expect(view.text).toContain('*A* · _just now_ ⏳ — still running');
-    expect(view.text).toContain('_⏳ no reply_');
+    expect(shown(view)).toContain('*A* · _just now_ ⏳ — still running');
+    expect(shown(view)).toContain('_⏳ no reply_');
   });
 
   it('marks a prompt another branch splits off at', () => {
     const split = { ...prompt('Split it', 5), branched: true };
     const view = renderPrompts(conversation(prompt('Plan the parser', 9), split), 15);
-    expect(view.text).toContain('*B* · _5m ago_ 🌿 — Split it');
-    expect(view.text).toContain('_🌿 a branch splits off here_');
+    expect(shown(view)).toContain('*B* · _5m ago_ 🌿 — Split it');
+    expect(shown(view)).toContain('_🌿 a branch splits off here_');
   });
 
-  it('escapes MarkdownV2 so a prompt full of punctuation still sends', () => {
+  it('shows a prompt full of punctuation as it was typed, with no formatting of its own', () => {
     const view = renderPrompts(conversation(prompt('fix src/a-b.ts (the *bold* one!)', 5)), 15);
-    expect(view.text).toContain('fix src/a\\-b\\.ts \\(the \\*bold\\* one\\!\\)');
+    expect(view.text.text).toContain('— fix src/a-b.ts (the *bold* one!)');
+    // Bold for the letter, italic for the time: nothing inside the prompt.
+    expect(view.text.entities.map((e) => e.type)).toEqual(['bold', 'bold', 'italic']);
   });
 
   it('collapses newlines so a multi-line prompt stays on one line', () => {
     const view = renderPrompts(conversation(prompt('first line\n\nsecond line', 5)), 15);
-    expect(listLines(view.text)).toEqual(['*A* · _5m ago_ — first line second line']);
+    expect(listLines(shown(view))).toEqual(['*A* · _5m ago_ — first line second line']);
   });
 
   it('truncates a long prompt instead of dumping the paste', () => {
     const view = renderPrompts(conversation(prompt('x'.repeat(1000), 5)), 15);
-    expect(view.text).toContain('…');
-    expect(view.text.length).toBeLessThan(450);
+    expect(shown(view)).toContain('…');
+    expect(view.text.text.length).toBeLessThan(450);
   });
 
   it('keeps the end of a long prompt, where the question usually is', () => {
     const view = renderPrompts(conversation(prompt(`Plan the parser ${'and more detail '.repeat(30)}so what do you think?`, 5)), 15);
-    expect(listLines(view.text)[0]).toMatch(/— Plan the parser and more detail .+ … .+ so what do you think\?$/);
+    expect(listLines(shown(view))[0]).toMatch(/— Plan the parser and more detail .+ … .+ so what do you think\?$/);
   });
 
   it('falls back to a vague time when the log recorded none', () => {
     const view = renderPrompts(conversation(prompt('no timestamp')), 15);
-    expect(view.text).toContain('*A* · _earlier_ — no timestamp');
+    expect(shown(view)).toContain('*A* · _earlier_ — no timestamp');
   });
 
   it('drops the oldest prompts to fit one Telegram message and says so', () => {
     const many = Array.from({ length: 20 }, (_, i) => prompt(`prompt ${i} `.padEnd(300, 'x'), 20 - i));
     const view = renderPrompts(conversation(...many), 25);
 
-    expect(view.text.length).toBeLessThan(4096);
+    expect(view.text.text.length).toBeLessThan(4096);
     // The one you just sent survives; the oldest is what gets cut.
-    expect(view.text).toContain('prompt 19');
-    expect(view.text).not.toContain('prompt 0 ');
-    expect(view.text).toMatch(/^💬 \*parser\* — last \d+ prompts \\\(\d+ older trimmed to fit\\\)$/m);
+    expect(shown(view)).toContain('prompt 19');
+    expect(shown(view)).not.toContain('prompt 0 ');
+    expect(shown(view)).toMatch(/^💬 \*parser\* — last \d+ prompts \(\d+ older trimmed to fit\)$/m);
     // Lettered from the oldest that fit, with a button for each.
-    expect(listLines(view.text)[0]).toMatch(/^\*A\* · /);
-    expect(view.keyboard.flat()).toHaveLength(listLines(view.text).length);
+    expect(listLines(shown(view))[0]).toMatch(/^\*A\* · /);
+    expect(view.keyboard.flat()).toHaveLength(listLines(shown(view)).length);
   });
 });
 
@@ -170,7 +177,7 @@ describe('summarizeUserPrompt', () => {
   });
 
   it('shows the summary in the prompts list, not the scaffold', () => {
-    const out = renderPrompts(conversation(prompt(recordedImageNote, 5)), 15).text;
+    const out = renderPrompts(conversation(prompt(recordedImageNote, 5)), 15).text.text;
     expect(out).toContain('📷 Image — This is my last invoice from Groq');
     expect(out).not.toContain('vision input');
     expect(out).not.toContain('Saved at');

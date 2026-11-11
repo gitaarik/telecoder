@@ -24,6 +24,8 @@ vi.mock('../../src/telegram/telegraph-settings.js', () => ({
 
 const { shouldPublishTelegraph } = await import('../../src/telegram/telegraph.js');
 const { withTelegraphFooter } = await import('../../src/telegram/message-sender.js');
+const { EntityText, plain } = await import('../../src/telegram/entities.js');
+type EntityMessage = import('../../src/telegram/entities.js').EntityMessage;
 
 const long = (n: number) => 'x'.repeat(n);
 
@@ -53,32 +55,34 @@ describe('shouldPublishTelegraph', () => {
 });
 
 describe('withTelegraphFooter', () => {
-  const footer = '📄 [Open in Instant View](https://telegra\\.ph/abc)';
+  const footer = new EntityText().add('📄 ').link('Open in Instant View', 'https://telegra.ph/abc').build();
+  const texts = (parts: EntityMessage[]) => parts.map((p) => p.text);
 
   it('returns the chunks untouched when there is no page', () => {
-    const parts = ['one', 'two'];
+    const parts = [plain('one'), plain('two')];
     expect(withTelegraphFooter(parts, null)).toEqual(parts);
   });
 
-  it('hangs the footer under the last chunk', () => {
-    expect(withTelegraphFooter(['one', 'two'], footer)).toEqual([
-      'one',
-      `two\n\n${footer}`,
-    ]);
+  it('hangs the footer under the last chunk, its link moved along with it', () => {
+    const result = withTelegraphFooter([plain('one'), plain('two')], footer);
+    expect(texts(result)).toEqual(['one', `two\n\n${footer.text}`]);
+    const link = result[1].entities[0];
+    expect(link).toMatchObject({ type: 'text_link', url: 'https://telegra.ph/abc' });
+    expect(result[1].text.slice(link.offset, link.offset + link.length)).toBe('Open in Instant View');
   });
 
   it('gives the footer its own chunk rather than overflowing the last one', () => {
-    const last = long(4096);
-    const result = withTelegraphFooter(['first', last], footer);
-    expect(result).toEqual(['first', last, footer]);
-    expect(result.every((p) => p.length <= 4096)).toBe(true);
+    const last = plain(long(4096));
+    const result = withTelegraphFooter([plain('first'), last], footer);
+    expect(result).toEqual([plain('first'), last, footer]);
+    expect(result.every((p) => p.text.length <= 4096)).toBe(true);
   });
 
   it('never drops a chunk of the reply', () => {
-    const parts = ['a', 'b', long(4090)];
+    const parts = [plain('a'), plain('b'), plain(long(4090))];
     const result = withTelegraphFooter(parts, footer);
     for (const part of parts) {
-      expect(result.some((r) => r.startsWith(part))).toBe(true);
+      expect(result.some((r) => r.text.startsWith(part.text))).toBe(true);
     }
   });
 });

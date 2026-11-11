@@ -9,7 +9,8 @@
 import { Context } from 'grammy';
 import type { ThrottleInfo } from '../../../providers/types.js';
 import { config } from '../../../config.js';
-import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
+import { EntityText } from '../../../telegram/entities.js';
+import { replyFormatted } from '../../../telegram/send.js';
 
 // Last user prompt that hit a throttle, keyed by sessionKey. Used by the
 // "Switch & Retry" callback so the bot can replay the prompt under CCR
@@ -22,10 +23,10 @@ export function formatResetIn(resetAt?: number): string {
   const ms = resetAt - Date.now();
   if (ms <= 0) return '';
   const mins = Math.round(ms / 60_000);
-  if (mins < 60) return ` Resets in \\~${mins} min\\.`;
+  if (mins < 60) return ` Resets in ~${mins} min.`;
   const hours = Math.floor(mins / 60);
   const remainder = mins % 60;
-  return ` Resets in \\~${hours}h${remainder ? ` ${remainder}m` : ''}\\.`;
+  return ` Resets in ~${hours}h${remainder ? ` ${remainder}m` : ''}.`;
 }
 
 export async function postThrottlePrompt(
@@ -39,12 +40,14 @@ export async function postThrottlePrompt(
   lastThrottledPrompt.set(sessionKey, message);
 
   const resetTxt = formatResetIn(throttle.resetAt);
-  await ctx.reply(
-    `⚠️ *Max usage limit reached\\.*${esc(resetTxt)}\n\n` +
-      `Route your message through Claude Code Router \\(CCR\\) instead?\n` +
-      `_The switch is sticky — use /ccr to flip back\\._`,
+  await replyFormatted(
+    ctx,
+    new EntityText()
+      .add('⚠️ ').bold('Max usage limit reached.').add(resetTxt).newline(2)
+      .add('Route your message through Claude Code Router (CCR) instead?').newline()
+      .italic('The switch is sticky — use /ccr to flip back.')
+      .build(),
     {
-      parse_mode: 'MarkdownV2',
       reply_markup: {
         inline_keyboard: [
           [

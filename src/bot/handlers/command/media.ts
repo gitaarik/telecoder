@@ -9,7 +9,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { config } from '../../../config.js';
 import { messageSender } from '../../../telegram/message-sender.js';
-import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
+import { EntityText } from '../../../telegram/entities.js';
+import { replyFormatted } from '../../../telegram/send.js';
 import { isDuplicate, markProcessed } from '../../../telegram/deduplication.js';
 import { isStaleMessage } from '../../middleware/stale-filter.js';
 import { replyBareAudio, exceedsDownloadLimit, replyTooLargeToFetch } from '../media-fallback.js';
@@ -69,7 +70,7 @@ async function transcribeAndSend(
     return;
   }
 
-  const ackMsg = await ctx.reply('🎤 Transcribing...', { parse_mode: undefined });
+  const ackMsg = await ctx.reply('🎤 Transcribing...');
   let tempFilePath: string | null = null;
 
   try {
@@ -102,9 +103,9 @@ async function transcribeAndSend(
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('[Transcribe] Error:', sanitizeError(error));
     try {
-      await ctx.api.editMessageText(chatId, ackMsg.message_id, `❌ ${errorMessage}`, { parse_mode: undefined });
+      await ctx.api.editMessageText(chatId, ackMsg.message_id, `❌ ${errorMessage}`);
     } catch {
-      await ctx.reply(`❌ Transcription error: ${esc(errorMessage)}`, { parse_mode: 'MarkdownV2' });
+      await ctx.reply(`❌ Transcription error: ${errorMessage}`);
     }
   } finally {
     if (tempFilePath && fs.existsSync(tempFilePath)) {
@@ -142,10 +143,10 @@ export async function handleTranscribe(ctx: Context): Promise<void> {
   }
 
   // Path B: no audio attached — send ForceReply prompt
-  await ctx.reply(
-    '🎤 *Transcribe Audio*\n\n_Send a voice note or audio file:_',
+  await replyFormatted(
+    ctx,
+    new EntityText().add('🎤 ').bold('Transcribe Audio').add('\n\n').italic('Send a voice note or audio file:').build(),
     {
-      parse_mode: 'MarkdownV2',
       reply_markup: {
         force_reply: true,
         input_field_placeholder: 'Send a voice note or audio file',

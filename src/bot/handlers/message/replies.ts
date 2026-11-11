@@ -12,7 +12,8 @@ import * as path from 'path';
 import { sendToAgent, sendLoopToAgent, clearConversation } from '../../../providers/provider-router.js';
 import { sessionManager } from '../../../claude/session-manager.js';
 import { messageSender } from '../../../telegram/message-sender.js';
-import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
+import { EntityText } from '../../../telegram/entities.js';
+import { replyFormatted } from '../../../telegram/send.js';
 import { createTelegraphFromFile } from '../../../telegram/telegraph.js';
 import { maybeSendVoiceReply } from '../../../tts/voice-reply.js';
 import {
@@ -39,19 +40,15 @@ export async function handleProjectReply(ctx: Context, sessionKey: string, proje
 
   // Check if exists
   if (!fs.existsSync(resolvedPath)) {
-    await ctx.reply(
-      `❌ Path not found: \`${esc(resolvedPath)}\`\n\nPlease check the path and try again\\.`,
-      { parse_mode: 'MarkdownV2' }
-    );
+    await replyFormatted(ctx, new EntityText()
+      .add('❌ Path not found: ').code(resolvedPath).add('\n\nPlease check the path and try again.')
+      .build());
     return;
   }
 
   // Check if directory
   if (!fs.statSync(resolvedPath).isDirectory()) {
-    await ctx.reply(
-      `❌ Not a directory: \`${esc(resolvedPath)}\``,
-      { parse_mode: 'MarkdownV2' }
-    );
+    await replyFormatted(ctx, new EntityText().add('❌ Not a directory: ').code(resolvedPath).build());
     return;
   }
 
@@ -61,14 +58,16 @@ export async function handleProjectReply(ctx: Context, sessionKey: string, proje
   await clearTopicAndRefreshBotName(ctx, sessionKey);
 
   const projectName = path.basename(resolvedPath);
-  await ctx.reply(
-    `✅ Project set: *${esc(projectName)}*\n\n\`${esc(resolvedPath)}\`\n\nYou can now chat with Claude about this project\\!${projectStatusSuffix(sessionKey)}`,
-    { parse_mode: 'MarkdownV2' }
-  );
+  await replyFormatted(ctx, new EntityText()
+    .add('✅ Project set: ').bold(projectName).newline(2)
+    .code(resolvedPath).newline(2)
+    .add('You can now chat with Claude about this project!')
+    .append(projectStatusSuffix(sessionKey))
+    .build());
 
   const s = sessionManager.getSession(sessionKey);
   if (s?.claudeSessionId) {
-    await ctx.reply(resumeCommandMessage(s.claudeSessionId), { parse_mode: 'MarkdownV2' });
+    await replyFormatted(ctx, resumeCommandMessage(s.claudeSessionId));
   }
 }
 
@@ -80,10 +79,7 @@ export async function handleFileReply(ctx: Context, sessionKey: string, filePath
   const success = await messageSender.sendDocument(ctx, fullPath, `📎 ${path.basename(fullPath)}`);
 
   if (!success) {
-    await ctx.reply(
-      '❌ Failed to send file\\. It may be too large \\(\\>50MB\\) or inaccessible\\.',
-      { parse_mode: 'MarkdownV2' }
-    );
+    await ctx.reply('❌ Failed to send file. It may be too large (>50MB) or inaccessible.');
   }
 }
 
@@ -98,10 +94,7 @@ export async function handleAgentReply(
 
   const trimmedInput = input.trim();
   if (!trimmedInput) {
-    await ctx.reply(
-      '❌ Please provide a description\\.',
-      { parse_mode: 'MarkdownV2' }
-    );
+    await ctx.reply('❌ Please provide a description.');
     return;
   }
 
@@ -147,26 +140,20 @@ export async function handleTelegraphReply(ctx: Context, sessionKey: string, fil
 
   const ext = path.extname(fullPath).toLowerCase();
   if (ext !== '.md' && ext !== '.markdown') {
-    await ctx.reply(
-      '⚠️ Telegraph works best with Markdown files \\(\\.md\\)',
-      { parse_mode: 'MarkdownV2' }
-    );
+    await ctx.reply('⚠️ Telegraph works best with Markdown files (.md)');
   }
 
-  await ctx.reply('📤 Creating Telegraph page\\.\\.\\.', { parse_mode: 'MarkdownV2' });
+  await ctx.reply('📤 Creating Telegraph page...');
 
   const pageUrl = await createTelegraphFromFile(fullPath);
 
   if (pageUrl) {
     const fileName = path.basename(fullPath);
-    await ctx.reply(
-      `📄 *${esc(fileName)}*\n\n[Open in Instant View](${esc(pageUrl)})`,
-      { parse_mode: 'MarkdownV2' }
-    );
+    await replyFormatted(ctx, new EntityText()
+      .add('📄 ').bold(fileName).newline(2)
+      .link('Open in Instant View', pageUrl)
+      .build());
   } else {
-    await ctx.reply(
-      '❌ Failed to create Telegraph page\\.',
-      { parse_mode: 'MarkdownV2' }
-    );
+    await ctx.reply('❌ Failed to create Telegraph page.');
   }
 }

@@ -7,7 +7,8 @@
  */
 
 import { Context } from 'grammy';
-import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
+import { EntityText, type EntityMessage } from '../../../telegram/entities.js';
+import { replyFormatted, editCallbackMessage } from '../../../telegram/send.js';
 import { taskTracker, type TaskState } from '../../../telegram/task-tracker.js';
 import { getPtyProvider } from '../../../providers/claude-provider.js';
 import { scrapeTasksOverlay } from '../../../claude/tasks-overlay-scraper.js';
@@ -103,7 +104,7 @@ function getActiveTasks(sessionKey: string): TaskState[] {
   );
 }
 
-function renderTasksList(sessionKey: string, tasks: TaskState[]): { text: string; keyboard: { text: string; callback_data: string }[][] } {
+function renderTasksList(sessionKey: string, tasks: TaskState[]): { message: EntityMessage; keyboard: { text: string; callback_data: string }[][] } {
   if (tasks.length === 0) {
     // Cross-pointer: a `Bash(run_in_background=true)` shell can outlive its SDK
     // task entry (npm release scripts, deploys), so the statusline's 🔍 counter
@@ -111,14 +112,13 @@ function renderTasksList(sessionKey: string, tasks: TaskState[]): { text: string
     // where to look next.
     const claudePid = getPtyProvider().getSessionPid(sessionKey);
     const shellCount = claudePid !== undefined ? getBgProcesses(claudePid).length : 0;
-    const lines = ['🔄 *Active background tasks*', '', 'None running\\.'];
+    const b = new EntityText().add('🔄 ').bold('Active background tasks').newline(2).add('None running.');
     if (shellCount > 0) {
       const noun = shellCount === 1 ? 'shell' : 'shells';
-      lines.push('');
-      lines.push(`_🔍 ${shellCount} background ${noun} still running — see /shells\\._`);
+      b.newline(2).italic(`🔍 ${shellCount} background ${noun} still running — see /shells.`);
     }
     return {
-      text: lines.join('\n'),
+      message: b.build(),
       keyboard: [[
         { text: '🔄 Refresh', callback_data: 'tasks:refresh' },
         { text: '🔎 Ask claude', callback_data: 'tasks:ask' },
@@ -127,30 +127,34 @@ function renderTasksList(sessionKey: string, tasks: TaskState[]): { text: string
   }
 
   const groups = groupTasksForDisplay(tasks);
-  const lines: string[] = [`🔄 *Active background tasks* \\(${tasks.length}\\)`, ''];
+  const b = new EntityText()
+    .add('🔄 ')
+    .bold('Active background tasks')
+    .add(` (${tasks.length})`)
+    .newline(2);
 
   // Number tasks globally so callback buttons match the listed indices.
   let index = 1;
   const numberedTasks: TaskState[] = [];
 
   for (const group of groups) {
-    lines.push(`${group.emoji} *${esc(group.label)}* \\(${group.tasks.length}\\)`);
+    b.add(`${group.emoji} `).bold(group.label).add(` (${group.tasks.length})`).newline();
     for (const task of group.tasks) {
       const desc = task.description.length > 70
         ? task.description.substring(0, 67) + '...'
         : task.description;
       const staleMark = isPossiblyStale(task) ? '⚠️ ' : '';
-      lines.push(`  ${index}\\. ${staleMark}${esc(desc)} · ${esc(formatTaskElapsed(task))}`);
+      b.add(`  ${index}. ${staleMark}${desc} · ${formatTaskElapsed(task)}`).newline();
       numberedTasks.push(task);
       index++;
     }
-    lines.push('');
+    b.newline();
   }
-  lines.push('_Tap a number to view details\\._');
+  b.italic('Tap a number to view details.');
   if (numberedTasks.some(isPossiblyStale)) {
-    lines.push(
-      '_⚠️ no update in a while — may have finished already\\. ' +
-        'Tap 🔎 Ask claude to confirm\\._',
+    b.newline().italic(
+      '⚠️ no update in a while — may have finished already. ' +
+        'Tap 🔎 Ask claude to confirm.',
     );
   }
 
@@ -169,10 +173,10 @@ function renderTasksList(sessionKey: string, tasks: TaskState[]): { text: string
     { text: '🔎 Ask claude', callback_data: 'tasks:ask' },
   ]);
 
-  return { text: lines.join('\n'), keyboard };
+  return { message: b.build(), keyboard };
 }
 
-function renderTaskDetail(task: TaskState): { text: string; keyboard: { text: string; callback_data: string }[][] } {
+function renderTaskDetail(task: TaskState): { message: EntityMessage; keyboard: { text: string; callback_data: string }[][] } {
   const groupHint = (() => {
     switch (task.taskType) {
       case 'monitor_mcp': return '📡 Monitor';
@@ -185,41 +189,38 @@ function renderTaskDetail(task: TaskState): { text: string; keyboard: { text: st
     }
   })();
 
-  const lines: string[] = [
-    `${groupHint}: *${esc(task.description)}*`,
-    '',
-    `• *Status:* ${esc(task.status)}`,
-    `• *Backgrounded:* ${task.isBackgrounded ? 'yes' : 'no'}`,
-    `• *Started:* ${esc(formatTaskElapsed(task))} ago`,
-  ];
+  const b = new EntityText().add(`${groupHint}: `).bold(task.description).newline();
+  /** A `• Label: ` bullet on a line of its own; the caller appends the value. */
+  const field = (label: string) => b.newline().add('• ').bold(`${label}:`).add(' ');
+
+  field('Status').add(task.status);
+  field('Backgrounded').add(task.isBackgrounded ? 'yes' : 'no');
+  field('Started').add(`${formatTaskElapsed(task)} ago`);
   if (isPossiblyStale(task)) {
-    lines.push(`• *Last update:* ${esc(formatTaskSilence(task))} ago ⚠️`);
+    field('Last update').add(`${formatTaskSilence(task)} ago ⚠️`);
   }
   if (task.taskType) {
-    lines.push(`• *Type:* \`${esc(task.taskType)}\``);
+    field('Type').code(task.taskType);
   }
   if (task.lastProgress?.lastToolName) {
-    lines.push(`• *Last tool:* \`${esc(task.lastProgress.lastToolName)}\``);
+    field('Last tool').code(task.lastProgress.lastToolName);
   }
   if (task.lastProgress?.usage) {
     const u = task.lastProgress.usage;
-    lines.push(`• *Tokens:* ${esc(String(u.totalTokens))} · *Tool uses:* ${esc(String(u.toolUses))}`);
+    field('Tokens').add(`${u.totalTokens} · `).bold('Tool uses:').add(` ${u.toolUses}`);
   }
   if (task.lastProgress?.summary) {
     const summary = task.lastProgress.summary.length > 300
       ? task.lastProgress.summary.substring(0, 297) + '...'
       : task.lastProgress.summary;
-    lines.push('');
-    lines.push('*Latest progress:*');
-    lines.push(`> ${esc(summary)}`);
+    b.newline(2).bold('Latest progress:').newline().quote(summary);
   }
   if (task.error) {
-    lines.push('');
-    lines.push(`⚠️ ${esc(task.error)}`);
+    b.newline(2).add(`⚠️ ${task.error}`);
   }
 
   return {
-    text: lines.join('\n'),
+    message: b.build(),
     keyboard: [
       [
         { text: '← Back to list', callback_data: 'tasks:back' },
@@ -237,12 +238,9 @@ export async function handleTasks(ctx: Context): Promise<void> {
   }
 
   const tasks = getActiveTasks(keyInfo.sessionKey);
-  const { text, keyboard } = renderTasksList(keyInfo.sessionKey, tasks);
+  const { message, keyboard } = renderTasksList(keyInfo.sessionKey, tasks);
 
-  await ctx.reply(text, {
-    parse_mode: 'MarkdownV2',
-    reply_markup: { inline_keyboard: keyboard },
-  });
+  await replyFormatted(ctx, message, { reply_markup: { inline_keyboard: keyboard } });
 }
 
 export async function handleTasksCallback(ctx: Context): Promise<void> {
@@ -256,13 +254,10 @@ export async function handleTasksCallback(ctx: Context): Promise<void> {
 
   if (data === 'tasks:refresh' || data === 'tasks:back') {
     const tasks = getActiveTasks(sessionKey);
-    const { text, keyboard } = renderTasksList(sessionKey, tasks);
+    const { message, keyboard } = renderTasksList(sessionKey, tasks);
     await ctx.answerCallbackQuery().catch(() => {});
     try {
-      await ctx.editMessageText(text, {
-        parse_mode: 'MarkdownV2',
-        reply_markup: { inline_keyboard: keyboard },
-      });
+      await editCallbackMessage(ctx, message, { reply_markup: { inline_keyboard: keyboard } });
     } catch (err) {
       // "message is not modified" is fine — content already up to date.
       const msg = err instanceof Error ? err.message.toLowerCase() : '';
@@ -284,23 +279,17 @@ export async function handleTasksCallback(ctx: Context): Promise<void> {
     if (!task) {
       // Task finished or was cleared between renders — go back to the list.
       const tasks = getActiveTasks(sessionKey);
-      const { text, keyboard } = renderTasksList(sessionKey, tasks);
+      const { message, keyboard } = renderTasksList(sessionKey, tasks);
       await ctx.answerCallbackQuery({ text: 'Task no longer active.' }).catch(() => {});
       try {
-        await ctx.editMessageText(text, {
-          parse_mode: 'MarkdownV2',
-          reply_markup: { inline_keyboard: keyboard },
-        });
+        await editCallbackMessage(ctx, message, { reply_markup: { inline_keyboard: keyboard } });
       } catch { /* ignore */ }
       return;
     }
-    const { text, keyboard } = renderTaskDetail(task);
+    const { message, keyboard } = renderTaskDetail(task);
     await ctx.answerCallbackQuery().catch(() => {});
     try {
-      await ctx.editMessageText(text, {
-        parse_mode: 'MarkdownV2',
-        reply_markup: { inline_keyboard: keyboard },
-      });
+      await editCallbackMessage(ctx, message, { reply_markup: { inline_keyboard: keyboard } });
     } catch (err) {
       const msg = err instanceof Error ? err.message.toLowerCase() : '';
       if (!msg.includes('message is not modified')) {
@@ -315,10 +304,12 @@ export async function handleTasksCallback(ctx: Context): Promise<void> {
 
 /**
  * Test hooks. The predicate is pure, but the render path is where a staleness
- * regression would actually be seen, so both are exposed.
+ * regression would actually be seen, so both are exposed — and the detail
+ * view with them, for its formatting.
  */
 export const _isPossiblyStale = isPossiblyStale;
 export const _renderTasksList = renderTasksList;
+export const _renderTaskDetail = renderTaskDetail;
 
 // ---------------------------------------------------------------------------
 // "🔎 Ask claude" — relay claude's own /tasks overlay
@@ -337,15 +328,18 @@ export const _renderTasksList = renderTasksList;
 async function handleAskClaude(ctx: Context, sessionKey: string): Promise<void> {
   await ctx.answerCallbackQuery({ text: 'Asking claude…' }).catch(() => {});
 
+  // Every answer below opens with the same heading.
+  const view = () => new EntityText().add('🔎 ').bold("Claude's background view").newline(2);
+
   const result = await getPtyProvider().runOverlayCommand(sessionKey, '/tasks');
   if (!result.ok) {
     const reason =
       result.reason === 'turn-active'
-        ? 'Claude is mid\\-turn — the TUI keyboard is busy\\. Try again once it finishes\\.'
+        ? 'Claude is mid-turn — the TUI keyboard is busy. Try again once it finishes.'
         : result.reason === 'not-ready'
-          ? 'The Claude TUI is not at a prompt right now\\. Try again in a moment\\.'
-          : 'No active PTY session for this chat\\. In SDK mode the list above is already authoritative\\.';
-    await ctx.reply(`🔎 *Claude's background view*\n\n${reason}`, { parse_mode: 'MarkdownV2' });
+          ? 'The Claude TUI is not at a prompt right now. Try again in a moment.'
+          : 'No active PTY session for this chat. In SDK mode the list above is already authoritative.';
+    await replyFormatted(ctx, view().add(reason).build());
     return;
   }
 
@@ -353,11 +347,13 @@ async function handleAskClaude(ctx: Context, sessionKey: string): Promise<void> 
   if (!overlay) {
     // The overlay's layout is a Claude Code implementation detail and can move
     // between releases — say so plainly rather than showing a mangled guess.
-    await ctx.reply(
-      "🔎 *Claude's background view*\n\n" +
-        "Couldn't read the `/tasks` overlay — Claude Code may have changed its layout\\. " +
-        'The list above still works\\.',
-      { parse_mode: 'MarkdownV2' },
+    await replyFormatted(
+      ctx,
+      view()
+        .add("Couldn't read the ")
+        .code('/tasks')
+        .add(' overlay — Claude Code may have changed its layout. The list above still works.')
+        .build(),
     );
     return;
   }
@@ -367,21 +363,16 @@ async function handleAskClaude(ctx: Context, sessionKey: string): Promise<void> 
     // out loud though: claude reporting empty while the list above shows
     // tasks means our tracker is holding entries claude no longer knows about.
     const tracked = getActiveTasks(sessionKey).length;
-    const note = tracked > 0
-      ? `\n\n_The ${tracked} task\\(s\\) listed above are unknown to claude — likely finished already\\._`
-      : '';
-    await ctx.reply(
-      `🔎 *Claude's background view*\n\nNothing running\\.${note}`,
-      { parse_mode: 'MarkdownV2' },
-    );
+    const b = view().add('Nothing running.');
+    if (tracked > 0) {
+      b.newline(2).italic(`The ${tracked} task(s) listed above are unknown to claude — likely finished already.`);
+    }
+    await replyFormatted(ctx, b.build());
     return;
   }
 
   const body = overlay.text.length > 3000 ? overlay.text.slice(0, 2997) + '...' : overlay.text;
-  await ctx.reply(
-    `🔎 *Claude's background view*\n\n\`\`\`\n${body}\n\`\`\``,
-    { parse_mode: 'MarkdownV2' },
-  );
+  await replyFormatted(ctx, view().pre(body).build());
 }
 
 // ── /shells ─────────────────────────────────────────────────────
@@ -434,15 +425,18 @@ export function getBgProcesses(claudePid: number): ProcInfo[] {
 }
 
 function renderBgList(sessionKey: string, claudePid: number | undefined, procs: ProcInfo[]): {
-  text: string;
+  message: EntityMessage;
   keyboard: { text: string; callback_data: string }[][];
 } {
+  const heading = () => new EntityText().add('🔍 ').bold('Background processes');
   if (claudePid === undefined) {
     return {
-      text:
-        '🔍 *Background processes*\n\n' +
-        '_No active PTY session for this chat\\._\n\n' +
-        'In SDK mode, use /tasks to inspect tracked background tasks\\.',
+      message: heading()
+        .newline(2)
+        .italic('No active PTY session for this chat.')
+        .newline(2)
+        .add('In SDK mode, use /tasks to inspect tracked background tasks.')
+        .build(),
       keyboard: [],
     };
   }
@@ -450,25 +444,23 @@ function renderBgList(sessionKey: string, claudePid: number | undefined, procs: 
     // Cross-pointer to /tasks when SDK-tracked tasks (agents, monitors) are
     // running but no OS shells are.
     const taskCount = getActiveTasks(sessionKey).length;
-    const lines = ['🔍 *Background processes*', '', 'None running\\.'];
+    const b = heading().newline(2).add('None running.');
     if (taskCount > 0) {
       const noun = taskCount === 1 ? 'task' : 'tasks';
-      lines.push('');
-      lines.push(`_🔄 ${taskCount} SDK ${noun} still running — see /tasks\\._`);
+      b.newline(2).italic(`🔄 ${taskCount} SDK ${noun} still running — see /tasks.`);
     }
     return {
-      text: lines.join('\n'),
+      message: b.build(),
       keyboard: [[{ text: '🔄 Refresh', callback_data: 'shells:refresh' }]],
     };
   }
 
-  const lines: string[] = [`🔍 *Background processes* \\(${procs.length}\\)`, ''];
+  const b = heading().add(` (${procs.length})`).newline(2);
   procs.forEach((p, i) => {
-    lines.push(`*${i + 1}\\.* \\[${esc(formatBgAge(p.ageSec))}\\] pid \`${esc(String(p.pid))}\``);
-    lines.push(`\`${esc(truncateBgCmd(unwrapBgCmd(p.cmd)))}\``);
-    lines.push('');
+    b.bold(`${i + 1}.`).add(` [${formatBgAge(p.ageSec)}] pid `).code(String(p.pid)).newline();
+    b.code(truncateBgCmd(unwrapBgCmd(p.cmd))).newline(2);
   });
-  lines.push('_Tap a number to SIGTERM that process \\(and its descendants\\)\\._');
+  b.italic('Tap a number to SIGTERM that process (and its descendants).');
 
   const keyboard: { text: string; callback_data: string }[][] = [];
   let row: { text: string; callback_data: string }[] = [];
@@ -483,19 +475,16 @@ function renderBgList(sessionKey: string, claudePid: number | undefined, procs: 
     { text: '🛑 Kill all', callback_data: 'shells:killall' },
     { text: '🔄 Refresh', callback_data: 'shells:refresh' },
   ]);
-  return { text: lines.join('\n'), keyboard };
+  return { message: b.build(), keyboard };
 }
 
 async function rerenderBg(ctx: Context, sessionKey: string, claudePid: number | undefined): Promise<void> {
   // Brief grace period so killed processes drop out of /proc before we re-read.
   await new Promise((r) => setTimeout(r, 200));
   const procs = claudePid !== undefined ? getBgProcesses(claudePid) : [];
-  const { text, keyboard } = renderBgList(sessionKey, claudePid, procs);
+  const { message, keyboard } = renderBgList(sessionKey, claudePid, procs);
   try {
-    await ctx.editMessageText(text, {
-      parse_mode: 'MarkdownV2',
-      reply_markup: { inline_keyboard: keyboard },
-    });
+    await editCallbackMessage(ctx, message, { reply_markup: { inline_keyboard: keyboard } });
   } catch (err) {
     const msg = err instanceof Error ? err.message.toLowerCase() : '';
     if (!msg.includes('message is not modified')) {
@@ -512,11 +501,8 @@ export async function handleShells(ctx: Context): Promise<void> {
   }
   const claudePid = getPtyProvider().getSessionPid(keyInfo.sessionKey);
   const procs = claudePid !== undefined ? getBgProcesses(claudePid) : [];
-  const { text, keyboard } = renderBgList(keyInfo.sessionKey, claudePid, procs);
-  await ctx.reply(text, {
-    parse_mode: 'MarkdownV2',
-    reply_markup: { inline_keyboard: keyboard },
-  });
+  const { message, keyboard } = renderBgList(keyInfo.sessionKey, claudePid, procs);
+  await replyFormatted(ctx, message, { reply_markup: { inline_keyboard: keyboard } });
 }
 
 export async function handleShellsCallback(ctx: Context): Promise<void> {

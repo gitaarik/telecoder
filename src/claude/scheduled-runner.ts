@@ -10,7 +10,6 @@ import { closeTurn, relayCatchUpIfMissed } from '../bot/handlers/message.handler
 import { parseSessionKey } from '../utils/session-key.js';
 import { buildSyntheticCtx } from './synthetic-ctx.js';
 import { scheduler, type Schedule } from './scheduler.js';
-import { escapeMarkdownV2 } from '../telegram/markdown.js';
 
 /**
  * Wires the scheduler to the rest of the bot. On boot, registers a fire
@@ -51,8 +50,8 @@ async function fireSchedule(bot: Bot, schedule: Schedule): Promise<void> {
     try {
       await bot.api.sendMessage(
         chatId,
-        `⚠️ Scheduled fire skipped — no project bound to this chat. Use /project to bind one, then the next fire will run\\.`,
-        { parse_mode: 'MarkdownV2', ...threadOpts },
+        '⚠️ Scheduled fire skipped — no project bound to this chat. Use /project to bind one, then the next fire will run.',
+        threadOpts,
       );
     } catch (err) {
       console.error('[ScheduledRunner] failed to notify missing session:', err);
@@ -77,8 +76,8 @@ async function fireSchedule(bot: Bot, schedule: Schedule): Promise<void> {
     try {
       await bot.api.sendMessage(
         chatId,
-        `⚠️ Scheduled fire failed: ${escapeMarkdownV2(msg)}`,
-        { parse_mode: 'MarkdownV2', ...threadOpts },
+        `⚠️ Scheduled fire failed: ${msg}`,
+        threadOpts,
       );
     } catch { /* ignore */ }
     throw err instanceof Error ? err : new Error(msg);

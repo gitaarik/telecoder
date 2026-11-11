@@ -22,7 +22,7 @@ const REANCHOR_FLOOR_MS = 120_000;
 interface Sent {
   chatId: number;
   text: string;
-  opts?: { message_thread_id?: number; parse_mode?: string };
+  opts?: { message_thread_id?: number; parse_mode?: string; entities?: { type: string; offset: number; length: number }[] };
 }
 
 let sends: Sent[];
@@ -338,14 +338,32 @@ describe('size limits', () => {
   });
 });
 
+describe('formatting', () => {
+  it('sends entities, not a parse mode, and keeps model text verbatim', async () => {
+    noteMonitorEvent(SESSION_KEY, 'step_1 *done*.', 'line (one)\nline_two', { notify: true });
+    await settle();
+
+    const { text, opts } = sends[0];
+    expect(opts?.parse_mode).toBeUndefined();
+    expect(text).toContain('step_1 *done*.');
+    expect(text).not.toContain('\\');
+    const spans = (type: string) =>
+      (opts?.entities ?? []).filter((e) => e.type === type).map((e) => text.slice(e.offset, e.offset + e.length));
+    expect(spans('bold')).toEqual(['Background activity']);
+    expect(spans('pre')).toEqual(['line (one)\nline_two']);
+    expect(spans('italic')).toEqual([expect.stringMatching(/^\d\d:\d\d$/)]);
+  });
+});
+
 describe('Telegram failures', () => {
-  it('falls back to plain text when MarkdownV2 is rejected', async () => {
+  it('falls back to plain text when Telegram refuses the entities', async () => {
     sendFailures = [grammyError('Bad Request: can\'t parse entities', 400)];
     noteMonitorEvent(SESSION_KEY, 'weird *formatting*', '', { notify: true });
     await settle();
 
     expect(sends).toHaveLength(1);
     expect(sends[0].opts?.parse_mode).toBeUndefined();
+    expect(sends[0].opts?.entities).toEqual([]);
     expect(sends[0].text).toContain('weird *formatting*');
   });
 

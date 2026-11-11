@@ -99,10 +99,10 @@ export async function initTelegraph(): Promise<void> {
  * hang the URL under it.
  *
  * Length is the only trigger. Merely containing a markdown table used to send a
- * three-line reply to Telegraph as well, on the grounds that MarkdownV2 can't
- * render tables — but `convertToTelegramMarkdown` rewrites pipe tables into
- * bullet lists before they ever reach Telegram, so there is nothing left to
- * compensate for.
+ * three-line reply to Telegraph as well, on the grounds that Telegram can't
+ * render tables — but `markdownToEntities` rewrites pipe tables into
+ * `**Header**: cell` lines before they ever reach Telegram, so there is
+ * nothing left to compensate for.
  */
 export function shouldPublishTelegraph(content: string, sessionKey?: string): boolean {
   // Global kill switch, then the per-chat toggle.

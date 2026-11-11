@@ -99,11 +99,33 @@ describe('/recap', () => {
   it('shows each exchange with only what you sent', async () => {
     const { ctx, reply } = chatWithTranscript('/recap');
     await handleRecap(ctx);
-    const yours = reply.mock.calls.map(([text]) => text).filter((text) => text.startsWith('>*You:*'));
-    expect(yours).toEqual([
-      '>*You:* Plan the parser',
-      '>*You:* Build log: all green Ship it',
+    const yours = reply.mock.calls.filter(([text]) => text.startsWith('You:'));
+    expect(yours.map(([text]) => text)).toEqual([
+      'You: Plan the parser',
+      'You: Build log: all green Ship it',
     ]);
+    // Quoted, with the label in bold — sent as entities, never a parse mode.
+    expect(yours[0][1]).toEqual({
+      entities: [
+        { type: 'blockquote', offset: 0, length: 'You: Plan the parser'.length },
+        { type: 'bold', offset: 0, length: 4 },
+      ],
+    });
+  });
+
+  it('renders the reply\'s markdown as entities rather than raw marks', async () => {
+    const { ctx, reply } = chatWithTranscript('/recap', [
+      rec('user', 'Where is it?'), rec('assistant', 'In **src/parser.ts**, see `parse()`.'),
+    ]);
+    await handleRecap(ctx);
+    const answer = reply.mock.calls.find(([text]) => text.startsWith('In src/parser.ts'));
+    expect(answer?.[0]).toBe('In src/parser.ts, see parse().');
+    expect(answer?.[1]).toEqual({
+      entities: [
+        { type: 'bold', offset: 3, length: 13 },
+        { type: 'code', offset: 22, length: 7 },
+      ],
+    });
   });
 
   describe('ends the way a turn does', () => {
@@ -129,7 +151,7 @@ describe('/recap', () => {
       const lastReply = sent.findIndex((text) => text.includes('Shipped'));
       const [statusLine] = sent.slice(lastReply + 1);
       expect(sent).toHaveLength(lastReply + 2);
-      expect(statusLine).toContain('_▸ Plan the parser_\n_▸ Ship it_');
+      expect(statusLine).toContain('▸ Plan the parser\n▸ Ship it');
       expect(statusLine).toContain('54% context');
     });
 
@@ -146,7 +168,7 @@ describe('/recap', () => {
       await handleRecap(ctx);
 
       const sent = reply.mock.calls.map(([text]) => text);
-      expect(sent.at(-1)).toContain('_▸ Plan the parser_');
+      expect(sent.at(-1)).toContain('▸ Plan the parser');
       expect(sent.at(-1)).not.toContain('Ship it');
       expect(sent.at(-1)).toContain('30% context');
     });

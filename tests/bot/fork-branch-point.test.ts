@@ -10,7 +10,10 @@
  */
 
 import { describe, it, expect, vi, afterAll } from 'vitest';
-import type { Context } from 'grammy';
+import { GrammyError, type Context } from 'grammy';
+import type { MessageEntity } from 'grammy/types';
+import type { EntityMessage } from '../../src/telegram/entities.js';
+import { marked } from '../helpers/entity-marks.js';
 import type { PendingFork } from '../../src/claude/pending-forks.js';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -70,7 +73,7 @@ const MARKER_BUTTONS = {
   },
 };
 /** How a loaded fork's marker goes out: formatted, with its buttons under it. */
-const MARKER_OPTIONS = { parse_mode: 'MarkdownV2', ...MARKER_BUTTONS };
+const MARKER_OPTIONS = { entities: expect.any(Array), ...MARKER_BUTTONS };
 
 const record = (uuid: string, type: 'user' | 'assistant', text: string) => JSON.stringify({
   type,
@@ -115,14 +118,25 @@ function sendFork(userId: number): void {
 
 /** A tap on an inline button under `messageId`. */
 function tap(chatId: number, userId: number, data: string, messageId: number) {
+  // An edit of the tapped message, as the bot makes it through ctx.api,
+  // recorded as (text, options) like ctx.editMessageText takes them.
+  const editMessageText = vi.fn(async (_text: string, _options: object) => true);
   return {
     chat: { id: chatId },
     from: { id: userId },
-    callbackQuery: { data, message: { message_id: messageId } },
+    callbackQuery: { data, message: { message_id: messageId, chat: { id: chatId } } },
     answerCallbackQuery: vi.fn(async () => true),
-    editMessageText: vi.fn(async () => true),
+    editMessageText,
+    api: {
+      editMessageText: (_chat: number, _id: number, text: string, options: object) => editMessageText(text, options),
+    },
   };
 }
+
+/** A text_link to `url` among a sent message's options. */
+const linkTo = (url: string) => expect.objectContaining({
+  entities: expect.arrayContaining([expect.objectContaining({ type: 'text_link', url })]),
+});
 
 const asCtx = (fake: object) => fake as unknown as Context;
 const loadedSessionId = (chatId: number) => sessionManager.getSession(String(chatId))!.claudeSessionId!;
@@ -202,16 +216,20 @@ describe('the confirmation of a loaded fork', () => {
     sendFork(6);
 
     const accept = tap(chatId, 6, 'fork:accept', 55);
-    accept.editMessageText.mockRejectedValueOnce(new Error("Bad Request: can't parse entities"));
+    accept.editMessageText.mockRejectedValueOnce(new GrammyError(
+      "Call to 'editMessageText' failed!",
+      { ok: false, error_code: 400, description: "Bad Request: can't parse entities" },
+      'editMessageText',
+      {},
+    ));
     await handleForkCallback(asCtx(accept));
 
     // Left as it was, the offer would go on showing Accept and Decline.
     expect(accept.editMessageText).toHaveBeenLastCalledWith(
       expect.stringContaining('Forked from Research bot'),
-      MARKER_BUTTONS,
+      { ...MARKER_BUTTONS, entities: [] },
     );
     const plain = accept.editMessageText.mock.lastCall?.[0] as string;
-    expect(plain).not.toMatch(/\\|\*\*>|\|\||^>/m);
     expect(plain).toContain('You: Split the parser in two');
     expect(plain).toContain('Done — tokenizer and parser are separate now.');
     expect(messageOffsets.lookup(String(chatId), 55)).toMatchObject({ lineCount: 3 });
@@ -231,68 +249,72 @@ describe('buildForkMarker', () => {
   /** A fork whose transcript is one exchange: `prompt`, answered by `reply`. */
   const forkOf = (prompt: string, reply: string) =>
     fork({ jsonl: jsonl(record('u1', 'user', prompt), record('a1', 'assistant', reply)) });
-  /** The collapsed quote's lines, from its opening `**>` to its closing `||`. */
-  const quoteIn = (marker: string) => {
-    const lines = marker.split('\n');
-    const start = lines.findIndex((line) => line.startsWith('**>'));
-    if (start === -1) return undefined;
-    return lines.slice(start, lines.findIndex((line, i) => i >= start && line.endsWith('||')) + 1);
+  /** The collapsed quote's lines, or undefined when there is none. */
+  const quoteIn = (marker: EntityMessage) => {
+    const quote = marker.entities.find((e) => e.type === 'expandable_blockquote');
+    return quote && marker.text.slice(quote.offset, quote.offset + quote.length).split('\n');
   };
+  /** The marker as it reads, its bold and italic marked. */
+  const shown = (marker: EntityMessage) => marked(marker.text, marker.entities);
 
   it('reads as a break between two conversations', () => {
-    expect(buildForkMarker(fork())).toBe([
+    const marker = buildForkMarker(fork());
+    expect(shown(marker)).toBe([
       '━━━━━━━━━━━━━━━━',
       '*🍴 Forked from Research bot*',
       '━━━━━━━━━━━━━━━━',
       'telecoder · Split the parser',
       '',
-      'A new conversation starts here\\. It picks up after:',
+      'A new conversation starts here. It picks up after:',
       '*You:* Split the parser in two',
-      '**>Looking at the parser first\\.',
-      '>',
-      '>Done — tokenizer and parser are separate now\\.||',
+      'Looking at the parser first.',
       '',
-      "_What's above is this bot's previous conversation — it's in /resume\\._",
+      'Done — tokenizer and parser are separate now.',
+      '',
+      "_What's above is this bot's previous conversation — it's in /resume._",
     ].join('\n'));
+    expect(quoteIn(marker)).toEqual([
+      'Looking at the parser first.',
+      '',
+      'Done — tokenizer and parser are separate now.',
+    ]);
   });
 
   it('calls a branch taken in this chat a branch', () => {
-    const marker = buildForkMarker(fork({ fromBotId: BOT_ID, fromBotName: 'TeleCoder' }));
+    const marker = shown(buildForkMarker(fork({ fromBotId: BOT_ID, fromBotName: 'TeleCoder' })));
     expect(marker).toContain('*🌱 New branch*');
     expect(marker).toContain('the conversation you branched from');
   });
 
   it('still says a new conversation starts when there is no exchange to show', () => {
     const marker = buildForkMarker(fork({ jsonl: jsonl(record('u1', 'user', 'Still thinking?')) }));
-    expect(marker).toContain('A new conversation starts here\\.');
-    expect(marker).not.toContain('You:');
+    expect(marker.text).toContain('A new conversation starts here.');
+    expect(marker.text).not.toContain('You:');
     expect(quoteIn(marker)).toBeUndefined();
   });
 
   it('collapses the whole reply, without its markdown', () => {
     const reply = '## Status\n\n**Done** — `parser.ts` is split:\n\n```ts\nexport const x = 1;\n```\n\nNext: tests.';
     expect(quoteIn(buildForkMarker(forkOf('Where are we?', reply)))).toEqual([
-      '**>Status',
-      '>',
-      '>Done — parser\\.ts is split:',
-      '>',
-      '>export const x \\= 1;',
-      '>',
-      '>Next: tests\\.||',
+      'Status',
+      '',
+      'Done — parser.ts is split:',
+      '',
+      'export const x = 1;',
+      '',
+      'Next: tests.',
     ]);
   });
 
   it('cuts a reply too long for one message, and says where the rest is', () => {
     const marker = buildForkMarker(forkOf('Long one?', 'All good here. '.repeat(400)));
-    expect(quoteIn(marker)!.at(-1)!.endsWith('here\\. …||')).toBe(true);
-    expect(marker).toContain('The rest of the reply is in /recap\\.');
-    // Telegram counts the text once parsed; unescaped, with markup still in,
-    // is an upper bound on that.
-    expect(marker.replace(/\\(.)/g, '$1').length).toBeLessThanOrEqual(4096);
+    expect(quoteIn(marker)!.at(-1)!.endsWith('here. …')).toBe(true);
+    expect(marker.text).toContain('The rest of the reply is in /recap.');
+    expect(marker.text.length).toBeLessThanOrEqual(4096);
   });
 
   /** The banner's line for the prompt it picks up after. */
-  const youIn = (marker: string) => marker.split('\n').find((line) => line.startsWith('*You:*'));
+  const youIn = (marker: EntityMessage) => shown(marker).split('\n').find((line) => line.startsWith('*You:*'));
 
   it('keeps the prompt to one line, whole up to 300 characters', () => {
     const marker = buildForkMarker(forkOf('First line\nsecond line ' + 'word '.repeat(55), 'Ok.'));
@@ -304,7 +326,7 @@ describe('buildForkMarker', () => {
     const marker = buildForkMarker(forkOf(prompt, 'All good here. '.repeat(400)));
     expect(youIn(marker)).toMatch(/^\*You:\* Plan the parser and more detail .+ … .+ so what do you think\?$/);
     // With the longest reply a banner holds, it still fits one message.
-    expect(marker.replace(/\\(.)/g, '$1').length).toBeLessThanOrEqual(4096);
+    expect(marker.text.length).toBeLessThanOrEqual(4096);
   });
 
   it('shows a paste by its text and a reply by the words under the quote, as /tree does', () => {
@@ -314,11 +336,13 @@ describe('buildForkMarker', () => {
       .toBe('*You:* Why not a parser?');
   });
 
-  it('escapes what it shows', () => {
-    const marker = buildForkMarker({ ...forkOf('Is a-b > c?', 'Use [c]!'), topic: 'v2.1 (draft)' });
-    expect(marker).toContain('telecoder · v2\\.1 \\(draft\\)');
-    expect(marker).toContain('*You:* Is a\\-b \\> c?');
-    expect(quoteIn(marker)).toEqual(['**>Use \\[c\\]\\!||']);
+  it('shows what it quotes as it was written, with no formatting of its own', () => {
+    const marker = buildForkMarker({ ...forkOf('Is a-b > c? *Not* `this`', 'Use [c]!'), topic: 'v2.1 (draft)' });
+    expect(shown(marker)).toContain('telecoder · v2.1 (draft)');
+    expect(shown(marker)).toContain('*You:* Is a-b > c? *Not* `this`');
+    expect(quoteIn(marker)).toEqual(['Use [c]!']);
+    // The title, You:, the quote and the closing line: nothing from the content.
+    expect(marker.entities.map((e: MessageEntity) => e.type)).toEqual(['bold', 'bold', 'expandable_blockquote', 'italic']);
   });
 });
 
@@ -328,7 +352,7 @@ describe('cutting text short', () => {
 
   it('never cuts an emoji in half in a reply with no space to cut at', () => {
     const [quote] = replyQuote('日本語'.repeat(3) + '😀'.repeat(10), 10);
-    expect(quote).not.toMatch(brokenEmoji);
+    expect(quote!.text).not.toMatch(brokenEmoji);
   });
 });
 
@@ -382,11 +406,12 @@ describe('a fork into a new thread', () => {
     const before = sessionManager.getSession(String(chatId))?.claudeSessionId;
     const createForumTopic = vi.fn(async () => ({ message_thread_id: 9, name: '🍴 project', icon_color: 0 }));
     const sendMessage = vi.fn(async () => ({ message_id: 501 }));
+    const base = tap(chatId, 1, 'fork:confirm:thread:70', 80);
     const confirm = {
-      ...tap(chatId, 1, 'fork:confirm:thread:70', 80),
+      ...base,
       chat: { id: chatId, type: 'private' },
       me: { username: 'telecoder_bot', has_topics_enabled: true },
-      api: { createForumTopic, sendMessage },
+      api: { ...base.api, createForumTopic, sendMessage },
     };
 
     await handleForkCallback(asCtx(confirm));
@@ -404,9 +429,10 @@ describe('a fork into a new thread', () => {
     expect(sessionManager.getSession(String(chatId))?.claudeSessionId).toBe(before);
     // And the picker here turns into a link to it, keeping the fork point.
     expect(confirm.editMessageText).toHaveBeenCalledWith(
-      expect.stringContaining('https://t.me/telecoder_bot/9'),
+      expect.stringContaining('🍴 project carries on from that point'),
       expect.objectContaining(FORK_BUTTON),
     );
+    expect(confirm.editMessageText).toHaveBeenCalledWith(expect.any(String), linkTo('https://t.me/telecoder_bot/9'));
     expect(messageOffsets.lookup(String(chatId), 80)?.lineCount).toBe(3);
   });
 
@@ -415,11 +441,12 @@ describe('a fork into a new thread', () => {
     sourceChat(chatId, 72);
     const before = sessionManager.getSession(String(chatId))?.claudeSessionId;
     const createForumTopic = vi.fn(async () => ({ message_thread_id: 11, name: '🍴 project', icon_color: 0 }));
+    const base = tap(chatId, 1, 'fork:pick', 72);
     const pick = {
-      ...tap(chatId, 1, 'fork:pick', 72),
+      ...base,
       chat: { id: chatId, type: 'private' },
       me: { username: 'telecoder_bot', has_topics_enabled: true },
-      api: { createForumTopic, sendMessage: vi.fn(async () => ({ message_id: 502 })) },
+      api: { ...base.api, createForumTopic, sendMessage: vi.fn(async () => ({ message_id: 502 })) },
       reply: vi.fn(async () => ({ message_id: 90 })),
     };
 
@@ -433,9 +460,10 @@ describe('a fork into a new thread', () => {
     // The reply it was taken from stays; the link goes under it, keeping the fork point.
     expect(pick.editMessageText).not.toHaveBeenCalled();
     expect(pick.reply).toHaveBeenCalledWith(
-      expect.stringContaining('https://t.me/telecoder_bot/11'),
+      expect.stringContaining('Forked into a new thread'),
       expect.objectContaining({ ...FORK_BUTTON, reply_parameters: { message_id: 72 } }),
     );
+    expect(pick.reply).toHaveBeenCalledWith(expect.any(String), linkTo('https://t.me/telecoder_bot/11'));
     expect(messageOffsets.lookup(String(chatId), 90)?.lineCount).toBe(3);
   });
 
@@ -460,8 +488,9 @@ describe('a fork into a new thread', () => {
     expect(uuidsIn(sessionJsonlPath(PROJECT, thread.claudeSessionId!))).toEqual(['u1', 'a1', 'a2', 'u2', 'a3']);
     expect(command.reply).toHaveBeenCalledTimes(1);
     expect(command.reply).toHaveBeenCalledWith(
-      expect.stringContaining('https://t.me/telecoder_bot/12'),
+      expect.stringContaining('Forked into a new thread'),
       expect.objectContaining({ reply_parameters: { message_id: 75 } }),
     );
+    expect(command.reply).toHaveBeenCalledWith(expect.any(String), linkTo('https://t.me/telecoder_bot/12'));
   });
 });

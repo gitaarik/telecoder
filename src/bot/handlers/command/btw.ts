@@ -27,7 +27,7 @@ export async function handleBtw(ctx: Context): Promise<void> {
   const question = text.replace(/^\/btw\s*/i, '').trim();
 
   if (!question) {
-    await ctx.reply('Usage: /btw <your question>\n\nAsk a side question without interrupting the current task.', { parse_mode: undefined });
+    await ctx.reply('Usage: /btw <your question>\n\nAsk a side question without interrupting the current task.');
     return;
   }
 
@@ -46,8 +46,7 @@ export async function handleBtw(ctx: Context): Promise<void> {
     // The query object only exists while a turn is in flight — this is not a
     // statement about whether the conversation itself exists.
     await ctx.reply(
-      'No turn is running right now, so there is nothing to ask alongside. Send your question as a regular message instead.',
-      { parse_mode: undefined }
+      'No turn is running right now, so there is nothing to ask alongside. Send your question as a regular message instead.'
     );
     return;
   }
@@ -55,21 +54,21 @@ export async function handleBtw(ctx: Context): Promise<void> {
   // askSideQuestion exists at runtime but isn't in the TypeScript types yet
   const queryAny = activeQuery as unknown as Record<string, unknown>;
   if (typeof queryAny.askSideQuestion !== 'function') {
-    await ctx.reply('Side questions are not supported by the current SDK version.', { parse_mode: undefined });
+    await ctx.reply('Side questions are not supported by the current SDK version.');
     return;
   }
 
   try {
     const result = await (queryAny.askSideQuestion as (q: string) => Promise<{ response: string; synthetic: boolean } | null>)(question);
     if (!result || !result.response) {
-      await ctx.reply("I don't have enough context to answer that.", { parse_mode: undefined });
+      await ctx.reply("I don't have enough context to answer that.");
       return;
     }
     await messageSender.sendMessage(ctx, formatSideAnswer(question, result.response));
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
     console.error('[btw] Error:', msg);
-    await ctx.reply(`Failed to answer side question: ${msg}`, { parse_mode: undefined });
+    await ctx.reply(`Failed to answer side question: ${msg}`);
   }
 }
 
@@ -103,8 +102,7 @@ async function handleBtwViaFork(ctx: Context, sessionKey: string, question: stri
   const session = sessionManager.getSession(sessionKey);
   if (!session?.claudeSessionId) {
     await ctx.reply(
-      'No conversation to ask about yet. Send a message first, then /btw can answer alongside it.',
-      { parse_mode: undefined }
+      'No conversation to ask about yet. Send a message first, then /btw can answer alongside it.'
     );
     return;
   }
@@ -115,9 +113,7 @@ async function handleBtwViaFork(ctx: Context, sessionKey: string, question: stri
   // Labelled ack: this sits alongside the main turn's live status message, so
   // it has to be obvious which one belongs to the side question. It then
   // doubles as the progress line, and finally as a one-line receipt.
-  const ack = await ctx.reply(`${headline}\nasking on the side… (main task keeps running)`, {
-    parse_mode: undefined,
-  });
+  const ack = await ctx.reply(`${headline}\nasking on the side… (main task keeps running)`);
 
   const progress = new BtwProgressLine(ctx, chatId, ack.message_id, headline);
 
@@ -131,7 +127,7 @@ async function handleBtwViaFork(ctx: Context, sessionKey: string, question: stri
     await progress.finish(result.toolCount ?? 0, result.elapsedMs ?? 0);
 
     if (!result.response) {
-      await ctx.reply("I don't have enough context to answer that.", { parse_mode: undefined });
+      await ctx.reply("I don't have enough context to answer that.");
       return;
     }
     await messageSender.sendMessage(ctx, formatSideAnswer(question, result.response));
@@ -139,7 +135,7 @@ async function handleBtwViaFork(ctx: Context, sessionKey: string, question: stri
     const msg = error instanceof Error ? error.message : 'Unknown error';
     console.error('[btw] Fork error:', sanitizeError(error));
     await progress.fail();
-    await ctx.reply(`Failed to answer side question: ${msg}`, { parse_mode: undefined });
+    await ctx.reply(`Failed to answer side question: ${msg}`);
   }
 }
 
@@ -220,7 +216,7 @@ class BtwProgressLine {
     this.lastEditAt = Date.now();
     this.lastRendered = text;
     try {
-      await this.ctx.api.editMessageText(this.chatId, this.messageId, text, { parse_mode: undefined });
+      await this.ctx.api.editMessageText(this.chatId, this.messageId, text);
     } catch (err) {
       console.debug('[btw] progress edit failed:', err instanceof Error ? err.message : err);
     }

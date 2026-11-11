@@ -23,7 +23,8 @@ import { InstancesConfigError } from '../../utils/instance-config.js';
 import { getWorkspaceRoot } from '../../utils/workspace-guard.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
 import { sessionManager } from '../../claude/session-manager.js';
-import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
+import { EntityText } from '../../telegram/entities.js';
+import { replyFormatted, sendFormatted } from '../../telegram/send.js';
 
 /** How long a /newbot waits for the bot it asked for. */
 const PENDING_TTL_MS = 60 * 60_000;
@@ -81,12 +82,15 @@ export async function offerNewBot(
 
   const project = path.basename(projectPath);
   pending.set(userId, { projectPath, at: Date.now() });
-  await api.sendMessage(
+  await sendFormatted(
+    api,
     userId,
-    `🤖 Tap the button to create a bot for *${esc(project)}*\\. You can change its name and username on the next screen\\.\n\n` +
-      'It starts in that project, and its threads are named without the project in front\\.',
+    new EntityText()
+      .add('🤖 Tap the button to create a bot for ').bold(project)
+      .add('. You can change its name and username on the next screen.\n\n')
+      .add('It starts in that project, and its threads are named without the project in front.')
+      .build(),
     {
-      parse_mode: 'MarkdownV2',
       ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
       reply_markup: {
         keyboard: [[{
@@ -214,16 +218,16 @@ export async function handleManagedBotCreated(ctx: Context): Promise<void> {
   }
   console.log(`[NewBot] Added bot ${created.id} as "${name}"${projectPath ? ` for ${projectPath}` : ''}`);
 
-  const link = created.username ? `[${esc(handle)}](https://t.me/${created.username})` : `*${esc(handle)}*`;
-  const lines = [
-    projectPath
-      ? `✅ ${link} is set up for *${esc(path.basename(projectPath))}* and starts in a few seconds\\.`
-      : `✅ ${link} is set up and starts in a few seconds\\. It has no project of its own: this /newbot had expired\\.`,
-    '',
-    'It has no threads yet: only you can turn them on, in [@BotFather](https://t.me/BotFather)\'s Mini App\\. Message it and it walks you through it, and tells you once they\'re on\\.',
-  ];
-  if (!locked) lines.push('', '⚠️ Couldn\'t restrict who can open it\\. Only allowed users get answers either way\\.');
-  await ctx.reply(lines.join('\n'), { parse_mode: 'MarkdownV2', ...done });
+  const text = new EntityText().add('✅ ');
+  if (created.username) text.link(handle, `https://t.me/${created.username}`);
+  else text.bold(handle);
+  if (projectPath) text.add(' is set up for ').bold(path.basename(projectPath)).add(' and starts in a few seconds.');
+  else text.add(' is set up and starts in a few seconds. It has no project of its own: this /newbot had expired.');
+  text.newline(2)
+    .add('It has no threads yet: only you can turn them on, in ').link('@BotFather', 'https://t.me/BotFather')
+    .add("'s Mini App. Message it and it walks you through it, and tells you once they're on.");
+  if (!locked) text.newline(2).add("⚠️ Couldn't restrict who can open it. Only allowed users get answers either way.");
+  await replyFormatted(ctx, text.build(), done);
 }
 
 /** Test hook. */

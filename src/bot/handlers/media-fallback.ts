@@ -1,5 +1,6 @@
 import { Context } from 'grammy';
-import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
+import { EntityText } from '../../telegram/entities.js';
+import { replyFormatted } from '../../telegram/send.js';
 import { isDuplicate, markProcessed } from '../../telegram/deduplication.js';
 import { isStaleMessage } from '../middleware/stale-filter.js';
 
@@ -18,10 +19,10 @@ export function exceedsDownloadLimit(fileSizeBytes?: number): boolean {
   return (fileSizeBytes ?? 0) / (1024 * 1024) > TELEGRAM_DOWNLOAD_LIMIT_MB;
 }
 
-/** ` (172.0MB)`, MarkdownV2-escaped — or empty when Telegram omitted the size. */
+/** ` (172.0MB)` — or empty when Telegram omitted the size. */
 function sizeSuffix(fileSizeBytes?: number): string {
   const mb = (fileSizeBytes ?? 0) / (1024 * 1024);
-  return mb > 0 ? ` \\(${esc(mb.toFixed(1))}MB\\)` : '';
+  return mb > 0 ? ` (${mb.toFixed(1)}MB)` : '';
 }
 
 /**
@@ -39,13 +40,12 @@ export async function replyTooLargeToFetch(
   // nothing arrived" is unfalsifiable without a line to point at.
   console.log(`[Media] ${kindTitle} over the ${TELEGRAM_DOWNLOAD_LIMIT_MB}MB fetch limit `
     + `(${((fileSizeBytes ?? 0) / (1024 * 1024)).toFixed(1)}MB) — explained to user`);
-  await ctx.reply(
-    `❌ *${esc(kindTitle)} too large*${sizeSuffix(fileSizeBytes)}\n\n`
-    + `Telegram caps bot downloads at ${TELEGRAM_DOWNLOAD_LIMIT_MB}MB, so I can't fetch this one `
-    + `no matter how the bot is configured\\.\n\n`
-    + `Re\\-encode it smaller, or — if the file is already on this machine — send me its path instead\\.`,
-    { parse_mode: 'MarkdownV2' }
-  );
+  await replyFormatted(ctx, new EntityText()
+    .add('❌ ').bold(`${kindTitle} too large`).add(sizeSuffix(fileSizeBytes)).add('\n\n')
+    .add(`Telegram caps bot downloads at ${TELEGRAM_DOWNLOAD_LIMIT_MB}MB, so I can't fetch this one `
+      + 'no matter how the bot is configured.\n\n'
+      + 'Re-encode it smaller, or — if the file is already on this machine — send me its path instead.')
+    .build());
 }
 
 /**
@@ -58,12 +58,11 @@ export async function replyBareAudio(ctx: Context, fileSizeBytes?: number): Prom
     return;
   }
   console.log('[Media] Bare audio upload — pointed user at /transcribe');
-  await ctx.reply(
-    `🎵 *Audio received*${sizeSuffix(fileSizeBytes)}\n\n`
-    + `I don't read audio files on their own\\. To transcribe this, run /transcribe `
-    + `and reply to the prompt with the same file\\.`,
-    { parse_mode: 'MarkdownV2' }
-  );
+  await replyFormatted(ctx, new EntityText()
+    .add('🎵 ').bold('Audio received').add(sizeSuffix(fileSizeBytes)).add('\n\n')
+    .add("I don't read audio files on their own. To transcribe this, run /transcribe "
+      + 'and reply to the prompt with the same file.')
+    .build());
 }
 
 /**
@@ -76,12 +75,11 @@ export async function replyUnsupportedVideo(ctx: Context, fileSizeBytes?: number
     return;
   }
   console.log('[Media] Video upload — unsupported, told user');
-  await ctx.reply(
-    `🎬 *Video isn't supported*${sizeSuffix(fileSizeBytes)}\n\n`
-    + `I can't read video files\\. Extract the audio and send that via /transcribe, `
-    + `or point me at the file's path if it's already on this machine\\.`,
-    { parse_mode: 'MarkdownV2' }
-  );
+  await replyFormatted(ctx, new EntityText()
+    .add('🎬 ').bold("Video isn't supported").add(sizeSuffix(fileSizeBytes)).add('\n\n')
+    .add("I can't read video files. Extract the audio and send that via /transcribe, "
+      + "or point me at the file's path if it's already on this machine.")
+    .build());
 }
 
 /**

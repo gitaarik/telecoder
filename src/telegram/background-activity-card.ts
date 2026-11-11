@@ -24,7 +24,8 @@
  */
 
 import { GrammyError, type Bot } from 'grammy';
-import { escapeMarkdownV2 } from './markdown.js';
+import { EntityText, sliceMessage, type EntityMessage } from './entities.js';
+import { sendFormatted, editFormatted } from './send.js';
 import { parseSessionKey } from '../utils/session-key.js';
 
 export type BackgroundTaskKind = 'monitor' | 'bash_background' | 'subagent' | 'workflow';
@@ -199,7 +200,7 @@ export function sealCard(sessionKey: string): void {
   // Final edit so the sealed card is not left showing a stale intermediate
   // state. Bypasses the throttle — turn boundaries are rare enough.
   if (state.messageId !== null && state.dirty) {
-    void editCard(state, state.messageId, renderCard(state), renderCardPlain(state));
+    void editCard(state, state.messageId, renderCard(state));
   }
   state.messageId = null;
   state.anchoredAt = 0;
@@ -230,7 +231,7 @@ export function _inspectCard(sessionKey: string): {
     messageId: state.messageId,
     running: state.running.size,
     events: state.events.length,
-    text: renderCardPlain(state),
+    text: renderCard(state).text,
   };
 }
 
@@ -311,7 +312,8 @@ async function flush(state: CardState): Promise<void> {
     state.lastRendered = '';
   }
 
-  const text = renderCard(state);
+  const card = renderCard(state);
+  const text = card.text;
   if (state.messageId !== null && text === state.lastRendered) {
     state.dirty = false;
     return;
@@ -321,9 +323,8 @@ async function flush(state: CardState): Promise<void> {
   state.inFlight = true;
   state.dirty = false;
   try {
-    const plain = renderCardPlain(state);
     if (state.messageId === null) {
-      const messageId = await sendCard(state, text, plain);
+      const messageId = await sendCard(state, card);
       // Torn down while the send was in flight — the session is gone, so
       // there is nothing left to adopt this message id.
       if (epoch !== state.epoch) return;
@@ -334,7 +335,7 @@ async function flush(state: CardState): Promise<void> {
         state.lastRendered = text;
       }
     } else {
-      const ok = await editCard(state, state.messageId, text, plain);
+      const ok = await editCard(state, state.messageId, card);
       if (epoch !== state.epoch) return;
       state.lastEditAt = Date.now();
       if (ok) state.lastRendered = text;
@@ -350,29 +351,27 @@ async function flush(state: CardState): Promise<void> {
   }
 }
 
-async function sendCard(state: CardState, text: string, plain: string): Promise<number | null> {
+/**
+ * Post the card. A card whose formatting Telegram refuses goes out again as
+ * plain text (see ./send.ts).
+ */
+async function sendCard(state: CardState, card: EntityMessage): Promise<number | null> {
   if (!botRef) return null;
   const opts = state.threadId !== undefined ? { message_thread_id: state.threadId } : {};
   try {
-    const msg = await botRef.api.sendMessage(state.chatId, text, { ...opts, parse_mode: 'MarkdownV2' });
+    const msg = await sendFormatted(botRef.api, state.chatId, card, opts);
     return msg.message_id;
   } catch (err) {
     if (noteRateLimit(state, err)) return null;
-    console.error('[BackgroundCard] MarkdownV2 send failed, falling back to plain text:', describe(err));
-    try {
-      const msg = await botRef.api.sendMessage(state.chatId, plain, opts);
-      return msg.message_id;
-    } catch (plainErr) {
-      console.error('[BackgroundCard] plain text send also failed:', describe(plainErr));
-      return null;
-    }
+    console.error('[BackgroundCard] send failed:', describe(err));
+    return null;
   }
 }
 
-async function editCard(state: CardState, messageId: number, text: string, plain: string): Promise<boolean> {
+async function editCard(state: CardState, messageId: number, card: EntityMessage): Promise<boolean> {
   if (!botRef) return false;
   try {
-    await botRef.api.editMessageText(state.chatId, messageId, text, { parse_mode: 'MarkdownV2' });
+    await editFormatted(botRef.api, state.chatId, messageId, card);
     return true;
   } catch (err) {
     if (noteRateLimit(state, err)) return false;
@@ -386,14 +385,8 @@ async function editCard(state: CardState, messageId: number, text: string, plain
       state.lastRendered = '';
       return false;
     }
-    console.error('[BackgroundCard] MarkdownV2 edit failed, falling back to plain text:', describe(err));
-    try {
-      await botRef.api.editMessageText(state.chatId, messageId, plain);
-      return true;
-    } catch (plainErr) {
-      console.error('[BackgroundCard] plain text edit also failed:', describe(plainErr));
-      return false;
-    }
+    console.error('[BackgroundCard] edit failed:', describe(err));
+    return false;
   }
 }
 
@@ -411,75 +404,45 @@ function describe(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function renderCard(state: CardState): string {
+function renderCard(state: CardState): EntityMessage {
   for (let limit = state.events.length; limit >= 0; limit--) {
-    const text = renderCardAt(state, limit);
-    if (text.length <= MAX_CARD_CHARS) return text;
+    const card = renderCardAt(state, limit);
+    if (card.text.length <= MAX_CARD_CHARS) return card;
   }
-  return renderCardAt(state, 0).slice(0, MAX_CARD_CHARS);
+  return sliceMessage(renderCardAt(state, 0), 0, MAX_CARD_CHARS);
 }
 
-function renderCardAt(state: CardState, eventLimit: number): string {
-  const lines: string[] = [`📡 *${escapeMarkdownV2('Background activity')}*`];
+function renderCardAt(state: CardState, eventLimit: number): EntityMessage {
+  const b = new EntityText().add('📡 ').bold('Background activity');
 
   const running = [...state.running.values()].sort((a, b) => a.startedAt - b.startedAt);
   if (running.length > 0) {
-    lines.push('');
+    b.newline();
     const now = Date.now();
     for (const task of running) {
       const label = `${kindLabel(task.kind)}: ${truncate(task.description, MAX_TITLE_CHARS)}`;
-      lines.push(`${kindIcon(task.kind)} ${escapeMarkdownV2(label)} · _${escapeMarkdownV2(`running ${formatDuration(now - task.startedAt)}`)}_`);
+      b.newline().add(`${kindIcon(task.kind)} ${label} · `).italic(`running ${formatDuration(now - task.startedAt)}`);
     }
   }
 
   const shown = eventLimit > 0 ? state.events.slice(-eventLimit) : [];
   const dropped = state.events.length - shown.length;
   if (dropped > 0) {
-    lines.push('');
-    lines.push(`_${escapeMarkdownV2(`… ${dropped} earlier event${dropped === 1 ? '' : 's'}`)}_`);
+    b.newline(2).italic(`… ${dropped} earlier event${dropped === 1 ? '' : 's'}`);
   }
 
   for (const event of shown) {
-    lines.push('');
-    lines.push(`${event.icon} _${escapeMarkdownV2(clockTime(event.at))}_ ${escapeMarkdownV2(truncate(event.title, MAX_TITLE_CHARS))}`);
+    b.newline(2).add(`${event.icon} `).italic(clockTime(event.at)).add(` ${truncate(event.title, MAX_TITLE_CHARS)}`);
     if (event.detail) {
-      lines.push(`\`\`\`\n${escapeMarkdownV2(truncate(event.detail, MAX_DETAIL_CHARS))}\n\`\`\``);
+      b.newline().pre(truncate(event.detail, MAX_DETAIL_CHARS));
     }
   }
 
   if (running.length === 0 && shown.length === 0 && dropped === 0) {
-    lines.push('');
-    lines.push(`_${escapeMarkdownV2('nothing running')}_`);
+    b.newline(2).italic('nothing running');
   }
 
-  return lines.join('\n');
-}
-
-function renderCardPlain(state: CardState): string {
-  const lines: string[] = ['📡 Background activity'];
-
-  const running = [...state.running.values()].sort((a, b) => a.startedAt - b.startedAt);
-  if (running.length > 0) {
-    lines.push('');
-    const now = Date.now();
-    for (const task of running) {
-      lines.push(`${kindIcon(task.kind)} ${kindLabel(task.kind)}: ${truncate(task.description, MAX_TITLE_CHARS)} · running ${formatDuration(now - task.startedAt)}`);
-    }
-  }
-
-  for (const event of state.events.slice(-MAX_EVENTS)) {
-    lines.push('');
-    lines.push(`${event.icon} ${clockTime(event.at)} ${truncate(event.title, MAX_TITLE_CHARS)}`);
-    if (event.detail) lines.push(truncate(event.detail, MAX_DETAIL_CHARS));
-  }
-
-  if (running.length === 0 && state.events.length === 0) {
-    lines.push('');
-    lines.push('nothing running');
-  }
-
-  const text = lines.join('\n');
-  return text.length > MAX_CARD_CHARS ? text.slice(0, MAX_CARD_CHARS - 3) + '...' : text;
+  return b.build();
 }
 
 function kindIcon(kind: BackgroundTaskKind): string {

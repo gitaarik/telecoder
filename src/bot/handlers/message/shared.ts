@@ -15,7 +15,8 @@ import { sessionManager } from '../../../claude/session-manager.js';
 import { queueRequest } from '../../../claude/request-queue.js';
 import { summarizeTopicWithHaiku } from '../../../claude/auto-topic-haiku.js';
 import { readLastAiTitle } from '../../../claude/session-jsonl.js';
-import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
+import { EntityText } from '../../../telegram/entities.js';
+import { replyFormatted } from '../../../telegram/send.js';
 import { isBotNameEnabled } from '../../../telegram/botname-settings.js';
 import { namesThread } from '../../../telegram/thread-titles.js';
 import { userPreferences } from '../../../providers/user-preferences.js';
@@ -28,7 +29,7 @@ import { requireSession } from '../session-guard.js';
 export { requireSession } from '../session-guard.js';
 
 export async function replyFeatureDisabled(ctx: Context, feature: string): Promise<void> {
-  await ctx.reply(`⚠️ ${feature} feature is disabled in configuration.`, { parse_mode: undefined });
+  await ctx.reply(`⚠️ ${feature} feature is disabled in configuration.`);
 }
 
 /**
@@ -107,26 +108,17 @@ export async function resolveUserFilePath(
   const workspaceRoot = getWorkspaceRoot();
 
   if (!isPathWithinRoot(workspaceRoot, fullPath)) {
-    await ctx.reply(
-      `❌ File path must be within workspace root: \`${esc(workspaceRoot)}\``,
-      { parse_mode: 'MarkdownV2' }
-    );
+    await replyFormatted(ctx, new EntityText().add('❌ File path must be within workspace root: ').code(workspaceRoot).build());
     return null;
   }
 
   if (!fs.existsSync(fullPath)) {
-    await ctx.reply(
-      `❌ File not found: \`${esc(trimmedPath)}\``,
-      { parse_mode: 'MarkdownV2' }
-    );
+    await replyFormatted(ctx, new EntityText().add('❌ File not found: ').code(trimmedPath).build());
     return null;
   }
 
   if (fs.statSync(fullPath).isDirectory()) {
-    await ctx.reply(
-      `❌ That's a directory, not a file: \`${esc(trimmedPath)}\``,
-      { parse_mode: 'MarkdownV2' }
-    );
+    await replyFormatted(ctx, new EntityText().add("❌ That's a directory, not a file: ").code(trimmedPath).build());
     return null;
   }
 
@@ -155,6 +147,6 @@ export async function runQueuedTurn(
     if ((error as Error).message === 'Queue cleared') return;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[${label}] Turn failed:`, error);
-    await ctx.reply(`❌ Error: ${esc(errorMessage)}`, { parse_mode: 'MarkdownV2' });
+    await ctx.reply(`❌ Error: ${errorMessage}`);
   }
 }

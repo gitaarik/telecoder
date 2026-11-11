@@ -16,7 +16,9 @@ import { sessionManager } from '../../../claude/session-manager.js';
 import { sessionHistory } from '../../../claude/session-history.js';
 import { clearConversation, getCachedUsage } from '../../../providers/provider-router.js';
 import { messageSender } from '../../../telegram/message-sender.js';
-import { escapeMarkdownV2 as esc, processMessageForTelegram } from '../../../telegram/markdown.js';
+import { EntityText, type EntityMessage } from '../../../telegram/entities.js';
+import { replyFormatted, editCallbackMessage, replyMarkdown } from '../../../telegram/send.js';
+import { taskListDisplay } from '../../../telegram/task-list.js';
 import { summarizeUserPrompt, unwrapPaste, cutLabel } from '../../../telegram/prompt-label.js';
 import {
   readRecentExchanges,
@@ -68,31 +70,39 @@ export async function handleClear(ctx: Context): Promise<void> {
 
     const session = sessionManager.getSession(sessionKey);
     const projectName = session ? path.basename(session.workingDirectory) : null;
-    const msg = projectName
-      ? `🔄 Conversation cleared\\. Project *${esc(projectName)}* is still selected\\.`
-      : '🔄 Conversation cleared\\.';
-    const back = withBackToPrevious(msg, sessionKey, session?.conversationId);
-    await ctx.reply(back.text, back.options);
+    const back = withBackToPrevious(clearedMessage(projectName), sessionKey, session?.conversationId);
+    await replyFormatted(ctx, back.text, back.options);
     return;
   }
 
   const session = sessionManager.getSession(sessionKey);
   const projectName = session ? path.basename(session.workingDirectory) : 'current session';
 
-  await ctx.reply(
-    `⚠️ *Clear conversation?*\n\nThis wipes the conversation history for *${esc(projectName)}*\\. The project stays selected\\.\n\n_This cannot be undone\\._\n\n💡 Tip: \`/clear \\-y\` skips this confirmation\\.`,
-    {
-      parse_mode: 'MarkdownV2',
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: '✓ Yes, clear it', callback_data: 'clear:confirm' },
-            { text: '✗ Cancel', callback_data: 'clear:cancel' },
-          ],
+  const confirm = new EntityText()
+    .add('⚠️ ').bold('Clear conversation?')
+    .add('\n\nThis wipes the conversation history for ').bold(projectName)
+    .add('. The project stays selected.\n\n')
+    .italic('This cannot be undone.')
+    .add('\n\n💡 Tip: ').code('/clear -y').add(' skips this confirmation.')
+    .build();
+
+  await replyFormatted(ctx, confirm, {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: '✓ Yes, clear it', callback_data: 'clear:confirm' },
+          { text: '✗ Cancel', callback_data: 'clear:cancel' },
         ],
-      },
-    }
-  );
+      ],
+    },
+  });
+}
+
+/** The confirmation once a conversation is cleared, naming the project kept. */
+function clearedMessage(projectName: string | null): EntityMessage {
+  const msg = new EntityText().add('🔄 Conversation cleared.');
+  if (projectName) msg.add(' Project ').bold(projectName).add(' is still selected.');
+  return msg.build();
 }
 
 export async function handleClearCallback(ctx: Context): Promise<void> {
@@ -116,14 +126,11 @@ export async function handleClearCallback(ctx: Context): Promise<void> {
     const projectName = session ? path.basename(session.workingDirectory) : null;
 
     await ctx.answerCallbackQuery({ text: 'Conversation cleared!' });
-    const msg = projectName
-      ? `🔄 Conversation cleared\\. Project *${esc(projectName)}* is still selected\\.`
-      : '🔄 Conversation cleared\\.';
-    const back = withBackToPrevious(msg, sessionKey, session?.conversationId);
-    await ctx.editMessageText(back.text, back.options);
+    const back = withBackToPrevious(clearedMessage(projectName), sessionKey, session?.conversationId);
+    await editCallbackMessage(ctx, back.text, back.options);
   } else {
     await ctx.answerCallbackQuery({ text: 'Cancelled' });
-    await ctx.editMessageText('👍 Clear cancelled\\. Your session is intact\\.', { parse_mode: 'MarkdownV2' });
+    await editCallbackMessage(ctx, '👍 Clear cancelled. Your session is intact.');
   }
 }
 
@@ -137,15 +144,12 @@ export async function handleResume(ctx: Context): Promise<void> {
   const resumable = history.filter((entry) => entry.claudeSessionId);
 
   if (resumable.length === 0) {
-    await replyMd(ctx, 'ℹ️ No resumable sessions found\\.\n\nSessions need at least one Claude response to be resumable\\.\nUse `/project <name>` to start a new session\\.');
+    await replyMd(ctx, 'ℹ️ No resumable sessions found.\n\nSessions need at least one Claude response to be resumable.\nUse `/project <name>` to start a new session.');
     return;
   }
 
   const { text, keyboard } = buildResumeMessage(resumable);
-  await ctx.reply(text, {
-    parse_mode: 'MarkdownV2',
-    reply_markup: { inline_keyboard: keyboard },
-  });
+  await replyFormatted(ctx, text, { reply_markup: { inline_keyboard: keyboard } });
 }
 
 /** The subset of a history entry the /resume picker renders. */
@@ -169,7 +173,7 @@ export interface ResumableSession {
  * distinguishable.
  */
 export function buildResumeMessage(entries: ResumableSession[]): {
-  text: string;
+  text: EntityMessage;
   keyboard: { text: string; callback_data: string }[][];
 } {
   const options = entries.map((entry) => ({
@@ -180,14 +184,11 @@ export function buildResumeMessage(entries: ResumableSession[]): {
     description: formatTimeAgo(new Date(entry.lastActivity)),
   }));
 
-  const lines = letteredOptionLines(options).map((line) => esc(line));
-  const text = [
-    '📜 *Recent Sessions*',
-    '',
-    'Select a session to resume:',
-    '',
-    ...lines,
-  ].join('\n');
+  const text = new EntityText()
+    .add('📜 ').bold('Recent Sessions')
+    .add('\n\nSelect a session to resume:\n\n')
+    .add(letteredOptionLines(options).join('\n'))
+    .build();
 
   const keyboard = buildLetteredKeyboard(
     options.map((o, idx) => ({
@@ -217,18 +218,24 @@ export async function handleResumeCallback(ctx: Context): Promise<void> {
   await restoreTopicAndRefreshBotName(ctx, sessionKey, entry?.topic);
 
   await ctx.answerCallbackQuery({ text: 'Session resumed!' });
-  await ctx.editMessageText(
-    `✅ Resumed session for *${esc(path.basename(session.workingDirectory))}*\n\n` +
-    `Working directory: \`${esc(session.workingDirectory)}\`${projectStatusSuffix(sessionKey)}`,
-    { parse_mode: 'MarkdownV2' }
-  );
+  await editCallbackMessage(ctx, sessionRestoredMessage('✅ Resumed session for ', session.workingDirectory, sessionKey));
 
   // Send session ID as separate message for easy copying
   if (session.claudeSessionId) {
-    await replyMd(ctx, resumeCommandMessage(session.claudeSessionId));
+    await replyFormatted(ctx, resumeCommandMessage(session.claudeSessionId));
   }
 
+  await taskListDisplay.showRestored(ctx.api, sessionKey, session.claudeSessionId);
   await sendRecapHint(ctx, sessionKey);
+}
+
+/** "<lead><project>", the working directory and the project status block. */
+function sessionRestoredMessage(lead: string, workingDirectory: string, sessionKey: string): EntityMessage {
+  return new EntityText()
+    .add(lead).bold(path.basename(workingDirectory))
+    .add('\n\nWorking directory: ').code(workingDirectory)
+    .append(projectStatusSuffix(sessionKey))
+    .build();
 }
 
 export async function handleContinue(ctx: Context): Promise<void> {
@@ -239,7 +246,7 @@ export async function handleContinue(ctx: Context): Promise<void> {
   const session = sessionManager.resumeLastSession(sessionKey);
 
   if (!session) {
-    await replyMd(ctx, 'ℹ️ No previous session to continue\\.\n\nUse `/project <name>` to start a new session\\.');
+    await replyMd(ctx, 'ℹ️ No previous session to continue.\n\nUse `/project <name>` to start a new session.');
     return;
   }
 
@@ -247,23 +254,21 @@ export async function handleContinue(ctx: Context): Promise<void> {
   const entry = sessionHistory.getLastSession(sessionKey);
   await restoreTopicAndRefreshBotName(ctx, sessionKey, entry?.topic);
 
-  await replyMd(ctx,
-    `✅ Continuing *${esc(path.basename(session.workingDirectory))}*\n\n` +
-    `Working directory: \`${esc(session.workingDirectory)}\`${projectStatusSuffix(sessionKey)}`
-  );
+  await replyFormatted(ctx, sessionRestoredMessage('✅ Continuing ', session.workingDirectory, sessionKey));
 
   // Send session ID as separate message for easy copying
   if (session.claudeSessionId) {
-    await replyMd(ctx, resumeCommandMessage(session.claudeSessionId));
+    await replyFormatted(ctx, resumeCommandMessage(session.claudeSessionId));
   }
 
+  await taskListDisplay.showRestored(ctx.api, sessionKey, session.claudeSessionId);
   await sendRecapHint(ctx, sessionKey);
 }
 
 // Cap for the user-prompt blockquote — long pasted prompts shouldn't dominate
 // the recap. Assistant replies are NOT truncated: they go through the same
-// converter+chunker as the original delivery, so their markdown renders
-// (bold, code, lists) instead of showing escaped literals.
+// markdown-to-entities converter and splitter as the original delivery, so
+// their markdown renders (bold, code, lists) instead of showing raw marks.
 const RECAP_USER_MAX_CHARS = 500;
 const RECAP_DEFAULT_N = 3;
 const RECAP_MAX_N = 10;
@@ -276,33 +281,32 @@ function truncateUserPrompt(text: string, max: number = RECAP_USER_MAX_CHARS): s
  * Post the recap as a sequence of messages: a header, then for each exchange
  * the user prompt as a blockquote followed by the assistant reply rendered
  * with its original markdown intact. This mirrors how the assistant text
- * looked on first delivery, instead of cramming everything into one escaped
- * blockquote block where `*bold*` / backticks / lists show as raw characters.
+ * looked on first delivery, instead of cramming everything into one
+ * blockquote where `**bold**` / backticks / lists show as raw characters.
  */
 async function sendRecap(ctx: Context, exchanges: RecapExchange[]): Promise<void> {
-  await replyMd(
+  await replyFormatted(
     ctx,
-    `📋 *Recap* — last ${exchanges.length} exchange${exchanges.length === 1 ? '' : 's'}`,
+    new EntityText()
+      .add('📋 ').bold('Recap')
+      .add(` — last ${exchanges.length} exchange${exchanges.length === 1 ? '' : 's'}`)
+      .build(),
   );
 
   for (const ex of exchanges) {
-    const userText = esc(truncateUserPrompt(ex.user));
-    await replyMd(ctx, `>*You:* ${userText}`);
+    const userText = truncateUserPrompt(ex.user);
+    await replyFormatted(
+      ctx,
+      new EntityText().wrap('blockquote', (b) => b.bold('You:').add(` ${userText}`)).build(),
+    );
 
-    for (const part of processMessageForTelegram(ex.assistant)) {
-      try {
-        await ctx.reply(part, { parse_mode: 'MarkdownV2' });
-      } catch (error) {
-        // Same fallback shape as MessageSender.sendMessage: if MarkdownV2 parse
-        // fails (malformed entity from the converter), strip backslash-escapes
-        // and resend as plain text rather than dropping the chunk.
-        console.error('[Recap] MarkdownV2 send failed, falling back to plain text:', error);
-        try {
-          await ctx.reply(part.replace(/\\(.)/g, '$1'), { parse_mode: undefined });
-        } catch (plainError) {
-          console.error('[Recap] Plain text send also failed:', plainError);
-        }
-      }
+    // replyMarkdown already falls back to plain text when Telegram refuses the
+    // formatting; this only keeps one undeliverable reply from ending the
+    // whole recap.
+    try {
+      await replyMarkdown(ctx, ex.assistant);
+    } catch (error) {
+      console.error('[Recap] Failed to send an assistant reply:', error);
     }
   }
 }
@@ -313,7 +317,7 @@ async function sendRecapHint(ctx: Context, sessionKey: string): Promise<void> {
   if (!session?.claudeSessionId) return;
   const exchanges = readRecentExchanges(session.workingDirectory, session.claudeSessionId, 1);
   if (exchanges.length === 0) return;
-  await replyMd(ctx, '💡 Tip: use `/recap` to see your last messages from this session\\.');
+  await replyMd(ctx, '💡 Tip: use `/recap` to see your last messages from this session.');
 }
 
 export async function handleRecap(ctx: Context): Promise<void> {
@@ -328,7 +332,7 @@ export async function handleRecap(ctx: Context): Promise<void> {
   if (arg) {
     const parsed = parseInt(arg, 10);
     if (Number.isNaN(parsed) || parsed < 1) {
-      await replyMd(ctx, '⚠️ Usage: `/recap [N]` where N is the number of exchanges \\(default 3, max 10\\)\\.');
+      await replyMd(ctx, '⚠️ Usage: `/recap [N]` where N is the number of exchanges (default 3, max 10).');
       return;
     }
     n = Math.min(parsed, RECAP_MAX_N);
@@ -336,17 +340,17 @@ export async function handleRecap(ctx: Context): Promise<void> {
 
   const session = sessionManager.getSession(sessionKey);
   if (!session) {
-    await replyMd(ctx, '⚠️ No active session\\. Use `/continue` or `/resume` first\\.');
+    await replyMd(ctx, '⚠️ No active session. Use `/continue` or `/resume` first.');
     return;
   }
   if (!session.claudeSessionId) {
-    await replyMd(ctx, 'ℹ️ This session has no recorded messages yet\\.');
+    await replyMd(ctx, 'ℹ️ This session has no recorded messages yet.');
     return;
   }
 
   const exchanges = readRecentExchanges(session.workingDirectory, session.claudeSessionId, n);
   if (exchanges.length === 0) {
-    await replyMd(ctx, 'ℹ️ No recoverable exchanges found in this session\\.');
+    await replyMd(ctx, 'ℹ️ No recoverable exchanges found in this session.');
     return;
   }
 
@@ -372,17 +376,17 @@ export async function handleHandoff(ctx: Context): Promise<void> {
 
   const session = sessionManager.getSession(sessionKey);
   if (!session) {
-    await replyMd(ctx, '⚠️ No active session\\. Use `/continue` or `/resume` first\\.');
+    await replyMd(ctx, '⚠️ No active session. Use `/continue` or `/resume` first.');
     return;
   }
   if (!session.claudeSessionId) {
-    await replyMd(ctx, 'ℹ️ This session has no recorded messages yet\\.');
+    await replyMd(ctx, 'ℹ️ This session has no recorded messages yet.');
     return;
   }
 
   const exchanges = readRecentExchanges(session.workingDirectory, session.claudeSessionId, 200);
   if (exchanges.length === 0) {
-    await replyMd(ctx, 'ℹ️ No recoverable exchanges in this session\\.');
+    await replyMd(ctx, 'ℹ️ No recoverable exchanges in this session.');
     return;
   }
 
@@ -427,21 +431,24 @@ export async function handleHandoff(ctx: Context): Promise<void> {
   try {
     outDir = ensureProjectDataDir(session.workingDirectory, 'handoffs');
   } catch (err) {
-    await replyMd(ctx, `❌ Couldn't create handoff dir: ${esc(err instanceof Error ? err.message : String(err))}`);
+    await replyFormatted(ctx, `❌ Couldn't create handoff dir: ${err instanceof Error ? err.message : String(err)}`);
     return;
   }
   const filePath = path.join(outDir, `handoff-${ts}.md`);
   try {
     fs.writeFileSync(filePath, md, { mode: 0o600 });
   } catch (err) {
-    await replyMd(ctx, `❌ Couldn't write handoff: ${esc(err instanceof Error ? err.message : String(err))}`);
+    await replyFormatted(ctx, `❌ Couldn't write handoff: ${err instanceof Error ? err.message : String(err)}`);
     return;
   }
 
-  await replyMd(
+  await replyFormatted(
     ctx,
-    `📦 *Handoff written* — \`${esc(path.relative(session.workingDirectory, filePath))}\`\n` +
-    `${exchanges.length} exchange${exchanges.length === 1 ? '' : 's'} captured\\.`,
+    new EntityText()
+      .add('📦 ').bold('Handoff written')
+      .add(' — ').code(path.relative(session.workingDirectory, filePath))
+      .add(`\n${exchanges.length} exchange${exchanges.length === 1 ? '' : 's'} captured.`)
+      .build(),
   );
 
   // Telegraph preview + downloadable file (mirrors /telegraph)
@@ -464,17 +471,17 @@ export async function handleSync(ctx: Context): Promise<void> {
 
   const session = sessionManager.getSession(sessionKey);
   if (!session) {
-    await replyMd(ctx, '⚠️ No active session\\. Use `/continue` or `/resume` first\\.');
+    await replyMd(ctx, '⚠️ No active session. Use `/continue` or `/resume` first.');
     return;
   }
   if (!session.claudeSessionId) {
-    await replyMd(ctx, 'ℹ️ This session has no recorded messages yet\\.');
+    await replyMd(ctx, 'ℹ️ This session has no recorded messages yet.');
     return;
   }
 
   const jsonlText = readLastAssistantTurnText(session.workingDirectory, session.claudeSessionId);
   if (!jsonlText) {
-    await replyMd(ctx, 'ℹ️ No assistant reply found for the current turn\\.');
+    await replyMd(ctx, 'ℹ️ No assistant reply found for the current turn.');
     return;
   }
 
@@ -482,7 +489,7 @@ export async function handleSync(ctx: Context): Promise<void> {
   // Same 20-char slack as the proactive check — trim/whitespace deltas don't
   // count as a real miss.
   if (jsonlText.length <= relayed.length + 20) {
-    await replyMd(ctx, "✅ You're caught up — nothing new in the session log\\.");
+    await replyMd(ctx, "✅ You're caught up — nothing new in the session log.");
     return;
   }
 
@@ -490,11 +497,11 @@ export async function handleSync(ctx: Context): Promise<void> {
     ? jsonlText.slice(relayed.length).trim()
     : jsonlText;
   if (!missing) {
-    await replyMd(ctx, "✅ You're caught up — nothing new in the session log\\.");
+    await replyMd(ctx, "✅ You're caught up — nothing new in the session log.");
     return;
   }
 
-  await replyMd(ctx, '📨 *Sync* — from session log');
+  await replyMd(ctx, '📨 **Sync** — from session log');
   await messageSender.sendMessage(ctx, missing);
   sessionManager.setLastRelayedAssistantText(sessionKey, jsonlText);
 }
@@ -508,30 +515,37 @@ export async function handleSessions(ctx: Context): Promise<void> {
   const currentSession = sessionManager.getSession(sessionKey);
 
   if (history.length === 0 && !currentSession) {
-    await replyMd(ctx, 'ℹ️ No sessions found\\.\n\nUse `/project <name>` to start a new session\\.');
+    await replyMd(ctx, 'ℹ️ No sessions found.\n\nUse `/project <name>` to start a new session.');
     return;
   }
 
-  let message = '📋 *Sessions*\n\n';
+  const message = new EntityText().add('📋 ').bold('Sessions').add('\n\n');
 
   if (currentSession) {
-    message += `*Active:*\n• \`${esc(path.basename(currentSession.workingDirectory))}\` \\(${esc(formatTimeAgo(currentSession.lastActivity))}\\)\n\n`;
+    message
+      .bold('Active:')
+      .add('\n• ').code(path.basename(currentSession.workingDirectory))
+      .add(` (${formatTimeAgo(currentSession.lastActivity)})\n\n`);
   }
 
   if (history.length > 0) {
-    message += '*Recent:*\n';
+    message.bold('Recent:').newline();
     for (const entry of history) {
       const isActive = currentSession && currentSession.conversationId === entry.conversationId;
       const marker = isActive ? '→ ' : '• ';
       const date = new Date(entry.lastActivity);
-      const topicSuffix = entry.topic ? ` — _${esc(entry.topic)}_` : '';
-      message += `${marker}\`${esc(entry.projectName)}\` \\(${esc(formatTimeAgo(date))}\\)${topicSuffix}\n`;
+      message.add(marker).code(entry.projectName).add(` (${formatTimeAgo(date)})`);
+      if (entry.topic) message.add(' — ').italic(entry.topic);
+      message.newline();
     }
   }
 
-  message += '\n_Use `/resume` to switch sessions or `/continue` to resume the last one\\._';
+  message.newline().wrap('italic', (b) => b
+    .add('Use ').code('/resume')
+    .add(' to switch sessions or ').code('/continue')
+    .add(' to resume the last one.'));
 
-  await replyMd(ctx, message);
+  await replyFormatted(ctx, message.build());
 }
 
 export async function handleTeleport(ctx: Context): Promise<void> {
@@ -543,12 +557,12 @@ export async function handleTeleport(ctx: Context): Promise<void> {
   const session = sessionManager.getSession(sessionKey);
 
   if (!session) {
-    await replyMd(ctx, 'ℹ️ No active session to teleport\\.\n\nStart a conversation first with `/project <name>`\\.');
+    await replyMd(ctx, 'ℹ️ No active session to teleport.\n\nStart a conversation first with `/project <name>`.');
     return;
   }
 
   if (!session.claudeSessionId) {
-    await replyMd(ctx, 'ℹ️ No Claude session available yet\\.\n\nSend a message first to start a session, then use `/teleport`\\.');
+    await replyMd(ctx, 'ℹ️ No Claude session available yet.\n\nSend a message first to start a session, then use `/teleport`.');
     return;
   }
 
@@ -556,18 +570,15 @@ export async function handleTeleport(ctx: Context): Promise<void> {
   const claudeBin = config.CLAUDE_EXECUTABLE_PATH ?? 'claude';
   const command = `cd "${session.workingDirectory}" && ${claudeBin} --resume ${session.claudeSessionId}`;
 
-  const message = `🚀 *Teleport to Terminal*
+  const message = new EntityText()
+    .add('🚀 ').bold('Teleport to Terminal')
+    .add('\n\n').bold('Project:').add(' ').code(projectName)
+    .newline().bold('Session:').add(' ').code(`${session.claudeSessionId.substring(0, 8)}...`)
+    .add('\n\nCopy and run in your terminal:\n\n')
+    .pre(command)
+    .add('\n\n')
+    .italic('Both Telegram and terminal can continue independently (forked session).')
+    .build();
 
-*Project:* \`${esc(projectName)}\`
-*Session:* \`${esc(session.claudeSessionId.substring(0, 8))}\\.\\.\\.\`
-
-Copy and run in your terminal:
-
-\`\`\`
-${esc(command)}
-\`\`\`
-
-_Both Telegram and terminal can continue independently \\(forked session\\)\\._`;
-
-  await replyMd(ctx, message);
+  await replyFormatted(ctx, message);
 }

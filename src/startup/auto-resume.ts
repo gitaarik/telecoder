@@ -19,7 +19,8 @@ import { describeRunningBuild } from '../utils/build-info.js';
 import { setSessionTopic } from '../bot/handlers/command/topic-store.js';
 import { getEffortLabel } from '../bot/handlers/command.handler.js';
 import { isBotNameEnabled, rateLimitedSetMyName, notifyBotNameBlockToChat } from '../telegram/botname-settings.js';
-import { splitMessage, escapeMarkdownV2 } from '../telegram/markdown.js';
+import { sendParts } from '../telegram/send.js';
+import { taskListDisplay } from '../telegram/task-list.js';
 import { allowedChatIds, threadOpts, sendBlockWithPlainFallback } from './shared.js';
 
 const RELOAD_MARKER_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
@@ -128,48 +129,41 @@ export async function autoResumeAfterReload(bot: Bot, notified: Set<string>): Pr
       const projectName = path.basename(session.workingDirectory);
       const opts = threadOpts(threadId);
 
-      // Header: plain status text — escape for MarkdownV2 so any special chars
-      // in topic/project names don't break the parser. Kept compact (no prompt
-      // body) so a long stored prompt doesn't blow past the 4096-char limit;
-      // the prompt is delivered in its own chunked block below.
-      let header = `✅ Reloaded and session restored: ${escapeMarkdownV2(projectName)}`;
+      // Header: plain status text, sent without formatting so topic/project
+      // names go out verbatim. Kept compact (no prompt body) so a long stored
+      // prompt doesn't blow past the 4096-char limit; the prompt is delivered
+      // in its own chunked block below.
+      let header = `✅ Reloaded and session restored: ${projectName}`;
       if (entry.topic) {
-        header += ` \\(topic: ${escapeMarkdownV2(entry.topic)}\\)`;
+        header += ` (topic: ${entry.topic})`;
       }
       const effortLabel = getEffortLabel(sessionKey);
       if (effortLabel) {
-        header += `\nEffort: ${escapeMarkdownV2(effortLabel)}`;
+        header += `\nEffort: ${effortLabel}`;
       }
       const build = describeRunningBuild();
       if (build) {
-        header += `\nVersion: ${escapeMarkdownV2(build)}`;
+        header += `\nVersion: ${build}`;
       }
-      try {
-        await bot.api.sendMessage(chatId, header, { parse_mode: 'MarkdownV2', ...opts });
-      } catch {
-        // Markdown parser rejected — fall back to plain text without escapes.
-        const plain = header.replace(/\\(.)/g, '$1');
-        for (const chunk of splitMessage(plain)) {
-          await bot.api.sendMessage(chatId, chunk, opts);
-        }
-      }
+      await sendParts(bot.api, chatId, header, opts);
 
       // Last prompt: deliver the full stored prompt as its own message
-      // (chunked if long). User input is treated as literal text — escape
-      // rather than re-render as markdown so a literal `*` or `_` doesn't
+      // (chunked if long). User input is treated as literal text — sent
+      // plain rather than rendered as markdown so a literal `*` or `_` doesn't
       // become formatting noise.
       if (entry.lastMessagePreview) {
         await bot.api.sendMessage(chatId, '📝 Last prompt:', opts);
         await sendBlockWithPlainFallback(bot, chatId, opts, entry.lastMessagePreview, 'AutoResume');
       }
 
-      // Assistant preview: re-render with full MarkdownV2 formatting (mirrors
+      // Assistant preview: re-render the markdown as entities (mirrors
       // how messageSender.sendMessage delivers normal responses) so bold/code/
       // links survive the resume.
       if (entry.lastAssistantPreview) {
         await bot.api.sendMessage(chatId, '💬 Last response:', opts);
         await sendBlockWithPlainFallback(bot, chatId, opts, entry.lastAssistantPreview, 'AutoResume', 'render');
       }
+      await taskListDisplay.showRestored(bot.api, sessionKey, session.claudeSessionId);
       resumed++;
       notified.add(sessionKey);
     } catch (err) {

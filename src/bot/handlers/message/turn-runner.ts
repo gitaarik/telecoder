@@ -62,14 +62,11 @@ export async function handleCcrThrottleCallback(ctx: Context): Promise<void> {
     await ctx.editMessageReplyMarkup({ reply_markup: undefined });
 
     if (!pending) {
-      await ctx.reply(
-        '🔌 Switched to CCR\\. Send your message again to retry\\.',
-        { parse_mode: 'MarkdownV2' },
-      );
+      await ctx.reply('🔌 Switched to CCR. Send your message again to retry.');
       return;
     }
 
-    await ctx.reply('🔁 Retrying via CCR\\.\\.\\.', { parse_mode: 'MarkdownV2' });
+    await ctx.reply('🔁 Retrying via CCR...');
     await runQueuedTurn(ctx, sessionKey, pending, 'CcrRetry', () =>
       runTurn(ctx, sessionKey, chatId, pending),
     );

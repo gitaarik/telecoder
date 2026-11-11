@@ -68,7 +68,7 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 - Two transports: the Agent SDK, or the real `claude` CLI in a pseudo-terminal
 - Session resume across messages — Claude remembers everything
 - Project-based working directories
-- Streaming responses with live-updating messages
+- Streaming responses: the reply shows while Claude writes it, in both transports
 - Model and effort pickers, plan, explore and loop modes
 - Provider router with one-tap failover when Max throttles ([details](#providers))
 
@@ -116,7 +116,7 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 - `/tts` — agent responses spoken back as Telegram voice notes, via Groq Orpheus or OpenAI
 
 ### Rich Output
-- MarkdownV2 formatting with automatic escaping
+- Formatting sent as Telegram entities: nothing to escape, and a long reply splits anywhere without breaking its bold, links or code blocks
 - Telegraph Instant View for long responses & tables
 - Smart chunking that preserves code blocks
 - Terminal-style tool status (`/terminalui`)
@@ -674,7 +674,7 @@ Telegram ⇄ grammY bot ⇄ provider router ─┬─ claude: Agent SDK ──�
 | `src/providers/` | Provider router, SDK and CCR providers, switching, per-user preferences |
 | `src/claude/` | PTY provider and TUI parsing, session state and history, watchdog, permission gate, scope guard, charter judge, scheduler, MCP tools |
 | `src/bin/` | The MCP server process |
-| `src/telegram/` | Streaming, chunking, MarkdownV2, Telegraph, task cards |
+| `src/telegram/` | Streaming, markdown to entities, splitting, Telegraph, task cards |
 | `src/startup/` | Restoring chats after a restart |
 | `src/audio/`, `src/tts/` | Speech: voice transcription and spoken replies |
 | `src/utils/` | Shared helpers, including download, path and error sanitizing |
@@ -784,8 +784,9 @@ TeleCoder is maintained independently by [@gitaarik](https://github.com/gitaarik
   max) with icon prefix in bot name; /btw side-question command
 - **Plan mode surfacing** — extract plan content from spontaneous plan
   mode and inject into chat
-- **Skills + TodoWrite** — full SDK skill discovery; live-updating
-  per-turn checklist for TodoWrite calls
+- **Skills + task list** — full SDK skill discovery; Claude Code's task
+  list (TaskCreate/TaskUpdate) as a live per-turn card, shown again when a
+  session is restored
 - **send_file MCP tool** — Claude can deliver files directly via Telegram
 - **Session resilience** — auto-restore on restart (/rebuildbot), persistent
   topic + preview across restarts, last-response display on resume
