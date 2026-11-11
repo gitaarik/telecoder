@@ -93,7 +93,7 @@ describe('/newbot', () => {
     await nb.handleManagedBotCreated(ctx);
 
     expect(api.getManagedBotToken).toHaveBeenCalledWith(555);
-    expect(api.setManagedBotAccessSettings).toHaveBeenCalledWith(555, true);
+    expect(api.setManagedBotAccessSettings).toHaveBeenCalledWith(555, true, { added_user_ids: [ADMIN] });
     expect(addInstance).toHaveBeenCalledWith({
       name: 'TeleCoder — sjs',
       token: '555:secret',

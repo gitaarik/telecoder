@@ -176,10 +176,12 @@ export async function handleManagedBotCreated(ctx: Context): Promise<void> {
   }
 
   // ALLOWED_USER_IDS already keeps strangers out of the conversation; this
-  // keeps them from opening a chat with the bot at all.
+  // keeps them from opening a chat with the bot at all. Its creator has to be
+  // named: "the owner can always access it" didn't cover them, and a /start
+  // from them never reached the bot.
   let locked = true;
   try {
-    await ctx.api.setManagedBotAccessSettings(created.id, true);
+    await ctx.api.setManagedBotAccessSettings(created.id, true, { added_user_ids: [from.id] });
   } catch (err) {
     locked = false;
     console.warn('[NewBot] setManagedBotAccessSettings failed:', sanitizeError(err));
