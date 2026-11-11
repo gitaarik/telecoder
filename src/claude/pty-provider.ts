@@ -69,6 +69,7 @@ import { parseModal } from './tui-modal.js';
 import { dialogResumeState, turnHold } from './turn-end.js';
 import { isSuggestionsEnabled } from '../telegram/suggestions-settings.js';
 import { resolveBin } from '../utils/resolve-bin.js';
+import { withPendingCarryOver } from './carry-over.js';
 import type { Context } from 'grammy';
 import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions, type EditDiffEvent, type ToolResultEvent } from '../providers/types.js';
 
@@ -535,7 +536,9 @@ export class PtyProvider implements Provider {
   }
 
   async sendToAgent(sessionKey: string, message: string, options?: AgentOptions): Promise<AgentResponse> {
-    const commandWrapped = wrapCommandPrompt(message, options?.command);
+    // A provider switch or a cross-backend /resume may have queued a recap of
+    // the conversation this fresh session continues.
+    const commandWrapped = wrapCommandPrompt(withPendingCarryOver(sessionKey, message), options?.command);
     const { prompt: promptToSend, tempPaths } = stageImagesForPty(commandWrapped, options?.images);
 
     // Timestamp of the newest compaction already on disk before this turn.

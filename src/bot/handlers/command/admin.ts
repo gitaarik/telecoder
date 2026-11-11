@@ -18,7 +18,8 @@ import { replyFormatted, replyParts } from '../../../telegram/send.js';
 import { sanitizeError } from '../../../utils/sanitize.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 import { botctlExists, PROJECT_ROOT, BOTCTL_PATH } from './shared.js';
-import { handleResume, handleContinue, handleClear } from './session.js';
+import { handleContinue, handleClear } from './session.js';
+import { handleResume } from './resume.js';
 import {
   requestRestart,
   requestRestartAll,

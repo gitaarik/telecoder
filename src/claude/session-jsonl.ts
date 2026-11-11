@@ -855,3 +855,69 @@ export function hasForeignThinkingSignatures(workingDirectory: string, sessionId
   }
   return false;
 }
+
+/**
+ * Which backend wrote a session, read off its transcript: 'ccr' when a reply
+ * came from a model that isn't Claude (CCR passes through DeepSeek's own name,
+ * `deepseek-flash`, whatever its router config calls the route) or carries a
+ * fabricated thinking signature; 'claude' when every reply is Claude's;
+ * undefined when there is no reply to tell by.
+ *
+ * For sessions TeleCoder didn't start, which have no recorded owner — one
+ * from a terminal, or from a bot that predates ownership tracking.
+ */
+export function detectOwnerProvider(file: string): 'claude' | 'ccr' | undefined {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, 'utf-8');
+  } catch {
+    return undefined;
+  }
+  // Only replies count: a tool result can carry a `model` field of its own,
+  // naming whatever model the tool was asked about.
+  let sawClaude = false;
+  for (const line of raw.split('\n')) {
+    if (!line.includes('"assistant"')) continue;
+    let rec: { type?: string; message?: { model?: unknown; content?: unknown } };
+    try { rec = JSON.parse(line) as typeof rec; }
+    catch { continue; }
+    if (rec.type !== 'assistant') continue;
+    const model = rec.message?.model;
+    if (typeof model === 'string' && model !== '<synthetic>') {
+      if (!model.startsWith('claude-')) return 'ccr';
+      sawClaude = true;
+    }
+    const content = rec.message?.content;
+    if (Array.isArray(content)) {
+      for (const block of content as { type?: string; signature?: unknown }[]) {
+        if (block?.type === 'thinking' && typeof block.signature === 'string' && isForeignThinkingSignature(block.signature)) {
+          return 'ccr';
+        }
+      }
+    }
+  }
+  return sawClaude ? 'claude' : undefined;
+}
+
+/**
+ * A transcript with every record's `sessionId` set to `newSessionId`. Claude
+ * Code stamps the session's id into each record, and a resume can get
+ * confused when a copy's filename and contents disagree.
+ */
+export function rewriteJsonlSessionId(jsonl: string, newSessionId: string): string {
+  if (!jsonl.trim()) return jsonl;
+  const lines = jsonl.split('\n');
+  const out: string[] = [];
+  for (const line of lines) {
+    if (!line) { out.push(line); continue; }
+    try {
+      const rec = JSON.parse(line) as Record<string, unknown>;
+      if (typeof rec.sessionId === 'string') rec.sessionId = newSessionId;
+      out.push(JSON.stringify(rec));
+    } catch {
+      // Pass through anything we can't parse — better than corrupting the file.
+      out.push(line);
+    }
+  }
+  return out.join('\n');
+}

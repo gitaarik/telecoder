@@ -80,8 +80,6 @@ export {
 export {
   handleClear,
   handleClearCallback,
-  handleResume,
-  handleResumeCallback,
   handleContinue,
   handleRecap,
   handleHandoff,
@@ -89,6 +87,7 @@ export {
   handleSessions,
   handleTeleport,
 } from './command/session.js';
+export { handleResume, handleResumeCallback } from './command/resume.js';
 import { buildTelegraphMenu } from './command/settings.js';
 export {
   handleStreaming,

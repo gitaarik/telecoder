@@ -260,6 +260,12 @@ class SessionHistory {
   }
 
   /** Every chat of this bot whose history holds the Claude session `claudeSessionId`. */
+  /** Every entry of every chat this bot keeps, with the chat it belongs to. */
+  allEntries(): Array<{ sessionKey: string; entry: SessionHistoryEntry }> {
+    return Object.entries(this.data.sessions).flatMap(([sessionKey, history]) =>
+      history.map((entry) => ({ sessionKey, entry })));
+  }
+
   findByClaudeSessionId(claudeSessionId: string): Array<{ sessionKey: string; entry: SessionHistoryEntry }> {
     const found: Array<{ sessionKey: string; entry: SessionHistoryEntry }> = [];
     for (const [sessionKey, history] of Object.entries(this.data.sessions)) {
@@ -292,20 +298,34 @@ export interface HistoryOwner {
  */
 export function findHistoryOwners(claudeSessionIds: string[], selfBotId: string): Map<string, HistoryOwner[]> {
   const wanted = new Set(claudeSessionIds);
+  const own = [...wanted].flatMap((id) => sessionHistory.findByClaudeSessionId(id));
+  return collectOwners(selfBotId, own, (id) => wanted.has(id));
+}
+
+/**
+ * Every conversation any TeleCoder bot on this machine has a chat history
+ * entry for, keyed by Claude session id — the same sources as
+ * findHistoryOwners, without picking ids first.
+ */
+export function allHistoryOwners(selfBotId: string): Map<string, HistoryOwner[]> {
+  return collectOwners(selfBotId, sessionHistory.allEntries(), () => true);
+}
+
+function collectOwners(
+  selfBotId: string,
+  own: Array<{ sessionKey: string; entry: SessionHistoryEntry }>,
+  keep: (claudeSessionId: string) => boolean,
+): Map<string, HistoryOwner[]> {
   const owners = new Map<string, HistoryOwner[]>();
   const add = (owner: HistoryOwner) => {
     const id = owner.entry.claudeSessionId;
-    if (!id || !wanted.has(id)) return;
+    if (!id || !keep(id)) return;
     const list = owners.get(id);
     if (list) list.push(owner);
     else owners.set(id, [owner]);
   };
 
-  for (const id of wanted) {
-    for (const { sessionKey, entry } of sessionHistory.findByClaudeSessionId(id)) {
-      add({ botId: selfBotId, sessionKey, entry });
-    }
-  }
+  for (const { sessionKey, entry } of own) add({ botId: selfBotId, sessionKey, entry });
 
   let names: string[] = [];
   try {

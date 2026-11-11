@@ -16,7 +16,7 @@
 
 import { sessionManager } from '../claude/session-manager.js';
 import { readRecentExchanges } from '../claude/session-jsonl.js';
-import { setPendingCarryOver } from '../claude/agent.js';
+import { setPendingCarryOver } from '../claude/carry-over.js';
 import {
   setActiveProvider,
   getActiveProviderName,

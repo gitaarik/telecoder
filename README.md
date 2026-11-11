@@ -435,7 +435,7 @@ your secrets, which is the only form of that answer worth trusting.
 | `/clear` | Clear conversation history (project stays selected) |
 | `/status` | Current session info |
 | `/sessions` | List saved sessions |
-| `/resume` | Pick from recent sessions |
+| `/resume [words\|id]` | Pick, search or open any Claude Code session, like Claude Code's own `/resume` |
 | `/continue` | Resume most recent session |
 | `/recap [N]` | Re-read the last N exchanges of the current session (default 3), ending with the same status message as a normal turn |
 | `/prompts [N]` | List just the last N prompts you sent, without the replies (default 15, max 25) |

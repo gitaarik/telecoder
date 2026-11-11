@@ -40,6 +40,7 @@ import {
 import { userPreferences } from '../providers/user-preferences.js';
 import { hasForeignThinkingSignatures } from './session-jsonl.js';
 import { BoundedMap } from '../utils/bounded-map.js';
+import { withPendingCarryOver } from './carry-over.js';
 import { recordTurnCost, clearSessionCost } from './session-cost.js';
 import { parseSessionKey, type SettingsScope } from '../utils/session-key.js';
 import { resolveBundledClaudeBin, resolveActiveClaudeExecutable } from '../utils/resolve-claude-bin.js';
@@ -61,17 +62,6 @@ const conversationHistory = new BoundedMap<string, ConversationMessage[]>(1000);
 
 // Track Claude Code session IDs per session for conversation continuity
 const chatSessionIds = new BoundedMap<string, string>(1000);
-
-// Plain-text context to prepend to the next turn's prompt, set when a provider
-// switch starts a fresh session (the old session can't be resumed on a
-// different backend). Consumed and cleared on the next send so the new backend
-// keeps continuity of context without inheriting foreign-signed thinking blocks.
-const pendingCarryOver = new BoundedMap<string, string>(1000);
-
-/** Queue a one-shot context preamble for the next turn of `sessionKey`. */
-export function setPendingCarryOver(sessionKey: string, preamble: string): void {
-  pendingCarryOver.set(sessionKey, preamble);
-}
 
 // Cache latest usage per session for /context and /status commands
 const chatUsageCache = new BoundedMap<string, AgentUsage>(1000);
@@ -295,13 +285,9 @@ export async function sendToAgent(
     prompt = `Explore the codebase and answer: ${message}`;
   }
 
-  // Prepend any one-shot carry-over context queued by a provider switch. This
-  // is plain text (no thinking blocks), so it's safe to replay on any backend.
-  const carryOver = pendingCarryOver.get(sessionKey);
-  if (carryOver) {
-    pendingCarryOver.delete(sessionKey);
-    prompt = `${carryOver}\n\n${prompt}`;
-  }
+  // Prepend any one-shot carry-over context queued by a provider switch or a
+  // cross-backend /resume. Plain text, so it's safe to replay on any backend.
+  prompt = withPendingCarryOver(sessionKey, prompt);
 
   // Add user message to history
   history.push({

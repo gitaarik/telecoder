@@ -53,6 +53,7 @@ import {
   sessionJsonlPath,
   lastAssistantTurnText,
   lastExchangeIn,
+  rewriteJsonlSessionId,
   type RecapExchange,
 } from '../../claude/session-jsonl.js';
 import { sessionManager } from '../../claude/session-manager.js';
@@ -998,22 +999,4 @@ async function scanAndOffer(bot: Bot): Promise<void> {
       console.debug(`[Fork] Proactive offer to ${userIdStr} failed (will retry via lazy path): ${msg}`);
     }
   }
-}
-
-function rewriteJsonlSessionId(jsonl: string, newSessionId: string): string {
-  if (!jsonl.trim()) return jsonl;
-  const lines = jsonl.split('\n');
-  const out: string[] = [];
-  for (const line of lines) {
-    if (!line) { out.push(line); continue; }
-    try {
-      const rec = JSON.parse(line) as Record<string, unknown>;
-      if (typeof rec.sessionId === 'string') rec.sessionId = newSessionId;
-      out.push(JSON.stringify(rec));
-    } catch {
-      // Pass through anything we can't parse — better than corrupting the file.
-      out.push(line);
-    }
-  }
-  return out.join('\n');
 }

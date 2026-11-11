@@ -1,5 +1,5 @@
 /**
- * Session lifecycle: /clear, /resume, /continue, /recap, /handoff, /sync,
+ * Session lifecycle: /clear, /continue, /recap, /handoff, /sync,
  * /sessions and /teleport. /prompts, which branches as well as lists, lives
  * beside /tree in prompts.handler.ts.
  *
@@ -134,78 +134,12 @@ export async function handleClearCallback(ctx: Context): Promise<void> {
   }
 }
 
-export async function handleResume(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const history = sessionManager.getSessionHistory(sessionKey, 10);
-  // Only show sessions that actually have a Claude session (were chatted in)
-  const resumable = history.filter((entry) => entry.claudeSessionId);
-
-  if (resumable.length === 0) {
-    await replyMd(ctx, 'ℹ️ No resumable sessions found.\n\nSessions need at least one Claude response to be resumable.\nUse `/project <name>` to start a new session.');
-    return;
-  }
-
-  const { text, keyboard } = buildResumeMessage(resumable);
-  await replyFormatted(ctx, text, { reply_markup: { inline_keyboard: keyboard } });
-}
-
-/** The subset of a history entry the /resume picker renders. */
-export interface ResumableSession {
-  conversationId: string;
-  projectName: string;
-  topic?: string;
-  lastActivity: string;
-}
-
 /**
- * The /resume picker: every session written out in the message body keyed
- * A/B/C, with the same letter on its button.
- *
- * A session's name is `project · topic` and its topic is a sentence fragment
- * the model wrote, so the label routinely runs past the width a button
- * renders. It used to be truncated to Telegram's 64-byte cap, which the client
- * then ellipsised again at its own much narrower width — so two sessions of
- * the same project arrived as the same half-line and you picked between them
- * blind. Now the body carries the names and the buttons only have to be
- * distinguishable.
+ * Go back to a conversation from this chat's history — what the ↩️ Back
+ * button does (`resume:<conversationId>`), and what the history-based /resume
+ * picker did before /resume read Claude Code's transcripts (resume.ts).
  */
-export function buildResumeMessage(entries: ResumableSession[]): {
-  text: EntityMessage;
-  keyboard: { text: string; callback_data: string }[][];
-} {
-  const options = entries.map((entry) => ({
-    label: sessionDisplayName(entry),
-    // The age goes in the body rather than on the button: it is what tells two
-    // otherwise identical project names apart, and keeping it off the label
-    // leaves a short name room to stay readable on its own button.
-    description: formatTimeAgo(new Date(entry.lastActivity)),
-  }));
-
-  const text = new EntityText()
-    .add('📜 ').bold('Recent Sessions')
-    .add('\n\nSelect a session to resume:\n\n')
-    .add(letteredOptionLines(options).join('\n'))
-    .build();
-
-  const keyboard = buildLetteredKeyboard(
-    options.map((o, idx) => ({
-      label: o.label,
-      callbackData: `resume:${entries[idx].conversationId}`,
-    })),
-  );
-
-  return { text, keyboard };
-}
-
-export async function handleResumeCallback(ctx: Context): Promise<void> {
-  const cb = parseCallback(ctx, 'resume:');
-  if (!cb) return;
-  const { sessionKey, data } = cb;
-
-  const conversationId = data.replace('resume:', '');
+export async function resumeHistoryEntry(ctx: Context, sessionKey: string, conversationId: string): Promise<void> {
   const session = sessionManager.resumeSession(sessionKey, conversationId);
 
   if (!session) {
@@ -312,7 +246,7 @@ async function sendRecap(ctx: Context, exchanges: RecapExchange[]): Promise<void
 }
 
 /** Post a one-line tip pointing the user at /recap. Used after explicit restore. */
-async function sendRecapHint(ctx: Context, sessionKey: string): Promise<void> {
+export async function sendRecapHint(ctx: Context, sessionKey: string): Promise<void> {
   const session = sessionManager.getSession(sessionKey);
   if (!session?.claudeSessionId) return;
   const exchanges = readRecentExchanges(session.workingDirectory, session.claudeSessionId, 1);
