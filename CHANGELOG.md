@@ -357,6 +357,13 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **No more catch-up repeating a reply** — the reply goes out without its
+  reasoning summary, but the session log keeps it, and the check that recovers
+  prose the relay dropped counted the summary as missing. With summaries on,
+  every reply got a "📨 Catch-up — recovered from session log", and one with a
+  tool call in it was posted a second time in full. The check now leaves the
+  summary out of the log's text as well, and still recovers prose that really
+  went missing.
 - **The live action log says when it last moved** — Telegram shows when a
   message was sent but not when it was last edited, so a live log that had
   stopped moving looked just like one that was still going, and a long quiet

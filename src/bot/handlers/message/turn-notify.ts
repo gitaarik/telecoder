@@ -15,6 +15,7 @@ import { messageSender } from '../../../telegram/message-sender.js';
 import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
 import { resolveVerbosityFlags } from '../../../utils/verbosity.js';
 import { fmtTokens } from '../../../utils/format.js';
+import { stripReasoningSummary } from '../../../utils/reasoning-summary.js';
 
 /**
  * After a turn's main response has been sent to Telegram, compare what we
@@ -40,7 +41,12 @@ export async function relayCatchUpIfMissed(
       return;
     }
 
-    const jsonlText = readLastAssistantTurnText(session.workingDirectory, session.claudeSessionId);
+    // The relayed text went out without its reasoning summary; the log still
+    // has it. Compared as is, the summary alone counts as missing prose, and
+    // a turn with a tool call in it gets the whole reply posted again.
+    const jsonlText = stripReasoningSummary(
+      readLastAssistantTurnText(session.workingDirectory, session.claudeSessionId) ?? '',
+    );
     if (!jsonlText) {
       sessionManager.setLastRelayedAssistantText(sessionKey, relayedText);
       return;
