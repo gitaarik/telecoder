@@ -15,7 +15,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { Api, Context } from 'grammy';
+import { Api, type Context } from 'grammy';
 import { isAdmin } from '../../utils/admins.js';
 import { sanitizeError } from '../../utils/sanitize.js';
 import { addInstance } from '../../utils/instances.js';
@@ -176,15 +176,27 @@ export async function handleManagedBotCreated(ctx: Context): Promise<void> {
   }
 
   // ALLOWED_USER_IDS already keeps strangers out of the conversation; this
-  // keeps them from opening a chat with the bot at all. Its creator has to be
-  // named: "the owner can always access it" didn't cover them, and a /start
-  // from them never reached the bot.
+  // keeps them from opening a chat with the bot at all. The creator is named
+  // as well as being its owner, which costs nothing: it was the first suspect
+  // when a creator's /start went missing, until the lost first message below
+  // turned out to be the cause.
   let locked = true;
   try {
     await ctx.api.setManagedBotAccessSettings(created.id, true, { added_user_ids: [from.id] });
   } catch (err) {
     locked = false;
     console.warn('[NewBot] setManagedBotAccessSettings failed:', sanitizeError(err));
+  }
+
+  // Telegram seems to keep a new bot's updates only once it has asked for
+  // them: the first /start to two new bots, sent seconds after creation while
+  // their workers were still booting, was never delivered, and the second
+  // was. So ask once now, before anything links to the bot. No offset, so
+  // nothing is confirmed; whatever this returns, the worker gets again.
+  try {
+    await new Api(token).getUpdates({ timeout: 0, limit: 1 });
+  } catch (err) {
+    console.warn('[NewBot] Priming getUpdates failed:', sanitizeError(err));
   }
 
   let name: string;

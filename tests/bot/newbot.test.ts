@@ -15,6 +15,17 @@ vi.mock('../../src/claude/session-manager.js', () => ({
   sessionManager: { getSession: () => ({ workingDirectory: path.join(workspace, 'telecoder') }) },
 }));
 
+const primedTokens: string[] = [];
+const primeGetUpdates = vi.fn(async () => []);
+vi.mock('grammy', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('grammy')>();
+  class Api {
+    constructor(token: string) { primedTokens.push(token); }
+    getUpdates = primeGetUpdates;
+  }
+  return { ...actual, Api };
+});
+
 const nb = await import('../../src/bot/handlers/newbot.handler.js');
 
 function ctxFor(opts: { text?: string; from?: number; canManage?: boolean; created?: { id: number; first_name: string; username?: string } }) {
@@ -94,6 +105,9 @@ describe('/newbot', () => {
 
     expect(api.getManagedBotToken).toHaveBeenCalledWith(555);
     expect(api.setManagedBotAccessSettings).toHaveBeenCalledWith(555, true, { added_user_ids: [ADMIN] });
+    // Asks for the new bot's updates once, so Telegram keeps a /start sent before its worker is up.
+    expect(primedTokens).toContain('555:secret');
+    expect(primeGetUpdates).toHaveBeenCalledWith({ timeout: 0, limit: 1 });
     expect(addInstance).toHaveBeenCalledWith({
       name: 'TeleCoder — sjs',
       token: '555:secret',
