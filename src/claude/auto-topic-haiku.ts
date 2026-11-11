@@ -96,6 +96,9 @@ export async function summarizeTopicWithHaiku(
         // the call deferral-proof and cheap.
         settingSources: [] as SettingSource[],
         allowedTools: [],
+        // A throwaway one-shot: saving it left a session file per message in
+        // the project's transcript dir, burying the real ones in /resume.
+        persistSession: false,
         abortController: controller,
         includePartialMessages: false,
         ...(() => {
