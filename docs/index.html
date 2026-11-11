@@ -2117,6 +2117,14 @@
             everything waiting along with the running turn.</p>
           </div>
           <div class="feature-card" data-category="reliability">
+            <div class="feature-icon"><svg><use href="#i-page"/></svg></div>
+            <h3>Long pastes arrive whole</h3>
+            <p>Telegram splits a paste over 4096 characters into several messages. TeleCoder puts
+            them back together and sends Claude one prompt, not one turn per part, while a busy bot
+            gets one <code>⏳ Queued</code> notice for the paste rather than one per part. Shorter
+            messages go out as soon as they arrive.</p>
+          </div>
+          <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-bell"/></svg></div>
             <h3>Decide after you've read the answer</h3>
             <p>Not sure a follow-up will still apply? Tap <code>🔔 Ask me after</code> on its

@@ -6,6 +6,12 @@
  * buffers consecutive text messages per session and combines them into a
  * single message before passing it down the middleware chain.
  *
+ * Only a message long enough to be the front part of a split opens a batch, so
+ * an ordinary message isn't held up waiting for parts that will never come.
+ * Once a batch is open, every text message in the session joins it, however
+ * short (the last part usually is) and even if it starts with a slash, since a
+ * split can land just before a path.
+ *
  * Must be registered BEFORE grammY's `sequentialize` middleware so that
  * concurrent same-session updates are still visible (sequentialize would
  * serialize them and prevent batching).
@@ -22,6 +28,13 @@ interface PendingBatch {
 }
 
 const batches: Map<string, PendingBatch> = new Map();
+
+/**
+ * The shortest message that may have more parts coming. Clients split at 4096
+ * characters but back up to a paragraph or word break to do it, so the front
+ * part can come out well short of that.
+ */
+export const SPLIT_PART_MIN_LENGTH = 2000;
 
 /**
  * Whether this message carries the text of several. An edit to one of them can't
@@ -43,11 +56,6 @@ export function createBatchMiddleware(): MiddlewareFn<Context> {
 
     const text = ctx.message.text;
 
-    // Don't batch commands
-    if (text.startsWith('/')) {
-      return next();
-    }
-
     // Determine session key
     const chatId = ctx.chat?.id;
     if (!chatId) return next();
@@ -66,6 +74,11 @@ export function createBatchMiddleware(): MiddlewareFn<Context> {
       }, timeoutMs);
       console.log(`[Batcher] Merged message into batch for ${sessionKey} (${existing.texts.length} parts)`);
       return; // don't call next() — this update is absorbed
+    }
+
+    // Don't batch commands, or a message too short to have been split
+    if (text.startsWith('/') || text.length < SPLIT_PART_MIN_LENGTH) {
+      return next();
     }
 
     // First message: create batch and await the timer

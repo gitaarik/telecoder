@@ -58,6 +58,7 @@ const { createBot } = await import('../../src/bot/bot.js');
 const { sessionManager } = await import('../../src/claude/session-manager.js');
 const { armReminders, forgetParkedMessages, initParkedMessages } = await import('../../src/bot/middleware/queued-messages.js');
 const { config } = await import('../../src/config.js');
+const { SPLIT_PART_MIN_LENGTH } = await import('../../src/bot/middleware/message-batcher.js');
 
 const CHAT = 1; // In the suite's ALLOWED_USER_IDS.
 const GROUP = -1009990001; // In the suite's ALLOWED_GROUP_IDS.
@@ -382,11 +383,13 @@ describe('the bot as assembled', () => {
   describe('with messages merged by the batcher', () => {
     beforeEach(() => { config.MESSAGE_BATCH_TIMEOUT_MS = 30; });
     afterEach(() => { config.MESSAGE_BATCH_TIMEOUT_MS = 0; });
+    // Only a message long enough to be the front of a split opens a batch.
+    const PART_ONE = 'part one'.padEnd(SPLIT_PART_MIN_LENGTH, '.');
 
     it('sends the whole of a merged message set aside', async () => {
       send('first');
       await vi.waitFor(() => expect(fx.prompts).toEqual(['first']), WAIT);
-      const merged = send('part one');
+      const merged = send(PART_ONE);
       send('part two');
       await vi.waitFor(() => expect(ackFor(merged)).toBeDefined(), WAIT);
       await tapButton(`queued:park:${merged}`);
@@ -395,20 +398,20 @@ describe('the bot as assembled', () => {
       await vi.waitFor(() => expect(reminderFor(merged)).toBeDefined(), WAIT);
       await tapButton(`queued:send:${merged}`);
 
-      await vi.waitFor(() => expect(fx.prompts).toEqual(['first', 'part one\npart two']), WAIT);
+      await vi.waitFor(() => expect(fx.prompts).toEqual(['first', `${PART_ONE}\npart two`]), WAIT);
     });
 
     it("doesn't let an edit to one part replace the whole of a merged message", async () => {
       send('first');
       await vi.waitFor(() => expect(fx.prompts).toEqual(['first']), WAIT);
-      const merged = send('part one');
+      const merged = send(PART_ONE);
       send('part two');
       await vi.waitFor(() => expect(ackFor(merged)).toBeDefined(), WAIT);
 
       await edit(merged, 'part one, fixed');
       fx.finish.get('first')!();
 
-      await vi.waitFor(() => expect(fx.prompts).toEqual(['first', 'part one\npart two']), WAIT);
+      await vi.waitFor(() => expect(fx.prompts).toEqual(['first', `${PART_ONE}\npart two`]), WAIT);
     });
   });
 });

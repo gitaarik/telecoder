@@ -378,6 +378,17 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Reliability
 
+- **A long paste reaches Claude as one message again** — Telegram splits a
+  paste over 4096 characters into several messages. Since messages started
+  queueing behind a busy turn, each part waited for the one before it to be
+  answered, so Claude saw the paste one part per turn. The batcher that
+  joins them was off unless `MESSAGE_BATCH_TIMEOUT_MS` was set. It's now on by
+  default (1500ms), and only a message of 2000 characters or more opens a
+  batch, so ordinary messages aren't held up waiting for parts that won't come.
+  The parts after the first join it whatever they look like, including a short
+  last part or one that starts with a slash because the split landed just
+  before a path.
+
 - **No more catch-up repeating a reply** — the reply goes out without its
   reasoning summary, but the session log keeps it, and the check that recovers
   prose the relay dropped counted the summary as missing. With summaries on,

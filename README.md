@@ -791,8 +791,8 @@ TeleCoder is maintained independently by [@gitaarik](https://github.com/gitaarik
   topic + preview across restarts, last-response display on resume
 - **Agent watchdog** — silence/stuck-tool detection, force-abort on stuck
   queries, /cancel works during hangs
-- **Message batching middleware** — combines rapid split pastes into one
-  prompt
+- **Message batching middleware** — joins the parts of a paste Telegram
+  split up into one prompt (on by default; only 2000+ char messages wait)
 - **SDK isolation** — bot runs in a clean SDK env to avoid user-level
   plugin tool-deferral interfering with proactive MCP calls
 
