@@ -127,6 +127,7 @@ import { groupMentionMiddleware } from './middleware/group-mention.middleware.js
 import { groupRoleMiddleware } from './middleware/group-role.middleware.js';
 import { trackForceReplyPrompts } from '../telegram/force-reply-tracker.js';
 import { initThreadTitles } from '../telegram/thread-titles.js';
+import { initThreadsSetup } from '../telegram/threads-setup.js';
 import { resolvePendingPoll } from '../claude/poll-user.js';
 import { captureSecretMessages, handleSecretCallback } from '../claude/secret-request.js';
 import { registerBotCommandName } from '../claude/command-parser.js';
@@ -361,6 +362,10 @@ export async function createBot(): Promise<Bot> {
   // Note who named each private-chat thread, from the notices passing by, so a
   // name the user chose is never replaced by the session topic.
   initThreadTitles(bot);
+
+  // A project bot made by /newbot starts without threads, which only its owner
+  // can turn on: tell them how, with the first message they send it.
+  initThreadsSetup(bot);
 
   // In groups, ignore messages that aren't addressed to the bot, so people can
   // talk to each other without triggering a turn. Runs before the command

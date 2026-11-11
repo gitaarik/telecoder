@@ -208,7 +208,7 @@ export async function handleManagedBotCreated(ctx: Context): Promise<void> {
       ? `✅ ${link} is set up for *${esc(path.basename(projectPath))}* and starts in a few seconds\\.`
       : `✅ ${link} is set up and starts in a few seconds\\. It has no project of its own: this /newbot had expired\\.`,
     '',
-    'To give it threads, turn on Threaded Mode for it in @BotFather\'s Mini App\\.',
+    'It has no threads yet: only you can turn them on, in [@BotFather](https://t.me/BotFather)\'s Mini App\\. Message it and it walks you through it, and tells you once they\'re on\\.',
   ];
   if (!locked) lines.push('', '⚠️ Couldn\'t restrict who can open it\\. Only allowed users get answers either way\\.');
   await ctx.reply(lines.join('\n'), { parse_mode: 'MarkdownV2', ...done });

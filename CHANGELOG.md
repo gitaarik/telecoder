@@ -27,7 +27,10 @@ reasoning — the commit bodies are the long form, this is the index.
   and Threaded Mode, which Telegram offers no API for, is still switched on
   there by hand. Only a bot an admin created is adopted: anyone can create one
   managed by ours through a link. Asking Claude for a bot works too: its
-  `telecoder_create_bot` tool sends the same button.
+  `telecoder_create_bot` tool sends the same button. The new bot sends the
+  steps for turning threads on with the first message you send it, then
+  checks once a minute and says so when they're on, taking the setting in
+  without a restart.
 - **A bot can have a home project** — `HOME_PROJECT`, which `/newbot` sets. A
   conversation with nothing to restore starts there instead of asking for
   `/project`, and the project is left out of the thread names and the bot's

@@ -14,6 +14,7 @@
 import { run } from '@grammyjs/runner';
 import { isMainThread, parentPort } from 'worker_threads';
 import { createBot } from './bot/bot.js';
+import { resumeThreadsSetup } from './telegram/threads-setup.js';
 import { armReminders } from './bot/middleware/queued-messages.js';
 import { config, BOT_ID } from './config.js';
 import { preventSleep, allowSleep } from './utils/caffeinate.js';
@@ -131,6 +132,7 @@ async function main() {
   // Initialize bot (fetches bot info from Telegram)
   await bot.init();
   console.log(`✅ Bot started as @${bot.botInfo.username}`);
+  resumeThreadsSetup(bot);
   console.log('📱 Send /start in Telegram to begin');
 
   // Start concurrent runner — updates are processed in parallel,

@@ -204,7 +204,8 @@ new bot's token, restricts the bot to you, and adds it to `instances.json` with
 `HOME_PROJECT` set, which the launcher picks up. A bot with a `HOME_PROJECT` starts
 conversations there without a `/project` first, and leaves that project out of its thread
 names and its display name. Telegram has no API to turn on threads for a bot, so for a
-bot with threads, turn on Threaded Mode for it in the same Mini App. `/newbot` rewrites
+bot with threads, turn on Threaded Mode for it in the same Mini App: the new bot sends
+you the steps with your first message, and says so once they're on. `/newbot` rewrites
 `instances.json`, so it refuses a file with `//` comments rather than lose them.
 
 ---
