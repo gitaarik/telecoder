@@ -64,6 +64,7 @@ import { restoreTopicAndRefreshBotName } from './command.handler.js';
 import { getSessionTopic } from './command.handler.js';
 import { sessionDisplayName } from './command/shared.js';
 import { adoptThread, threadName } from '../../telegram/thread-titles.js';
+import { isHomeProject } from '../../utils/home-project.js';
 import { userPreferences } from '../../providers/user-preferences.js';
 import { buildSyntheticCtx } from '../../claude/synthetic-ctx.js';
 
@@ -450,7 +451,8 @@ async function forkIntoThread(
   }
 
   const projectLabel = path.basename(fork.projectPath);
-  const name = threadName(fork.topic ?? '', FORK_THREAD_PREFIX, projectLabel);
+  const name = threadName(fork.topic ?? '', FORK_THREAD_PREFIX, isHomeProject(fork.projectPath) ? '' : projectLabel)
+    || `${FORK_THREAD_PREFIX}${projectLabel}`;
   let threadId: number;
   try {
     threadId = (await ctx.api.createForumTopic(chatId, name)).message_thread_id;

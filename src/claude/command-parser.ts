@@ -91,6 +91,7 @@ export function getAvailableCommands(): string {
       commands: [
         '• `/project <path>` \\- Set working directory',
         '• `/newproject <name>` \\- Create a new project',
+        '• `/newbot [project]` \\- Create a bot for a project, named after it and starting in it',
         '• `/resume` \\- Pick from recent sessions to resume',
         '• `/continue` \\- Resume most recent session',
         '• `/sessions` \\- List all sessions',

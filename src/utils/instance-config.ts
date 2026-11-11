@@ -152,3 +152,36 @@ function sameInstance(a: ResolvedInstance, b: ResolvedInstance): boolean {
   const keys = Object.keys(ao);
   return keys.length === Object.keys(bo).length && keys.every((k) => ao[k] === bo[k]);
 }
+
+// ---------------------------------------------------------------------------
+// Adding a bot
+// ---------------------------------------------------------------------------
+
+/**
+ * `text` with one more single-token bot in it, for /newbot to write back.
+ *
+ * Its name is `entry.name`, or that with " 2", " 3"… after it when another bot
+ * has the name already: the launcher keys its workers by name. Throws
+ * InstancesConfigError when the bot is listed already, or when the file has
+ * comments, which a rewrite through JSON would lose.
+ */
+export function withInstanceAdded(text: string, entry: ResolvedInstance): { text: string; name: string } {
+  if (stripJsonComments(text) !== text) {
+    throw new InstancesConfigError('it has comments, which rewriting it would drop');
+  }
+  const current = resolveInstances(text);
+  if (current.some((inst) => botIdOf(inst.token) === botIdOf(entry.token))) {
+    throw new InstancesConfigError(`bot ${botIdOf(entry.token)} is listed already`);
+  }
+  const names = new Set(current.map((inst) => inst.name));
+  let name = entry.name;
+  for (let n = 2; names.has(name); n++) name = `${entry.name} ${n}`;
+
+  const parsed = JSON.parse(text) as InstancesConfig;
+  const added: InstanceEntry = { name, token: entry.token };
+  if (entry.overrides && Object.keys(entry.overrides).length) added.overrides = entry.overrides;
+  parsed.instances = [...(parsed.instances ?? []), added];
+  const next = `${JSON.stringify(parsed, null, 2)}\n`;
+  resolveInstances(next);
+  return { text: next, name };
+}

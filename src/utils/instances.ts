@@ -5,10 +5,10 @@
  * --config flag handling.
  */
 
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, renameSync } from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { stripJsonComments, expandName } from './instance-config.js';
+import { stripJsonComments, expandName, withInstanceAdded, type ResolvedInstance } from './instance-config.js';
 import { legacyEnv } from './legacy-env.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -101,4 +101,21 @@ export function findBotByName(name: string): BotInstance | undefined {
 
 export function findBotById(botId: string): BotInstance | undefined {
   return listAllBots().find((b) => b.botId === botId);
+}
+
+/**
+ * Add a bot to instances.json, which the launcher watches: it starts the bot
+ * a few seconds later. Written to a temporary file and renamed into place, so
+ * the launcher never reads half a file. Returns the name it got, which has a
+ * number after it if another bot had the name already. Throws
+ * InstancesConfigError when the file can't take it as it stands.
+ */
+export function addInstance(entry: ResolvedInstance): string {
+  const cfgPath = configPath();
+  const { text, name } = withInstanceAdded(readFileSync(cfgPath, 'utf-8'), entry);
+  const tmp = `${cfgPath}.${process.pid}.tmp`;
+  writeFileSync(tmp, text, { mode: 0o600 });
+  renameSync(tmp, cfgPath);
+  cached = null;
+  return name;
 }

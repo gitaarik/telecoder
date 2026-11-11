@@ -95,6 +95,7 @@ import {
 import { handleMessage, handleCcrThrottleCallback } from './handlers/message.handler.js';
 import { handleSchedule, handleSchedules, handleUnschedule } from './handlers/schedule.handler.js';
 import { handleForkCallback, handleAcceptCommand, handleDeclineCommand, handleForkCommand } from './handlers/fork.handler.js';
+import { handleNewBot, handleManagedBotCreated } from './handlers/newbot.handler.js';
 import { handleTreeCommand, handleTreeCallback } from './handlers/tree.handler.js';
 import { handlePromptsCommand, handlePromptsCallback } from './handlers/prompts.handler.js';
 import {
@@ -282,6 +283,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'start', description: '🚀 Show help and getting started' },
     { command: 'project', description: '📁 Set working directory' },
     { command: 'newproject', description: '📁 Create a new project' },
+    { command: 'newbot', description: '🤖 Create a bot for a project' },
     { command: 'status', description: '📊 Show current session status' },
     { command: 'clear', description: '🗑️ Clear conversation history' },
     { command: 'cancel', description: '⏹️ Stop the current request and drop anything queued' },
@@ -515,6 +517,8 @@ export async function createBot(): Promise<Bot> {
   // guardrails rather than the conversation.
   cmd('project', adminOnly(handleProject));
   cmd('newproject', adminOnly(handleNewProject));
+  // Creating a bot adds a process to the launcher and a token to instances.json.
+  cmd('newbot', adminOnly(handleNewBot));
   cmd('streaming', handleStreaming);
   // /mode was the streaming toggle's name until this landed, and was kept as
   // an alias for exactly as long as nothing better wanted it. Permission mode
@@ -645,6 +649,10 @@ export async function createBot(): Promise<Bot> {
       // in the same chat).
     }
   });
+
+  // The bot a /newbot button created. The handler checks for an admin itself,
+  // and quietly: anyone with a t.me/newbot link can create one.
+  bot.on('message:managed_bot_created', handleManagedBotCreated);
 
   // Handle voice messages
   bot.on('message:voice', handleVoice);

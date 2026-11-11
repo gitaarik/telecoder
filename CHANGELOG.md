@@ -17,6 +17,23 @@ reasoning — the commit bodies are the long form, this is the index.
   its name once it has stopped. A file that doesn't parse, lists no bots, or
   gives two bots one name is ignored until it's fixed.
 
+- **`/newbot` creates a bot for a project** — a bot per project meant a
+  BotFather chat each time: pick a name, copy the token, paste it into
+  `instances.json`. Now `/newbot sjs` offers a button that opens Telegram's own
+  create-a-bot screen with the name and username filled in, and once you
+  confirm, the bot that sent it fetches the new token, restricts the new bot to
+  you, and adds it to `instances.json`, which the launcher picks up. It needs
+  Bot Management Mode on in BotFather's Mini App for the bot you send it to,
+  and Threaded Mode, which Telegram offers no API for, is still switched on
+  there by hand. Only a bot an admin created is adopted: anyone can create one
+  managed by ours through a link.
+- **A bot can have a home project** — `HOME_PROJECT`, which `/newbot` sets. A
+  conversation with nothing to restore starts there instead of asking for
+  `/project`, and the project is left out of the thread names and the bot's
+  display name while you're in it, since the bot's own name already says it.
+  That leaves the thread names their full width for what they're about. A
+  thread that moves to another project gets that one in front again.
+
 ### Threads
 
 - **Each thread keeps its own model, effort, backend, transport and

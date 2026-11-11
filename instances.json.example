@@ -31,7 +31,10 @@
       "token": "<bot-token-4>",
       "overrides": {
         "ALLOWED_USER_IDS": "987654321",
-        "DANGEROUS_MODE": "true"
+        "DANGEROUS_MODE": "true",
+        // The project this bot is for. /newbot adds bots with this set, but
+        // it rewrites the file to do so and refuses one with comments.
+        "HOME_PROJECT": "/home/user/projects/admin-tools"
       }
     }
   ]

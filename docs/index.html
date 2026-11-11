@@ -2315,6 +2315,15 @@
             unless you named them yourself.</p>
           </div>
           <div class="feature-card" data-category="sessions">
+            <div class="feature-icon"><svg><use href="#i-instances"/></svg></div>
+            <h3>A bot per project, in one tap</h3>
+            <p><code>/newbot sjs</code> opens Telegram's own create-a-bot screen; confirm it and the
+            new bot is added to the launcher and started, locked to you, with no BotFather chat or
+            token to copy. It starts every conversation in its project, and since its name already
+            says which one, its threads leave the project out of their names and keep the room for
+            what they're about.</p>
+          </div>
+          <div class="feature-card" data-category="sessions">
             <div class="feature-icon"><svg><use href="#i-shield"/></svg></div>
             <h3>Share a bot with a group</h3>
             <p>Allow-list a group in <code>ALLOWED_GROUP_IDS</code> and the bot works there.
@@ -2824,6 +2833,10 @@ CCR_AUTOSTART=true</pre>
             <div class="command-row">
               <code class="command-code">/newproject &lt;name&gt;</code>
               <span class="command-desc">Create and open a new project</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/newbot [project]</code>
+              <span class="command-desc">Create a bot for a project without going through BotFather: one tap on Telegram's create-a-bot screen, and it starts in that project. Needs Bot Management Mode on the bot you send it to. Admin-only.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/clear [-y]</code>

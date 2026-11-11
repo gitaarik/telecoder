@@ -6,6 +6,7 @@ import {
   diffInstances,
   botIdOf,
   InstancesConfigError,
+  withInstanceAdded,
   type ResolvedInstance,
 } from '../../src/utils/instance-config.js';
 
@@ -155,5 +156,43 @@ describe('diffInstances', () => {
     expect(diff.removed.map((i) => i.name)).toEqual(['TC 2']);
     expect(diff.changed.map((c) => [c.from.name, c.to.name])).toEqual([['TC 3', 'TC 2']]);
     expect(diff.added).toEqual([]);
+  });
+});
+
+describe('withInstanceAdded', () => {
+  const file = JSON.stringify({
+    defaults: { STREAMING_MODE: 'streaming' },
+    instances: [
+      { name: 'TeleCoder {n}', tokens: ['1:a', '2:b'] },
+      { name: 'TeleCoder — sjs', token: '3:c' },
+    ],
+  }, null, 2);
+
+  it('appends the bot with its overrides, leaving the rest as it was', () => {
+    const { text, name } = withInstanceAdded(file, { name: 'TeleCoder — web', token: '4:d', overrides: { HOME_PROJECT: '/w/web' } });
+
+    expect(name).toBe('TeleCoder — web');
+    const parsed = JSON.parse(text);
+    expect(parsed.defaults).toEqual({ STREAMING_MODE: 'streaming' });
+    expect(parsed.instances.at(-1)).toEqual({ name: 'TeleCoder — web', token: '4:d', overrides: { HOME_PROJECT: '/w/web' } });
+    expect(resolveInstances(text).map((i) => i.name)).toEqual(['TeleCoder 1', 'TeleCoder 2', 'TeleCoder — sjs', 'TeleCoder — web']);
+  });
+
+  it('numbers the name when another bot has it, counting expanded templates', () => {
+    expect(withInstanceAdded(file, { name: 'TeleCoder — sjs', token: '4:d' }).name).toBe('TeleCoder — sjs 2');
+    expect(withInstanceAdded(file, { name: 'TeleCoder 1', token: '4:d' }).name).toBe('TeleCoder 1 2');
+  });
+
+  it('leaves out an empty overrides object', () => {
+    const { text } = withInstanceAdded(file, { name: 'Bare', token: '4:d', overrides: {} });
+    expect(JSON.parse(text).instances.at(-1)).toEqual({ name: 'Bare', token: '4:d' });
+  });
+
+  it('refuses a bot that is listed already', () => {
+    expect(() => withInstanceAdded(file, { name: 'Again', token: '3:new-secret' })).toThrow(InstancesConfigError);
+  });
+
+  it('refuses a file with comments rather than drop them', () => {
+    expect(() => withInstanceAdded(`// my bots\n${file}`, { name: 'X', token: '4:d' })).toThrow(/comments/);
   });
 });

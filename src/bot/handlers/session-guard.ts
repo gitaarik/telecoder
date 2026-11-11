@@ -13,6 +13,7 @@ import * as path from 'path';
 import { sessionManager, type Session } from '../../claude/session-manager.js';
 import { sessionHistory } from '../../claude/session-history.js';
 import { escapeMarkdownV2 as esc } from '../../telegram/markdown.js';
+import { homeProject } from '../../utils/home-project.js';
 
 /** Shown when a handler needs a working directory and no session supplies one. */
 export const NO_PROJECT_MESSAGE =
@@ -56,11 +57,15 @@ export async function requireActiveSession(ctx: Context, sessionKey: string): Pr
  *
  * For the paths where the user is mid-conversation — a typed message, a photo,
  * a voice note — and a restart shouldn't be their problem. Announces the
- * restore so the recovered context isn't invisible. Returns null after
- * replying, so callers just early-return.
+ * restore so the recovered context isn't invisible. With nothing to restore, a
+ * bot with a home project starts a fresh conversation there. Returns null
+ * after replying, so callers just early-return.
  */
 export async function requireSession(ctx: Context, sessionKey: string): Promise<Session | null> {
-  const { session, restored } = sessionManager.getOrRestoreSession(sessionKey);
+  const { session: restoredSession, restored } = sessionManager.getOrRestoreSession(sessionKey);
+  // A bot made for one project starts there instead of asking for /project.
+  const home = restoredSession ? undefined : homeProject();
+  const session = restoredSession ?? (home ? sessionManager.createSession(sessionKey, home) : undefined);
   if (!session) {
     await ctx.reply(NO_PROJECT_MESSAGE, { parse_mode: 'MarkdownV2' });
     return null;

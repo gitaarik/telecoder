@@ -144,6 +144,11 @@ const envSchema = z.object({
   // OpenAI (TTS)
   OPENAI_API_KEY: z.string().optional(),
   WORKSPACE_DIR: z.string().default(process.env.HOME || '.'),
+  // The project this bot is for, set by /newbot for the bots it creates. A
+  // conversation with nowhere else to be starts here, and a thread in it is
+  // named without the project in front, since the bot's name already says it.
+  // Absolute, or relative to WORKSPACE_DIR.
+  HOME_PROJECT: z.string().optional(),
   CLAUDE_EXECUTABLE_PATH: z.string().default('claude'),
   CLAUDE_USE_BUNDLED_EXECUTABLE: z
     .string()

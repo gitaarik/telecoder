@@ -25,6 +25,7 @@ import {
   notifyBotNameBlock,
 } from '../../../telegram/botname-settings.js';
 import { syncThreadTitle } from '../../../telegram/thread-titles.js';
+import { isHomeProject } from '../../../utils/home-project.js';
 
 // Per-session topic (ephemeral — not persisted across restarts)
 const sessionTopics: Map<string, string> = new Map();
@@ -35,7 +36,10 @@ const lastTopicSetAt: Map<string, number> = new Map();
 /** Build the bot display name from base name and project. Topic now lives in the status line. */
 export function buildBotDisplayName(sessionKey: string): string {
   const session = sessionManager.getSession(sessionKey);
-  const project = session?.workingDirectory ? path.basename(session.workingDirectory) : '';
+  // A bot made for one project already carries it in its name.
+  const project = session?.workingDirectory && !isHomeProject(session.workingDirectory)
+    ? path.basename(session.workingDirectory)
+    : '';
   const parts: string[] = [config.BOT_NAME];
   if (project) parts.push(project);
   return parts.join(' — ').slice(0, 64);
@@ -97,9 +101,11 @@ export function setSessionTopic(sessionKey: string, topic: string): string {
   lastTopicSetAt.set(sessionKey, Date.now());
   // Persist so topic survives restarts
   sessionHistory.updateTopic(sessionKey, topic || undefined);
-  // In a private chat's thread, the topic is the thread's name too.
+  // In a private chat's thread, the topic is the thread's name too, with the
+  // project in front unless it's the one the bot is named after.
   const workingDirectory = sessionManager.getSession(sessionKey)?.workingDirectory;
-  syncThreadTitle(sessionKey, topic, workingDirectory ? path.basename(workingDirectory) : undefined);
+  const project = workingDirectory && !isHomeProject(workingDirectory) ? path.basename(workingDirectory) : undefined;
+  syncThreadTitle(sessionKey, topic, project);
   return buildBotDisplayName(sessionKey);
 }
 
