@@ -31,7 +31,7 @@ import {
   handleTelegraphReply,
 } from './message/replies.js';
 
-export { relayCatchUpIfMissed } from './message/turn-notify.js';
+export { closeTurn, relayCatchUpIfMissed } from './message/turn-notify.js';
 export { runQueuedTurn } from './message/shared.js';
 export { formatResetIn } from './message/throttle.js';
 export { handleCcrThrottleCallback, dispatchPromptFromCallback } from './message/turn-runner.js';

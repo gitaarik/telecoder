@@ -6,7 +6,7 @@ import { queueRequest } from './request-queue.js';
 import { messageSender } from '../telegram/message-sender.js';
 import { progressCallbacks, toolCallbacks, withStreamingTurn } from '../telegram/streaming-turn.js';
 import { maybeSendVoiceReply } from '../tts/voice-reply.js';
-import { relayCatchUpIfMissed } from '../bot/handlers/message.handler.js';
+import { closeTurn, relayCatchUpIfMissed } from '../bot/handlers/message.handler.js';
 import { parseSessionKey } from '../utils/session-key.js';
 import { buildSyntheticCtx } from './synthetic-ctx.js';
 import { scheduler, type Schedule } from './scheduler.js';
@@ -100,5 +100,8 @@ async function runScheduledTurn(ctx: Context, sessionKey: string, prompt: string
     await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
     await maybeSendVoiceReply(ctx, response.text);
     await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
+    // The short form: a schedule can fire every minute, and the whole block
+    // under each fire would outweigh the result it closes.
+    await closeTurn(ctx, sessionKey, response, prompt, { brief: true });
   });
 }

@@ -591,14 +591,16 @@ export function formatRecentPrompts(prompts: string[]): string {
 /**
  * The session's prompts as its log records them, so the list reaches back past
  * a restart and past prompts sent from elsewhere. The turn's own prompt stands
- * in when the log has none to give.
+ * in when the log has none to give. A reply no prompt started, like the one to
+ * a background task that reported back, has only the log to go by.
  */
-function recentPrompts(sessionKey: string | undefined, lastPrompt: string): string[] {
+function recentPrompts(sessionKey: string | undefined, lastPrompt: string | undefined): string[] {
   const session = sessionKey ? sessionManager.getSession(sessionKey) : undefined;
   const logged = session?.claudeSessionId
     ? promptsIn(session.workingDirectory, session.claudeSessionId)
     : [];
-  return logged.length > 0 ? logged : [lastPrompt];
+  if (logged.length > 0) return logged;
+  return lastPrompt ? [lastPrompt] : [];
 }
 
 /**
@@ -623,27 +625,30 @@ function usageFooter(chatId: number, usage: AgentUsage | undefined): string | un
  * line visible when distinguishing multiple bots in the same project.
  *
  * The usage footer, when the chat shows one, closes the message.
+ *
+ * `brief` leaves the stats and that footer: see StatusLineOptions.
  */
 function buildStatusLineMarkdown(
   chatId: number,
   sessionKey?: string,
   usage?: AgentUsage,
   lastPrompt?: string,
+  brief = false,
 ): string {
   const sections: string[] = [];
 
-  if (sessionKey && userPreferences.getShowTopicInStatusLine(chatId)) {
+  if (!brief && sessionKey && userPreferences.getShowTopicInStatusLine(chatId)) {
     const topic = getSessionTopic(sessionKey);
     if (topic) sections.push(`_💬 ${esc(topic)}_`);
   }
 
-  if (lastPrompt && userPreferences.getShowPromptInStatusLine(chatId)) {
+  if (!brief && userPreferences.getShowPromptInStatusLine(chatId)) {
     const formatted = formatRecentPrompts(recentPrompts(sessionKey, lastPrompt));
     if (formatted) sections.push(formatted);
   }
 
   const tail: string[] = [];
-  if (sessionKey && userPreferences.getShowSessionInStatusLine(chatId)) {
+  if (!brief && sessionKey && userPreferences.getShowSessionInStatusLine(chatId)) {
     const claudeSessionId = sessionManager.getSession(sessionKey)?.claudeSessionId;
     if (claudeSessionId) {
       // Inside backticks only `\` and `` ` `` need escaping; UUIDs contain neither.
@@ -704,10 +709,24 @@ function buildStatusLineMarkdown(
   return sections.join('\n\n');
 }
 
+export interface StatusLineOptions {
+  /**
+   * Only the stats and the usage footer: no topic, no prompts, no resume
+   * command. For a turn nobody typed, on a schedule that may fire every minute.
+   * The whole block under each fire would outweigh a short result, and each
+   * fire is logged as a prompt, so the list would soon hold nothing but the
+   * schedule's own.
+   */
+  brief?: boolean;
+}
+
 /**
  * The message that closes a turn: the status line, with the usage footer at its
  * bottom when the chat shows both. /statusline and /verbosity set them apart,
  * so with the status line off, a chat that shows the footer gets it on its own.
+ *
+ * `lastPrompt` is the turn's own, for a session whose log has no prompts to
+ * list. Leave it out for a reply that no prompt started.
  */
 export async function sendStatusLine(
   ctx: Context,
@@ -715,10 +734,11 @@ export async function sendStatusLine(
   sessionKey: string,
   usage?: AgentUsage,
   lastPrompt?: string,
+  { brief = false }: StatusLineOptions = {},
 ): Promise<void> {
   try {
     if (userPreferences.getShowStatusLine(chatId)) {
-      const markdown = buildStatusLineMarkdown(chatId, sessionKey, usage, lastPrompt);
+      const markdown = buildStatusLineMarkdown(chatId, sessionKey, usage, lastPrompt, brief);
       await ctx.reply(markdown, { parse_mode: 'MarkdownV2' });
       return;
     }

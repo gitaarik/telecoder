@@ -32,7 +32,8 @@ import { config } from '../config.js';
  * turn of its own. Nothing streams that turn, so the relay collects its prose
  * and, when claude closes the turn, sends it as the turn pipeline sends a
  * reply: whole, in one go. That is usually the answer the background work was
- * for, and often longer than a card can hold.
+ * for, and often longer than a card can hold. It ends the way a reply of the
+ * turn pipeline's does too, with the status line under it.
  *
  * State is per-sessionKey and torn down with the session. No persistence:
  * if the bot restarts, the user has to re-arm any monitors they want.
@@ -75,6 +76,12 @@ interface MonitorState {
    * page to publish first can't be overtaken by the next.
    */
   replySent: Promise<void>;
+  /**
+   * The turn claude started itself has put something in the chat: its prose,
+   * or a tool's post it made way for. Such a turn takes the status line when
+   * it closes, even with nothing more to say by then.
+   */
+  postedInTurn: boolean;
   /**
    * Armed-task bookkeeping keyed by tool_use_id. Populated by
    * onAsyncToolArmed when an async tool fires; consumed by handleChange
@@ -288,6 +295,7 @@ export function onAsyncToolArmed(
       pendingRead: null,
       reply: [],
       replySent: Promise.resolve(),
+      postedInTurn: false,
       armedTasks: new Map(),
     };
     states.set(sessionKey, state);
@@ -335,9 +343,11 @@ export function markTurnStart(sessionKey: string): void {
   if (state) {
     // A turn claude started itself may not be read to the end yet, or not
     // closed. What it wrote goes out now, ahead of this turn, instead of
-    // being skipped as this turn's.
-    drain(state);
+    // being skipped as this turn's. Without a status line, even if the log
+    // turns out to have closed it: this turn is under way and ends with one.
+    drain(state, false);
     void sendReply(state);
+    state.postedInTurn = false;
     state.inTurn = true;
     state.selfTurnOpen = false;
   }
@@ -378,6 +388,8 @@ export async function settleBeforePost(sessionKey: string): Promise<void> {
   const state = states.get(sessionKey);
   if (state && !state.inTurn) {
     drain(state);
+    // The post counts as the turn's, with or without prose ahead of it.
+    state.postedInTurn = true;
     await sendReply(state);
   }
   sealCard(sessionKey);
@@ -394,6 +406,8 @@ export function markSelfTurnInterrupted(sessionKey: string): void {
   drain(state);
   state.selfTurnOpen = false;
   void sendReply(state);
+  // Cut short rather than closed, and by someone looking at the chat.
+  state.postedInTurn = false;
 }
 
 /** The sessions to look at: the one asked about, or all of them. */
@@ -422,7 +436,8 @@ export function teardown(sessionKey: string): void {
   stopWatcher(state);
   // A turn claude started itself and never got to close — it crashed, or was
   // cleared or restarted mid-turn. What it wrote is still the user's to read.
-  drain(state);
+  // No status line under it: the session it would describe is going away.
+  drain(state, false);
   void sendReply(state);
   states.delete(sessionKey);
   clearCard(sessionKey);
@@ -465,16 +480,19 @@ function stopWatcher(state: MonitorState): void {
  * Read now whatever the watcher has been told about but not read yet.
  * Cancels the coalesce timer so it doesn't fire later with the position
  * already past the data.
+ *
+ * `closes` is whether a turn found closed in what's read still ends with the
+ * status line. Not when the caller is ending the relay's part itself.
  */
-function drain(state: MonitorState): void {
+function drain(state: MonitorState, closes = true): void {
   if (state.pendingRead) {
     clearTimeout(state.pendingRead);
     state.pendingRead = null;
   }
-  handleChange(state);
+  handleChange(state, closes);
 }
 
-function handleChange(state: MonitorState): void {
+function handleChange(state: MonitorState, closes = true): void {
   const filePath = sessionJsonlPath(state.cwd, state.claudeSessionId);
   let size: number;
   try {
@@ -517,6 +535,7 @@ function handleChange(state: MonitorState): void {
         if (!state.inTurn) {
           state.selfTurnOpen = false;
           void sendReply(state);
+          state.postedInTurn = false;
         }
         continue;
       }
@@ -559,7 +578,7 @@ function handleChange(state: MonitorState): void {
       // itself too, and one cut short by an API error as well.
       if (!state.inTurn) {
         state.selfTurnOpen = false;
-        void sendReply(state);
+        void sendReply(state, closes);
       }
     }
   }
@@ -571,17 +590,29 @@ function handleChange(state: MonitorState): void {
  * needs it, with an Instant View link when it runs long. Joined as
  * readLastAssistantTurnText joins a turn's text records.
  *
- * Resolves once the reply is in the chat, so a tool can post below it.
+ * `turnClosed` is for the send that follows claude closing the turn. A turn
+ * that put anything in the chat then ends as one of ours does, with the status
+ * line under it. A send for any other reason gets none: the turn is still
+ * going, or was cut short, or a turn of ours is taking over and will end with
+ * its own.
+ *
+ * Resolves once all of it is in the chat, so a tool can post below it.
  */
-function sendReply(state: MonitorState): Promise<void> {
-  if (state.reply.length === 0) return state.replySent;
+function sendReply(state: MonitorState, turnClosed = false): Promise<void> {
   const text = state.reply.join('\n\n');
   state.reply = [];
-  // What the card shows happened before this reply. Sealed, the card stays
-  // above it, and whatever happens next starts a fresh card below.
+  if (text) state.postedInTurn = true;
+  const closes = turnClosed && state.postedInTurn;
+  if (turnClosed) state.postedInTurn = false;
+  if (!text && !closes) return state.replySent;
+  // What the card shows happened before this. Sealed, the card stays above
+  // it, and whatever happens next starts a fresh card below.
   sealCard(state.sessionKey);
   const { sessionKey } = state;
-  state.replySent = state.replySent.then(() => postReply(sessionKey, text));
+  state.replySent = state.replySent.then(async () => {
+    if (text) await postReply(sessionKey, text);
+    if (closes) await postStatusLine(sessionKey);
+  });
   return state.replySent;
 }
 
@@ -596,6 +627,20 @@ async function postReply(sessionKey: string, text: string): Promise<void> {
     await messageSender.sendMessage(ctx, text);
   } catch (err) {
     console.error('[Monitor] reply send failed:', err instanceof Error ? err.message : err);
+  }
+}
+
+/** Close a turn claude started itself the way the turn pipeline closes one of ours. */
+async function postStatusLine(sessionKey: string): Promise<void> {
+  if (!botRef) return;
+  const ctx = buildSyntheticCtx({ api: botRef.api, sessionKey, syntheticText: '' });
+  try {
+    // Lazy like the import above, and with more reason: the handler layer
+    // imports the provider that loads this module.
+    const { closeSelfStartedTurn } = await import('../bot/handlers/message/turn-notify.js');
+    await closeSelfStartedTurn(ctx, sessionKey);
+  } catch (err) {
+    console.error('[Monitor] status line send failed:', err instanceof Error ? err.message : err);
   }
 }
 

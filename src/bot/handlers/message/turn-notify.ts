@@ -1,21 +1,27 @@
 /**
  * Everything posted to the chat *after* a turn's main response: the catch-up
- * relay that recovers prose the extractors dropped, and the context-visibility
- * notices (compaction, new-agent-session). The usage footer isn't one of them:
- * it goes out with the status line, see `sendStatusLine`.
+ * relay that recovers prose the extractors dropped, the context-visibility
+ * notices (compaction, new-agent-session), and the status line that comes
+ * last. The usage footer isn't a message of its own: it goes out at the bottom
+ * of the status line, see `sendStatusLine`.
  *
- * Each notice consults the chat's verbosity settings itself, so callers fire
- * them unconditionally via `sendTurnNotifications`.
+ * Each notice consults the chat's verbosity settings itself, and the status
+ * line the chat's /statusline ones, so callers fire them unconditionally via
+ * `closeTurn`.
  */
 
 import { Context } from 'grammy';
 import { sessionManager } from '../../../claude/session-manager.js';
 import { readLastAssistantTurnText } from '../../../claude/session-jsonl.js';
+import { getPtyProvider } from '../../../providers/claude-provider.js';
+import { getCachedUsage } from '../../../providers/provider-router.js';
+import type { AgentResponse } from '../../../providers/types.js';
 import { messageSender } from '../../../telegram/message-sender.js';
 import { escapeMarkdownV2 as esc } from '../../../telegram/markdown.js';
 import { resolveVerbosityFlags } from '../../../utils/verbosity.js';
 import { fmtTokens } from '../../../utils/format.js';
 import { stripReasoningSummary } from '../../../utils/reasoning-summary.js';
+import { sendStatusLine, type StatusLineOptions } from '../command/settings.js';
 
 /**
  * After a turn's main response has been sent to Telegram, compare what we
@@ -147,4 +153,48 @@ export async function sendTurnNotifications(
 ): Promise<void> {
   await sendCompactionNotification(ctx, response.compaction);
   await sendSessionInitNotification(ctx, sessionKey, response.sessionInit);
+}
+
+/**
+ * What closes a turn, however it started: the context notices, then the status
+ * line. A typed message, a voice note, an upload, /plan, /explore, /loop and a
+ * scheduled fire all end here. Each used to write its own ending, and only the
+ * typed message's had the status line, so a turn started any other way left
+ * the chat on the tail of its reply with nothing to say where things stood.
+ *
+ * `prompt` is what the turn was sent, for a session whose log has no prompts
+ * for the status line to list.
+ */
+export async function closeTurn(
+  ctx: Context,
+  sessionKey: string,
+  response: Pick<AgentResponse, 'usage' | 'compaction' | 'sessionInit'>,
+  prompt: string,
+  options?: StatusLineOptions,
+): Promise<void> {
+  await sendTurnNotifications(ctx, sessionKey, response);
+  const chatId = ctx.chat?.id;
+  if (chatId === undefined) return;
+  // Not every response carries a usage: a /loop's doesn't, though each of its
+  // iterations left one behind, and neither does a cancelled turn's. The line
+  // then shows what the session last had, rather than no model and no context.
+  const usage = response.usage ?? getCachedUsage(sessionKey);
+  await sendStatusLine(ctx, chatId, sessionKey, usage, prompt, options);
+}
+
+/**
+ * The close of a turn claude started itself, when a background task reported
+ * back. Its reply is often the answer the exchange was for, it tends to land
+ * while the user is elsewhere, and no prompt of theirs sits above it, so it
+ * closes with the status line like any other.
+ *
+ * Nothing ran that turn for us: there's no response to take the usage from,
+ * and the cached figure is the one the turn before it left. The session log
+ * has what this one left. The prompts come from the log as well, which lists
+ * what the user sent and not what a task reported.
+ */
+export async function closeSelfStartedTurn(ctx: Context, sessionKey: string): Promise<void> {
+  const chatId = ctx.chat?.id;
+  if (chatId === undefined) return;
+  await sendStatusLine(ctx, chatId, sessionKey, getPtyProvider().refreshUsage(sessionKey));
 }

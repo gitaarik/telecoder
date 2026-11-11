@@ -122,6 +122,22 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Sessions
 
+- **Every reply ends with the status line** — it only came after a message you
+  typed. A reply to a voice note, a photo or a file, to `/plan`, `/explore` or
+  `/loop` with the task on the same line, and the one Claude writes on its own
+  when a background agent or task reports back, all left you on the tail of the
+  answer with nothing to say where things stood. That last one is often the
+  answer you were waiting for, and it tends to arrive while you're in another
+  chat, with no prompt of yours above it. Each now closes the way a typed turn
+  does: your last prompts, the project, the model and the context, which under
+  a background reply is the figure that reply left and not the one from the
+  turn before. They get the compaction and new-session notices a typed turn
+  gets as well, and a `/loop` shows the model and the context, which the line
+  under one never had. A scheduled fire closes with a short line, the stats
+  and the context bar alone: a schedule can fire every minute, and each fire
+  counts as a prompt, so the list would soon show nothing else. A background
+  turn that says nothing still posts nothing.
+
 - **The status line names the project** — a bot moves between projects and its
   display name only says where it is now, so scrolling back left you guessing
   which project an older answer belonged to. `📁 telecoder` now leads the stats

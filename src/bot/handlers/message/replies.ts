@@ -19,11 +19,10 @@ import {
   projectStatusSuffix,
   resumeCommandMessage,
   clearTopicAndRefreshBotName,
-  sendStatusLine,
 } from '../command.handler.js';
 import { fireAutoTopic, requireSession, resolveUserFilePath, runQueuedTurn } from './shared.js';
 import { progressCallbacks, toolCallbacks, withStreamingTurn } from '../../../telegram/streaming-turn.js';
-import { relayCatchUpIfMissed, sendTurnNotifications } from './turn-notify.js';
+import { closeTurn, relayCatchUpIfMissed } from './turn-notify.js';
 
 // Handle reply to project ForceReply prompt
 export async function handleProjectReply(ctx: Context, sessionKey: string, projectPath: string): Promise<void> {
@@ -136,11 +135,7 @@ export async function handleAgentReply(
       // Completion notification for long tasks
       await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
 
-      // Context visibility notifications
-      await sendTurnNotifications(ctx, sessionKey, response);
-
-      const chatId = ctx.chat?.id;
-      if (chatId !== undefined) await sendStatusLine(ctx, chatId, sessionKey, response.usage, trimmedInput);
+      await closeTurn(ctx, sessionKey, response, trimmedInput);
     });
   });
 }

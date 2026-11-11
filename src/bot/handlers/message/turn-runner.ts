@@ -17,9 +17,9 @@ import { messageSender } from '../../../telegram/message-sender.js';
 import { makeToolResultHandler, makeEditDiffHandler, progressCallbacks, toolCallbacks, withStreamingTurn } from '../../../telegram/streaming-turn.js';
 import { maybeSendVoiceReply } from '../../../tts/voice-reply.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
-import { getStreamingMode, sendStatusLine } from '../command.handler.js';
+import { getStreamingMode } from '../command.handler.js';
 import { fireAutoTopic, runQueuedTurn } from './shared.js';
-import { relayCatchUpIfMissed, sendTurnNotifications } from './turn-notify.js';
+import { closeTurn, relayCatchUpIfMissed } from './turn-notify.js';
 import { lastThrottledPrompt, postThrottlePrompt } from './throttle.js';
 
 
@@ -132,11 +132,7 @@ async function handleStreamingResponse(
     // Completion notification for long tasks (streaming edits don't trigger push notifications)
     await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
 
-    // Context visibility notifications
-    await sendTurnNotifications(ctx, sessionKey, response);
-
-    const chatId = ctx.chat?.id;
-    if (chatId !== undefined) await sendStatusLine(ctx, chatId, sessionKey, response.usage, message);
+    await closeTurn(ctx, sessionKey, response, message);
 
     if (response.throttle) {
       await postThrottlePrompt(ctx, sessionKey, message, response.throttle);
@@ -173,10 +169,7 @@ async function handleWaitResponse(
     await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
     await maybeSendVoiceReply(ctx, response.text);
 
-    // Context visibility notifications
-    await sendTurnNotifications(ctx, sessionKey, response);
-
-    await sendStatusLine(ctx, chatId, sessionKey, response.usage, message);
+    await closeTurn(ctx, sessionKey, response, message);
 
     if (response.throttle) {
       await postThrottlePrompt(ctx, sessionKey, message, response.throttle);

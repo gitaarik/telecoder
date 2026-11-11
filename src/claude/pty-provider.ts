@@ -2167,6 +2167,16 @@ export class PtyProvider implements Provider {
     return this.usageCache.get(sessionKey) ?? this._refreshUsageFromJsonl(sessionKey);
   }
 
+  /**
+   * The usage as the session log has it now, cached for /status and /context.
+   * For after a turn claude started itself: no turn of ours ran to refresh the
+   * cache, which still holds the figure from before that turn grew the context.
+   * Falls back on the cached figure when the log has none to give.
+   */
+  refreshUsage(sessionKey: string): AgentUsage | undefined {
+    return this._refreshUsageFromJsonl(sessionKey) ?? this.usageCache.get(sessionKey);
+  }
+
   isDangerousMode(): boolean {
     return true;
   }

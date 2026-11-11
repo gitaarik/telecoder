@@ -54,8 +54,12 @@ function converse(key: string, sessionId: string, lines?: string[]): void {
   sessionManager.setClaudeSessionId(key, sessionId);
 }
 
-/** The prompt lines of the status line sendStatusLine posts after a turn. */
-async function promptLines(chatId: number, key: string, lastPrompt: string): Promise<string[]> {
+/**
+ * The prompt lines of the status line sendStatusLine posts after a turn. No
+ * `lastPrompt` is a reply that no prompt started, like the one to a background
+ * task that reported back.
+ */
+async function promptLines(chatId: number, key: string, lastPrompt?: string): Promise<string[]> {
   const reply = vi.fn(async (_text: string, _opts?: unknown) => ({}));
   await sendStatusLine({ reply } as unknown as Context, chatId, key, undefined, lastPrompt);
   expect(reply).toHaveBeenCalledTimes(1);
@@ -154,6 +158,32 @@ describe('the prompts on the status line', () => {
   it("fall back to the turn's own prompt when the log isn't there", async () => {
     converse('101:2', 'never-written');
     expect(await promptLines(chatId, '101:2', 'first thing I asked')).toEqual(['_▸ first thing I asked_']);
+  });
+
+  it('are the same ones under a reply that no prompt started', async () => {
+    converse('101:3', 'background', [
+      rec('user', 'Review the diff in the background'), rec('assistant', 'Started a reviewer.'),
+      rec('user', 'ok'), rec('assistant', 'It is still running.'),
+      // What the reviewer reported, filed as a user record like a prompt is.
+      JSON.stringify({
+        type: 'user',
+        uuid: `r${uuid++}`,
+        sessionId: 'whichever',
+        origin: { kind: 'task-notification' },
+        message: { role: 'user', content: [{ type: 'text', text: '<task-notification><status>completed</status></task-notification>' }] },
+      }),
+      rec('assistant', 'The review is back: one finding.'),
+    ]);
+    // What the task reported takes no line: it isn't something the user sent.
+    expect(await promptLines(chatId, '101:3')).toEqual([
+      '_▸ Review the diff in the background_',
+      '_▸ ok_',
+    ]);
+  });
+
+  it('are left out under such a reply when the log has none to give', async () => {
+    converse('101:4', 'never-written-either');
+    expect(await promptLines(chatId, '101:4')).toEqual([]);
   });
 
   it('stay off when the chat turned them off', async () => {

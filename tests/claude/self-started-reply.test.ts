@@ -9,8 +9,12 @@
  * weeks of session logs, 50 of 119 such turns wrote a text record past the
  * cut, and the rest of it was only in /recap.
  *
+ * A turn that closes ends the way a turn of TeleCoder's does, with the status
+ * line under its reply: it is often the answer the exchange was for, read by
+ * someone coming back to the chat, with no prompt of theirs above it.
+ *
  * These drive the real relay off a session log on disk, through its real
- * file watcher, with a stand-in for the message sender.
+ * file watcher, with a stand-in for the message sender and for the status line.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
@@ -29,8 +33,14 @@ vi.mock('os', async (importOriginal) => {
 
 const fx = vi.hoisted(() => ({
   replies: [] as { sessionKey: string | undefined; text: string }[],
+  /** The session each status line was sent for. */
+  statusLines: [] as (string | undefined)[],
+  /** Replies and status lines in the order they reached the chat. */
+  chat: [] as string[],
   /** Set to park the next reply until the test releases it. */
   gate: null as Promise<void> | null,
+  /** Set to park the next status line until the test releases it. */
+  statusGate: null as Promise<void> | null,
 }));
 
 vi.mock('../../src/telegram/message-sender.js', async () => {
@@ -44,11 +54,29 @@ vi.mock('../../src/telegram/message-sender.js', async () => {
           await gate;
         }
         fx.replies.push({ sessionKey: getSessionKeyFromCtx(ctx)?.sessionKey, text });
+        fx.chat.push(text);
         return 1;
       },
     },
   };
 });
+
+// What the status line says is the status line's own business, and its tests'.
+// Here it's where one goes: under which replies, and after them.
+vi.mock('../../src/bot/handlers/message/turn-notify.js', () => ({
+  closeSelfStartedTurn: async (ctx: Context, sessionKey: string) => {
+    if (fx.statusGate) {
+      const gate = fx.statusGate;
+      fx.statusGate = null;
+      await gate;
+    }
+    expect(ctx.chat?.id).toBe(Number(sessionKey.split(':')[0]));
+    fx.statusLines.push(sessionKey);
+    fx.chat.push(STATUS_LINE);
+  },
+}));
+
+const STATUS_LINE = '(status line)';
 
 const {
   setMonitorRelayBot,
@@ -169,7 +197,10 @@ afterAll(() => {
 beforeEach(() => {
   seedLog();
   fx.replies.length = 0;
+  fx.statusLines.length = 0;
+  fx.chat.length = 0;
   fx.gate = null;
+  fx.statusGate = null;
   cardTexts.length = 0;
   setMonitorRelayBot(makeBot());
 });
@@ -417,5 +448,201 @@ describe('whether a turn claude started itself is still going', () => {
     release();
     await waiting;
     expect(fx.replies).toHaveLength(1);
+  });
+});
+
+describe('the status line under a turn claude started itself', () => {
+  /** Long enough for a status line that was on its way to have arrived. */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 400));
+
+  it('closes the turn, under its reply', async () => {
+    armAndEndTurn();
+    append(completion('toolu_01'), prose(LONG_ANSWER), TURN_CLOSED);
+
+    await vi.waitFor(() => expect(fx.chat).toEqual([LONG_ANSWER, STATUS_LINE]), WAIT);
+    expect(fx.statusLines).toEqual([SESSION_KEY]);
+  });
+
+  it("goes to the session's forum topic", async () => {
+    armAndEndTurn('subagent', TOPIC_KEY);
+    append(completion('toolu_01'), prose('Done.'), TURN_CLOSED);
+
+    await vi.waitFor(() => expect(fx.statusLines).toEqual([TOPIC_KEY]), WAIT);
+  });
+
+  it('comes once per turn, each under its own reply', async () => {
+    armAndEndTurn();
+    append(completion('toolu_01'), prose('First.'), TURN_CLOSED);
+    await vi.waitFor(() => expect(fx.chat).toHaveLength(2), WAIT);
+    append(monitorEvent('gate 3 passed'), prose('Second.'), TURN_CLOSED);
+
+    await vi.waitFor(() => expect(fx.chat).toEqual(['First.', STATUS_LINE, 'Second.', STATUS_LINE]), WAIT);
+  });
+
+  it('waits for the turn to close, however long it runs', async () => {
+    armAndEndTurn();
+    append(completion('toolu_01'), prose('Running the tests on it now.'), ...toolRoundTrip('toolu_02'));
+    await cardShows('Subagent done');
+    await settle();
+    expect(fx.chat).toEqual([]);
+
+    append(prose('They pass.'), TURN_CLOSED);
+    await vi.waitFor(() => expect(fx.chat).toEqual(['Running the tests on it now.\n\nThey pass.', STATUS_LINE]), WAIT);
+  });
+
+  it('is left out when the turn said nothing', async () => {
+    // A monitor fires, claude looks into it and has nothing to report.
+    armAndEndTurn('monitor');
+    append(monitorEvent('gate 3 passed'), ...toolRoundTrip('toolu_02'), TURN_CLOSED);
+
+    await cardShows('gate 3 passed');
+    await vi.waitFor(() => expect(hasSelfStartedTurn()).toBe(false), WAIT);
+    await settle();
+    expect(fx.chat).toEqual([]);
+  });
+
+  it('is not put between a reply and what a tool posts below it', async () => {
+    armAndEndTurn();
+    append(completion('toolu_01'), prose('One thing to settle before I go on.'));
+
+    await settleBeforePost(SESSION_KEY);
+    await settle();
+    expect(fx.chat).toEqual(['One thing to settle before I go on.']);
+
+    // The turn goes on after the question, and closes like any other.
+    append(prose('Going with the first, then.'), TURN_CLOSED);
+    await vi.waitFor(() => expect(fx.chat).toEqual([
+      'One thing to settle before I go on.',
+      'Going with the first, then.',
+      STATUS_LINE,
+    ]), WAIT);
+  });
+
+  it('still closes a turn that ended on what a tool posted', async () => {
+    armAndEndTurn();
+    append(completion('toolu_01'), prose('The report is attached.'));
+    await settleBeforePost(SESSION_KEY);
+
+    append(TURN_CLOSED);
+    await vi.waitFor(() => expect(fx.chat).toEqual(['The report is attached.', STATUS_LINE]), WAIT);
+  });
+
+  it('closes a turn whose only post was a tool\'s', async () => {
+    // A file sent with no words around it: there's a post to close all the same.
+    armAndEndTurn();
+    append(completion('toolu_01'));
+    await vi.waitFor(() => expect(hasSelfStartedTurn()).toBe(true), WAIT);
+    await settleBeforePost(SESSION_KEY);
+
+    append(TURN_CLOSED);
+    await vi.waitFor(() => expect(fx.chat).toEqual([STATUS_LINE]), WAIT);
+  });
+
+  it("doesn't carry a tool's post over to the next turn, which says nothing", async () => {
+    armAndEndTurn('monitor');
+    append(monitorEvent('gate 3 failed'), prose('Sending the log.'));
+    await settleBeforePost(SESSION_KEY);
+    append(TURN_CLOSED);
+    await vi.waitFor(() => expect(fx.chat).toEqual(['Sending the log.', STATUS_LINE]), WAIT);
+
+    append(monitorEvent('gate 3 passed'), TURN_CLOSED);
+    await cardShows('gate 3 passed');
+    await vi.waitFor(() => expect(hasSelfStartedTurn()).toBe(false), WAIT);
+    await settle();
+    expect(fx.chat).toEqual(['Sending the log.', STATUS_LINE]);
+  });
+
+  it("is left to the turn of TeleCoder's that takes over", async () => {
+    armAndEndTurn();
+    append(completion('toolu_01'), prose('Halfway through the fix.'));
+
+    markTurnStart(SESSION_KEY);
+    await vi.waitFor(() => expect(fx.chat).toEqual(['Halfway through the fix.']), WAIT);
+    await settle();
+    expect(fx.chat).toEqual(['Halfway through the fix.']);
+    markTurnEnd(SESSION_KEY);
+
+    // Nor is one owed afterwards, to a turn that has nothing to say.
+    append(monitorEvent('gate 3 passed'), TURN_CLOSED);
+    await cardShows('gate 3 passed');
+    await vi.waitFor(() => expect(hasSelfStartedTurn()).toBe(false), WAIT);
+    await settle();
+    expect(fx.chat).toEqual(['Halfway through the fix.']);
+  });
+
+  it("is left to that turn even when the log had the one before it closed already", async () => {
+    // Closed, but not read yet: the watcher's coalesce window hasn't run.
+    armAndEndTurn();
+    append(completion('toolu_01'), prose('All done.'), TURN_CLOSED);
+
+    markTurnStart(SESSION_KEY);
+    await vi.waitFor(() => expect(fx.chat).toEqual(['All done.']), WAIT);
+    await settle();
+    expect(fx.chat).toEqual(['All done.']);
+    markTurnEnd(SESSION_KEY);
+  });
+
+  it('is not sent for a turn that was interrupted', async () => {
+    armAndEndTurn();
+    append(completion('toolu_01'), prose('Halfway through the review.'));
+    await vi.waitFor(() => expect(hasSelfStartedTurn()).toBe(true), WAIT);
+
+    append({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user]' }] } });
+    await vi.waitFor(() => expect(fx.chat).toEqual(['Halfway through the review.']), WAIT);
+    await vi.waitFor(() => expect(hasSelfStartedTurn()).toBe(false), WAIT);
+
+    // Nor is one owed by the next turn, which has nothing to say.
+    append(monitorEvent('gate 3 passed'), TURN_CLOSED);
+    await cardShows('gate 3 passed');
+    await vi.waitFor(() => expect(hasSelfStartedTurn()).toBe(false), WAIT);
+    await settle();
+    expect(fx.chat).toEqual(['Halfway through the review.']);
+  });
+
+  it('is not sent for a turn told it was interrupted, nor owed by the one after', async () => {
+    armAndEndTurn('monitor');
+    append(monitorEvent('gate 3 failed'), prose('Halfway through the review.'));
+    await vi.waitFor(() => expect(hasSelfStartedTurn()).toBe(true), WAIT);
+
+    markSelfTurnInterrupted(SESSION_KEY);
+    await vi.waitFor(() => expect(fx.chat).toEqual(['Halfway through the review.']), WAIT);
+
+    // The next turn has nothing to say, and nothing was left over to close.
+    append(monitorEvent('gate 3 passed'), TURN_CLOSED);
+    await cardShows('gate 3 passed');
+    await vi.waitFor(() => expect(hasSelfStartedTurn()).toBe(false), WAIT);
+    await settle();
+    expect(fx.chat).toEqual(['Halfway through the review.']);
+  });
+
+  it('is not sent when the session goes down, closed turn or not', async () => {
+    armAndEndTurn();
+    append(completion('toolu_01'), prose('Committing the fix.'), TURN_CLOSED);
+
+    // Read by teardown itself, ahead of the watcher.
+    teardown(SESSION_KEY);
+    await vi.waitFor(() => expect(fx.chat).toEqual(['Committing the fix.']), WAIT);
+    await settle();
+    expect(fx.chat).toEqual(['Committing the fix.']);
+  });
+
+  it('is in the chat before a caller waiting on the reply moves on', async () => {
+    // A message held behind the turn, or a restart waiting for idle.
+    let release!: () => void;
+    fx.statusGate = new Promise<void>((resolve) => { release = resolve; });
+    armAndEndTurn();
+    append(completion('toolu_01'), prose(LONG_ANSWER), TURN_CLOSED);
+    // The reply is in, and the status line is parked on the gate.
+    await vi.waitFor(() => expect(fx.statusGate).toBeNull(), WAIT);
+    expect(fx.chat).toEqual([LONG_ANSWER]);
+
+    let sent = false;
+    const waiting = whenRepliesSent(SESSION_KEY).then(() => { sent = true; });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(sent).toBe(false);
+
+    release();
+    await waiting;
+    expect(fx.chat).toEqual([LONG_ANSWER, STATUS_LINE]);
   });
 });
