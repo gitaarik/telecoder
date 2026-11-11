@@ -41,6 +41,9 @@ reasoning — the commit bodies are the long form, this is the index.
   in front, `telecoder · Thread naming`, since one bot's threads can each be
   in a different project; it's left out when the topic already names it, and
   after a project switch it's the whole name until the new topic comes in.
+  Haiku is told the project, so the topic's area names a part of it rather
+  than repeating it, and a topic Claude or `/topic` sets while Haiku is still
+  summarizing the message is no longer overwritten by Haiku's late answer.
 
 - **A fork opens a thread of its own** — on a bot with threads, the 🍴 Fork
   button and `/fork` go straight to a new thread, with no picker and no

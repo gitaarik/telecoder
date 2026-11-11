@@ -22,6 +22,7 @@ import { userPreferences } from '../../../providers/user-preferences.js';
 import { parseSessionKey } from '../../../utils/session-key.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../../../utils/workspace-guard.js';
 import { getSessionTopic, setSessionTopic } from '../command.handler.js';
+import { getMsSinceTopicSet } from '../command/topic-store.js';
 import { requireSession } from '../session-guard.js';
 
 export { requireSession } from '../session-guard.js';
@@ -48,7 +49,18 @@ export function fireAutoTopic(ctx: Context, sessionKey: string, userMessage: str
   void (async () => {
     try {
       const previousTopic = getSessionTopic(sessionKey);
-      let topic = await summarizeTopicWithHaiku(userMessage, previousTopic);
+      const startedAt = Date.now();
+      const workingDirectory = sessionManager.getSession(sessionKey)?.workingDirectory;
+      let topic = await summarizeTopicWithHaiku(
+        userMessage,
+        previousTopic,
+        workingDirectory ? path.basename(workingDirectory) : undefined,
+      );
+      // The agent (or the user's /topic) set one while Haiku was thinking:
+      // that topic is newer and deliberate, and Haiku's guess, made from the
+      // topic before it, would otherwise land a few seconds later on top.
+      const setSince = getMsSinceTopicSet(sessionKey);
+      if (setSince !== undefined && setSince < Date.now() - startedAt) return;
       // If Haiku failed AND we have no prior topic at all, seed from Claude
       // Code's aiTitle so the status line shows *something* instead of staying
       // blank until the next turn succeeds. With a prior topic we keep it.

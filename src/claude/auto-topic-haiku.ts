@@ -34,7 +34,12 @@ export const TOPIC_PART_SEPARATOR = ' · ';
 const TRIVIAL_MESSAGE_RE =
   /^(ok|okay|yes|yeah|yep|yup|no|nope|nah|thanks|thx|ty|cool|sure|nice|great|sounds good|got it|alright|done|next|continue|go|stop|wait|hmm|huh|lol|haha|👍|👌|✅|🙏|❤️|🎉)[.!?]*$/i;
 
-function buildInstructions(previousTopic?: string): string {
+function buildInstructions(previousTopic?: string, project?: string): string {
+  // The project is shown next to the topic (in a thread's name, the status
+  // line), so a GENERAL that only repeats it says nothing.
+  const projectLine = project
+    ? `The project is "${project}" and is already shown next to the topic. GENERAL must name the feature/area within it, never just the project name.\n\n`
+    : '';
   const previousLine = previousTopic
     ? `Previous topic was: "${previousTopic}"\n` +
       '- Keep GENERAL the same unless the user has clearly pivoted to a different feature/area.\n' +
@@ -54,6 +59,7 @@ function buildInstructions(previousTopic?: string): string {
     '"Understood, I\'ll continue with..." (chat reply)\n' +
     'Dark mode (missing CURRENT)\n' +
     'Fixing the bug. (missing GENERAL and pipe)\n\n' +
+    projectLine +
     previousLine +
     'User message:\n'
   );
@@ -65,11 +71,13 @@ function buildInstructions(previousTopic?: string): string {
  * Haiku doesn't follow the format — caller keeps the prior topic in that
  * case rather than overwriting it with garbage. Pass the full previous
  * topic so Haiku can keep GENERAL stable and reuse CURRENT for
- * meta/acknowledgment messages.
+ * meta/acknowledgment messages, and the project's folder name so GENERAL
+ * isn't just that.
  */
 export async function summarizeTopicWithHaiku(
   userMessage: string,
   previousTopic?: string,
+  project?: string,
 ): Promise<string | undefined> {
   const trimmed = userMessage.trim();
   if (trimmed.length < 3) return undefined;
@@ -81,7 +89,7 @@ export async function summarizeTopicWithHaiku(
 
   try {
     const response = query({
-      prompt: buildInstructions(previousTopic) + input,
+      prompt: buildInstructions(previousTopic, project) + input,
       options: {
         model: HAIKU_MODEL,
         // Bypass project AND user settings — no plugins, MCP, or hooks. Keeps
