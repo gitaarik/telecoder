@@ -9,6 +9,10 @@
  * usually tall enough to push both off screen, so the bottom of the log is
  * where the user is looking.
  *
+ * It is usually taller than a screen itself, so the time it was drawn, and how
+ * much of the log is showing, stand at its top as well as its bottom: whichever
+ * end is on screen says whether the log is still moving.
+ *
  * Times go out as `date_time` entities, so they read in the user's own
  * timezone rather than the server's.
  */
@@ -509,12 +513,18 @@ export class ActionLogger {
    * with the clock means the bot is alive however long the current step
    * takes, and one that falls behind means it isn't. Without the status line
    * nothing redraws it between actions, and it's the time of the newest one.
+   *
+   * The same line opens the log, under the header: see addProgressLine. A log
+   * that isn't running has no time to give, and says how much of it is
+   * showing on its own, at the top.
    */
   private renderActionLog(entries: ActionEntry[], shown: number, view: LogView): EntityMessage {
     const b = new EntityText();
     b.add(view.live ? '⏳ ' : '📋 ').bold('Action Log');
 
-    if (entries.length > shown) {
+    if (view.drawnAt !== undefined) {
+      this.addProgressLine(b.newline(2), view.drawnAt, shown, entries.length);
+    } else if (entries.length > shown) {
       b.newline(2).italic(`Showing last ${shown} of ${entries.length} actions`);
     }
 
@@ -532,10 +542,31 @@ export class ActionLogger {
     if (view.status) b.newline(2).append(view.status);
     if (view.prompt) b.newline(2).italic(`▸ ${view.prompt}`);
     if (view.drawnAt !== undefined) {
-      b.newline(2).add('🕐 Updated ').dateTime(serverClockTime(view.drawnAt), view.drawnAt);
+      this.addProgressLine(b.newline(2), view.drawnAt, shown, entries.length);
     }
 
     return b.build();
+  }
+
+  /**
+   * The line a running log both opens and closes with: when it was drawn, and
+   * how much of it is showing when that isn't all of it.
+   *
+   * At both ends because the log is usually taller than a screen and either
+   * end can be the one on screen: the bottom while following along, the top
+   * on opening the chat or scrolling back to an earlier action. The count was
+   * only at the top and the time only at the bottom, and both change all the
+   * time, so reading either meant scrolling to the other end. From the top
+   * the log also looked frozen through a long step, the count being the only
+   * thing there that moves, and only when an action comes in.
+   *
+   * One line rather than two: a log that had the count at its top is no
+   * taller for it, and one with every action showing gains the time there.
+   * The time comes first, as the part that says the bot is alive.
+   */
+  private addProgressLine(b: EntityText, drawnAt: number, shown: number, total: number): void {
+    b.add('🕐 Updated ').dateTime(serverClockTime(drawnAt), drawnAt);
+    if (total > shown) b.add(` · last ${shown} of ${total} actions`);
   }
 
   /**

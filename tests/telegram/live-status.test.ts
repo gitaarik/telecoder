@@ -133,7 +133,7 @@ describe('a running turn', () => {
     const { sender, ctx, api, edits } = await turnWithLog(7003);
 
     const [, posted] = api.sendMessage.mock.calls[0];
-    expect(posted).toMatch(/^⏳ Action Log\n/);
+    expect(posted).toMatch(/^⏳ Action Log\n\n🕐 Updated \d\d:\d\d\n/);
     expect(posted).toMatch(/\n\n⏳ 💻 Running\nnpm test\n\n▸ run the tests\n\n🕐 Updated \d\d:\d\d$/);
 
     await vi.advanceTimersByTimeAsync(10_000);

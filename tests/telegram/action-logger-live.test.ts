@@ -17,6 +17,10 @@
  *   last edited, so a log that had stopped moving looked like one still going.
  *   Its times are `date_time` entities, which read in the user's timezone; the
  *   server's clock read an hour or more off theirs.
+ * - That time opens the log too, and at both ends it says how much of the log
+ *   is showing. The log is usually taller than a screen, the count was only at
+ *   its top and the time only at its bottom, and both change all the time, so
+ *   reading either meant scrolling to the other end.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -83,6 +87,12 @@ const dateTimes = (d: Delivered) =>
 /** How the bottom of a live log reads, whatever the server's clock says. */
 const UPDATED = String.raw`\n\n🕐 Updated \d\d:\d\d$`;
 
+/** The line a log opens with, under its header, and the one it closes with. */
+const ends = (d: Delivered) => {
+  const lines = d.text.split('\n');
+  return { top: lines[2], bottom: lines.at(-1) };
+};
+
 /** A status line whose text the test can change, with a command block like the bubble's. */
 function statusLine(initial: string) {
   let line = initial;
@@ -118,7 +128,10 @@ describe('ActionLogger live log', () => {
     await vi.advanceTimersByTimeAsync(10_000);
 
     expect(latest().text).toContain('cat file12 ');
-    expect(latest().text).toMatch(/^⏳ Action Log\n\nShowing last [1-9] of 12 actions\n/);
+    expect(latest().text).toMatch(/^⏳ Action Log\n\n🕐 Updated /);
+    // Both lines are part of what has to fit, and both say what did.
+    expect(ends(latest()).top).toMatch(/^🕐 Updated \d\d:\d\d · last [1-9] of 12 actions$/);
+    expect(ends(latest()).bottom).toBe(ends(latest()).top);
   });
 
   it('still shows ten when they fit', async () => {
@@ -130,7 +143,7 @@ describe('ActionLogger live log', () => {
     }
     await vi.advanceTimersByTimeAsync(10_000);
 
-    expect(latest().text).toMatch(/^⏳ Action Log\n\nShowing last 10 of 12 actions\n/);
+    expect(ends(latest()).top).toMatch(/^🕐 Updated \d\d:\d\d · last 10 of 12 actions$/);
   });
 
   it('draws an action that arrives inside the edit throttle once the throttle runs out', async () => {
@@ -237,14 +250,15 @@ describe('ActionLogger live log', () => {
     await vi.advanceTimersByTimeAsync(65_000);
     await logger.addToolResult(SESSION, bash('cat a', 'a'), 20, 2000);
 
-    const [first, second] = dateTimes(latest());
-    expect(latest().text).toMatch(/^⏳ Action Log\n\n💻 ✅ \[\d\d:\d\d\] Bash result\n/);
+    // The ones in brackets: the log's own time comes before and after them.
+    const [first, second] = dateTimes(latest()).filter((e) => latest().text[e.offset - 1] === '[');
+    expect(latest().text).toMatch(/^⏳ Action Log\n\n🕐 Updated \d\d:\d\d\n\n💻 ✅ \[\d\d:\d\d\] Bash result\n/);
     expect(covered(latest(), first as unknown as MessageEntity)).toMatch(/^\d\d:\d\d$/);
     expect(first).toMatchObject({ unix_time: start / 1000, date_time_format: 't' });
     expect(second).toMatchObject({ unix_time: start / 1000 + 65, date_time_format: 't' });
   });
 
-  it('ends with the time it was drawn, which a quiet stretch still moves on, until the turn ends', async () => {
+  it('starts and ends with the time it was drawn, which a quiet stretch still moves on, until the turn ends', async () => {
     const start = Date.UTC(2026, 10, 3, 17, 20, 0);
     vi.setSystemTime(start);
     const logger = new ActionLogger();
@@ -254,10 +268,17 @@ describe('ActionLogger live log', () => {
     await logger.addToolResult(SESSION, bash('ls', 'src'), 20, 2000);
 
     const drawnAt = () => {
-      const time = dateTimes(latest()).at(-1)!;
-      expect(latest().text.slice(0, time.offset)).toMatch(/\n\n▸ run the tests\n\n🕐 Updated $/);
-      expect(time.offset + time.length).toBe(latest().text.length);
-      return time.unix_time;
+      const times = dateTimes(latest());
+      const [top, bottom] = [times[0]!, times.at(-1)!];
+      // Straight under the header, and under the prompt at the very end.
+      expect(latest().text.slice(0, top.offset)).toBe('⏳ Action Log\n\n🕐 Updated ');
+      expect(latest().text.slice(0, bottom.offset)).toMatch(/\n\n▸ run the tests\n\n🕐 Updated $/);
+      expect(bottom.offset + bottom.length).toBe(latest().text.length);
+      // The one action is showing, so neither has a count to give.
+      expect(ends(latest()).top).toMatch(/^🕐 Updated \d\d:\d\d$/);
+      expect(ends(latest()).bottom).toBe(ends(latest()).top);
+      expect(top.unix_time).toBe(bottom.unix_time);
+      return bottom.unix_time;
     };
     expect(drawnAt()).toBe(start / 1000);
 
@@ -273,6 +294,51 @@ describe('ActionLogger live log', () => {
     expect(latest().text).toMatch(/^📋 Action Log\n/);
     expect(latest().text).not.toContain('🕐 Updated');
     expect(dateTimes(latest())).toHaveLength(1); // the action's own time
+  });
+
+  it('says how much of the log is showing next to that time, at both ends', async () => {
+    const logger = new ActionLogger();
+    const { ctx, latest } = fakeChat();
+    const status = statusLine('⏳ 💻 Running [12s]');
+    await logger.initialize(ctx, SESSION, status.source, 'run the tests');
+    for (let i = 1; i <= 12; i++) {
+      await logger.addToolResult(SESSION, bash(`echo ${i}`, `${i}`), 20, 2000);
+    }
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    const { top, bottom } = ends(latest());
+    expect(top).toMatch(/^🕐 Updated \d\d:\d\d · last 10 of 12 actions$/);
+    expect(bottom).toBe(top);
+    // The closing one where the time alone was: under the status line and the prompt.
+    expect(latest().text).toMatch(/\n\n⏳ 💻 Running \[12s\]\nnpm test\n\n▸ run the tests\n\n🕐 Updated [^\n]*$/);
+    // Unstyled, like the time it grew out of: the prompt is the one line in italics.
+    const italic = latest().entities.filter((e) => e.type === 'italic').map((e) => covered(latest(), e));
+    expect(italic).toEqual(['▸ run the tests']);
+
+    // It counts on with the log, at both ends.
+    await logger.addToolResult(SESSION, bash('echo 13', '13'), 20, 2000);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(ends(latest()).top).toMatch(/^🕐 Updated \d\d:\d\d · last 10 of 13 actions$/);
+    expect(ends(latest()).bottom).toBe(ends(latest()).top);
+  });
+
+  it('keeps the count alone, at the top, once the turn has ended', async () => {
+    const logger = new ActionLogger();
+    const { ctx, latest } = fakeChat();
+    await logger.initialize(ctx, SESSION, statusLine('⏳ 💻 Running [12s]').source, 'run the tests');
+    for (let i = 1; i <= 12; i++) {
+      await logger.addToolResult(SESSION, bash(`echo ${i}`, `${i}`), 20, 2000);
+    }
+
+    logger.endTurn(SESSION);
+    await vi.advanceTimersByTimeAsync(5000);
+
+    // A log at rest has no time to give, and nothing under its last action.
+    expect(latest().text).toMatch(/^📋 Action Log\n\nShowing last 10 of 12 actions\n\n/);
+    expect(latest().text).not.toContain('🕐');
+    expect(latest().text).not.toMatch(/actions$/);
+    const italic = latest().entities.filter((e) => e.type === 'italic').map((e) => covered(latest(), e));
+    expect(italic).toEqual(['Showing last 10 of 12 actions']);
   });
 
   it("drops the live marker and status line as soon as the turn ends", async () => {

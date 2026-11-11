@@ -396,6 +396,14 @@ reasoning — the commit bodies are the long form, this is the index.
   tool call in it was posted a second time in full. The check now leaves the
   summary out of the log's text as well, and still recovers prose that really
   went missing.
+- **The live action log gives its time and its count at both ends** — the log
+  is usually taller than a screen, the count of actions sat only at its top
+  and the time it was last drawn only at its bottom, and both change all the
+  time, so reading either meant scrolling to the other end. From the top the
+  log also looked frozen through a long step, since nothing up there moved
+  until the next action came in. A running log now opens and closes with the
+  same line, `🕐 Updated 2:11 PM · last 9 of 20 actions`, with the count left
+  off while every action is showing.
 - **The live action log says when it last moved** — Telegram shows when a
   message was sent but not when it was last edited, so a live log that had
   stopped moving looked just like one that was still going, and a long quiet
