@@ -465,6 +465,30 @@ export async function createBot(): Promise<Bot> {
   bot.callbackQuery(/^mode:/, handleModeCallback);
   bot.callbackQuery(/^tts:/, handleTTSCallback);
   bot.callbackQuery(/^sugg:/, handleSuggestionsCallback);
+  // The same goes for the permission mode, which a turn applies as it starts,
+  // and for the bot's and the thread's names.
+  // /mode was the streaming toggle's name until this landed, and was kept as
+  // an alias for exactly as long as nothing better wanted it. Permission mode
+  // is what people were always going to mean by it.
+  cmd('mode', adminOnly(handlePermissionMode));
+  cmd('botname', handleBotName);
+  cmd('topic', handleTopic);
+  bot.callbackQuery(/^permmode:/, adminOnly(handlePermissionModeCallback));
+  bot.callbackQuery(/^botname:/, handleBotNameCallback);
+  // An auto-approve window matters most mid-turn: that's when the prompts it
+  // answers are turning up, and closing one can't wait for the turn either.
+  // Admins *and* approvers: opening a window is a decision about prompts, not
+  // a power over the bot, so it sits with the people who answer them.
+  cmd('autoapprove', adminOrApproverOnly(handleAutoApprove));
+  cmd('permissions', adminOnly(handlePermissions));
+  // Nothing here touches the session: a welcome text, a file sent from disk or
+  // published, and a new bot, which is a process of its own.
+  cmd('start', handleStart);
+  cmd('file', handleFile);
+  cmd('telegraph', handleTelegraph);
+  bot.callbackQuery(/^telegraph:/, handleTelegraphCallback);
+  // Creating a bot adds a process to the launcher and a token to instances.json.
+  cmd('newbot', adminOnly(handleNewBot));
   // Schedule commands bypass sequentialize so they remain responsive even
   // when a scheduled-fire turn is already running (the cap-enforcing create,
   // the list, and the remove all need to work mid-stream).
@@ -530,21 +554,12 @@ export async function createBot(): Promise<Bot> {
   bot.use(holdQueuedMessage);
 
   // Bot command handlers (sequentialized per chat)
-  cmd('start', handleStart);
   cmd('clear', handleClear);
   // Admin-only now that a group can hold contributors: repointing the bot
   // moves everyone's session, and /teleport and /permissions reach the
   // guardrails rather than the conversation.
   cmd('project', adminOnly(handleProject));
   cmd('newproject', adminOnly(handleNewProject));
-  // Creating a bot adds a process to the launcher and a token to instances.json.
-  cmd('newbot', adminOnly(handleNewBot));
-  // /mode was the streaming toggle's name until this landed, and was kept as
-  // an alias for exactly as long as nothing better wanted it. Permission mode
-  // is what people were always going to mean by it.
-  cmd('mode', adminOnly(handlePermissionMode));
-  cmd('botname', handleBotName);
-  cmd('topic', handleTopic);
   // /compact is a native Claude Code slash command, not a bot command — route it
   // through the normal message pipeline (handleMessage), which forwards it to
   // the active provider. The PTY provider runs the real compaction and reports
@@ -578,17 +593,10 @@ export async function createBot(): Promise<Bot> {
 
   // Loop mode
   cmd('loop', handleLoop);
-  cmd('permissions', adminOnly(handlePermissions));
-  // Admins *and* approvers: opening a window is a decision about prompts, not
-  // a power over the bot, so it sits with the people who answer them.
-  cmd('autoapprove', adminOrApproverOnly(handleAutoApprove));
 
   // Teleport to terminal
   cmd('teleport', adminOnly(handleTeleport));
 
-  // File commands
-  cmd('file', handleFile);
-  cmd('telegraph', handleTelegraph);
 
   // Transcribe
   if (config.TRANSCRIBE_ENABLED) {
@@ -609,12 +617,6 @@ export async function createBot(): Promise<Bot> {
       await handlePrefsAllCallback(ctx);
     } else if (data.startsWith('model:')) {
       await handleModelCallback(ctx);
-    } else if (data.startsWith('permmode:')) {
-      await adminOnly(handlePermissionModeCallback)(ctx);
-    } else if (data.startsWith('botname:')) {
-      await handleBotNameCallback(ctx);
-    } else if (data.startsWith('telegraph:')) {
-      await handleTelegraphCallback(ctx);
     } else if (data.startsWith('clear:')) {
       await handleClearCallback(ctx);
     } else if (data.startsWith('project:')) {
