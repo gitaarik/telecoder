@@ -57,6 +57,7 @@ interface ConversationMessage {
 
 import { SYSTEM_PROMPT } from './system-prompt.js';
 import { stripReasoningSummary } from '../utils/reasoning-summary.js';
+import { findModelUsageKey } from './model-catalog.js';
 
 const conversationHistory = new BoundedMap<string, ConversationMessage[]>(1000);
 
@@ -318,6 +319,11 @@ export async function sendToAgent(
   const toolsUsed: string[] = [];
   let gotResult = false;
   let resultUsage: AgentUsage | undefined;
+  // The main thread's latest API call: its usage is the context as it now
+  // stands, and its model is the one answering. The result's modelUsage can't
+  // say either — it adds every call of the query together and lists the CLI's
+  // own Haiku side calls alongside, sometimes first.
+  let lastMainCall: { model: string; usage: Record<string, unknown> } | undefined;
   let compactionEvent: { trigger: 'manual' | 'auto'; preTokens: number } | undefined;
   // Post-compaction size, kept alongside compactionEvent rather than on it:
   // the shared AgentResponse.compaction shape only carries preTokens, and the
@@ -738,6 +744,12 @@ export async function sendToAgent(
 
       if (responseMessage.type === 'assistant') {
         logAt('verbose', '[Claude] Assistant content blocks:', responseMessage.message.content.length);
+        if (responseMessage.parent_tool_use_id === null && responseMessage.message.usage) {
+          lastMainCall = {
+            model: responseMessage.message.model,
+            usage: responseMessage.message.usage as unknown as Record<string, unknown>,
+          };
+        }
         for (const block of responseMessage.message.content) {
           logAt('trace', '[Claude] Block type:', block.type);
           if (block.type === 'text') {
@@ -1077,14 +1089,19 @@ export async function sendToAgent(
         // Extract usage data from result
         const resultMsg = responseMessage as SDKResultMessage;
         if (resultMsg.modelUsage) {
-          const modelKey = Object.keys(resultMsg.modelUsage)[0];
+          const modelKey = lastMainCall
+            ? findModelUsageKey(resultMsg.modelUsage, lastMainCall.model)
+            : Object.keys(resultMsg.modelUsage)[0];
           if (modelKey && resultMsg.modelUsage[modelKey]) {
             const mu = resultMsg.modelUsage[modelKey];
+            const call = lastMainCall?.usage;
+            const tokens = (key: string, fallback: number): number =>
+              call ? (typeof call[key] === 'number' ? call[key] as number : 0) : fallback;
             resultUsage = {
-              inputTokens: mu.inputTokens,
-              outputTokens: mu.outputTokens,
-              cacheReadTokens: mu.cacheReadInputTokens,
-              cacheWriteTokens: mu.cacheCreationInputTokens,
+              inputTokens: tokens('input_tokens', mu.inputTokens),
+              outputTokens: tokens('output_tokens', mu.outputTokens),
+              cacheReadTokens: tokens('cache_read_input_tokens', mu.cacheReadInputTokens),
+              cacheWriteTokens: tokens('cache_creation_input_tokens', mu.cacheCreationInputTokens),
               totalCostUsd: resultMsg.total_cost_usd,
               // Filled in below, once the turn is known to have completed.
               sessionCostUsd: 0,

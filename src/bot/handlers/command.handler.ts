@@ -18,6 +18,7 @@ import { execFile } from 'child_process';
 import { getWorkspaceRoot, isPathWithinRoot } from '../../utils/workspace-guard.js';
 import { resolveClaudeExecutableForMethod } from '../../utils/resolve-claude-bin.js';
 import { getActiveMethod, getPtyProvider } from '../../providers/claude-provider.js';
+import { contextTokens } from '../../providers/types.js';
 import { takeBackAllQueued } from '../middleware/queued-messages.js';
 import { cancelSecretRequest } from '../../claude/secret-request.js';
 import { groupAvailableCommands, type AvailableCommands } from '../../claude/available-commands.js';
@@ -303,9 +304,9 @@ export async function handleStatus(ctx: Context): Promise<void> {
     field('📡', 'Mode').add(config.STREAMING_MODE);
     field(isDangerousMode() ? '⚠️' : '🛡️', 'Dangerous Mode').add(dangerousMode);
     if (cached) {
-      // Cache reads are most of the context once the prompt cache is warm, and
-      // without them this read about 0%. Same sum as the usage footer's.
-      const used = cached.inputTokens + cached.outputTokens + cached.cacheReadTokens;
+      // Cache reads and writes are most of the context, and without them this
+      // read about 0%. Same sum as the usage footer's.
+      const used = contextTokens(cached);
       const pct = cached.contextWindow > 0
         ? Math.round((used / cached.contextWindow) * 100)
         : 0;
@@ -355,7 +356,7 @@ export async function handleContext(ctx: Context): Promise<void> {
   const cached = getCachedUsage(sessionKey);
   if (cached) {
     const pct = cached.contextWindow > 0
-      ? Math.round(((cached.inputTokens + cached.outputTokens + cached.cacheReadTokens) / cached.contextWindow) * 100)
+      ? Math.round((contextTokens(cached) / cached.contextWindow) * 100)
       : 0;
     const bar = getProgressBar(pct);
 

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   CLAUDE_MODELS,
   filterModelsForVersion,
+  findModelUsageKey,
   isPassthroughModelId,
   isPremiumModel,
 } from '../../src/claude/model-catalog.js';
@@ -118,5 +119,26 @@ describe('isPremiumModel', () => {
     for (const m of ['opus', 'opus[1m]', 'sonnet', 'haiku', 'best', 'claude-opus-5-5', undefined, '']) {
       expect(isPremiumModel(m)).toBe(false);
     }
+  });
+});
+
+describe('findModelUsageKey', () => {
+  it("picks the reply's model over a Haiku side call listed first", () => {
+    const usage = { 'claude-haiku-4-5-20251001': {}, 'claude-opus-5-5': {} };
+    expect(findModelUsageKey(usage, 'claude-opus-5-5')).toBe('claude-opus-5-5');
+  });
+
+  it('matches a key carrying a context suffix', () => {
+    const usage = { 'claude-haiku-4-5-20251001': {}, 'claude-opus-5-5[1m]': {} };
+    expect(findModelUsageKey(usage, 'claude-opus-5-5')).toBe('claude-opus-5-5[1m]');
+  });
+
+  it('matches an alias key by its canonical model', () => {
+    const usage = { 'claude-haiku-4-5-20251001': {}, opus: { canonicalModel: 'claude-opus-5-5' } };
+    expect(findModelUsageKey(usage, 'claude-opus-5-5')).toBe('opus');
+  });
+
+  it('falls back on the first entry', () => {
+    expect(findModelUsageKey({ a: {}, b: {} }, 'c')).toBe('a');
   });
 });

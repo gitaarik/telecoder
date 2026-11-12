@@ -83,3 +83,19 @@ export async function getModelsForBinary(bin: string): Promise<ModelInfo[]> {
   const version = await getClaudeVersion(bin);
   return filterModelsForVersion(CLAUDE_MODELS, isAtLeast(version, FABLE_MIN_CLI_VERSION));
 }
+
+/**
+ * The modelUsage entry for `model`, which a reply names by its plain id while
+ * modelUsage may key it by an alias or with a suffix such as `[1m]`. Falls back
+ * on the first entry when none matches.
+ */
+export function findModelUsageKey(
+  modelUsage: Record<string, { canonicalModel?: string }>,
+  model: string,
+): string | undefined {
+  const keys = Object.keys(modelUsage);
+  return keys.find((k) => k === model)
+    ?? keys.find((k) => modelUsage[k].canonicalModel === model)
+    ?? keys.find((k) => k.startsWith(model) || model.startsWith(k.replace(/\[.*\]$/, '')))
+    ?? keys[0];
+}

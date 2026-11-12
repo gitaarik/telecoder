@@ -34,6 +34,14 @@ export interface AgentUsage {
   model: string;
 }
 
+/**
+ * Tokens the context holds: the whole prompt of the last call — uncached,
+ * cache-read and cache-written alike — plus the reply it produced.
+ */
+export function contextTokens(usage: AgentUsage): number {
+  return usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens + usage.outputTokens;
+}
+
 export interface AgentResponse {
   text: string;
   toolsUsed: string[];

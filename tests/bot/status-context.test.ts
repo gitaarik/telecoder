@@ -73,7 +73,7 @@ describe('/status', () => {
     const reply = vi.fn(async (_text: string, _opts?: unknown) => ({}));
     await handleStatus({ chat: { id: chat }, message: { text: '/status' }, reply } as unknown as Context);
 
-    expect(contextLine(reply)).toContain('📐 Context: 54% (535.5k/1.0M)');
+    expect(contextLine(reply)).toContain('📐 Context: 54% (536.4k/1.0M)');
   });
 
   it('reads it from the session log when no turn has cached one, as after a jump', async () => {

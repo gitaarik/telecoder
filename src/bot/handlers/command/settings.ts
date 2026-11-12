@@ -21,6 +21,7 @@ import {
   type AgentUsage,
 } from '../../../providers/provider-router.js';
 import { userPreferences } from '../../../providers/user-preferences.js';
+import { contextTokens } from '../../../providers/types.js';
 import { isPremiumModel, PREMIUM_MODEL_ICON } from '../../../claude/model-catalog.js';
 import { getActiveMethod, getPtyProvider } from '../../../providers/claude-provider.js';
 import { EntityText, joinMessages, type EntityMessage } from '../../../telegram/entities.js';
@@ -609,7 +610,7 @@ function recentPrompts(sessionKey: string | undefined, lastPrompt: string | unde
  */
 function usageFooter(chatId: number, usage: AgentUsage | undefined): string | undefined {
   if (!usage || !resolveVerbosityFlags(chatId).showUsageFooter) return undefined;
-  const used = usage.inputTokens + usage.outputTokens + usage.cacheReadTokens;
+  const used = contextTokens(usage);
   const pct = usage.contextWindow > 0 ? Math.round((used / usage.contextWindow) * 100) : 0;
   return `${getProgressBar(pct)} ${pct}% context · ${fmtTokens(used)}/${fmtTokens(usage.contextWindow)} · $${usage.totalCostUsd.toFixed(4)} · ${usage.numTurns} turns`;
 }
@@ -679,7 +680,7 @@ function buildStatusLine(
     // The footer gives these two right below, in more detail.
     if (!footer) {
       if (usage.contextWindow > 0) {
-        const used = usage.inputTokens + usage.outputTokens + usage.cacheReadTokens;
+        const used = contextTokens(usage);
         const pct = Math.round((used / usage.contextWindow) * 100);
         stats.push(`📊 ${pct}%`);
       }
