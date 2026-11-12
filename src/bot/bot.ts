@@ -450,6 +450,21 @@ export async function createBot(): Promise<Bot> {
   // buttons that switch conversations refuse while a reply is running.
   cmd('tree', handleTreeCommand);
   cmd('prompts', handlePromptsCommand);
+  // Display preferences: each only flips a stored setting that a turn reads
+  // when it starts, so changing one mid-turn applies from the next turn and
+  // has no reason to wait for this one. Their menu buttons likewise.
+  cmd('statusline', handleStatusLine);
+  cmd('verbosity', handleVerbosity);
+  cmd('terminalui', handleTerminalUI);
+  cmd('streaming', handleStreaming);
+  cmd('tts', handleTTS);
+  cmd('suggestions', handleSuggestions);
+  bot.callbackQuery(/^statusline:/, handleStatusLineCallback);
+  bot.callbackQuery(/^verbosity:/, handleVerbosityCallback);
+  bot.callbackQuery(/^terminalui:/, handleTerminalUICallback);
+  bot.callbackQuery(/^mode:/, handleModeCallback);
+  bot.callbackQuery(/^tts:/, handleTTSCallback);
+  bot.callbackQuery(/^sugg:/, handleSuggestionsCallback);
   // Schedule commands bypass sequentialize so they remain responsive even
   // when a scheduled-fire turn is already running (the cap-enforcing create,
   // the list, and the remove all need to work mid-stream).
@@ -524,16 +539,12 @@ export async function createBot(): Promise<Bot> {
   cmd('newproject', adminOnly(handleNewProject));
   // Creating a bot adds a process to the launcher and a token to instances.json.
   cmd('newbot', adminOnly(handleNewBot));
-  cmd('streaming', handleStreaming);
   // /mode was the streaming toggle's name until this landed, and was kept as
   // an alias for exactly as long as nothing better wanted it. Permission mode
   // is what people were always going to mean by it.
   cmd('mode', adminOnly(handlePermissionMode));
-  cmd('terminalui', handleTerminalUI);
-  cmd('statusline', handleStatusLine);
   cmd('botname', handleBotName);
   cmd('topic', handleTopic);
-  cmd('tts', handleTTS);
   // /compact is a native Claude Code slash command, not a bot command — route it
   // through the normal message pipeline (handleMessage), which forwards it to
   // the active provider. The PTY provider runs the real compaction and reports
@@ -545,7 +556,6 @@ export async function createBot(): Promise<Bot> {
 
   cmd('model', handleModelCommand);
   cmd('effort', handleEffort);
-  cmd('verbosity', handleVerbosity);
   cmd('method', adminOnly(handleMethodCommand));
   if (config.CCR_ENABLED) {
     cmd('provider', adminOnly(handleProviderCommand));
@@ -579,7 +589,6 @@ export async function createBot(): Promise<Bot> {
   // File commands
   cmd('file', handleFile);
   cmd('telegraph', handleTelegraph);
-  cmd('suggestions', handleSuggestions);
 
   // Transcribe
   if (config.TRANSCRIBE_ENABLED) {
@@ -602,20 +611,10 @@ export async function createBot(): Promise<Bot> {
       await handleModelCallback(ctx);
     } else if (data.startsWith('permmode:')) {
       await adminOnly(handlePermissionModeCallback)(ctx);
-    } else if (data.startsWith('mode:')) {
-      await handleModeCallback(ctx);
-    } else if (data.startsWith('terminalui:')) {
-      await handleTerminalUICallback(ctx);
-    } else if (data.startsWith('statusline:')) {
-      await handleStatusLineCallback(ctx);
     } else if (data.startsWith('botname:')) {
       await handleBotNameCallback(ctx);
-    } else if (data.startsWith('tts:')) {
-      await handleTTSCallback(ctx);
     } else if (data.startsWith('telegraph:')) {
       await handleTelegraphCallback(ctx);
-    } else if (data.startsWith('sugg:')) {
-      await handleSuggestionsCallback(ctx);
     } else if (data.startsWith('clear:')) {
       await handleClearCallback(ctx);
     } else if (data.startsWith('project:')) {
@@ -628,8 +627,6 @@ export async function createBot(): Promise<Bot> {
       await adminOnly(handleUpdateCallback)(ctx);
     } else if (data.startsWith('effort:')) {
       await handleEffortCallback(ctx);
-    } else if (data.startsWith('verbosity:')) {
-      await handleVerbosityCallback(ctx);
     } else if (data.startsWith('method:')) {
       await adminOnly(handleMethodCallback)(ctx);
     } else if (data.startsWith('ccr_throttle:')) {
