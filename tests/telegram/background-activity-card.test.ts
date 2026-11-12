@@ -351,7 +351,44 @@ describe('formatting', () => {
       (opts?.entities ?? []).filter((e) => e.type === type).map((e) => text.slice(e.offset, e.offset + e.length));
     expect(spans('bold')).toEqual(['Background activity']);
     expect(spans('pre')).toEqual(['line (one)\nline_two']);
-    expect(spans('italic')).toEqual([expect.stringMatching(/^\d\d:\d\d$/)]);
+    expect(spans('italic')).toEqual([expect.stringMatching(/^\d\d:\d\d$/), '✅ All done']);
+  });
+});
+
+describe('status line', () => {
+  const lastLine = (text: string) => text.split('\n').at(-1);
+
+  it('ends a card with tasks running on how many are running', async () => {
+    noteTaskArmed(SESSION_KEY, 'monitor', 'watch the deploy', 'toolu_01');
+    noteTaskArmed(SESSION_KEY, 'subagent', 'review the diff', 'toolu_02');
+    await settle();
+
+    expect(lastLine(_inspectCard(SESSION_KEY)!.text)).toBe('⏳ 2 tasks running');
+  });
+
+  it('ends on done once the last task has finished', async () => {
+    noteTaskArmed(SESSION_KEY, 'subagent', 'review the diff', 'toolu_01');
+    await settle();
+    noteTaskFinished(SESSION_KEY, 'toolu_01', { kind: 'subagent', description: 'review the diff', status: 'completed', elapsedMs: 1_000 });
+    await tick();
+
+    expect(lastLine(_inspectCard(SESSION_KEY)!.text)).toBe('✅ All done');
+    expect(lastLine(edits[edits.length - 1].text)).toBe('✅ All done');
+  });
+
+  it('points a sealed card with tasks still running at the next card', async () => {
+    noteTaskArmed(SESSION_KEY, 'subagent', 'long review', 'toolu_01');
+    await settle();
+    await tick();
+    const before = edits.length;
+
+    sealCard(SESSION_KEY);
+    await settle();
+
+    // The card was clean, but it still gets an edit: it can't go on saying
+    // the task runs here when its end will land on another card.
+    expect(edits).toHaveLength(before + 1);
+    expect(lastLine(edits[edits.length - 1].text)).toBe('⏳ 1 task still running · updates continue below');
   });
 });
 

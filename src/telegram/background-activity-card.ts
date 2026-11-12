@@ -198,9 +198,11 @@ export function sealCard(sessionKey: string): void {
     state.flushTimer = null;
   }
   // Final edit so the sealed card is not left showing a stale intermediate
-  // state. Bypasses the throttle — turn boundaries are rare enough.
-  if (state.messageId !== null && state.dirty) {
-    void editCard(state, state.messageId, renderCard(state));
+  // state. Bypasses the throttle — turn boundaries are rare enough. A card
+  // with tasks still running gets it even when clean: its bottom line must
+  // stop saying they run here, since their end lands on the next card.
+  if (state.messageId !== null && (state.dirty || state.running.size > 0)) {
+    void editCard(state, state.messageId, renderCard(state, true));
   }
   state.messageId = null;
   state.anchoredAt = 0;
@@ -404,15 +406,27 @@ function describe(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function renderCard(state: CardState): EntityMessage {
-  for (let limit = state.events.length; limit >= 0; limit--) {
-    const card = renderCardAt(state, limit);
-    if (card.text.length <= MAX_CARD_CHARS) return card;
-  }
-  return sliceMessage(renderCardAt(state, 0), 0, MAX_CARD_CHARS);
+/**
+ * The card's bottom line, saying whether anything is still running. The card
+ * grows downward and the running list sits at its top, so on a long card the
+ * bottom is the only part on screen, and without this line a finished card
+ * looked the same as a busy one.
+ */
+function statusLine(running: number, sealed: boolean, empty: boolean): string {
+  if (running === 0) return empty ? '✅ Nothing running' : '✅ All done';
+  const tasks = `${running} task${running === 1 ? '' : 's'}`;
+  return sealed ? `⏳ ${tasks} still running · updates continue below` : `⏳ ${tasks} running`;
 }
 
-function renderCardAt(state: CardState, eventLimit: number): EntityMessage {
+function renderCard(state: CardState, sealed = false): EntityMessage {
+  for (let limit = state.events.length; limit >= 0; limit--) {
+    const card = renderCardAt(state, limit, sealed);
+    if (card.text.length <= MAX_CARD_CHARS) return card;
+  }
+  return sliceMessage(renderCardAt(state, 0, sealed), 0, MAX_CARD_CHARS);
+}
+
+function renderCardAt(state: CardState, eventLimit: number, sealed: boolean): EntityMessage {
   const b = new EntityText().add('📡 ').bold('Background activity');
 
   const running = [...state.running.values()].sort((a, b) => a.startedAt - b.startedAt);
@@ -438,9 +452,8 @@ function renderCardAt(state: CardState, eventLimit: number): EntityMessage {
     }
   }
 
-  if (running.length === 0 && shown.length === 0 && dropped === 0) {
-    b.newline(2).italic('nothing running');
-  }
+  const empty = running.length === 0 && shown.length === 0 && dropped === 0;
+  b.newline(2).italic(statusLine(running.length, sealed, empty));
 
   return b.build();
 }

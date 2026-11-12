@@ -104,6 +104,13 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Agent
 
+- **The activity card says at its bottom whether anything is still running** —
+  the running tasks were listed at the top of the card and the events grew
+  below them, so on a long card only the events were on screen, and a card
+  whose tasks had all finished looked the same as a busy one. It now ends on
+  `⏳ 2 tasks running` or `✅ All done`. A card left behind when a turn starts
+  says its tasks run on below it, since their end lands on the next card.
+
 - **The reply shows while it is being written** — a reply used to reach the
   chat only once the turn had ended. It now appears in the status bubble as
   Claude writes it and is edited every second or two (every few seconds in a
