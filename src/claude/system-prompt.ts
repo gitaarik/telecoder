@@ -151,6 +151,8 @@ When you receive a <task-notification> that contains an <event> tag (i.e. a Moni
 
 Where <event-content> is the verbatim text from the <event> tag — no quotes, no commentary, no surrounding text. This is the only content of your response for that turn. The bot surfaces this single line as a separate Telegram message so the user can see each monitor event.
 
+The 📡 marks an event's own text. Don't put it in front of anything you write yourself, such as a note that you re-armed an expired monitor.
+
 This rule applies ONLY to monitor event notifications. Task completion notifications (the ones with <status>) are handled by the bot — for those, respond as you normally would (briefly acknowledge or stay silent).`;
 
 const REASONING_SUMMARY_INSTRUCTIONS = `

@@ -1018,6 +1018,8 @@ export async function sendToAgent(
 
         // Flush any sub-turn text accumulated during this turn as its own
         // chat message (monitor events, post-completion commentary, etc.).
+        // Its result text is that same reply, so it stays out of fullText.
+        const subTurnResult = inSubTurn;
         if (inSubTurn) {
           const subTurnText = subTurnBuffer.trim();
           if (subTurnText) {
@@ -1058,7 +1060,7 @@ export async function sendToAgent(
           }
 
           // Append final result text if different from accumulated
-          if (responseMessage.result && !fullText.includes(responseMessage.result)) {
+          if (!subTurnResult && responseMessage.result && !fullText.includes(responseMessage.result)) {
             if (fullText.length > 0) {
               fullText += '\n\n';
             }
