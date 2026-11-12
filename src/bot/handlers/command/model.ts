@@ -17,7 +17,7 @@ import {
   getAvailableModels,
   type ProviderName,
 } from '../../../providers/provider-router.js';
-import { isPassthroughModelId } from '../../../claude/model-catalog.js';
+import { isPassthroughModelId, isPremiumModel, PREMIUM_MODEL_ICON } from '../../../claude/model-catalog.js';
 import { switchProvider, switchRequiresConfirm } from '../../../providers/provider-switch.js';
 import { EntityText, type EntityMessage } from '../../../telegram/entities.js';
 import { replyFormatted, editCallbackMessage } from '../../../telegram/send.js';
@@ -123,6 +123,7 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
   const restarted = restartPtyForSettingChange(keyInfo.sessionKey);
   const confirmation = new EntityText().append(prefsConfirmation('model', chosen));
   if (restarted) confirmation.append(PTY_RESTART_NOTE);
+  appendPremiumNote(confirmation, chosen, providerName);
   if (!known) {
     confirmation.add(
       "\n\n⚠️ Not a known alias — passed to the CLI as-is. If your install can't serve it, the next turn fails; /model to pick again.",
@@ -172,9 +173,22 @@ export async function handleModelCallback(ctx: Context): Promise<void> {
   const keyboard = buildApplyToAllKeyboard('model', model);
   const confirmation = new EntityText().append(prefsConfirmation('model', displayName));
   if (restarted) confirmation.append(PTY_RESTART_NOTE);
+  appendPremiumNote(confirmation, model, getActiveProviderName(sessionKey));
   await editCallbackMessage(ctx, confirmation.build(), {
     ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
   });
+}
+
+/**
+ * Said once, when a premium model is picked: from then on the status line's
+ * 💎 is the reminder, and it only works if it was explained here.
+ */
+function appendPremiumNote(confirmation: EntityText, model: string, provider: ProviderName): void {
+  if (provider === 'ccr' || !isPremiumModel(model)) return;
+  confirmation.newline(2).italic(
+    `${PREMIUM_MODEL_ICON} ${model} costs more per turn than opus, so it uses up your plan's limits faster. ` +
+      `The status line shows ${PREMIUM_MODEL_ICON} while it's on; /model opus to switch back.`,
+  );
 }
 
 const PROVIDER_DESCRIPTIONS: Record<ProviderName, string> = {

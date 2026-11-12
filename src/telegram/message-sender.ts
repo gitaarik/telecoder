@@ -37,6 +37,8 @@ import {
   suggestionFitsOnButton,
 } from './prompt-suggestion.js';
 import { hasPendingQuestionForSession } from '../claude/ask-user.js';
+import { PREMIUM_MODEL_ICON } from '../claude/model-catalog.js';
+import { getPremiumModel } from '../providers/provider-router.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -152,6 +154,8 @@ interface StreamState {
   actionLogEnabled: boolean;
   // What the turn was sent, drawn at the bottom of the action log.
   prompt: string;
+  // The premium model the turn runs on, badged on the status line; see premiumBadge.
+  premiumModel?: string;
 }
 
 const TYPING_INTERVAL_MS = 4000; // Send typing every 4 seconds
@@ -175,6 +179,15 @@ const WRITING_WINDOW_MS = 4000;
  * without the terminal UI: the text above it isn't final yet.
  */
 const STREAMING_INDICATOR = '✍️ Writing…';
+
+/**
+ * Tacked onto the status line's first line while a premium model is on, so a
+ * fable picked for one task doesn't go on quietly spending the plan's limits
+ * on the next ten.
+ */
+function premiumBadge(model: string | undefined): string {
+  return model ? ` · ${PREMIUM_MODEL_ICON} ${model}` : '';
+}
 const MONITOR_TASK_TYPE = 'monitor_mcp';
 
 /**
@@ -253,6 +266,8 @@ export interface StatusBubbleView {
   footer: string;
   /** The reply has grown in the last few seconds: say "Writing", not "Thinking". */
   writing?: boolean;
+  /** The premium model the turn runs on, if any. */
+  premiumModel?: string;
 }
 
 /**
@@ -284,14 +299,14 @@ export function renderStatusBubble(view: StatusBubbleView): EntityMessage {
       operation.detail?.trim(),
       view.elapsedMs,
       view.pausedMs,
-    ));
+    ) + premiumBadge(view.premiumModel));
     // Bash commands render their (possibly multi-line) command in a separate
     // block below the header so the timer stays on a clean single line.
     if (operation.commandBlock) b.newline().pre(operation.commandBlock, 'bash');
   } else if (view.writing) {
-    b.add(`${getSpinnerFrame(view.spinnerIndex)} ${STREAMING_INDICATOR}`);
+    b.add(`${getSpinnerFrame(view.spinnerIndex)} ${STREAMING_INDICATOR}${premiumBadge(view.premiumModel)}`);
   } else {
-    b.add(`${getSpinnerFrame(view.spinnerIndex)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...`);
+    b.add(`${getSpinnerFrame(view.spinnerIndex)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...${premiumBadge(view.premiumModel)}`);
   }
 
   // Mirror Claude Code's live spinner tip under the status line, as the TUI
@@ -542,7 +557,8 @@ export class MessageSender {
     const actionLogEnabled = verbosityFlags.useActionLog && (verbosityFlags.showToolResults || verbosityFlags.showDiffs);
 
 
-    const initialText = `${getSpinnerFrame(0)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...`;
+    const premiumModel = getPremiumModel(sessionKey);
+    const initialText = `${getSpinnerFrame(0)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...${premiumBadge(premiumModel)}`;
     const message = await ctx.reply(initialText);
 
     // "typing…" only for a turn with no live status line. Terminal mode has
@@ -577,6 +593,7 @@ export class MessageSender {
       tip: null,
       actionLogEnabled,
       prompt,
+      premiumModel,
     };
 
     // Register before anything else can throw. The typing indicator and the
@@ -990,6 +1007,7 @@ export class MessageSender {
       tip: state.tip,
       footer: renderBackgroundFooter(taskTracker.getBackgroundedTasks(state.sessionKey)),
       writing: Date.now() - state.contentChangedAt < WRITING_WINDOW_MS,
+      premiumModel: state.premiumModel,
     };
   }
 
@@ -1027,9 +1045,9 @@ export class MessageSender {
     }
     if (hasPendingQuestionForSession(state.sessionKey)) return plain(AWAITING_ANSWER_LINE);
     if (!state.content.trim()) {
-      return plain(`${getSpinnerFrame(state.spinnerIndex)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...`);
+      return plain(`${getSpinnerFrame(state.spinnerIndex)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...${premiumBadge(state.premiumModel)}`);
     }
-    return new EntityText().italic(STREAMING_INDICATOR).build();
+    return new EntityText().italic(STREAMING_INDICATOR).add(premiumBadge(state.premiumModel)).build();
   }
 
   /**

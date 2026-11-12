@@ -3,6 +3,7 @@ import {
   CLAUDE_MODELS,
   filterModelsForVersion,
   isPassthroughModelId,
+  isPremiumModel,
 } from '../../src/claude/model-catalog.js';
 
 const ids = (models: { id: string }[]) => models.map((m) => m.id);
@@ -103,5 +104,19 @@ describe('filterModelsForVersion', () => {
     expect(ids(filterModelsForVersion(CLAUDE_MODELS, false)).sort()).toEqual(
       ['best', 'haiku', 'opus', 'opus[1m]', 'opusplan', 'sonnet', 'sonnet[1m]'].sort(),
     );
+  });
+});
+
+describe('isPremiumModel', () => {
+  it('flags the fable aliases and the IDs the API reports for them', () => {
+    for (const m of ['fable', 'fable[1m]', 'claude-fable-5-1', 'anthropic/claude-fable-5-1']) {
+      expect(isPremiumModel(m)).toBe(true);
+    }
+  });
+
+  it('leaves every other model alone', () => {
+    for (const m of ['opus', 'opus[1m]', 'sonnet', 'haiku', 'best', 'claude-opus-5-5', undefined, '']) {
+      expect(isPremiumModel(m)).toBe(false);
+    }
   });
 });

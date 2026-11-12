@@ -21,6 +21,7 @@ import {
   type AgentUsage,
 } from '../../../providers/provider-router.js';
 import { userPreferences } from '../../../providers/user-preferences.js';
+import { isPremiumModel, PREMIUM_MODEL_ICON } from '../../../claude/model-catalog.js';
 import { getActiveMethod, getPtyProvider } from '../../../providers/claude-provider.js';
 import { EntityText, joinMessages, type EntityMessage } from '../../../telegram/entities.js';
 import { replyFormatted, editCallbackMessage } from '../../../telegram/send.js';
@@ -669,7 +670,11 @@ function buildStatusLine(
     if (usage.model) {
       const shortened = shortenModelName(usage.model);
       // The SDK alias doesn't reflect CCR's actual backend; tag accordingly.
-      stats.push(provider === 'ccr' ? `🤖 ${shortened} · CCR` : `🤖 ${shortened}`);
+      // A premium model swaps the robot for a badge, so it stands out of the
+      // row rather than reading as one more stat.
+      if (provider === 'ccr') stats.push(`🤖 ${shortened} · CCR`);
+      else if (isPremiumModel(usage.model)) stats.push(`${PREMIUM_MODEL_ICON} ${shortened.toUpperCase()}`);
+      else stats.push(`🤖 ${shortened}`);
     }
     // The footer gives these two right below, in more detail.
     if (!footer) {

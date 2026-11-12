@@ -10,6 +10,7 @@ import {
   type EffortLevel,
 } from '../claude/agent.js';
 import { userPreferences } from './user-preferences.js';
+import { isPremiumModel } from '../claude/model-catalog.js';
 import type { SettingsScope } from '../utils/session-key.js';
 import type { Provider, ProviderName, AgentOptions, LoopOptions, AgentResponse, AgentUsage, ModelInfo } from './types.js';
 
@@ -110,6 +111,20 @@ export function setModel(scope: SettingsScope, model: string): void {
 
 export function getModel(scope: SettingsScope): string {
   return getProvider(scope).getModel(scope);
+}
+
+/**
+ * The premium model this session runs on, or undefined when it's on an
+ * ordinary one. `best` counts once a turn has shown it resolving to one. CCR
+ * is left out: its aliases map onto other backends, so the name says nothing
+ * about the cost.
+ */
+export function getPremiumModel(sessionKey: string): string | undefined {
+  if (getActiveProviderName(sessionKey) === 'ccr') return undefined;
+  const model = getModel(sessionKey);
+  if (isPremiumModel(model)) return model;
+  if (model === 'best' && isPremiumModel(getCachedUsage(sessionKey)?.model)) return model;
+  return undefined;
 }
 
 export function clearModel(scope: SettingsScope): void {

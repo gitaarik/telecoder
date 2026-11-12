@@ -36,6 +36,19 @@ export const FABLE_MIN_CLI_VERSION = [2, 1, 220] as const;
 const FABLE_ALIASES = new Set(['fable', 'fable[1m]']);
 
 /**
+ * True for a model that burns through the plan's limits much faster than the
+ * default, so the bot keeps it in sight while it's on. Matches the aliases as
+ * well as full IDs (`claude-fable-5-1`, `anthropic/claude-fable-...`), since
+ * the status line gets the ID the API reports, not the alias that was picked.
+ */
+export function isPremiumModel(model: string | undefined): boolean {
+  return !!model && /fable/i.test(model);
+}
+
+/** The badge a premium model gets wherever the bot names the model. */
+export const PREMIUM_MODEL_ICON = '💎';
+
+/**
  * Shape check for a model string typed by hand rather than picked from the
  * catalog — full IDs (`claude-opus-4-8`), dated Vertex snapshots
  * (`claude-opus-4-5@20251101`), Bedrock ARNs and CCR's `vendor/model` and

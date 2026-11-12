@@ -104,6 +104,14 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Agent
 
+- **Fable gets a 💎 while it's on** — the model showed as one more `🤖` stat
+  in the status line, easy to read past, and not at all with the status line
+  off, so a Fable picked for one hard task went on spending the plan's limits
+  on the easy ones after it. The live status now ends its first line with
+  `· 💎 fable` every turn, the status line shows `💎 FABLE-5-1` in place of
+  the robot, and picking it in `/model` says what the badge means. Under CCR
+  the alias says nothing about the backend, so it's left unbadged.
+
 - **The activity card says at its bottom whether anything is still running** —
   the running tasks were listed at the top of the card and the events grew
   below them, so on a long card only the events were on screen, and a card

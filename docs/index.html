@@ -1992,7 +1992,8 @@
             <h3>Pick the model</h3>
             <p>Switch between Fable, Opus, Sonnet and Haiku with <code>/model</code> — including
             <code>opusplan</code>, <code>best</code> and the 1M-context variants — and set reasoning
-            effort per bot. Opus by default.</p>
+            effort per bot. Opus by default. While Fable is on, the live status and the status line
+            carry a 💎 so it doesn't quietly eat your plan's limits after the task you picked it for.</p>
           </div>
           <div class="feature-card" data-category="agent">
             <div class="feature-icon"><svg><use href="#i-relay"/></svg></div>
@@ -2956,7 +2957,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/model [all]</code>
-              <span class="command-desc">Switch AI model (provider-aware). Offers every alias Claude Code's <code>--model</code> accepts — fable, opus, sonnet, haiku, opusplan, best and the fable/opus/sonnet 1M-context variants — filtered to what your installed CLI actually supports, so an alias your binary predates never reaches a turn. Pass a full model ID instead (<code>/model claude-opus-4-8</code>) to pin an exact release; unrecognised names are forwarded to the CLI as-is with a warning. Applies to the bot you typed it in; add <code>all</code> (<code>/model sonnet all</code>) or tap the button on the confirmation to set every instance at once. Works in both SDK and PTY mode; in PTY mode Claude Code restarts on your next message to pick it up, keeping the conversation. Reports the model that actually served the last turn rather than a default.</span>
+              <span class="command-desc">Switch AI model (provider-aware). Offers every alias Claude Code's <code>--model</code> accepts — fable, opus, sonnet, haiku, opusplan, best and the fable/opus/sonnet 1M-context variants — filtered to what your installed CLI actually supports, so an alias your binary predates never reaches a turn. Pass a full model ID instead (<code>/model claude-opus-4-8</code>) to pin an exact release; unrecognised names are forwarded to the CLI as-is with a warning. Applies to the bot you typed it in; add <code>all</code> (<code>/model sonnet all</code>) or tap the button on the confirmation to set every instance at once. Works in both SDK and PTY mode; in PTY mode Claude Code restarts on your next message to pick it up, keeping the conversation. Reports the model that actually served the last turn rather than a default. Fable, the premium tier, gets a 💎 on the live status and the status line for as long as it's on.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/effort &lt;level&gt; [all]</code>

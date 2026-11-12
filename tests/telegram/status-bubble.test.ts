@@ -27,6 +27,23 @@ const covered = (text: string, e: MessageEntity) => text.slice(e.offset, e.offse
 const LOOP = `for i in $(seq 1 20); do p=0; for n in 79 80; do c=$(gh pr checks $n -R gitaarik/sjs-ops 2>&1 | awk -F'\\t' '{print $2}' | grep -c "pending"); p=$((p+c)); done; [ "$p" = "0" ] && break; sleep 30; done`;
 
 describe('renderStatusBubble', () => {
+  it('badges the first line while a premium model is on', () => {
+    const thinking = renderStatusBubble(view({ premiumModel: 'fable' })).text;
+    expect(thinking).toMatch(/^⏳ .+\.\.\. · 💎 fable$/);
+
+    const { text } = renderStatusBubble(view({
+      operation: { name: 'Bash', commandBlock: 'ls' },
+      elapsedMs: 58_000,
+      premiumModel: 'fable',
+    }));
+    // On the header, not after the command block under it.
+    expect(text.split('\n')[0]).toBe('⏳ 💻 Running [58s] · 💎 fable');
+  });
+
+  it('has no badge on an ordinary model', () => {
+    expect(renderStatusBubble(view()).text).not.toContain('💎');
+  });
+
   it('puts a running Bash command in a bash code block under the header', () => {
     const { text, entities } = renderStatusBubble(view({
       operation: { name: 'Bash', commandBlock: LOOP },
