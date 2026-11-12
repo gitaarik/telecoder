@@ -18,7 +18,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import * as fs from 'fs';
 import { sessionManager } from './session-manager.js';
-import { setActiveQuery, clearActiveQuery, isCancelled } from './request-queue.js';
+import { setActiveQuery, clearActiveQuery, isCancelled, setInputRelease, clearInputRelease } from './request-queue.js';
 import type { Context } from 'grammy';
 import { config } from '../config.js';
 import { AgentWatchdog } from './agent-watchdog.js';
@@ -71,16 +71,34 @@ export function getCachedUsage(sessionKey: string): AgentUsage | undefined {
 }
 
 /**
- * Build a multimodal prompt with image content blocks for the Claude SDK.
- * The SDK accepts `prompt: string | AsyncIterable<SDKUserMessage>`.
- * When images are attached, we use the AsyncIterable form to send
- * content blocks (image + text) in a single user message.
+ * The turn's prompt, as the SDK's `AsyncIterable<SDKUserMessage>` form: one
+ * user message (image blocks first when there are any), then held open until
+ * `done` settles.
+ *
+ * The holding is the point. Given a plain string, the CLI treats the prompt
+ * as finished input: once the model ends its turn it waits a few seconds and
+ * exits, stopping any background shell still running — a build or a deploy
+ * killed halfway, and the model, whose turn is over, never hears about it.
+ * With the input still open it stays up, the shell finishes, and its
+ * task-notification starts a sub-turn like a Monitor event does.
  */
-async function* buildMultimodalPrompt(
+async function* turnInput(
   text: string,
   images: ImageAttachment[],
-  sessionId?: string,
+  sessionId: string | undefined,
+  done: Promise<void>,
 ): AsyncGenerator<SDKUserMessage> {
+  if (images.length === 0) {
+    yield {
+      type: 'user',
+      message: { role: 'user', content: text },
+      parent_tool_use_id: null,
+      session_id: sessionId || '',
+    } as SDKUserMessage;
+    await done;
+    return;
+  }
+
   const contentBlocks: Array<
     | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
     | { type: 'text'; text: string }
@@ -105,6 +123,7 @@ async function* buildMultimodalPrompt(
     parent_tool_use_id: null,
     session_id: sessionId || '',
   } as SDKUserMessage;
+  await done;
 }
 
 type LogLevel = 'off' | 'basic' | 'verbose' | 'trace';
@@ -345,6 +364,18 @@ export async function sendToAgent(
   let silenceTimedOut = false;
   let staleToolTimedOut = false;
 
+  // The prompt stream stays open while a task this query started is still
+  // live, and ends once none is — see turnInput. Tasks are counted from their
+  // task_started to their task_notification, foreground ones included: one
+  // that is still live when a result arrives is running in the background,
+  // however it got there.
+  let releaseInput: () => void = () => {};
+  const inputDone = new Promise<void>((resolve) => { releaseInput = resolve; });
+  const liveTasks = new Set<string>();
+  // Between a result and the next turn, when the query is only being kept
+  // open for liveTasks.
+  let waitingOnTasks = false;
+
   try {
     const controller = abortController || new AbortController();
 
@@ -569,17 +600,14 @@ export async function sendToAgent(
       },
     };
 
-    const multimodalPrompt = images?.length
-      ? buildMultimodalPrompt(prompt, images, existingSessionId)
-      : undefined;
-
     const response = query({
-      prompt: multimodalPrompt || prompt,
+      prompt: turnInput(prompt, images ?? [], existingSessionId, inputDone),
       options: queryOptions,
     });
 
     // Store the Query object so /cancel can call interrupt()
     setActiveQuery(sessionKey, response);
+    setInputRelease(sessionKey, releaseInput);
 
     // Initialize watchdog for long-running query monitoring
     watchdog = config.AGENT_WATCHDOG_ENABLED
@@ -610,7 +638,9 @@ export async function sendToAgent(
             response.close();
             controller.abort();
           },
-          shouldPauseTimeouts: () => hasPendingQuestionForSession(sessionKey),
+          // Waiting on a quiet background shell is no stall: nothing is
+          // expected until it ends.
+          shouldPauseTimeouts: () => hasPendingQuestionForSession(sessionKey) || waitingOnTasks,
         })
       : null;
     watchdog?.start();
@@ -845,6 +875,7 @@ export async function sendToAgent(
           // query actually launched a backgrounded task — otherwise normal
           // foreground subagent inits would be wrongly suppressed.
           initCount++;
+          waitingOnTasks = false;
           inSubTurn = initCount > 1 && hadBackgroundedTask;
           subTurnBuffer = '';
         } else if (responseMessage.subtype === 'status') {
@@ -883,6 +914,7 @@ export async function sendToAgent(
           // contract, so we tag based on the launching tool name instead.
           const taskType = isMonitor ? 'monitor_mcp' : m.task_type;
           if (isBackgrounded) hadBackgroundedTask = true;
+          liveTasks.add(m.task_id);
           logAt('verbose', `[Claude] TASK STARTED: ${m.task_id} — ${m.description} backgrounded=${isBackgrounded} taskType=${taskType ?? '?'}`);
           await emitTaskEvent({
             type: 'started',
@@ -912,6 +944,8 @@ export async function sendToAgent(
         } else if (responseMessage.subtype === 'task_updated') {
           const m = responseMessage as SDKTaskUpdatedMessage;
           logAt('verbose', `[Claude] TASK UPDATED: ${m.task_id} — status=${m.patch.status ?? '?'} backgrounded=${m.patch.is_backgrounded ?? '?'}`);
+          // A shell moved to the background partway through only says so here.
+          if (m.patch.is_backgrounded) hadBackgroundedTask = true;
           await emitTaskEvent({
             type: 'updated',
             taskId: m.task_id,
@@ -924,6 +958,10 @@ export async function sendToAgent(
         } else if (responseMessage.subtype === 'task_notification') {
           const m = responseMessage as SDKTaskNotificationMessage;
           logAt('basic', `[Claude] TASK NOTIFICATION: ${m.task_id} — ${m.status}`);
+          liveTasks.delete(m.task_id);
+          // Nothing left to wait for. The CLI still answers this notification
+          // before it exits, the way it did with a string prompt.
+          if (waitingOnTasks && liveTasks.size === 0) releaseInput();
           await emitTaskEvent({
             type: 'notification',
             taskId: m.task_id,
@@ -1015,6 +1053,13 @@ export async function sendToAgent(
         }
         logAt('verbose', '[Claude] Result:', JSON.stringify(responseMessage, null, 2).substring(0, 500));
         gotResult = true;
+
+        if (liveTasks.size === 0 || isCancelled(sessionKey) || controller.signal.aborted) {
+          releaseInput();
+        } else {
+          waitingOnTasks = true;
+          logAt('basic', `[Claude] Keeping the query open for ${liveTasks.size} background task(s): ${[...liveTasks].join(', ')}`);
+        }
 
         // Flush any sub-turn text accumulated during this turn as its own
         // chat message (monitor events, post-completion commentary, etc.).
@@ -1143,9 +1188,11 @@ export async function sendToAgent(
       throw new Error(`Claude error: ${errorMessage}`);
     }
   } finally {
+    releaseInput();
     clearInterval(previewFlushTimer);
     watchdog?.stop();
     clearActiveQuery(sessionKey);
+    clearInputRelease(sessionKey);
   }
 
   // Report a manual /compact. The CLI answers it with an empty result and,
