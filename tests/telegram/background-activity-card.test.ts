@@ -9,6 +9,8 @@ import {
   noteMonitorEvent,
   sealCard,
   clearCard,
+  bringCardDown,
+  hasRunningTasks,
   _inspectCard,
 } from '../../src/telegram/background-activity-card.js';
 
@@ -22,11 +24,12 @@ const REANCHOR_FLOOR_MS = 120_000;
 interface Sent {
   chatId: number;
   text: string;
-  opts?: { message_thread_id?: number; parse_mode?: string; entities?: { type: string; offset: number; length: number }[] };
+  opts?: { message_thread_id?: number; disable_notification?: boolean; parse_mode?: string; entities?: { type: string; offset: number; length: number }[] };
 }
 
 let sends: Sent[];
 let edits: { messageId: number; text: string }[];
+let deletes: number[];
 let nextMessageId: number;
 /** Queued rejections, consumed one per call. */
 let sendFailures: (Error | null)[];
@@ -52,6 +55,10 @@ function makeBot(): Bot {
         const failure = editFailures.shift();
         if (failure) throw failure;
         edits.push({ messageId, text });
+        return true;
+      }),
+      deleteMessage: vi.fn(async (_chatId: number, messageId: number) => {
+        deletes.push(messageId);
         return true;
       }),
     },
@@ -82,6 +89,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-08-11T12:00:00Z'));
   sends = [];
   edits = [];
+  deletes = [];
   sendFailures = [];
   editFailures = [];
   sendGate = null;
@@ -389,6 +397,105 @@ describe('status line', () => {
     // the task runs here when its end will land on another card.
     expect(edits).toHaveLength(before + 1);
     expect(lastLine(edits[edits.length - 1].text)).toBe('⏳ 1 task still running · updates continue below');
+  });
+});
+
+describe('bringing the card down', () => {
+  it('does nothing when no task is running', async () => {
+    noteMonitorEvent(SESSION_KEY, 'one-off', '', { notify: true });
+    await settle();
+    sealCard(SESSION_KEY);
+
+    expect(hasRunningTasks(SESSION_KEY)).toBe(false);
+    expect(bringCardDown(SESSION_KEY)).toBe(false);
+    await settle();
+    expect(sends).toHaveLength(1);
+  });
+
+  it('reposts silently below and deletes a sealed card that only listed tasks', async () => {
+    noteTaskArmed(SESSION_KEY, 'bash_background', 'npm run build', 'toolu_01');
+    await settle();
+    sealCard(SESSION_KEY);
+
+    expect(bringCardDown(SESSION_KEY)).toBe(true);
+    await settle();
+
+    expect(sends).toHaveLength(2);
+    expect(sends[1].opts?.disable_notification).toBe(true);
+    expect(sends[1].text).toContain('npm run build');
+    expect(deletes).toEqual([100]);
+    expect(_inspectCard(SESSION_KEY)!.messageId).toBe(101);
+  });
+
+  it('leaves a sealed card with events where they happened', async () => {
+    noteTaskArmed(SESSION_KEY, 'monitor', 'watch the deploy', 'toolu_01');
+    noteMonitorEvent(SESSION_KEY, 'deploy step 1', 'log line 1', { notify: true });
+    await settle();
+    sealCard(SESSION_KEY);
+
+    bringCardDown(SESSION_KEY);
+    await settle();
+
+    expect(sends).toHaveLength(2);
+    expect(deletes).toEqual([]);
+    expect(sends[1].text).toContain('watch the deploy');
+    expect(sends[1].text).not.toContain('deploy step 1');
+  });
+
+  it('takes the sealed card log along when asked to', async () => {
+    noteTaskArmed(SESSION_KEY, 'monitor', 'watch the deploy', 'toolu_01');
+    noteMonitorEvent(SESSION_KEY, 'deploy step 1', 'log line 1', { notify: true });
+    await settle();
+    sealCard(SESSION_KEY);
+
+    bringCardDown(SESSION_KEY, { withLog: true });
+    await settle();
+
+    expect(sends[1].text).toContain('deploy step 1');
+    expect(deletes).toEqual([100]);
+  });
+
+  it('moves a live card whole, events and all', async () => {
+    noteTaskArmed(SESSION_KEY, 'monitor', 'watch the deploy', 'toolu_01');
+    noteMonitorEvent(SESSION_KEY, 'deploy step 1', 'log line 1', { notify: true });
+    await settle();
+
+    bringCardDown(SESSION_KEY);
+    await settle();
+
+    expect(sends).toHaveLength(2);
+    expect(sends[1].text).toContain('deploy step 1');
+    expect(sends[1].opts?.disable_notification).toBe(true);
+    expect(deletes).toEqual([100]);
+  });
+
+  it('still buzzes for an event, and drops the bare card it follows', async () => {
+    noteTaskArmed(SESSION_KEY, 'monitor', 'watch the deploy', 'toolu_01');
+    await settle();
+    sealCard(SESSION_KEY);
+
+    noteMonitorEvent(SESSION_KEY, 'deploy failed', '', { notify: true, urgent: true });
+    await settle();
+
+    expect(sends).toHaveLength(2);
+    expect(sends[1].opts?.disable_notification).toBeUndefined();
+    expect(deletes).toEqual([100]);
+  });
+
+  it('waits for a send in flight before moving', async () => {
+    let release!: () => void;
+    sendGate = new Promise((r) => { release = r; });
+    noteTaskArmed(SESSION_KEY, 'bash_background', 'npm run build', 'toolu_01');
+    await settle();
+
+    bringCardDown(SESSION_KEY);
+    release();
+    await settle();
+    await settle();
+
+    expect(sends).toHaveLength(2);
+    expect(deletes).toEqual([100]);
+    expect(_inspectCard(SESSION_KEY)!.messageId).toBe(101);
   });
 });
 

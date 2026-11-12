@@ -2384,6 +2384,14 @@
             of its own.</p>
           </div>
           <div class="feature-card" data-category="background">
+            <div class="feature-icon"><svg><use href="#i-relay"/></svg></div>
+            <h3>Running work stays in sight</h3>
+            <p>While tasks run, the activity card moves back to the bottom, silently, after every
+            reply and after quick commands like <code>/btw</code> or <code>/cost</code>. A question
+            or a side answer can't bury it. In SDK mode a short <em>⏳ N still running</em> line
+            does the same job.</p>
+          </div>
+          <div class="feature-card" data-category="background">
             <div class="feature-icon"><svg><use href="#i-clock"/></svg></div>
             <h3>Scheduled tasks</h3>
             <p><code>/schedule</code> runs a prompt on a cadence — <code>every 5m</code>,
@@ -2977,7 +2985,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/tasks</code>
-              <span class="command-desc">List active background work — subagents, monitors, backgrounded shells and workflows — grouped by kind, with elapsed time; tap a number to view details. Entries that have gone silent for 15 minutes are flagged <strong>⚠️</strong> — a finished task normally drops off the list, so a long-quiet one usually means its completion event never arrived; monitors are exempt, since idling until an event fires is exactly what they do. Works in both SDK and PTY mode. In PTY mode, <strong>🔎 Ask claude</strong> types <code>/tasks</code> into the live TUI and relays Claude Code's own background view, which also covers shells it started on its own and anything armed before the last bot restart.</span>
+              <span class="command-desc">List active background work — subagents, monitors, backgrounded shells and workflows — grouped by kind, with elapsed time; tap a number to view details. Entries that have gone silent for 15 minutes are flagged <strong>⚠️</strong> — a finished task normally drops off the list, so a long-quiet one usually means its completion event never arrived; monitors are exempt, since idling until an event fires is exactly what they do. Works in both SDK and PTY mode. In PTY mode, <strong>🔎 Ask claude</strong> types <code>/tasks</code> into the live TUI and relays Claude Code's own background view, which also covers shells it started on its own and anything armed before the last bot restart. <strong>📍 Show live card here</strong> moves the activity card, with its log, to the bottom of the chat.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/shells</code>

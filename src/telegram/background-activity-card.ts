@@ -21,6 +21,14 @@
  * the current card has been on screen a while. Bursts collapse into one
  * message; a genuinely new event still buzzes the phone. REANCHOR_FLOOR_MS is
  * the knob trading notifications against message count.
+ *
+ * Nothing new may come in for a long while, though: a build in the background
+ * says nothing until it ends. So the card is also brought down when a turn
+ * closes or a command answers (bringCardDown), silently, as long as tasks run
+ * — the user is in the chat then, and a card above what they just read would
+ * leave them thinking nothing runs. A card that only listed running tasks is
+ * deleted once its successor is up, so the chat keeps one of them; a card
+ * with events on it stays where they happened.
  */
 
 import { GrammyError, type Bot } from 'grammy';
@@ -98,6 +106,15 @@ interface CardState {
    * "running" forever.
    */
   sealPending: boolean;
+  /** A bringCardDown that arrived mid-send, run once the send resolves. */
+  bringDownPending: BringDownOptions | null;
+  /** The last sealed card and what it showed, until the next card is posted. */
+  sealedId: number | null;
+  sealedEvents: CardEvent[];
+  /** Cards to delete once the next one is up: the ones it replaces. */
+  retired: number[];
+  /** Post the next card without a notification: it moved, nothing happened. */
+  silentNext: boolean;
 }
 
 const cards = new Map<string, CardState>();
@@ -176,6 +193,53 @@ export function noteMonitorEvent(
   }, opts);
 }
 
+export interface BringDownOptions {
+  /**
+   * Take the events of the last sealed card along, and delete it. For a user
+   * asking to see the card here; a turn closing leaves them where they were,
+   * next to the replies they led to.
+   */
+  withLog?: boolean;
+}
+
+/** Whether the session's card lists tasks still running. */
+export function hasRunningTasks(sessionKey: string): boolean {
+  return (cards.get(sessionKey)?.running.size ?? 0) > 0;
+}
+
+/**
+ * Post the card again at the bottom of the chat, silently, if tasks still run.
+ * Called after something was posted below it: a turn's reply, a command's.
+ * Returns whether there was a card to bring down.
+ */
+export function bringCardDown(sessionKey: string, opts: BringDownOptions = {}): boolean {
+  const state = cards.get(sessionKey);
+  if (!state || state.running.size === 0) return false;
+  if (state.inFlight) {
+    state.bringDownPending = { withLog: opts.withLog || state.bringDownPending?.withLog };
+    return true;
+  }
+  if (state.flushTimer) {
+    clearTimeout(state.flushTimer);
+    state.flushTimer = null;
+  }
+  if (state.messageId !== null) {
+    // The live card moves as a whole, events and all.
+    state.retired.push(state.messageId);
+    state.messageId = null;
+    state.anchoredAt = 0;
+  } else if (opts.withLog && state.sealedId !== null) {
+    state.events = [...state.sealedEvents, ...state.events].slice(-MAX_EVENTS);
+    state.retired.push(state.sealedId);
+    state.sealedId = null;
+    state.sealedEvents = [];
+  }
+  state.lastRendered = '';
+  state.silentNext = true;
+  markDirty(state);
+  return true;
+}
+
 /**
  * Seal the current card and stop editing it. Called at turn boundaries: the
  * turn pipeline is about to post (or has just posted) its own messages, which
@@ -203,6 +267,10 @@ export function sealCard(sessionKey: string): void {
   // stop saying they run here, since their end lands on the next card.
   if (state.messageId !== null && (state.dirty || state.running.size > 0)) {
     void editCard(state, state.messageId, renderCard(state, true));
+  }
+  if (state.messageId !== null) {
+    state.sealedId = state.messageId;
+    state.sealedEvents = state.events;
   }
   state.messageId = null;
   state.anchoredAt = 0;
@@ -258,6 +326,11 @@ function getOrCreate(sessionKey: string): CardState | null {
     lastRendered: '',
     epoch: 0,
     sealPending: false,
+    bringDownPending: null,
+    sealedId: null,
+    sealedEvents: [],
+    retired: [],
+    silentNext: false,
   };
   cards.set(sessionKey, state);
   return state;
@@ -267,6 +340,8 @@ function pushEvent(state: CardState, event: CardEvent, opts: NoteOptions): void 
   // Re-anchor before appending so the new event lands on the fresh card
   // rather than on the one about to be sealed.
   if (opts.notify && shouldReanchor(state, opts.urgent === true)) sealCard(state.sessionKey);
+  // Something did happen: whatever posts the card next should buzz.
+  if (opts.notify) state.silentNext = false;
   state.events.push(event);
   if (state.events.length > MAX_EVENTS) state.events = state.events.slice(-MAX_EVENTS);
   markDirty(state);
@@ -326,7 +401,7 @@ async function flush(state: CardState): Promise<void> {
   state.dirty = false;
   try {
     if (state.messageId === null) {
-      const messageId = await sendCard(state, card);
+      const messageId = await sendCard(state, card, state.silentNext);
       // Torn down while the send was in flight — the session is gone, so
       // there is nothing left to adopt this message id.
       if (epoch !== state.epoch) return;
@@ -335,6 +410,8 @@ async function flush(state: CardState): Promise<void> {
         state.anchoredAt = Date.now();
         state.lastEditAt = Date.now();
         state.lastRendered = text;
+        state.silentNext = false;
+        retireReplaced(state);
       }
     } else {
       const ok = await editCard(state, state.messageId, card);
@@ -344,12 +421,38 @@ async function flush(state: CardState): Promise<void> {
     }
   } finally {
     state.inFlight = false;
-    if (state.sealPending) {
-      state.sealPending = false;
-      sealCard(state.sessionKey);
-    } else if (state.dirty && epoch === state.epoch) {
+    const seal = state.sealPending;
+    const bringDown = state.bringDownPending;
+    state.sealPending = false;
+    state.bringDownPending = null;
+    if (seal) sealCard(state.sessionKey);
+    if (bringDown && epoch === state.epoch) {
+      bringCardDown(state.sessionKey, bringDown);
+    } else if (!seal && state.dirty && epoch === state.epoch) {
       scheduleFlush(state);
     }
+  }
+}
+
+/**
+ * Delete what the card just posted replaces: a card it moved down from, and
+ * the last sealed card if all that one held was the running list, which the
+ * new card shows as well.
+ */
+function retireReplaced(state: CardState): void {
+  const ids = [...state.retired];
+  if (state.sealedId !== null && state.sealedEvents.length === 0) ids.push(state.sealedId);
+  state.retired = [];
+  state.sealedId = null;
+  state.sealedEvents = [];
+  const bot = botRef;
+  if (!bot) return;
+  for (const id of ids) {
+    // Past 48h Telegram refuses, and the user may have deleted it already;
+    // either way it stays as it is, sealed.
+    Promise.resolve()
+      .then(() => bot.api.deleteMessage(state.chatId, id))
+      .catch((err: unknown) => console.debug('[BackgroundCard] delete failed:', describe(err)));
   }
 }
 
@@ -357,9 +460,12 @@ async function flush(state: CardState): Promise<void> {
  * Post the card. A card whose formatting Telegram refuses goes out again as
  * plain text (see ./send.ts).
  */
-async function sendCard(state: CardState, card: EntityMessage): Promise<number | null> {
+async function sendCard(state: CardState, card: EntityMessage, silent: boolean): Promise<number | null> {
   if (!botRef) return null;
-  const opts = state.threadId !== undefined ? { message_thread_id: state.threadId } : {};
+  const opts = {
+    ...(state.threadId !== undefined ? { message_thread_id: state.threadId } : {}),
+    ...(silent ? { disable_notification: true } : {}),
+  };
   try {
     const msg = await sendFormatted(botRef.api, state.chatId, card, opts);
     return msg.message_id;

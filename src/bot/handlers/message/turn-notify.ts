@@ -19,6 +19,7 @@ import type { AgentResponse } from '../../../providers/types.js';
 import { messageSender } from '../../../telegram/message-sender.js';
 import { EntityText } from '../../../telegram/entities.js';
 import { replyFormatted } from '../../../telegram/send.js';
+import { bringCardDown } from '../../../telegram/background-activity-card.js';
 import { resolveVerbosityFlags } from '../../../utils/verbosity.js';
 import { fmtTokens } from '../../../utils/format.js';
 import { stripReasoningSummary } from '../../../utils/reasoning-summary.js';
@@ -173,6 +174,8 @@ export async function closeTurn(
   // then shows what the session last had, rather than no model and no context.
   const usage = response.usage ?? getCachedUsage(sessionKey);
   await sendStatusLine(ctx, chatId, sessionKey, usage, prompt, options);
+  // The reply buried the card; tasks still running get it back below.
+  bringCardDown(sessionKey);
 }
 
 /**
@@ -190,4 +193,5 @@ export async function closeSelfStartedTurn(ctx: Context, sessionKey: string): Pr
   const chatId = ctx.chat?.id;
   if (chatId === undefined) return;
   await sendStatusLine(ctx, chatId, sessionKey, getPtyProvider().refreshUsage(sessionKey));
+  bringCardDown(sessionKey);
 }

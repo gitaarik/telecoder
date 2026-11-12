@@ -12,6 +12,7 @@ import { replyFormatted, editCallbackMessage } from '../../../telegram/send.js';
 import { taskTracker, type TaskState } from '../../../telegram/task-tracker.js';
 import { getPtyProvider } from '../../../providers/claude-provider.js';
 import { scrapeTasksOverlay } from '../../../claude/tasks-overlay-scraper.js';
+import { bringCardDown, hasRunningTasks } from '../../../telegram/background-activity-card.js';
 import {
   getDirectChildren,
   describeProcess,
@@ -172,6 +173,10 @@ function renderTasksList(sessionKey: string, tasks: TaskState[]): { message: Ent
     { text: '🔄 Refresh', callback_data: 'tasks:refresh' },
     { text: '🔎 Ask claude', callback_data: 'tasks:ask' },
   ]);
+  // PTY-only: the live card is how that mode shows background work.
+  if (hasRunningTasks(sessionKey)) {
+    keyboard.push([{ text: '📍 Show live card here', callback_data: 'tasks:card' }]);
+  }
 
   return { message: b.build(), keyboard };
 }
@@ -265,6 +270,13 @@ export async function handleTasksCallback(ctx: Context): Promise<void> {
         console.error('[Tasks] Failed to refresh list:', err);
       }
     }
+    return;
+  }
+
+  if (data === 'tasks:card') {
+    // The card with its log, at the bottom, instead of up in the history.
+    const moved = bringCardDown(sessionKey, { withLog: true });
+    await ctx.answerCallbackQuery(moved ? {} : { text: 'Nothing running any more.' }).catch(() => {});
     return;
   }
 

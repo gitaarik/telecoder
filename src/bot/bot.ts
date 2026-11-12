@@ -131,6 +131,7 @@ import { initThreadsSetup } from '../telegram/threads-setup.js';
 import { resolvePendingPoll } from '../claude/poll-user.js';
 import { captureSecretMessages, handleSecretCallback } from '../claude/secret-request.js';
 import { registerBotCommandName } from '../claude/command-parser.js';
+import { withRunningNote } from './handlers/running-note.js';
 
 // Resolve sequentialize constraint: same-chat updates are ordered,
 // but /cancel is registered BEFORE this middleware so it bypasses it.
@@ -407,9 +408,9 @@ export async function createBot(): Promise<Bot> {
   // This lets them interrupt, inspect, or restart even when a query is hung.
   cmd('cancel', handleCancel);
   cmd('stop', handleCancel); // alias — natural expectation for "stop the current turn"
-  cmd('ping', handlePing);
-  cmd('status', handleStatus);
-  cmd('version', handleVersion);
+  cmd('ping', withRunningNote(handlePing));
+  cmd('status', withRunningNote(handleStatus));
+  cmd('version', withRunningNote(handleVersion));
   // Lifecycle and transport are admin-only: they act on every session in the
   // bot, not just the caller's, and /method decides whether the permission gate
   // (a PreToolUse hook, so PTY-only) is in the loop at all.
@@ -421,24 +422,24 @@ export async function createBot(): Promise<Bot> {
   cmd('allow', adminOnly(handleAllow));
   cmd('deny', adminOnly(handleDeny));
   cmd('users', adminOnly(handleUsers));
-  cmd('btw', handleBtw); // Side question — must bypass queue to work mid-task
+  cmd('btw', withRunningNote(handleBtw)); // Side question — must bypass queue to work mid-task
   // Sets an idea aside for after the turn, so it can't wait behind that turn. And
   // with nothing running, it's the one message that doesn't start one.
-  cmd('later', handleLater);
+  cmd('later', withRunningNote(handleLater));
   // Read-only, with nothing a running turn could be disturbed by, so they answer
   // mid-turn rather than after it: a fixed list, a look at the session list or
   // the bot process, a re-read of the transcript, and two that ask a probe of
   // their own rather than the live session. Anything that changes the session
   // or starts a turn stays behind sequentialize below.
-  cmd('commands', handleCommands);
-  cmd('sessions', handleSessions);
-  cmd('botstatus', handleBotStatus);
-  cmd('recap', handleRecap);
+  cmd('commands', withRunningNote(handleCommands));
+  cmd('sessions', withRunningNote(handleSessions));
+  cmd('botstatus', withRunningNote(handleBotStatus));
+  cmd('recap', withRunningNote(handleRecap));
   cmd('projectcommands', handleProjectCommands);
-  cmd('context', handleContext);
+  cmd('context', withRunningNote(handleContext));
   cmd('tasks', handleTasks); // Read-only; must bypass queue so it works mid-stream
-  cmd('cost', handleCost); // Read-only probe + a peek at the live TUI panel; bypasses the queue so it answers mid-turn
-  cmd('shells', handleShells); // Lists/kills OS-level bg processes; must bypass queue to rescue hung sessions
+  cmd('cost', withRunningNote(handleCost)); // Read-only probe + a peek at the live TUI panel; bypasses the queue so it answers mid-turn
+  cmd('shells', withRunningNote(handleShells)); // Lists/kills OS-level bg processes; must bypass queue to rescue hung sessions
   cmd('members', handleMembers);
   // /sync exists for the "I think a reply went missing" scenario, which by
   // definition includes hung or sluggish turns — gating it on sequentialize
@@ -449,7 +450,7 @@ export async function createBot(): Promise<Bot> {
   // mid-turn — "what did I just ask?" comes up while a long turn runs — and the
   // buttons that switch conversations refuse while a reply is running.
   cmd('tree', handleTreeCommand);
-  cmd('prompts', handlePromptsCommand);
+  cmd('prompts', withRunningNote(handlePromptsCommand));
   // Display preferences: each only flips a stored setting that a turn reads
   // when it starts, so changing one mid-turn applies from the next turn and
   // has no reason to wait for this one. Their menu buttons likewise.
