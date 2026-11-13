@@ -169,10 +169,44 @@ telecoder start    # runs every bot in ~/.telecoder/instances.json instead, if t
 
 Open your bot in Telegram → `/start`
 
-`/restartbot` restarts an npm install by exiting, so run it under something that
-starts it again — a systemd unit with `Restart=always`, launchd with `KeepAlive`,
-or pm2. `/update` installs the latest release; `/rebuildbot` is for source
-checkouts only.
+`/update` installs the latest release; `/rebuildbot` is for source checkouts only.
+
+### Run it in the background
+
+`telecoder start` runs in your terminal and stops with it. To keep the bot running,
+start it at boot, and let `/restartbot` restart it from chat (an npm install restarts
+by exiting, for its service manager to start it again):
+
+```bash
+telecoder service install     # systemd user unit on Linux, LaunchAgent on macOS
+telecoder service status      # is it running?
+telecoder service logs        # follow its output (--no-follow: the last 100 lines)
+telecoder service restart     # also brings it back after a config error stopped it
+telecoder service uninstall   # stop it and remove the unit
+```
+
+- **Linux** writes `~/.config/systemd/user/telecoder.service` and enables it. The unit
+  runs the `node` and `telecoder` it was installed with, from `~/.telecoder` (or
+  `TELECODER_HOME`), with a `PATH` that finds `claude`, `git` and `ffmpeg`. It holds no
+  secrets — the bot reads its `.env`. It restarts on any exit except a configuration
+  error (exit 78: fix the `.env`, then `telecoder service restart`), and
+  `systemctl --user stop telecoder` stops it for good. It asks before turning on
+  *lingering* (`loginctl enable-linger`), which keeps user services running after you
+  log out and starts them at boot; `--yes` answers yes to everything, `--no-linger`
+  skips it. Without a usable `systemd --user` (a container, WSL without systemd, a
+  shell under `sudo`) it prints the unit and other ways to run it instead.
+- **macOS** writes `~/Library/LaunchAgents/dev.telecoder.telecoder.plist` and loads it;
+  output goes to `~/Library/Logs/telecoder/telecoder.log`. A LaunchAgent runs while you
+  are logged in. launchd can't exempt one exit code from `KeepAlive`, so under launchd a
+  bot stopped by a configuration error exits 0 instead, which it leaves alone.
+
+Run `telecoder service install` again after moving `node`, `claude` or your config:
+it shows what changes and asks before replacing the unit. `--name <name>` installs a
+second one side by side, and `--dry-run` prints the file without writing anything. An
+`npx telecoder` isn't installed anywhere lasting, so install it with
+`npm install -g telecoder` first. A source checkout is run with
+[the bot control script](#bot-control-script) or `npm start` as before;
+`node dist/cli.js service install --from-checkout` installs a unit for it anyway.
 
 ### From source
 

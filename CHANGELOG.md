@@ -13,7 +13,18 @@ reasoning — the commit bodies are the long form, this is the index.
   `claude` CLI and its login (without spending anything), node-pty and the
   toolchain it needs, and the config, with `--live` asking Telegram about the
   token; `telecoder --version` and `telecoder help` do what they say. `init`
-  and `service install` are placeholders for now.
+  is a placeholder for now.
+- **`telecoder service install`** runs the bot in the background: a systemd
+  user unit on Linux (enabled, with lingering after asking, so it survives
+  logout and reboot) or a LaunchAgent on macOS, pointing at the `node` and
+  `telecoder` it was installed with and a `PATH` that finds `claude` and
+  `git`. `/restartbot` restarts it from chat; a configuration error stops it
+  instead of crash-looping (exit 78, `RestartPreventExitStatus=`; exit 0
+  under launchd, which can't single out one code). A changed unit is shown
+  as a diff before it is replaced; `status`, `logs`, `restart` and
+  `uninstall` go with it, and `--name` allows several installs. Without
+  `systemd --user` it prints the unit and a manual fallback; npx installs
+  are pointed at `npm install -g` first.
 - **Config lives in `~/.telecoder`** for an npm install (`TELECODER_HOME`
   moves it): `.env`, `instances.json` and the Telegraph account file sit next
   to the existing state files. A source checkout with a `.env` or
@@ -22,8 +33,8 @@ reasoning — the commit bodies are the long form, this is the index.
 - **An npm install updates and restarts without a checkout** — `/update`
   also offers `npm install -g telecoder@latest`, `/version` compares the
   installed version with the latest release, and `/restartbot` exits for the
-  service manager to start it again (so run it under systemd with
-  `Restart=always`, launchd or pm2). `/rebuildbot` is for source checkouts
+  service manager to start it again (`telecoder service install` sets one
+  up; pm2 works too). `/rebuildbot` is for source checkouts
   only and says so elsewhere.
 
 ### Security

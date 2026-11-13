@@ -2092,7 +2092,8 @@
             <code>telecoder doctor</code> checks Node, the <code>claude</code> CLI and its login, the
             terminal-mode dependency and your config before anything starts, without spending a
             token; <code>telecoder start</code> runs one bot, or all of them when there is an
-            <code>instances.json</code>. Config lives in <code>~/.telecoder</code>, and
+            <code>instances.json</code>, and <code>telecoder service install</code> keeps it running
+            as a systemd or launchd service. Config lives in <code>~/.telecoder</code>, and
             <code>/update</code> installs a new release from the chat.</p>
           </div>
           <div class="feature-card" data-category="reliability">
@@ -2521,11 +2522,12 @@
 <span class="command">cp</span> "$(npm root -g)/telecoder/.env.example" ~/.telecoder/.env
 <span class="comment"># Edit ~/.telecoder/.env with your credentials</span>
 <span class="command">telecoder doctor</span>
-<span class="command">telecoder start</span></pre>
+<span class="command">telecoder service install</span>  <span class="comment"># or: telecoder start, in the foreground</span></pre>
               </div>
             </div>
-            <p>An npm install restarts from chat by exiting, so run <code>telecoder start</code> under
-            something that starts it again: systemd with <code>Restart=always</code>, launchd or pm2.</p>
+            <p><code>telecoder service install</code> runs the bot in the background as a systemd user
+            unit (Linux) or a LaunchAgent (macOS), starts it at boot, and lets <code>/restartbot</code>
+            restart it from chat. <code>telecoder service logs</code> shows what it is doing.</p>
             <div class="code-block">
               <div class="code-header">
                 <span>From source</span>
@@ -2591,7 +2593,7 @@
                 <span class="step-number">6</span>
                 <div class="step-content">
                   <h4>Run the bot</h4>
-                  <p><code>telecoder doctor</code> checks the setup and <code>telecoder start</code> runs it; from source, <code>npm run dev</code> for development or <code>npm start</code> for production</p>
+                  <p><code>telecoder doctor</code> checks the setup, <code>telecoder service install</code> runs it in the background and at boot (or <code>telecoder start</code> in the foreground); from source, <code>npm run dev</code> for development or <code>npm start</code> for production</p>
                 </div>
               </div>
               <div class="step-item">
@@ -3231,6 +3233,35 @@ CCR_AUTOSTART=true</pre>
             <div class="command-row">
               <code class="command-code">/members</code>
               <span class="command-desc">Who may prompt the agent in <em>this group</em> — admins, contributors, explicit spectators, and the default everyone else falls into. The per-group half of <code>/users</code>.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="command-category">
+          <h3 class="command-category-title">
+            <span class="command-category-icon">⌨️</span>
+            Command Line
+          </h3>
+          <div class="commands-grid">
+            <div class="command-row">
+              <code class="command-code">telecoder start</code>
+              <span class="command-desc">Run the bot in this terminal — every bot in <code>instances.json</code> when there is one.</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">telecoder doctor [--live]</code>
+              <span class="command-desc">Check Node, the <code>claude</code> CLI and its login, node-pty and the config, without spending anything; <code>--live</code> asks Telegram about the token.</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">telecoder service install</code>
+              <span class="command-desc">Run it in the background and start it at boot: a systemd user unit on Linux (it asks before enabling lingering), a LaunchAgent on macOS. <code>/restartbot</code> then restarts it from chat. <code>--name</code> keeps several installs apart; <code>--dry-run</code> shows the file without writing it.</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">telecoder service status|logs</code>
+              <span class="command-desc">Whether the service is running, and its output (followed; <code>--no-follow</code> prints the last 100 lines).</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">telecoder service restart|uninstall</code>
+              <span class="command-desc">Restart it — also after a config error stopped it — or stop it and remove the unit.</span>
             </div>
           </div>
         </div>
