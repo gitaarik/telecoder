@@ -4,10 +4,24 @@
   "description": "Claude Code from Telegram: a self-hosted bot that drives the Claude Code agent on your own machine",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "telecoder": "dist/cli.js"
+  },
+  "files": [
+    "dist/",
+    "!dist/**/*.map",
+    "!dist/**/*.d.ts",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    ".env.example",
+    "instances.json.example"
+  ],
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "dev:multi": "tsx src/launcher.ts",
     "build": "node scripts/stamp-build.mjs && tsc",
+    "prepublishOnly": "npm run typecheck && npm test && node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && npm run build",
     "start": "node dist/index.js",
     "start:multi": "node dist/launcher.js",
     "typecheck": "tsc --noEmit",
