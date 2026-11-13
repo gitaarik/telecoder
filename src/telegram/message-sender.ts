@@ -200,6 +200,24 @@ function premiumBadge(model: string | undefined): string {
 const MONITOR_TASK_TYPE = 'monitor_mcp';
 
 /**
+ * How a background task is named in its start line and the completion that
+ * replaces it, by the SDK's task_type. The same icons as the PTY card's.
+ */
+function taskKind(taskType: string | undefined): { icon: string; label: string } {
+  switch (taskType) {
+    case MONITOR_TASK_TYPE: return { icon: '📡', label: 'Monitor' };
+    case 'local_bash': return { icon: '⚙️', label: 'Command' };
+    case 'local_agent': return { icon: '🤖', label: 'Subagent' };
+    case 'local_workflow': return { icon: '📋', label: 'Workflow' };
+    default: return { icon: '⚙️', label: 'Task' };
+  }
+}
+
+function shortDescription(description: string): string {
+  return description.length > 100 ? description.substring(0, 97) + '...' : description;
+}
+
+/**
  * Publish a long reply as an Instant View page and return the footer line that
  * points at it, or null when the chat hasn't asked for pages, the reply is
  * short, or telegra.ph is unreachable.
@@ -718,16 +736,23 @@ export class MessageSender {
 
   /**
    * Apply an SDK task lifecycle event. Updates the per-session task tracker,
-   * surfaces Monitor task events as their own chat messages, posts a
-   * chat-level completion message on backgrounded `task_notification` events,
-   * and refreshes the streaming UI footer.
+   * posts a line when a backgrounded task starts (edited in place when it
+   * ends), surfaces Monitor events as their own chat messages, and refreshes
+   * the streaming UI footer.
    */
   async notifyTaskEvent(ctx: Context, sessionKey: string, event: TaskEvent): Promise<void> {
+    const wasBackgrounded = event.type === 'updated'
+      ? taskTracker.getTask(sessionKey, event.taskId)?.isBackgrounded
+      : undefined;
     const state = taskTracker.handleEvent(sessionKey, event);
     const isMonitor = state?.taskType === MONITOR_TASK_TYPE;
 
-    if (event.type === 'started' && state && isMonitor) {
-      await this.postMonitorArmed(ctx, state);
+    if (event.type === 'started' && state?.isBackgrounded) {
+      await this.postTaskStarted(ctx, state);
+    } else if (event.type === 'updated' && state?.isBackgrounded && wasBackgrounded === false
+      && state.status === 'running') {
+      // A shell moved to the background partway through says so only here.
+      await this.postTaskStarted(ctx, state);
     } else if (event.type === 'progress' && state && isMonitor) {
       const eventText = event.summary ?? event.description;
       if (eventText) await this.postMonitorEvent(ctx, state, eventText);
@@ -743,17 +768,24 @@ export class MessageSender {
     }
   }
 
-  private async postMonitorArmed(ctx: Context, task: TaskState): Promise<void> {
-    if (task.skipTranscript) return;
-    const description = task.description.length > 100
-      ? task.description.substring(0, 97) + '...'
-      : task.description;
+  /**
+   * Say in the chat what just started in the background, rather than leave it
+   * to the footer's count. Silent: the user is in the chat, mid-turn. The
+   * line is kept by id so the completion can replace it.
+   */
+  private async postTaskStarted(ctx: Context, task: TaskState): Promise<void> {
+    if (task.skipTranscript || task.armedMessageId !== undefined) return;
+    const { icon, label } = taskKind(task.taskType);
+    const description = shortDescription(task.description);
+    const text = task.taskType === MONITOR_TASK_TYPE
+      ? `${icon} ${label} "${description}" armed`
+      : `${icon} ${label} "${description}" running in background`;
     try {
-      const posted = await replyFormatted(ctx, `📡 Monitor "${description}" armed`);
+      const posted = await replyFormatted(ctx, text, { disable_notification: true });
       task.armedMessageId = posted.message_id;
       this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
     } catch (error) {
-      console.error('[Task] Failed to post monitor armed:', error instanceof Error ? error.message : error);
+      console.error('[Task] Failed to post task start:', error instanceof Error ? error.message : error);
     }
   }
 
@@ -938,17 +970,18 @@ export class MessageSender {
     if (task.skipTranscript) return;
     if (!task.isBackgrounded) return;
 
-    // Use action logging if enabled
+    // Without a start line to replace, an action log takes the completion.
+    // With one, the start line is where it goes, so it can't sit on
+    // "running" after the task ended.
     const keyInfo = getSessionKeyFromCtx(ctx);
     const sessionKey = keyInfo?.sessionKey;
-    if (sessionKey && actionLogger.isActive(sessionKey)) {
+    if (task.armedMessageId === undefined && sessionKey && actionLogger.isActive(sessionKey)) {
       await actionLogger.addTaskCompletion(sessionKey, task);
       return;
     }
 
-    // Fall back to original behavior
-
     const isMonitor = task.taskType === MONITOR_TASK_TYPE;
+    const { label } = taskKind(task.taskType);
 
     const statusIcon = task.status === 'completed'
       ? (isMonitor ? '📡' : '✅')
@@ -963,16 +996,14 @@ export class MessageSender {
       ? `${Math.floor(seconds / 60)}m ${seconds % 60}s`
       : `${seconds}s`;
 
-    const description = task.description.length > 100
-      ? task.description.substring(0, 97) + '...'
-      : task.description;
+    const description = shortDescription(task.description);
 
     // Single-line format matching Claude Code's TUI:
-    //   ✅ Background task "<description>" completed in 54s
+    //   ✅ Subagent "<description>" completed in 54s
     //   📡 Monitor "<description>" stream ended after 12s
     const body = isMonitor
       ? `${statusIcon} Monitor "${description}" ${verb} after ${duration}`
-      : `${statusIcon} Background task "${description}" ${verb} in ${duration}`;
+      : `${statusIcon} ${label} "${description}" ${verb} in ${duration}`;
     const text = task.error ? `${body}\n⚠️ ${task.error}` : body;
 
     // If we still know the armed-message id, edit it in place so the chat
