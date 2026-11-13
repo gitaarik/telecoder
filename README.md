@@ -117,7 +117,7 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 
 ### Rich Output
 - Formatting sent as Telegram entities: nothing to escape, and a long reply splits anywhere without breaking its bold, links or code blocks
-- Telegraph Instant View for long responses & tables
+- Optional Telegraph Instant View for long responses (opt-in with `TELEGRAPH_ENABLED=true`; pages are public)
 - Smart chunking that preserves code blocks
 - Terminal-style tool status (`/terminalui`)
 - Inline keyboards for settings (model, mode, TTS, clear)
@@ -441,7 +441,7 @@ your secrets, which is the only form of that answer worth trusting.
 | `/recap [N]` | Re-read the last N exchanges of the current session (default 3), ending with the same status message as a normal turn |
 | `/prompts [N]` | List just the last N prompts you sent, without the replies (default 15, max 25) |
 | `/sync` | Resend the latest assistant reply from the session log if Telegram missed any of it |
-| `/handoff` | Dump the conversation to markdown — Telegraph link plus downloadable file |
+| `/handoff` | Dump the conversation to markdown as a downloadable file, plus a Telegraph link when Telegraph is on |
 | `/fork` | Fork the conversation — into a new thread on a bot with threads, otherwise a new branch on this bot or a hand-off to a sibling bot |
 | `/tree` | Draw the conversation's fork tree; tap a point to carry on that branch or branch from it |
 | `/accept` | Accept a pending fork from another bot |
@@ -473,7 +473,7 @@ your secrets, which is the only form of that answer worth trusting.
 | Command | Description |
 |---------|-------------|
 | `/file` | Download a project file |
-| `/telegraph` | Toggle Instant View for long responses |
+| `/telegraph` | Toggle Instant View for long responses in this chat (needs `TELEGRAPH_ENABLED=true`) |
 | `/suggestions` | Toggle predicted next-prompt buttons under each response |
 
 ### Voice & TTS
@@ -594,6 +594,7 @@ See [Sharing a bot](#sharing-a-bot) for how the pieces fit together.
 | `CLAUDE_PLUGINS` | — | Marketplace plugins to enable in the agent, as `plugin@marketplace` ids, comma-separated |
 | `BOT_NAME` | `TeleCoder` | Bot name in system prompt |
 | `STREAMING_MODE` | `streaming` | `streaming` or `wait` |
+| `TELEGRAPH_ENABLED` | `false` | Opt-in. Also publish long replies, `/handoff` notes and the full action log to telegra.ph as Instant View pages. **Pages are public** to anyone with the link and can't be deleted. Off, long replies arrive as chunked messages and `/handoff` as a file |
 | `DANGEROUS_MODE` | `false` | Auto-approve all tool permissions |
 | `CANCEL_ON_NEW_MESSAGE` | `false` | Auto-cancel running query on new message |
 | `QUESTION_TIMEOUT_MINUTES` | `10` | How long a question from Claude (buttons, polls, relayed dialogs) waits before the turn carries on without an answer and the question closes |
@@ -766,8 +767,9 @@ Your messages go to Telegram and to Claude Code, and from there to the model pro
 use. A secret you send when Claude asks for one is the exception: it goes to Telegram like any
 message, until the bot deletes it, and from there only into the command Claude named. A Claude
 token made with `claude setup-token` doesn't go through Telegram at all. Claude Code keeps its own session transcripts in `~/.claude`. Voice and text-to-speech
-go to Groq or OpenAI, and only if you configure them. Long replies can be published to
-Telegraph when Instant View is on, and those pages are public to anyone with the link.
+go to Groq or OpenAI, and only if you configure them. Nothing goes to Telegraph unless you set
+`TELEGRAPH_ENABLED=true`; with it on, long replies, `/handoff` notes and action logs are
+published there, and those pages are public to anyone with the link.
 
 ---
 

@@ -269,8 +269,10 @@ const envSchema = z.object({
     .default('5')
     .transform((val) => parseInt(val, 10)),
   AUTO_RESTORE_SESSION: z.string().default('false').transform(toBool),
-  // Telegraph (Instant View for long messages)
-  TELEGRAPH_ENABLED: z.string().default('true').transform(toBool),
+  // Telegraph (Instant View for long messages). Opt-in: every page is public
+  // on telegra.ph to anyone with the link, so replies — which can quote code,
+  // paths and anything else Claude read — are not published unless asked.
+  TELEGRAPH_ENABLED: z.string().default('false').transform(toBool),
   // Voice transcription (Groq Whisper)
   GROQ_API_KEY: z.string().optional(),
   TRANSCRIBE_ENABLED: z.string().default('true').transform(toBool),

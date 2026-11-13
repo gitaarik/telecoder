@@ -26,6 +26,7 @@ import {
   type RecapExchange,
 } from '../../../claude/session-jsonl.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../../../utils/session-key.js';
+import { isTelegraphEnabled } from '../../../telegram/telegraph-settings.js';
 import {
   replyMd,
   parseCallback,
@@ -385,8 +386,12 @@ export async function handleHandoff(ctx: Context): Promise<void> {
       .build(),
   );
 
-  // Telegraph preview + downloadable file (mirrors /telegraph)
-  await messageSender.sendMarkdownFile(ctx, filePath, { useTelegraph: true, sendAsDocument: true });
+  // Telegraph preview + downloadable file (mirrors /telegraph). The page is
+  // public, so only when this chat has Telegraph on — otherwise just the file.
+  await messageSender.sendMarkdownFile(ctx, filePath, {
+    useTelegraph: isTelegraphEnabled(sessionKey),
+    sendAsDocument: true,
+  });
 }
 
 /**

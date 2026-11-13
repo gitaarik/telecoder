@@ -29,6 +29,11 @@ export function setTelegraphEnabled(sessionKey: string, enabled: boolean): void 
   store.update(sessionKey, { enabled });
 }
 
+/**
+ * Whether this chat publishes to Telegraph. The global switch wins: a chat
+ * that turned it on while TELEGRAPH_ENABLED was true stops publishing the
+ * moment the owner turns it off, since every page is public.
+ */
 export function isTelegraphEnabled(sessionKey: string): boolean {
-  return store.get(sessionKey).enabled;
+  return config.TELEGRAPH_ENABLED && store.get(sessionKey).enabled;
 }

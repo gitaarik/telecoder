@@ -2445,8 +2445,9 @@
           <div class="feature-card" data-category="media">
             <div class="feature-icon"><svg><use href="#i-publish"/></svg></div>
             <h3>Long output stays readable</h3>
-            <p>Long replies arrive in full, chunked across messages, with an optional Instant View
-            link underneath &mdash; never a preview in place of the answer. A split never breaks
+            <p>Long replies arrive in full, chunked across messages, with an opt-in Instant View
+            link underneath (<code>TELEGRAPH_ENABLED=true</code>; Telegraph pages are public)
+            &mdash; never a preview in place of the answer. A split never breaks
             the formatting: bold, links and code blocks carry on into the next message. Markdown
             tables become clean key-value blocks instead of garbled pipes.</p>
           </div>
@@ -2749,6 +2750,13 @@ CCR_AUTOSTART=true</pre>
                   <td class="required-no">No</td>
                 </tr>
                 <tr>
+                  <td class="var-name">TELEGRAPH_ENABLED</td>
+                  <td>Opt-in (default: false). Also publish long replies, <code>/handoff</code> notes and
+                  action logs to telegra.ph as Instant View pages. Telegraph pages are public to
+                  anyone with the link</td>
+                  <td class="required-no">No</td>
+                </tr>
+                <tr>
                   <td class="var-name">BOT_MODE</td>
                   <td><code>dev</code> or <code>prod</code></td>
                   <td class="required-no">No</td>
@@ -2971,7 +2979,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/handoff</code>
-              <span class="command-desc">Dump the current conversation to a markdown file and deliver it as a Telegraph link plus a downloadable file — useful before switching projects, clearing context, or handing work to a teammate. Captures up to 200 exchanges plus session metadata.</span>
+              <span class="command-desc">Dump the current conversation to a markdown file and deliver it as a downloadable file, plus a Telegraph link when Telegraph is on — useful before switching projects, clearing context, or handing work to a teammate. Captures up to 200 exchanges plus session metadata.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/teleport</code>
@@ -3008,7 +3016,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/verbosity &lt;tier&gt;</code>
-              <span class="command-desc">Pick how much detail TeleCoder surfaces per turn (quiet / normal / verbose / debug). Verbose adds the per-turn usage footer (at the bottom of the status line when that's on), untruncated tool inputs, and a consolidated action log that streams live, with the turn's status line and the prompt it's working on at its bottom, and the time it last updated (in your own timezone) at both ends, next to how many of its actions are showing, moving down to a new message under your answer when Claude stops to ask you something, then collapses to a Telegraph link at the end of the turn. Debug extends the action log with longer previews (40 lines vs 20); quiet suppresses the completion ping. Per-chat — overrides VERBOSITY_DEFAULT.</span>
+              <span class="command-desc">Pick how much detail TeleCoder surfaces per turn (quiet / normal / verbose / debug). Verbose adds the per-turn usage footer (at the bottom of the status line when that's on), untruncated tool inputs, and a consolidated action log that streams live, with the turn's status line and the prompt it's working on at its bottom, and the time it last updated (in your own timezone) at both ends, next to how many of its actions are showing, moving down to a new message under your answer when Claude stops to ask you something, then collapses to a Telegraph link at the end of the turn when Telegraph is on. Debug extends the action log with longer previews (40 lines vs 20); quiet suppresses the completion ping. Per-chat — overrides VERBOSITY_DEFAULT.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/btw &lt;question&gt;</code>

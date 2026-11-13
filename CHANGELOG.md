@@ -7,6 +7,15 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Security
 
+- **Telegraph is off unless you turn it on** — `TELEGRAPH_ENABLED` defaulted
+  to `true`, so every reply over 2500 characters, every `/handoff` and every
+  verbose action log became a public telegra.ph page without anyone choosing
+  that. It now defaults to `false`, in the code and in `.env.example`; set it
+  to `true` to get Instant View links back. Off, long replies arrive in full
+  as chunked messages, as they already did underneath the link, and `/handoff`
+  sends just the file. Turning it off globally now also stops chats that had
+  switched it on with `/telegraph`, and `/handoff` follows the chat's setting.
+
 - **ID lists are checked at startup, and strangers are told their ID** —
   `ALLOWED_USER_IDS=@alice` used to parse to `NaN` and start a bot nobody
   could use ("Allowed users: NaN"), and the `.env.example` placeholder

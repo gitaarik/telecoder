@@ -180,7 +180,7 @@ export function buildTelegraphMenu(sessionKey: string) {
     return {
       text: header()
         .add('⚠️ ').bold('Disabled globally').newline(2)
-        .add('Telegraph is disabled in the bot configuration.\nSet ')
+        .add('Telegraph is off in the bot configuration. It is opt-in because every page it publishes is public to anyone with the link.\nSet ')
         .code('TELEGRAPH_ENABLED=true').add(' in .env to enable.')
         .build(),
       keyboard: [],
