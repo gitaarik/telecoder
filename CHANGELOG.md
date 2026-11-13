@@ -110,6 +110,11 @@ reasoning — the commit bodies are the long form, this is the index.
   native installer: `npm install -g @anthropic-ai/claude-code` fails with
   EACCES for a normal user on a distro's Node.
 
+- **A fresh install keeps the name you gave the bot** — the startup name sync
+  renamed every bot to "TeleCoder", BOT_NAME's default, so the name picked in
+  BotFather was gone on the first start. It only renames now when BOT_NAME
+  is set, or when dynamic names are on (they're built from it).
+
 - **Node.js 22 or newer is required** — Node 20 reached end of life in April
   2026. `engines.node` is now `>=22`, CI runs on Node 22 and 24, and the bot
   and the launcher check the version before loading anything else, saying

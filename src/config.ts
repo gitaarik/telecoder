@@ -499,7 +499,8 @@ export type Config = typeof config;
 
 // Capture which override env vars were explicitly set (after dotenv has loaded
 // process.env). The verbosity resolver consults these to decide whether to
-// honor the env value or fall back to the per-tier default.
+// honor the env value or fall back to the per-tier default; the startup name
+// sync only renames the bot when BOT_NAME was asked for.
 function isEnvSet(key: string): boolean {
   const raw = process.env[key];
   return raw !== undefined && raw !== '';
@@ -509,6 +510,7 @@ export const explicitFlags = {
   CONTEXT_SHOW_USAGE: isEnvSet('CONTEXT_SHOW_USAGE'),
   CONTEXT_NOTIFY_COMPACTION: isEnvSet('CONTEXT_NOTIFY_COMPACTION'),
   TERMINAL_UI_VERBOSE: isEnvSet('TERMINAL_UI_VERBOSE'),
+  BOT_NAME: isEnvSet('BOT_NAME'),
 } as const;
 
 // ---------------------------------------------------------------------------

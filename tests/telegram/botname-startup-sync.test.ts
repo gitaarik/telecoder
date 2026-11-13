@@ -9,6 +9,7 @@ import * as path from 'path';
 beforeAll(() => {
   const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'telecoder-botname-'));
   vi.stubEnv('HOME', tmpHome);
+  vi.stubEnv('BOT_NAME', 'TeleCoder');
 });
 
 // The sync is once-per-process by design, so every case needs a fresh module.
@@ -17,7 +18,7 @@ async function freshModule() {
   return import('../../src/telegram/botname-settings.js');
 }
 
-/** Fake bot api. BOT_NAME defaults to "TeleCoder" under the test env. */
+/** Fake bot api. BOT_NAME is set to "TeleCoder" for the suite. */
 function fakeApi(currentName: string) {
   const sent: string[] = [];
   return {
@@ -86,5 +87,21 @@ describe('syncBotNameOnStartup', () => {
 
     expect(result.status).toBe('no_change');
     expect(api.sent).toEqual([]);
+  });
+
+  it('keeps the BotFather name when BOT_NAME is not set', async () => {
+    vi.stubEnv('BOT_NAME', '');
+    vi.stubEnv('DYNAMIC_BOT_NAME', 'false');
+    try {
+      const { syncBotNameOnStartup } = await freshModule();
+      const api = fakeApi('My Own Bot');
+
+      const result = await syncBotNameOnStartup(api);
+
+      expect(result.status).toBe('no_change');
+      expect(api.sent).toEqual([]);
+    } finally {
+      vi.stubEnv('BOT_NAME', 'TeleCoder');
+    }
   });
 });

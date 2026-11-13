@@ -3,7 +3,7 @@
  * When enabled, the Telegram bot display name updates to include the active project.
  */
 
-import { config, BOT_ID } from '../config.js';
+import { config, BOT_ID, explicitFlags } from '../config.js';
 import * as path from 'path';
 import { z } from 'zod';
 import { GrammyError, type Context } from 'grammy';
@@ -275,12 +275,18 @@ export async function rateLimitedSetMyName(
  * case worth catching here is exactly the one where our cached name and the
  * live name disagree (BOT_NAME edited between runs, or a BotFather rename).
  * The persistent 429 cooldown still applies.
+ *
+ * Without an explicit BOT_NAME the name chosen in BotFather is kept: the
+ * "TeleCoder" default would otherwise overwrite it on a fresh install's first
+ * start. Dynamic naming builds every name from BOT_NAME anyway, so it still
+ * syncs.
  */
 export async function syncBotNameOnStartup(api: {
   getMyName(): Promise<{ name: string }>;
   setMyName(name: string): Promise<unknown>;
 }): Promise<SetMyNameResult> {
   if (nameClaimedThisProcess) return { status: 'no_change' };
+  if (!explicitFlags.BOT_NAME && !config.DYNAMIC_BOT_NAME) return { status: 'no_change' };
 
   const base = config.BOT_NAME;
   let current: string;
