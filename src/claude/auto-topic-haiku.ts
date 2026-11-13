@@ -7,8 +7,8 @@
  * GENERAL is fed back into the prompt so Haiku can keep it sticky
  * across consecutive messages and only change it when the user pivots.
  *
- * Uses settingSources:[] and allowedTools:[] so it bypasses plugins,
- * MCP servers, and hooks entirely — making it immune to the SDK's
+ * Runs isolated (see side-call-options.ts): no plugins, MCP servers, hooks,
+ * or the bot's own folder's memory and git status — making it immune to the SDK's
  * tool-deferral mode that can degrade the existing model-driven
  * auto-topic mechanism when many user-level tools are loaded.
  *
@@ -16,11 +16,8 @@
  * extra API key, account, or subscription is required.
  */
 
-import { query, type SettingSource } from '@anthropic-ai/claude-agent-sdk';
-import { config } from '../config.js';
-import { resolveBundledClaudeBin } from '../utils/resolve-claude-bin.js';
-
-const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
+import { query } from '@anthropic-ai/claude-agent-sdk';
+import { sideCallOptions } from './side-call-options.js';
 const TOPIC_TIMEOUT_MS = 10_000;
 const MAX_INPUT_CHARS = 1500;
 
@@ -90,25 +87,7 @@ export async function summarizeTopicWithHaiku(
   try {
     const response = query({
       prompt: buildInstructions(previousTopic, project) + input,
-      options: {
-        model: HAIKU_MODEL,
-        // Bypass project AND user settings — no plugins, MCP, or hooks. Keeps
-        // the call deferral-proof and cheap.
-        settingSources: [] as SettingSource[],
-        allowedTools: [],
-        // A throwaway one-shot: saving it left a session file per message in
-        // the project's transcript dir, burying the real ones in /resume.
-        persistSession: false,
-        abortController: controller,
-        includePartialMessages: false,
-        ...(() => {
-          if (!config.CLAUDE_USE_BUNDLED_EXECUTABLE) {
-            return { pathToClaudeCodeExecutable: config.CLAUDE_EXECUTABLE_PATH };
-          }
-          const bundled = resolveBundledClaudeBin();
-          return bundled ? { pathToClaudeCodeExecutable: bundled } : {};
-        })(),
-      },
+      options: sideCallOptions('You are a topic summarizer.', controller),
     });
 
     let collected = '';

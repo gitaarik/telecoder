@@ -9,9 +9,9 @@
  *
  * The reader is Haiku, called out of band on the user's message before the main
  * agent sees it — the same trick src/claude/auto-topic-haiku.ts uses for topic
- * labels, and for the same reasons: `settingSources: []` and `allowedTools: []`
- * mean no plugins, no MCP, no hooks, so the call cannot be steered by anything
- * in the project it is judging, and it stays cheap enough to run on every
+ * labels, and for the same reasons: it runs isolated (side-call-options.ts),
+ * with no plugins, MCP, hooks or project memory, so the call cannot be steered
+ * by anything in the project it is judging, and it stays cheap enough to run on every
  * message.
  *
  * It fails open. A judge that blocks the bot whenever Haiku is slow or the
@@ -25,14 +25,12 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { query, type SettingSource } from '@anthropic-ai/claude-agent-sdk';
+import { query } from '@anthropic-ai/claude-agent-sdk';
 import { config } from '../config.js';
-import { resolveBundledClaudeBin } from '../utils/resolve-claude-bin.js';
+import { sideCallOptions } from './side-call-options.js';
 import { getWorkspaceRoot } from '../utils/workspace-guard.js';
 import { hasGuestUsers } from '../utils/admins.js';
 import { getAllowedRoots } from './scope-guard.js';
-
-const HAIKU_MODEL = 'claude-haiku-4-5-20251001';
 
 /**
  * Generous on purpose. A judge call is a `claude` subprocess, and measured
@@ -186,20 +184,7 @@ export async function judgeMessage(message: string): Promise<CharterVerdict> {
   try {
     const response = query({
       prompt: `${buildInstructions(getCharter().text)}\n${input}\n</message>`,
-      options: {
-        model: HAIKU_MODEL,
-        settingSources: [] as SettingSource[],
-        allowedTools: [],
-        abortController: controller,
-        includePartialMessages: false,
-        ...(() => {
-          if (!config.CLAUDE_USE_BUNDLED_EXECUTABLE) {
-            return { pathToClaudeCodeExecutable: config.CLAUDE_EXECUTABLE_PATH };
-          }
-          const bundled = resolveBundledClaudeBin();
-          return bundled ? { pathToClaudeCodeExecutable: bundled } : {};
-        })(),
-      },
+      options: sideCallOptions('You judge messages against a charter.', controller),
     });
 
     let collected = '';
