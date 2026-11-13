@@ -31,6 +31,7 @@ const { resetAccessCooldowns } = await import('../../src/telegram/access-request
 // Test env (vitest.config.ts): ALLOWED_USER_IDS=1,2,3  ALLOWED_GROUP_IDS=-1009990001
 const ALLOWED_GROUP = -1009990001;
 const GROUP_ANONYMOUS_BOT_ID = 1087968824;
+const BOT_ID = 9000000001;
 
 interface FakeCtxOptions {
   userId?: number;
@@ -58,6 +59,7 @@ function makeCtx(opts: FakeCtxOptions) {
         : { id: opts.chatId ?? 1, type: opts.chatType ?? 'private' },
     message: opts.newMembers ? { new_chat_members: opts.newMembers } : undefined,
     api: { sendMessage, getChatMember },
+    me: { id: BOT_ID, is_bot: true, first_name: 'Bot' },
     reply,
   } as unknown as Context;
   return { ctx, reply, sendMessage };
@@ -76,6 +78,14 @@ describe('authMiddleware', () => {
     await authMiddleware(ctx, next);
     expect(next).toHaveBeenCalledOnce();
     expect(reply).not.toHaveBeenCalled();
+  });
+
+  it("ignores the bot's own updates, like the service message of a thread it opened", async () => {
+    const { ctx, reply, sendMessage } = makeCtx({ userId: BOT_ID, chatType: 'private' });
+    await authMiddleware(ctx, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(reply).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it('rejects an unknown user with a notice and no next', async () => {

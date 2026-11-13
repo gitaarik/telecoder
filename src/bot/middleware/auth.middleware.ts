@@ -63,6 +63,13 @@ export async function authMiddleware(
     return;
   }
 
+  // The bot's own doings come back as updates too: opening a thread in a
+  // private chat delivers its forum_topic_created service message, sent by the
+  // bot. Nothing downstream wants those, and refusing one answered the bot with
+  // "⛔ You are not authorized" as the first message of every /fork and
+  // /spinoff thread.
+  if (userId === ctx.me?.id) return;
+
   const newMembers = ctx.message?.new_chat_members;
   if (newMembers && newMembers.length > 0) {
     await handleNewMembers(ctx, newMembers);
