@@ -2089,7 +2089,8 @@
             <div class="feature-icon"><svg><use href="#i-tools"/></svg></div>
             <h3>One command to install and check</h3>
             <p><code>npm install -g telecoder</code> gives you a <code>telecoder</code> command.
-            <code>telecoder doctor</code> checks Node, the <code>claude</code> CLI and its login, the
+            <code>telecoder init</code> sets a bot up in a few questions, finding your user ID
+            when you message the bot. <code>telecoder doctor</code> checks Node, the <code>claude</code> CLI and its login, the
             terminal-mode dependency and your config before anything starts, without spending a
             token; <code>telecoder start</code> runs one bot, or all of them when there is an
             <code>instances.json</code>, and <code>telecoder service install</code> keeps it running
@@ -2518,13 +2519,13 @@
               </div>
               <div class="code-content">
                 <pre><span class="command">npm install -g</span> telecoder
-<span class="command">mkdir -p</span> ~/.telecoder
-<span class="command">cp</span> "$(npm root -g)/telecoder/.env.example" ~/.telecoder/.env
-<span class="comment"># Edit ~/.telecoder/.env with your credentials</span>
-<span class="command">telecoder doctor</span>
+<span class="command">telecoder init</span>   <span class="comment"># asks for the token, finds your id, writes ~/.telecoder/.env</span>
 <span class="command">telecoder service install</span>  <span class="comment"># or: telecoder start, in the foreground</span></pre>
               </div>
             </div>
+            <p><code>npx telecoder init</code> works without installing first. <code>init</code>
+            checks Node and the <code>claude</code> CLI and its login, and the bot messages you
+            when it's set up; <code>telecoder doctor</code> checks it all again later.</p>
             <p><code>telecoder service install</code> runs the bot in the background as a systemd user
             unit (Linux) or a LaunchAgent (macOS), starts it at boot, and lets <code>/restartbot</code>
             restart it from chat. <code>telecoder service logs</code> shows what it is doing.</p>
@@ -2573,8 +2574,10 @@
               <div class="step-item">
                 <span class="step-number">4</span>
                 <div class="step-content">
-                  <h4>Get your Telegram user ID</h4>
-                  <p>Message <code>@userinfobot</code> for your numeric ID. TeleCoder only answers
+                  <h4>Run the setup</h4>
+                  <p><code>telecoder init</code> asks for the token, then has you send your new bot
+                  <code>/start</code> and takes your numeric user ID from that message (by hand:
+                  message <code>@userinfobot</code>). TeleCoder only answers
                   accounts on this list, so the bot is inert to anyone else who finds it — in a
                   private chat it tells them their ID to pass on, and in a group it stays silent.</p>
                 </div>
@@ -2582,11 +2585,12 @@
               <div class="step-item">
                 <span class="step-number">5</span>
                 <div class="step-content">
-                  <h4>Connect the bot to TeleCoder</h4>
-                  <p>Copy <code>.env.example</code> to <code>~/.telecoder/.env</code> (from source:
-                  <code>.env</code> in the project directory), then set
-                  <code>TELEGRAM_BOT_TOKEN</code> to the token BotFather gave you and
-                  <code>ALLOWED_USER_IDS</code> to your numeric ID.</p>
+                  <h4>Pick a workspace and transport</h4>
+                  <p>Still in <code>init</code>: the folder your projects are in, SDK or PTY, and
+                  voice or Telegraph if you want them. It writes <code>~/.telecoder/.env</code>
+                  with just those. By hand, or from source: copy <code>.env.example</code> to
+                  <code>.env</code> and set <code>TELEGRAM_BOT_TOKEN</code> and
+                  <code>ALLOWED_USER_IDS</code>.</p>
                 </div>
               </div>
               <div class="step-item">
@@ -3243,6 +3247,10 @@ CCR_AUTOSTART=true</pre>
             Command Line
           </h3>
           <div class="commands-grid">
+            <div class="command-row">
+              <code class="command-code">telecoder init</code>
+              <span class="command-desc">Set a bot up in a few questions: checks Node and the <code>claude</code> CLI and its login, takes the bot token (hidden as you paste it) and checks it with Telegram, finds your user ID when you send the bot <code>/start</code>, then asks for the workspace, SDK or PTY, and voice and Telegraph. Writes a <code>.env</code> with just those, readable by you only, and the bot messages you when it's done. Run again to keep, edit or start over (the old file is backed up). <code>--token-env VAR</code>, <code>--owner-id</code>, <code>--workspace</code>, <code>--transport</code> and <code>--yes</code> answer it from a script.</span>
+            </div>
             <div class="command-row">
               <code class="command-code">telecoder start</code>
               <span class="command-desc">Run the bot in this terminal — every bot in <code>instances.json</code> when there is one.</span>

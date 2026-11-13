@@ -12,8 +12,7 @@ reasoning — the commit bodies are the long form, this is the index.
   `instances.json` when there is one; `telecoder doctor` checks Node, the
   `claude` CLI and its login (without spending anything), node-pty and the
   toolchain it needs, and the config, with `--live` asking Telegram about the
-  token; `telecoder --version` and `telecoder help` do what they say. `init`
-  is a placeholder for now.
+  token; `telecoder --version` and `telecoder help` do what they say.
 - **`telecoder service install`** runs the bot in the background: a systemd
   user unit on Linux (enabled, with lingering after asking, so it survives
   logout and reboot) or a LaunchAgent on macOS, pointing at the `node` and
@@ -25,6 +24,16 @@ reasoning — the commit bodies are the long form, this is the index.
   `uninstall` go with it, and `--name` allows several installs. Without
   `systemd --user` it prints the unit and a manual fallback; npx installs
   are pointed at `npm install -g` first.
+- **`telecoder init` sets a bot up in a few questions** — it runs doctor's
+  checks (offering `claude auth login` when Claude Code isn't logged in),
+  takes the bot token masked and checks it with Telegram, and finds your user
+  id by having you send the bot `/start`, so there is no @userinfobot step.
+  Then the workspace, SDK or PTY, and voice transcription and Telegraph if you
+  want them. It writes a `.env` with only those settings, readable by you
+  only, and the bot messages you to say it's set up. An existing `.env` can
+  be kept, edited with its values as defaults, or started over (backed up
+  first). `--token-env VAR`, `--owner-id`, `--workspace`, `--transport` and
+  `--yes` run it from a script.
 - **Config lives in `~/.telecoder`** for an npm install (`TELECODER_HOME`
   moves it): `.env`, `instances.json` and the Telegraph account file sit next
   to the existing state files. A source checkout with a `.env` or
