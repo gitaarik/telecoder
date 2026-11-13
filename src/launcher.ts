@@ -33,7 +33,7 @@ import { PrefsRelay } from './utils/prefs-relay.js';
 import { IdleRestart } from './utils/idle-restart.js';
 import { configFile } from './utils/config-home.js';
 import { PACKAGE_ROOT, isCheckout } from './utils/install-mode.js';
-import { EXIT_CONFIG } from './utils/exit-codes.js';
+import { EXIT_CONFIG, configErrorExitCode } from './utils/exit-codes.js';
 
 const projectRoot = PACKAGE_ROOT;
 
@@ -105,7 +105,7 @@ function loadInstancesConfig(configPath: string): ResolvedInstance[] {
     console.error(isCheckout()
       ? '  Copy instances.json.example to instances.json and configure your bots.'
       : '  Create it to run several bots (see instances.json.example in the TeleCoder repo), or run "telecoder start" without one for a single bot.');
-    process.exit(1);
+    process.exit(configErrorExitCode());
   }
 
   try {
@@ -113,7 +113,7 @@ function loadInstancesConfig(configPath: string): ResolvedInstance[] {
   } catch (err) {
     if (!(err instanceof InstancesConfigError)) throw err;
     console.error(`\u274c ${path.basename(configPath)}: ${err.message}`);
-    process.exit(1);
+    process.exit(configErrorExitCode());
   }
 }
 
@@ -778,7 +778,9 @@ function spawnWorker(inst: ResolvedInstance): Worker {
         `Fix its entry in ${path.basename(configPath)} and it starts again; for a fix in .env, restart the launcher.`
       );
       releaseName(inst.name);
-      shutdownIfNothingLeft(1);
+      // The last one standing went down on its config: a service unit should
+      // stand down too (RestartPreventExitStatus=), not start us into it again.
+      shutdownIfNothingLeft(configErrorExitCode());
       return;
     }
 

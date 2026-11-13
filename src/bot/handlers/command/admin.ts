@@ -38,6 +38,7 @@ import {
   type SystemdUnit,
 } from '../../../utils/systemd.js';
 import { launcherRestartHint } from '../../../utils/stale-launcher.js';
+import { getServiceManager } from '../../../utils/exit-codes.js';
 import { describeRunningBuild, getLatestBuild, getRunningBuild } from '../../../utils/build-info.js';
 import { checkCode, checkRemote, describeCodeCheck, describeRemoteCheck } from '../../../utils/version-check.js';
 import { isCheckout, detectPackageRunner, getInstalledVersion } from '../../../utils/install-mode.js';
@@ -425,7 +426,10 @@ async function planRestart(): Promise<{ plan: RestartPlan } | { error: EntityMes
     return { plan: { kind: 'systemd', unit } };
   }
 
-  if (!isCheckout()) {
+  // A checkout under the launchd agent `telecoder service install
+  // --from-checkout` writes takes this path too: botctl would start a second
+  // copy beside the one launchd is about to bring back.
+  if (!isCheckout() || getServiceManager() === 'launchd') {
     // A package install has no botctl. It expects a supervisor (a systemd or
     // launchd unit with Restart=always, pm2, ...) that starts it again when it
     // exits — and in a terminal there is none, so there it says so instead.
