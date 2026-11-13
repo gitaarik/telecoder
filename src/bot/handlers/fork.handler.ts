@@ -73,6 +73,7 @@ import { userPreferences } from '../../providers/user-preferences.js';
 import { buildSyntheticCtx } from '../../claude/synthetic-ctx.js';
 import { replayIntoThread } from '../middleware/queued-messages.js';
 import { sanitizeError } from '../../utils/sanitize.js';
+import { summarizeTopicWithHaiku } from '../../claude/auto-topic-haiku.js';
 
 const BOT_NAME = config.BOT_NAME;
 
@@ -766,6 +767,15 @@ export function spinoffCompactFocus(task: string): string {
  * Unlike a /fork, which takes the whole conversation along, the spinoff
  * starts with only what its task needs, and starts on it without waiting for
  * another message.
+ *
+ * Sent as a reply to one of the bot's messages, it spins off from that point
+ * instead, the way that message's 🍴 button forks: for a task planned before
+ * a tangent the spinoff has no need of.
+ *
+ * The thread is named after the task, not the conversation it came from. A
+ * thread's name is its topic's general half, which the topic summarizer keeps
+ * from one message to the next, so the source's topic would name the thread
+ * for good. Asked with no previous topic, it names the task's own area.
  */
 export async function handleSpinoffCommand(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
@@ -778,7 +788,7 @@ export async function handleSpinoffCommand(ctx: Context): Promise<void> {
     await ctx.reply(
       'Usage: /spinoff <task>\n\n'
       + 'Opens a new thread with this conversation compacted around the task, and starts on it there. '
-      + 'This thread carries on as it is.',
+      + 'This thread carries on as it is. Send it as a reply to one of my messages to spin off from that point.',
     );
     return;
   }
@@ -787,12 +797,28 @@ export async function handleSpinoffCommand(ctx: Context): Promise<void> {
     return;
   }
 
-  const latest = forkOfLatest(ctx, keyInfo.sessionKey);
-  if ('error' in latest) {
-    await ctx.reply(latest.error);
+  // In a thread, a message that isn't a reply still carries the thread's
+  // opening service message as its reply_to_message; that isn't a fork point.
+  const repliedTo = message.reply_to_message?.forum_topic_created ? undefined : message.reply_to_message;
+  const offset = repliedTo && messageOffsets.lookup(keyInfo.sessionKey, repliedTo.message_id);
+  if (repliedTo && !offset) {
+    await ctx.reply(
+      "There's no fork point on that message. Reply to one of my replies to spin off from there, "
+      + 'or send /spinoff without replying to spin off from where the conversation is now.',
+    );
     return;
   }
-  const opened = await openForkThread(ctx, keyInfo.sessionKey, latest.fork, {
+  const cut = offset ? cutFork(ctx, keyInfo.sessionKey, offset) : forkOfLatest(ctx, keyInfo.sessionKey);
+  if ('error' in cut) {
+    await ctx.reply(cut.error);
+    return;
+  }
+  const { fork } = cut;
+  if (config.AUTO_TOPIC_HAIKU) {
+    fork.topic = await summarizeTopicWithHaiku(task, undefined, path.basename(fork.projectPath)) ?? fork.topic;
+  }
+
+  const opened = await openForkThread(ctx, keyInfo.sessionKey, fork, {
     above: 'The conversation it was spun off from carries on in its own thread. '
       + 'This one is compacted around the task below first, then starts on it.',
   });

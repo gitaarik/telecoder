@@ -2297,8 +2297,9 @@
             <h3>Spin a task off</h3>
             <p><code>/spinoff &lt;task&gt;</code> splits one task off into a new thread: the
             conversation is compacted there around that task, and work on it starts right away.
-            The original carries on as it was, even mid-turn &mdash; handy when a session has
-            planned more than it should take on itself.</p>
+            The thread is named after the task, and the original carries on as it was, even
+            mid-turn. Send it as a reply to one of the bot's messages to spin off from that point
+            instead.</p>
           </div>
           <div class="feature-card" data-category="sessions">
             <div class="feature-icon"><svg><use href="#i-tree"/></svg></div>
@@ -2934,7 +2935,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/spinoff &lt;task&gt;</code>
-              <span class="command-desc">Split a task off into a new thread: the conversation is compacted there around the task, which then starts at once. Works mid-turn; this thread carries on unchanged. Needs a bot with threads</span>
+              <span class="command-desc">Split a task off into a new thread: the conversation is compacted there around the task, which then starts at once. Works mid-turn; this thread carries on unchanged. As a reply to one of the bot's messages, spins off from that point. Needs a bot with threads</span>
             </div>
             <div class="command-row">
               <code class="command-code">/tree</code>

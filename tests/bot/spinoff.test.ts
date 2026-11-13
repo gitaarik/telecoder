@@ -27,6 +27,11 @@ vi.mock('../../src/bot/handlers/command.handler.js', async (importOriginal) => (
   restoreTopicAndRefreshBotName: vi.fn(async () => {}),
   getSessionTopic: vi.fn(() => undefined),
 }));
+const summarizeTopicWithHaiku = vi.fn(async (_message: string, _previous?: string, _project?: string): Promise<string | undefined> => undefined);
+vi.mock('../../src/claude/auto-topic-haiku.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/claude/auto-topic-haiku.js')>()),
+  summarizeTopicWithHaiku,
+}));
 const replayIntoThread = vi.fn(async (_update: unknown, _threadId: number, _changes: object) => {});
 vi.mock('../../src/bot/middleware/queued-messages.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/bot/middleware/queued-messages.js')>()),
@@ -41,6 +46,7 @@ fs.mkdirSync(PROJECT);
 const { handleSpinoffCommand, spinoffCompactFocus } = await import('../../src/bot/handlers/fork.handler.js');
 const { sessionManager } = await import('../../src/claude/session-manager.js');
 const { sessionJsonlPath } = await import('../../src/claude/session-jsonl.js');
+const { messageOffsets } = await import('../../src/claude/message-offsets.js');
 
 afterAll(() => {
   delete process.env.TELECODER_TEST_HOME;
@@ -72,10 +78,11 @@ const uuidsIn = (file: string) => fs.readFileSync(file, 'utf-8')
   .filter(Boolean)
   .map((line) => (JSON.parse(line) as { uuid: string }).uuid);
 
-function command(chatId: number, text: string, opts: { topics?: boolean } = {}) {
+function command(chatId: number, text: string, opts: { topics?: boolean; replyTo?: object } = {}) {
   const message = {
     message_id: 80,
     text,
+    ...(opts.replyTo ? { reply_to_message: opts.replyTo } : {}),
     chat: { id: chatId, type: 'private' },
     entities: [
       { type: 'bot_command', offset: 0, length: '/spinoff'.length },
@@ -95,6 +102,9 @@ function command(chatId: number, text: string, opts: { topics?: boolean } = {}) 
     reply: vi.fn(async () => ({ message_id: 81 })),
   };
 }
+
+/** The name the new thread was opened under. */
+const threadNameOf = (ctx: ReturnType<typeof command>) => (ctx.api.createForumTopic.mock.calls[0] as unknown[])[1];
 
 const asCtx = (fake: object) => fake as unknown as Context;
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -157,5 +167,52 @@ describe('/spinoff', () => {
     await handleSpinoffCommand(asCtx(ctx));
     expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining('threads are off'));
     expect(ctx.api.createForumTopic).not.toHaveBeenCalled();
+  });
+
+  it('names the thread after the task, not the conversation it came from', async () => {
+    const chatId = 704;
+    sourceChat(chatId);
+    summarizeTopicWithHaiku.mockResolvedValueOnce('Feature Z · Building the Z endpoint');
+    const ctx = command(chatId, '/spinoff Build the Z endpoint');
+
+    await handleSpinoffCommand(asCtx(ctx));
+
+    // Asked without the source's topic, so its general half can't stick.
+    expect(summarizeTopicWithHaiku).toHaveBeenLastCalledWith('Build the Z endpoint', undefined, 'project');
+    expect(threadNameOf(ctx)).toBe('🍴 project · Feature Z');
+  });
+
+  it('spins off from the point of the reply it was sent as', async () => {
+    const chatId = 705;
+    sourceChat(chatId);
+    messageOffsets.record(String(chatId), 70, { claudeSessionId: `source-${chatId}`, projectPath: PROJECT, lineCount: 1 });
+    const ctx = command(chatId, '/spinoff Z', { replyTo: { message_id: 70 } });
+
+    await handleSpinoffCommand(asCtx(ctx));
+
+    const thread = sessionManager.getSession(`${chatId}:21`)!;
+    expect(uuidsIn(sessionJsonlPath(PROJECT, thread.claudeSessionId!))).toEqual(['u1']);
+  });
+
+  it("says so when the reply is to a message that isn't a fork point", async () => {
+    const chatId = 706;
+    sourceChat(chatId);
+    const ctx = command(chatId, '/spinoff Z', { replyTo: { message_id: 71 } });
+
+    await handleSpinoffCommand(asCtx(ctx));
+
+    expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining('no fork point on that message'));
+    expect(ctx.api.createForumTopic).not.toHaveBeenCalled();
+  });
+
+  it("takes a thread's opening message for no reply at all", async () => {
+    const chatId = 707;
+    sourceChat(chatId);
+    const ctx = command(chatId, '/spinoff Z', { replyTo: { message_id: 5, forum_topic_created: { name: 'x', icon_color: 0 } } });
+
+    await handleSpinoffCommand(asCtx(ctx));
+
+    const thread = sessionManager.getSession(`${chatId}:21`)!;
+    expect(uuidsIn(sessionJsonlPath(PROJECT, thread.claudeSessionId!)).slice(0, 3)).toEqual(['u1', 'a1', 'u2']);
   });
 });
