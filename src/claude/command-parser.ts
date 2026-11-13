@@ -87,6 +87,7 @@ export function getAvailableCommands(): EntityMessage {
         '• `/loop <task>` - Run iteratively until task complete',
         '• `/model [name]` - Show or set AI model',
         "• `/later [text]` - Set an idea aside, and be asked about it after Claude's turn",
+        '• `/steer <text>` - Stop the running turn and send this in its place',
         ...(config.CCR_ENABLED ? [`• \`/provider\` - Switch AI provider (Claude / CCR)${adminTag}`] : []),
         '• `/commands` - Show this list',
       ],

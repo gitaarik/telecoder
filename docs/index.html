@@ -1810,6 +1810,7 @@
   <symbol id="i-relay" viewBox="0 0 24 24"><path d="M12 10.5v10"/><path d="M8.6 20.5h6.8"/><circle cx="12" cy="8" r="1.9"/><path d="M7.9 4.2a5.9 5.9 0 0 0 0 7.6"/><path d="M16.1 4.2a5.9 5.9 0 0 1 0 7.6"/></symbol>
   <symbol id="i-sendfile" viewBox="0 0 24 24"><path d="M5 4.5a2 2 0 0 1 2-2h6.7L18.5 7v12.5a2 2 0 0 1-2 2h-4.5"/><path d="M13.7 2.6V7h4.8"/><path d="M6.5 21v-8.5"/><path d="M3.6 15.4 6.5 12.5l2.9 2.9"/></symbol>
   <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M8.6 15.6a6 6 0 1 1 6.8 0v2.8H8.6z"/><path d="M10.3 21.2h3.4"/></symbol>
+  <symbol id="i-steer" viewBox="0 0 24 24"><path d="M13.5 2.5 5 13.5h6l-1.5 8 8.5-11h-6z"/></symbol>
   <symbol id="i-reap" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="m6.2 6.2 11.6 11.6"/></symbol>
 </svg>
   <canvas id="matrix-canvas"></canvas>
@@ -2161,6 +2162,15 @@
             knows that prompt is still running in the original and that both work in the same
             directory, so it won't redo or undo that work. The original keeps running, and its reply
             arrives where it would have.</p>
+          </div>
+          <div class="feature-card" data-category="reliability">
+            <div class="feature-icon"><svg><use href="#i-steer"/></svg></div>
+            <h3>Correct Claude mid-turn</h3>
+            <p>Spotted something the moment you hit send? <code>/steer &lt;text&gt;</code> stops the
+            running turn and sends your text in its place, or tap <code>⚡ Interrupt &amp; send</code>
+            on a message's <code>⏳ Queued</code> notice to do the same with what you already typed.
+            Claude keeps the stopped prompt and anything it did before the stop, so a short
+            correction is all it takes. Anything else waiting is dropped, as with <code>/cancel</code>.</p>
           </div>
           <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-clock"/></svg></div>
@@ -3061,6 +3071,10 @@ CCR_AUTOSTART=true</pre>
             <div class="command-row">
               <code class="command-code">/btw &lt;question&gt;</code>
               <span class="command-desc">Ask a side question without interrupting the current task. Works in both modes: SDK mode uses the live query's side-question channel, PTY mode answers from a read-only, non-persisted fork of the running session — so the transcript is never touched and the turn keeps going.</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/steer &lt;text&gt;</code>
+              <span class="command-desc">Stop the running turn and send <code>&lt;text&gt;</code> in its place, without waiting for the stop first. Claude keeps the stopped prompt and whatever it did before the stop, so <code>&lt;text&gt;</code> can be a correction to it. Works on a turn Claude started itself too, and drops anything else waiting, as /cancel does. With nothing running it's an ordinary message. To do the same with a message already waiting, tap <code>⚡ Interrupt &amp; send</code> on its <code>⏳ Queued</code> notice.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/later [text]</code>

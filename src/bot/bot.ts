@@ -16,6 +16,7 @@ import {
   handleQueuedCallback,
   handleEditedMessage,
   handleLater,
+  handleSteer,
   initParkedMessages,
   setQueuedDiverters,
 } from './middleware/queued-messages.js';
@@ -332,6 +333,7 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
     { command: 'method', description: '🛰️ Switch Claude transport (SDK / PTY)' },
     { command: 'btw', description: '💬 Side question without interrupting' },
     { command: 'later', description: '🔔 Set an idea aside for after the turn' },
+    { command: 'steer', description: '⚡ Stop the turn and send this instead' },
     { command: 'tasks', description: '🔄 List active background tasks' },
     { command: 'shells', description: '🔍 List & kill background shells (PTY mode)' },
     ...(config.CCR_ENABLED ? [{ command: 'provider', description: '🔌 Switch AI provider' }] : []),
@@ -427,6 +429,8 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // Sets an idea aside for after the turn, so it can't wait behind that turn. And
   // with nothing running, it's the one message that doesn't start one.
   cmd('later', withRunningNote(handleLater));
+  // Stops the turn and sends a message in its place, so it can't wait behind that turn.
+  cmd('steer', handleSteer);
   // Read-only, with nothing a running turn could be disturbed by, so they answer
   // mid-turn rather than after it: a fixed list, a look at the session list or
   // the bot process, a re-read of the transcript, and two that ask a probe of

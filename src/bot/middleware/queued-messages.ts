@@ -44,6 +44,14 @@
  * the whole middleware chain as if it had just arrived, which is what gets a voice
  * note transcribed and puts the message back in line if a turn has started since.
  *
+ * A message can also go in place of the turn. "Interrupt & send" stops the turn
+ * the way /cancel does, minus this message, which goes to Claude once the turn
+ * has stopped. `/steer <text>` does the same for a message typed knowing that:
+ * it takes the command off and sends what's left through the chain again, after
+ * the stop, so it waits for the turn's end like any other message. Either way
+ * Claude still has the stopped prompt and whatever it did before the stop, so
+ * the new message reads as a correction to it.
+ *
  * `/later <text>` sets an idea aside without typing it at Claude first. It's the
  * only way in while nothing is running, when any message would start a turn, and
  * it saves racing the ack's button against the end of a turn. It goes into the
@@ -72,6 +80,7 @@ import { BOT_ID, config } from '../../config.js';
 import { getBotCommandNames } from '../../claude/command-parser.js';
 import { hasSelfStartedTurn, whenRepliesSent } from '../../claude/monitor-relay.js';
 import { cancelRequest, clearQueue, isProcessing } from '../../claude/request-queue.js';
+import { cancelSecretRequest } from '../../claude/secret-request.js';
 import { getPtyProvider } from '../../providers/claude-provider.js';
 import { isAdmin } from '../../utils/admins.js';
 import { ensureStateDir, getStateDir, readJsonFile, writeJsonFile } from '../../utils/json-store.js';
@@ -105,10 +114,11 @@ const REMIND_POLL_MS = 1_000;
 
 const CALLBACK_PREFIX = 'queued:';
 /** A bare message id is Take back, which is what acks already in chats carry. */
-const CALLBACK_PATTERN = /^queued:(?:(park|send|drop|btw|fork):)?(\d+)$/;
+const CALLBACK_PATTERN = /^queued:(?:(park|send|drop|btw|fork|steer):)?(\d+)$/;
 
 const BEHIND_TURN = '⏳ Queued behind the running turn.';
 const BEHIND_OWN_TURN = '⏳ Queued behind a turn Claude started itself.';
+const STEERING = '⚡ Stopping the turn, then sending this.';
 const TAKEN_BACK = '🗑 Taken back before it reached Claude.';
 const CANCELLED = '🛑 Cancelled before it reached Claude.';
 const NO_LONGER_WAITING = '⌛ No longer waiting. If Claude never answered it, send it again.';
@@ -122,6 +132,9 @@ const LIST_HEADING = '🔔 Set aside in this chat:';
 const LIST_FOOTER = 'Each gets a question below the reply, with Send and Drop. Edit a message to change what goes out.';
 /** The command and the whitespace after it, on a message that starts with it. */
 const LATER_COMMAND = /^\/later(?:@\w+)?(?:\s+|$)/i;
+const STEER_COMMAND = /^\/steer(?:@\w+)?(?:\s+|$)/i;
+const STEER_USAGE = '⚡ /steer <text> stops the running turn and sends <text> in its place. '
+  + 'Claude keeps what it had done, so <text> can be a correction to it.';
 const SENT = '📤 Sent.';
 const DROPPED = '🗑 Dropped before it reached Claude.';
 const NOT_YOURS = 'Only the person who sent this, or an admin, can do that.';
@@ -149,6 +162,8 @@ interface QueuedMessage {
   canFork: boolean;
   /** A fork is being opened for it: it keeps its place until that works out. */
   diverting: boolean;
+  /** Going in place of the turn, which is being stopped for it. */
+  steering: boolean;
   /** Set until the ack is due, and cleared early if it never becomes due. */
   ackTimer: NodeJS.Timeout | null;
   /** The ack on its way, resolving to its message id. Undefined if it never landed. */
@@ -157,6 +172,9 @@ interface QueuedMessage {
 
 /** From arrival until the message is let through or dropped, keyed by entryKey. */
 const queued = new Map<string, QueuedMessage>();
+
+/** Sent with /steer and on their way back through the chain, keyed by entryKey. */
+const steered = new Set<string>();
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -236,8 +254,9 @@ function boundForClaude(msg: Message): boolean | null {
   return msg.voice || msg.photo || msg.document ? true : null;
 }
 
-function ackText(sessionKey: SessionKey): string {
-  return !isProcessing(sessionKey) && getPtyProvider().isSessionGenerating(sessionKey)
+function ackText(entry: QueuedMessage): string {
+  if (entry.steering) return STEERING;
+  return !isProcessing(entry.sessionKey) && getPtyProvider().isSessionGenerating(entry.sessionKey)
     ? BEHIND_OWN_TURN
     : BEHIND_TURN;
 }
@@ -248,6 +267,8 @@ function takeBackButton(messageId: number) {
 
 function ackKeyboard(entry: QueuedMessage) {
   const first = [takeBackButton(entry.messageId)];
+  // The turn is already being stopped for it, so there's nothing else to wait out.
+  if (entry.steering) return { inline_keyboard: [first] };
   // A bot command has no answer to read first, so there's nothing to decide after.
   if (entry.forClaude) {
     first.push({ text: '🔔 Ask me after', callback_data: `${CALLBACK_PREFIX}park:${entry.messageId}` });
@@ -260,12 +281,14 @@ function ackKeyboard(entry: QueuedMessage) {
   if (entry.canFork && diverters) {
     second.push({ text: '🍴 Ask in a fork', callback_data: `${CALLBACK_PREFIX}fork:${entry.messageId}` });
   }
-  return { inline_keyboard: second.length > 0 ? [first, second] : [first] };
+  // Last, as the one that stops something.
+  const steer = [{ text: '⚡ Interrupt & send', callback_data: `${CALLBACK_PREFIX}steer:${entry.messageId}` }];
+  return { inline_keyboard: second.length > 0 ? [first, second, steer] : [first, steer] };
 }
 
 async function postAck(api: Api, entry: QueuedMessage): Promise<number | undefined> {
   try {
-    const sent = await api.sendMessage(entry.chatId, ackText(entry.sessionKey), {
+    const sent = await api.sendMessage(entry.chatId, ackText(entry), {
       // It's answering the message it hangs off, and the person who sent that
       // is looking at the chat, so a buzz would say nothing. Sent regardless of
       // whether that message still exists: deleting it doesn't recall it.
@@ -300,6 +323,7 @@ function noteArrival(ctx: Context): QueuedMessage | null {
   // to the handlers, which have their own duplicate check.
   const key = entryKey(keyInfo.chatId, msg.message_id);
   if (queued.has(key)) return null;
+  const steering = steered.delete(key);
 
   if (forClaude && config.CANCEL_ON_NEW_MESSAGE && isProcessing(keyInfo.sessionKey)) {
     takeBackAllQueued(ctx.api, keyInfo.sessionKey);
@@ -325,6 +349,7 @@ function noteArrival(ctx: Context): QueuedMessage | null {
     canBtw: forClaude && msg.text !== undefined && msg.text.trim() !== '' && !command,
     canFork: forClaude && !command && ctx.chat?.type === 'private' && ctx.me?.has_topics_enabled === true,
     diverting: false,
+    steering,
     ackTimer: null,
     ack: null,
   };
@@ -374,14 +399,31 @@ function takeBack(api: Api, entry: QueuedMessage, notice: string): void {
  * turn, because the end of that turn is what lets the next message through. One
  * set aside isn't going anywhere by itself, so it stays set aside.
  */
-export function takeBackAllQueued(api: Api, sessionKey: SessionKey): number {
+export function takeBackAllQueued(api: Api, sessionKey: SessionKey, keep?: QueuedMessage): number {
   let count = 0;
   for (const entry of queued.values()) {
-    if (entry.sessionKey !== sessionKey || entry.takenBack || entry.parked) continue;
+    if (entry === keep || entry.sessionKey !== sessionKey || entry.takenBack || entry.parked) continue;
     takeBack(api, entry, CANCELLED);
     count++;
   }
   return count;
+}
+
+/**
+ * What /cancel does to a session: drop what's waiting, withdraw a request for a
+ * secret, and stop the turn, whoever started it. `keep` stays in line, to go once
+ * the turn has stopped. Whether anything was stopped, and how many were dropped.
+ */
+export async function stopTurn(api: Api, sessionKey: SessionKey, keep?: QueuedMessage):
+  Promise<{ stopped: boolean; dropped: number }> {
+  // First, because the turn ending is what would let them through.
+  const takenBack = takeBackAllQueued(api, sessionKey, keep);
+  // Before the turn, too: until the request is withdrawn, the next message
+  // would still be taken for the secret it asked for.
+  const secretCancelled = cancelSecretRequest(sessionKey);
+  // A turn claude started itself has no handle for cancelRequest to find.
+  const stopped = await cancelRequest(sessionKey) || getPtyProvider().interruptOwnTurn(sessionKey) || secretCancelled;
+  return { stopped, dropped: takenBack + clearQueue(sessionKey) };
 }
 
 function parkedFile(): string {
@@ -521,9 +563,9 @@ export function armReminders(): void {
  * command entity would then point at nothing, and nothing downstream reads
  * entities, which is also what lets the mention gate rewrite text in place.
  */
-function stripLaterCommand(msg: Message): void {
+function stripCommand(msg: Message, command: RegExp): void {
   if (typeof msg.text !== 'string') return;
-  (msg as { text: string }).text = msg.text.replace(LATER_COMMAND, '');
+  (msg as { text: string }).text = msg.text.replace(command, '');
   delete (msg as { entities?: unknown }).entities;
 }
 
@@ -591,7 +633,7 @@ export async function handleLater(ctx: Context): Promise<void> {
   if (parked.has(key)) return;
 
   const update = ctx.update as MessageUpdate;
-  stripLaterCommand(update.message);
+  stripCommand(update.message, LATER_COMMAND);
   const awaitsTurn = !turnRunning(keyInfo.sessionKey);
   const message: ParkedMessage = {
     chatId: keyInfo.chatId,
@@ -618,6 +660,35 @@ export async function handleLater(ctx: Context): Promise<void> {
     void ctx.api.deleteMessage(keyInfo.chatId, noticeId)
       .catch((err: unknown) => console.warn('[Queued] Could not remove the notice:', sanitizeError(err)));
   }
+}
+
+/**
+ * `/steer <text>`: stop the running turn and send `<text>` in its place. The stop
+ * comes first, so the message isn't dropped along with what was waiting, and it
+ * then waits for the turn to end like any other. With nothing running it's just
+ * a message: stopping nothing would still end background work a turn left going.
+ * Registered ahead of sequentialize, or it would wait behind the turn it stops.
+ */
+export async function handleSteer(ctx: Context): Promise<void> {
+  const msg = ctx.message;
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  if (!msg || typeof msg.text !== 'string' || !keyInfo || !botRef) return;
+  if (!msg.text.replace(STEER_COMMAND, '').trim()) {
+    await ctx.reply(STEER_USAGE);
+    return;
+  }
+
+  const update = ctx.update as MessageUpdate;
+  stripCommand(update.message, STEER_COMMAND);
+  if (turnRunning(keyInfo.sessionKey)) {
+    await stopTurn(ctx.api, keyInfo.sessionKey);
+    steered.add(entryKey(keyInfo.chatId, msg.message_id));
+    console.log(`[Queued] Stopped the turn in ${keyInfo.sessionKey} for message ${msg.message_id}, sent with /steer`);
+  }
+  markAlreadyAddressed(update);
+  void botRef.handleUpdate(update).catch((err: unknown) => {
+    console.error(`[Queued] Sending message ${msg.message_id} with /steer failed:`, sanitizeError(err));
+  });
 }
 
 /** Back through the whole chain, as if it had just arrived. */
@@ -704,7 +775,7 @@ export async function handleEditedMessage(ctx: Context): Promise<void> {
   // The gate did this for the message as it arrived, and passes edits untouched.
   if (config.GROUP_REQUIRE_MENTION) stripBotMention(edited, ctx.me);
   // As did /later's handler, which an edit doesn't reach either.
-  if (setAside?.command) stripLaterCommand(edited);
+  if (setAside?.command) stripCommand(edited, LATER_COMMAND);
   waiting.update.message = edited;
   if (setAside) saveParked();
 }
@@ -800,9 +871,12 @@ async function claimWaiting(ctx: Context, key: string): Promise<QueuedMessage | 
     await answerNoLongerWaiting(ctx);
     return undefined;
   }
-  if (entry.takenBack || entry.parked || entry.diverting) {
+  if (entry.takenBack || entry.parked || entry.diverting || entry.steering) {
     await ctx.answerCallbackQuery({
-      text: entry.takenBack ? 'Already taken back.' : entry.parked ? 'Already set aside.' : 'Already opening a fork.',
+      text: entry.takenBack ? 'Already taken back.'
+        : entry.parked ? 'Already set aside.'
+          : entry.diverting ? 'Already opening a fork.'
+            : 'Already stopping the turn for it.',
     });
     return undefined;
   }
@@ -827,6 +901,24 @@ async function handleBtwTap(ctx: Context, key: string): Promise<void> {
   void btw(ctx, entry.sessionKey, question).catch((err: unknown) => {
     console.error(`[Queued] /btw for message ${entry.messageId} failed:`, sanitizeError(err));
   });
+}
+
+async function handleSteerTap(ctx: Context, key: string): Promise<void> {
+  const entry = await claimWaiting(ctx, key);
+  if (!entry) return;
+
+  // Set at once, so a second tap can't stop a turn that has already moved on to this one.
+  entry.steering = true;
+  // Started before anything else awaits, so what's waiting is dropped before the turn can end.
+  const stopping = stopTurn(ctx.api, entry.sessionKey, entry);
+  console.log(`[Queued] Stopping the turn in ${entry.sessionKey} for message ${entry.messageId}`);
+  await ctx.answerCallbackQuery({ text: 'Stopping the turn.' });
+  try {
+    await ctx.editMessageText(STEERING, { reply_markup: { inline_keyboard: [[takeBackButton(entry.messageId)]] } });
+  } catch (err) {
+    console.warn('[Queued] Could not update the ack:', sanitizeError(err));
+  }
+  await stopping;
 }
 
 /**
@@ -879,7 +971,7 @@ async function handleForkTap(ctx: Context, key: string): Promise<void> {
     // Cancelled meanwhile, so there's no place in line to give back.
     if (entry.takenBack) return;
     try {
-      await ctx.editMessageText(`${ackText(entry.sessionKey)}\n🍴 ${opened.error}`, { reply_markup: ackKeyboard(entry) });
+      await ctx.editMessageText(`${ackText(entry)}\n🍴 ${opened.error}`, { reply_markup: ackKeyboard(entry) });
     } catch (err) {
       console.warn('[Queued] Could not update the ack:', sanitizeError(err));
     }
@@ -943,5 +1035,6 @@ export async function handleQueuedCallback(ctx: Context): Promise<void> {
   if (action === 'send' || action === 'drop') return handleReminderTap(ctx, key, action);
   if (action === 'btw') return handleBtwTap(ctx, key);
   if (action === 'fork') return handleForkTap(ctx, key);
+  if (action === 'steer') return handleSteerTap(ctx, key);
   return handleTakeBackTap(ctx, key);
 }

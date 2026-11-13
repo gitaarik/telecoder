@@ -59,6 +59,7 @@ const {
   handleQueuedCallback,
   handleEditedMessage,
   handleLater,
+  handleSteer,
   initParkedMessages,
   forgetParkedMessages,
   armReminders,
@@ -142,6 +143,7 @@ function makeBot(): Bot {
   // The same order as createBot in src/bot/bot.ts.
   b.command('cancel', handleCancel);
   b.command('later', handleLater);
+  b.command('steer', handleSteer);
   b.callbackQuery(/^queued:/, handleQueuedCallback);
   b.on('edited_message', handleEditedMessage);
   initParkedMessages(b);
@@ -289,10 +291,13 @@ describe('a message sent during a turn', () => {
     const [ack] = acksFor(second);
     expect(ack?.payload.text).toBe('⏳ Queued behind the running turn.');
     expect(ack?.payload.reply_markup).toEqual({
-      inline_keyboard: [[
-        { text: '🗑 Take back', callback_data: `queued:${second}` },
-        { text: '🔔 Ask me after', callback_data: `queued:park:${second}` },
-      ]],
+      inline_keyboard: [
+        [
+          { text: '🗑 Take back', callback_data: `queued:${second}` },
+          { text: '🔔 Ask me after', callback_data: `queued:park:${second}` },
+        ],
+        [{ text: '⚡ Interrupt & send', callback_data: `queued:steer:${second}` }],
+      ],
     });
     // Still goes out if the sender has deleted the message meanwhile.
     expect((ack?.payload.reply_parameters as { allow_sending_without_reply?: boolean }).allow_sending_without_reply).toBe(true);
@@ -508,7 +513,10 @@ describe('setting a message aside', () => {
     await advance();
 
     expect(acksFor(clear)[0]?.payload.reply_markup).toEqual({
-      inline_keyboard: [[{ text: '🗑 Take back', callback_data: `queued:${clear}` }]],
+      inline_keyboard: [
+        [{ text: '🗑 Take back', callback_data: `queued:${clear}` }],
+        [{ text: '⚡ Interrupt & send', callback_data: `queued:steer:${clear}` }],
+      ],
     });
   });
 
@@ -1374,6 +1382,204 @@ describe('a bot command sent during a turn', () => {
   });
 });
 
+describe('sending a message in place of the turn', () => {
+  const STEERING = '⚡ Stopping the turn, then sending this.';
+
+  describe('with Interrupt & send', () => {
+    it('stops the turn, and the message goes out once it has', async () => {
+      send('first');
+      await advance();
+      const second = send('second');
+      await advance();
+
+      await tapButton(`queued:steer:${second}`, { ackId: 5000 });
+      await advance();
+
+      expect(turns.get('first')!.cancelled).toBe(true);
+      expect(started).toEqual(['first', 'second']);
+      expect(answers()).toEqual(['Stopping the turn.']);
+      expect(callsTo('editMessageText').at(-1)?.payload).toMatchObject({
+        message_id: 5000,
+        text: STEERING,
+        reply_markup: { inline_keyboard: [[{ text: '🗑 Take back', callback_data: `queued:${second}` }]] },
+      });
+    });
+
+    it('drops everything else waiting, as /cancel would', async () => {
+      send('first');
+      await advance();
+      send('second');
+      const third = send('third');
+      send('fourth');
+      await advance();
+
+      await tapButton(`queued:steer:${third}`, { ackId: 5001 });
+      await advance();
+
+      expect(started).toEqual(['first', 'third']);
+      expect(edits().filter((text) => text === '🛑 Cancelled before it reached Claude.')).toHaveLength(2);
+    });
+
+    it("leaves a message set aside where it is", async () => {
+      send('first');
+      await advance();
+      const second = send('second');
+      const third = send('third');
+      await advance();
+      await tapButton(`queued:park:${second}`, { ackId: 5000 });
+
+      await tapButton(`queued:steer:${third}`, { ackId: 5001 });
+      await advance();
+
+      expect(started).toEqual(['first', 'third']);
+      expect(remindersFor(second)).toEqual([]);
+      turns.get('third')!.release();
+      await advance();
+      expect(remindersFor(second)).toHaveLength(1);
+    });
+
+    it('stops the turn only once, however often it is tapped', async () => {
+      // Leaves the turn running for now, so the second tap finds the message still waiting.
+      const interrupt = vi.fn(async () => {});
+      send('first');
+      await advance();
+      const second = send('second');
+      await advance();
+      setActiveQuery(String(CHAT), { interrupt } as never);
+
+      await tapButton(`queued:steer:${second}`, { ackId: 5000 });
+      await tapButton(`queued:steer:${second}`, { ackId: 5000 });
+      await advance();
+
+      expect(interrupt).toHaveBeenCalledTimes(1);
+      expect(answers()).toEqual(['Stopping the turn.', 'Already stopping the turn for it.']);
+      turns.get('first')!.release();
+      await advance();
+      expect(started).toEqual(['first', 'second']);
+    });
+
+    it('can still be taken back while the turn winds down', async () => {
+      send('first');
+      await advance();
+      const second = send('second');
+      await advance();
+      // An interrupt that leaves the turn running, for now.
+      setActiveQuery(String(CHAT), { interrupt: async () => {} } as never);
+
+      await tapButton(`queued:steer:${second}`, { ackId: 5000 });
+      await tapTakeBack(second, { ackId: 5000 });
+      turns.get('first')!.release();
+      await advance();
+
+      expect(started).toEqual(['first']);
+    });
+
+    it('stops a turn Claude started itself', async () => {
+      let generating = true;
+      fx.pty.isSessionGenerating = () => generating;
+      fx.pty.interruptOwnTurn = () => { generating = false; return true; };
+      const id = send('second');
+      await advance();
+
+      await tapButton(`queued:steer:${id}`, { ackId: 5000 });
+      await advance();
+
+      expect(started).toEqual(['second']);
+    });
+
+    it("is refused to someone else in the chat, and the turn keeps going", async () => {
+      send('first');
+      await advance();
+      const second = send('second');
+      await advance();
+
+      await tapButton(`queued:steer:${second}`, { from: STRANGER, ackId: 5000 });
+      await advance();
+
+      expect(turns.get('first')!.cancelled).toBe(false);
+      expect(started).toEqual(['first']);
+    });
+  });
+
+  describe('with /steer', () => {
+    it('stops the turn and sends the rest of the message in its place', async () => {
+      send('first');
+      await advance();
+
+      send('/steer actually, use tabs');
+      await advance();
+
+      expect(turns.get('first')!.cancelled).toBe(true);
+      expect(started).toEqual(['first', 'actually, use tabs']);
+      expect(textsSent()).not.toContain('🛑 Cancelled.');
+    });
+
+    it('drops what was waiting, but not itself', async () => {
+      send('first');
+      await advance();
+      send('second');
+      await advance();
+
+      send('/steer third');
+      await advance();
+
+      expect(started).toEqual(['first', 'third']);
+      expect(edits()).toEqual(['🛑 Cancelled before it reached Claude.']);
+    });
+
+    it('says what it is doing while the turn winds down, with only Take back', async () => {
+      send('first');
+      await advance();
+      setActiveQuery(String(CHAT), { interrupt: async () => {} } as never);
+
+      const id = send('/steer fix');
+      await advance();
+
+      expect(acksFor(id)[0]?.payload).toMatchObject({
+        text: STEERING,
+        reply_markup: { inline_keyboard: [[{ text: '🗑 Take back', callback_data: `queued:${id}` }]] },
+      });
+      turns.get('first')!.release();
+      await advance();
+      expect(started).toEqual(['first', 'fix']);
+    });
+
+    it('stops a turn Claude started itself', async () => {
+      let generating = true;
+      fx.pty.isSessionGenerating = () => generating;
+      fx.pty.interruptOwnTurn = () => { generating = false; return true; };
+
+      send('/steer fix');
+      await advance();
+
+      expect(started).toEqual(['fix']);
+    });
+
+    it('is just a message when nothing is running, and stops nothing', async () => {
+      const interruptOwnTurn = vi.fn(() => false);
+      fx.pty.interruptOwnTurn = interruptOwnTurn;
+
+      send('/steer fix');
+      await advance();
+
+      expect(started).toEqual(['fix']);
+      expect(interruptOwnTurn).not.toHaveBeenCalled();
+      expect(callsTo('sendMessage')).toEqual([]);
+    });
+
+    it('says how to use it when there is nothing after it, and stops nothing', async () => {
+      send('first');
+      await advance();
+
+      send('/steer');
+      await advance();
+
+      expect(turns.get('first')!.cancelled).toBe(false);
+      expect(textsSent()).toEqual([expect.stringContaining('/steer <text>')]);
+    });
+  });
+});
+
 describe('CANCEL_ON_NEW_MESSAGE', () => {
   it('has the newest message replace the running turn and everything waiting', async () => {
     send('first');
@@ -1592,6 +1798,7 @@ describe('asking a waiting message some other way', () => {
           { text: '💬 Ask as /btw', callback_data: `queued:btw:${id}` },
           { text: '🍴 Ask in a fork', callback_data: `queued:fork:${id}` },
         ],
+        [{ text: '⚡ Interrupt & send', callback_data: `queued:steer:${id}` }],
       ],
     });
   });
@@ -1608,7 +1815,13 @@ describe('asking a waiting message some other way', () => {
   it('offers neither on a slash command, which means something only where it was typed', async () => {
     const id = await waiting('/compact');
 
-    expect((acksFor(id)[0]?.payload.reply_markup as { inline_keyboard: unknown[][] }).inline_keyboard).toHaveLength(1);
+    expect((acksFor(id)[0]?.payload.reply_markup as { inline_keyboard: unknown[][] }).inline_keyboard).toEqual([
+      [
+        { text: '🗑 Take back', callback_data: `queued:${id}` },
+        { text: '🔔 Ask me after', callback_data: `queued:park:${id}` },
+      ],
+      [{ text: '⚡ Interrupt & send', callback_data: `queued:steer:${id}` }],
+    ]);
   });
 
   it('asks it as /btw at once, and it never reaches Claude', async () => {
@@ -1671,7 +1884,7 @@ describe('asking a waiting message some other way', () => {
       text: '⏳ Queued behind the running turn.\n🍴 Could not open a new thread.',
     });
     expect((callsTo('editMessageText').at(-1)?.payload.reply_markup as { inline_keyboard: unknown[][] }).inline_keyboard)
-      .toHaveLength(2);
+      .toHaveLength(3);
 
     turns.get('first')!.release();
     await advance();

@@ -6,7 +6,7 @@ import { messageSender } from '../../telegram/message-sender.js';
 import { closeTurn, relayCatchUpIfMissed } from './message/turn-notify.js';
 import { getUptimeFormatted } from '../middleware/stale-filter.js';
 import { getAvailableCommands } from '../../claude/command-parser.js';
-import { cancelRequest, clearQueue, isProcessing, queueRequest } from '../../claude/request-queue.js';
+import { isProcessing, queueRequest } from '../../claude/request-queue.js';
 import { createTelegraphFromFile } from '../../telegram/telegraph.js';
 import { EntityText, joinMessages, trimMessage, type EntityMessage } from '../../telegram/entities.js';
 import { replyFormatted, replyParts } from '../../telegram/send.js';
@@ -16,10 +16,9 @@ import * as path from 'path';
 import { execFile } from 'child_process';
 import { refuseFilePublish, resolveShareableFile } from '../file-access.js';
 import { resolveClaudeExecutableForMethod } from '../../utils/resolve-claude-bin.js';
-import { getActiveMethod, getPtyProvider } from '../../providers/claude-provider.js';
+import { getActiveMethod } from '../../providers/claude-provider.js';
 import { contextTokens } from '../../providers/types.js';
-import { takeBackAllQueued } from '../middleware/queued-messages.js';
-import { cancelSecretRequest } from '../../claude/secret-request.js';
+import { stopTurn } from '../middleware/queued-messages.js';
 import { groupAvailableCommands, type AvailableCommands } from '../../claude/available-commands.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
 import { replyMd, getEffortLabel, withBackToPrevious } from './command/shared.js';
@@ -416,14 +415,7 @@ export async function handleCancel(ctx: Context): Promise<void> {
   const { sessionKey } = keyInfo;
 
   const wasProcessing = isProcessing(sessionKey);
-  // First, because the turn ending is what would let them through.
-  const takenBackCount = takeBackAllQueued(ctx.api, sessionKey);
-  // Before the turn, too: until the request is withdrawn, the next message
-  // would still be taken for the secret it asked for.
-  const secretCancelled = cancelSecretRequest(sessionKey);
-  // A turn claude started itself has no handle for cancelRequest to find.
-  const cancelled = await cancelRequest(sessionKey) || getPtyProvider().interruptOwnTurn(sessionKey) || secretCancelled;
-  const clearedCount = takenBackCount + clearQueue(sessionKey);
+  const { stopped: cancelled, dropped: clearedCount } = await stopTurn(ctx.api, sessionKey);
 
   if (cancelled || clearedCount > 0) {
     let message = '🛑 Cancelled.';
