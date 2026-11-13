@@ -2539,7 +2539,8 @@
                 <div class="step-content">
                   <h4>Get your Telegram user ID</h4>
                   <p>Message <code>@userinfobot</code> for your numeric ID. TeleCoder only answers
-                  accounts on this list, so the bot is inert to anyone else who finds it.</p>
+                  accounts on this list, so the bot is inert to anyone else who finds it — in a
+                  private chat it tells them their ID to pass on, and in a group it stays silent.</p>
                 </div>
               </div>
               <div class="step-item">
@@ -2581,7 +2582,7 @@
               </div>
               <div class="code-content">
                 <pre>{
-  "defaults": { "ALLOWED_USER_IDS": "123456789" },
+  "defaults": { "ALLOWED_USER_IDS": "your-numeric-telegram-id" },
   "instances": [
     { "name": "TeleCoder {n}", "tokens": ["token-one", "token-two"] },
     { "name": "Admin Bot", "token": "token-three",
@@ -2665,7 +2666,9 @@ CCR_AUTOSTART=true</pre>
                 </tr>
                 <tr>
                   <td class="var-name">ALLOWED_USER_IDS</td>
-                  <td>Comma-separated Telegram user IDs</td>
+                  <td>Comma-separated numeric Telegram user IDs, not <code>@usernames</code>. The
+                  bot refuses to start on a non-numeric entry or the <code>.env.example</code>
+                  placeholder</td>
                   <td class="required-yes">Yes</td>
                 </tr>
                 <tr><td colspan="3" style="color: var(--brand); font-weight: 600; padding-top: 1.25rem;">Sharing</td></tr>

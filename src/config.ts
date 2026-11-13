@@ -3,6 +3,7 @@ import { z } from 'zod';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { legacyEnv } from './utils/legacy-env.js';
+import { parseIdList } from './utils/id-list.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const defaultEnvPath = path.resolve(__dirname, '..', '.env');
@@ -45,16 +46,32 @@ if (shadowed.length > 0) {
 
 const toBool = (val: string) => val.toLowerCase() === 'true';
 
+/**
+ * A comma-separated id list, validated by parseIdList: non-numeric entries
+ * (`@alice`) and the .env.example placeholder fail startup with a message
+ * saying what to put there instead.
+ */
+const idList = (name: string, kind: 'user' | 'group' = 'user') =>
+  (val: string, ctx: z.RefinementCtx): number[] => {
+    const result = parseIdList(name, val, kind);
+    if (!result.ok) {
+      ctx.addIssue({ code: 'custom', message: result.error });
+      return z.NEVER;
+    }
+    return result.ids;
+  };
+
 const envSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().min(1, 'Telegram bot token is required'),
   ALLOWED_USER_IDS: z
     .string()
     .min(1, 'At least one allowed user ID is required (your own numeric Telegram id — get it from @userinfobot)')
-    .transform((val) => val.split(',').map((id) => parseInt(id.trim(), 10))),
+    .transform(idList('ALLOWED_USER_IDS'))
+    .refine((ids) => ids.length > 0, 'ALLOWED_USER_IDS has no ids in it — put your own numeric Telegram id there (get it from @userinfobot)'),
   ALLOWED_GROUP_IDS: z
     .string()
     .default('')
-    .transform((val) => val ? val.split(',').map((id) => parseInt(id.trim(), 10)) : []),
+    .transform(idList('ALLOWED_GROUP_IDS', 'group')),
   // The subset of ALLOWED_USER_IDS that may approve permission prompts and run
   // bot-lifecycle / transport commands. Empty means every allowed user is an
   // admin, which is the behaviour every install had before this existed — so a
@@ -63,11 +80,7 @@ const envSchema = z.object({
   ADMIN_USER_IDS: z
     .string()
     .default('')
-    .transform((val) =>
-      val
-        ? val.split(',').map((id) => parseInt(id.trim(), 10)).filter((id) => Number.isFinite(id))
-        : []
-    ),
+    .transform(idList('ADMIN_USER_IDS')),
   // The subset of ALLOWED_USER_IDS that may answer an approval prompt without
   // owning the bot. An approver is still a guest everywhere else — the charter
   // judge still reads their messages, the gate still stops their tool calls,
@@ -85,11 +98,7 @@ const envSchema = z.object({
   APPROVER_USER_IDS: z
     .string()
     .default('')
-    .transform((val) =>
-      val
-        ? val.split(',').map((id) => parseInt(id.trim(), 10)).filter((id) => Number.isFinite(id))
-        : []
-    ),
+    .transform(idList('APPROVER_USER_IDS')),
   // Confine non-admins to the groups in ALLOWED_GROUP_IDS. Without this a
   // shared bot is still reachable in a private chat, where the owner cannot
   // see what is being asked of it — which defeats the point of sharing it in a
@@ -406,7 +415,7 @@ const parsed = envSchema.safeParse(process.env);
 
 if (!parsed.success) {
   console.error('❌ Invalid environment configuration:');
-  console.error(parsed.error.message);
+  console.error(z.prettifyError(parsed.error));
   process.exit(1);
 }
 

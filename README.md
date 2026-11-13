@@ -560,7 +560,7 @@ All config lives in `.env`. See [`.env.example`](.env.example) for the full anno
 | Variable | Description |
 |----------|-------------|
 | `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather |
-| `ALLOWED_USER_IDS` | Comma-separated Telegram user IDs |
+| `ALLOWED_USER_IDS` | Comma-separated numeric Telegram user IDs (not `@usernames`). The bot refuses to start on a non-numeric entry or on the `.env.example` placeholder `123456789`. Someone not on the list who DMs the bot is told their ID, and it is logged |
 
 ### Sharing (admins & guests)
 

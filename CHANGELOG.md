@@ -7,6 +7,17 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Security
 
+- **ID lists are checked at startup, and strangers are told their ID** —
+  `ALLOWED_USER_IDS=@alice` used to parse to `NaN` and start a bot nobody
+  could use ("Allowed users: NaN"), and the `.env.example` placeholder
+  `123456789` was taken as a real admin. A non-numeric entry in
+  `ALLOWED_USER_IDS`, `ADMIN_USER_IDS`, `APPROVER_USER_IDS` or
+  `ALLOWED_GROUP_IDS`, or the placeholder in a user list, now stops startup
+  with a message saying what belongs there. Someone not on the list who
+  messages the bot privately is told their numeric ID to pass on, and it is
+  logged; a group that isn't allow-listed gets no reply at all, where it used
+  to get "not authorized" for every message when privacy mode was off.
+
 - **The bot token stays out of `ps` and out of error messages** — photos,
   documents and voice notes were fetched with `curl`, whose command line
   carried `https://api.telegram.org/file/bot<token>/…` for any local user to

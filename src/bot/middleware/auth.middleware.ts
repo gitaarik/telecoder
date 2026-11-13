@@ -98,11 +98,24 @@ export async function authMiddleware(
   // quiet while people talk to each other.
   if (!isAllowedUser(userId) && !inAllowedGroup) {
     logAuthAttempt(false, userId, username, chatType);
+
+    // A group nobody allow-listed gets no reply at all. With privacy mode off
+    // the bot sees every message there, and answering each one with a denial
+    // turns someone else's group chat into a wall of "not authorized".
+    if (chatType !== 'private') return;
+
     const outcome = ctx.from ? await requestAccess(ctx, identify(ctx.from)) : 'not-asked';
+    // The id is the one thing the owner needs and the sender can't easily
+    // find, so the denial carries it, and the log repeats it for the owner.
+    console.log(
+      `[auth] To let user ${userId}${username ? ` (@${username})` : ''} in, add ${userId} to ALLOWED_USER_IDS ` +
+      'or /allow them from an admin chat.'
+    );
     await ctx.reply(
       outcome === 'pending'
-        ? '⛔ Not authorized yet — an admin has been asked to let you in.'
-        : '⛔ You are not authorized to use this bot.'
+        ? `⛔ Not authorized yet — an admin has been asked to let you in. Your Telegram ID is ${userId}.`
+        : `⛔ You are not authorized to use this bot. Your Telegram ID is ${userId}. ` +
+          'Ask the owner to add it to ALLOWED_USER_IDS.'
     ).catch(() => {});
     return;
   }

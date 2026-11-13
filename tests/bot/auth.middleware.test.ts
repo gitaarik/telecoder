@@ -86,6 +86,15 @@ describe('authMiddleware', () => {
     expect(reply.mock.calls[0][0]).toMatch(/not authorized/i);
   });
 
+  it('tells a stranger in a private chat their numeric id, and logs it for the owner', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { ctx, reply } = makeCtx({ userId: 4242, username: 'stranger', chatType: 'private' });
+    await authMiddleware(ctx, next);
+    expect(reply.mock.calls[0][0]).toContain('Your Telegram ID is 4242.');
+    expect(reply.mock.calls[0][0]).toContain('ALLOWED_USER_IDS');
+    expect(log.mock.calls.some((c) => String(c[0]).includes('add 4242 to ALLOWED_USER_IDS'))).toBe(true);
+  });
+
   it('silently drops updates with no user id (no reply, no next)', async () => {
     const { ctx, reply } = makeCtx({ chatType: 'private' });
     await authMiddleware(ctx, next);
@@ -115,7 +124,9 @@ describe('authMiddleware', () => {
     expect(reply).not.toHaveBeenCalled();
   });
 
-  it('rejects an unknown user in a non-allow-listed group', async () => {
+  it('rejects an unknown user in a non-allow-listed group without replying', async () => {
+    // With privacy mode off the bot sees every message in the group; a denial
+    // per message would flood a chat it was never meant to be part of.
     const { ctx, reply } = makeCtx({
       userId: 999,
       chatId: -42, // not in ALLOWED_GROUP_IDS
@@ -123,7 +134,7 @@ describe('authMiddleware', () => {
     });
     await authMiddleware(ctx, next);
     expect(next).not.toHaveBeenCalled();
-    expect(reply).toHaveBeenCalledOnce();
+    expect(reply).not.toHaveBeenCalled();
   });
 
   it('rejects an unknown user in DM even if the same user could speak in an allow-listed group', async () => {
