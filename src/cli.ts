@@ -5,6 +5,8 @@
  * per subcommand.
  */
 
+// First, so an old Node gets a message about its version rather than a crash.
+import './node-version-check.js';
 import { dispatch } from './cli/dispatch.js';
 
 dispatch(process.argv.slice(2)).then(

@@ -22,8 +22,9 @@ import { parseIdList, PLACEHOLDER_USER_ID } from '../../utils/id-list.js';
 import { resolveInstances, InstancesConfigError } from '../../utils/instance-config.js';
 import { resolveBin } from '../../utils/resolve-bin.js';
 import { redactSecrets } from '../../utils/sanitize.js';
+import { MIN_NODE_MAJOR } from '../../node-version-check.js';
 
-export const MIN_NODE_MAJOR = 22;
+export { MIN_NODE_MAJOR };
 
 export type Status = 'ok' | 'warn' | 'fail';
 
