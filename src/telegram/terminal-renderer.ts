@@ -611,10 +611,12 @@ function truncateUrl(url: string | undefined, maxLen: number = 40): string | und
   return url.substring(0, maxLen - 3) + '...';
 }
 
-/** Update lines the footer shows, across all its tasks. */
+/** Update lines the footer shows under a lone task. */
 const FOOTER_UPDATES = 3;
 const FOOTER_UPDATE_CHARS = 80;
-const FOOTER_TASK_CHARS = 30;
+const FOOTER_TASK_CHARS = 60;
+/** Tasks the footer lists by name before the rest go into "+N more". */
+const FOOTER_MAX_TASKS = 6;
 
 function cut(text: string, max: number): string {
   return text.length > max ? text.substring(0, max - 3) + '...' : text;
@@ -623,34 +625,40 @@ function cut(text: string, max: number): string {
 /**
  * Render a compact background-task footer for the streaming status block.
  * - 0 tasks: null.
- * - 1 task: "🔄 Running in background: <description>" (truncated).
- * - N tasks: "🔄 N tasks running in background".
+ * - 1 task: "🔄 Running in background: <description>", and under it the
+ *   latest few things it reported doing.
+ * - N tasks: "🔄 N tasks running in background", then each by name with its
+ *   latest update under it. A bare count left the user guessing what had
+ *   started once there was more than one.
  *
- * Under it go the latest things the tasks reported doing, timed as the action
- * log times its entries, so a long task shows it's getting somewhere. With
- * more than one task each line says whose it is.
+ * Updates are timed as the action log times its entries, so a long task
+ * shows it's getting somewhere.
  */
 export function renderBackgroundFooter(
   tasks: Array<{ description: string; updates?: Array<{ at: number; text: string }> }>,
 ): EntityMessage | null {
   if (tasks.length === 0) return null;
   const b = new EntityText();
+  const addUpdate = (update: { at: number; text: string }, indent: string) => {
+    b.newline().add(`${indent}⎿ [`)
+      .dateTime(clockTime(update.at), update.at)
+      .add(`] ${cut(update.text, FOOTER_UPDATE_CHARS)}`);
+  };
+
   if (tasks.length === 1) {
-    b.add(`🔄 Running in background: ${cut(tasks[0].description, 60)}`);
-  } else {
-    b.add(`🔄 ${tasks.length} tasks running in background`);
+    b.add(`🔄 Running in background: ${cut(tasks[0].description, FOOTER_TASK_CHARS)}`);
+    for (const update of (tasks[0].updates ?? []).slice(-FOOTER_UPDATES)) addUpdate(update, '  ');
+    return b.build();
   }
 
-  const updates = tasks
-    .flatMap((task) => (task.updates ?? []).map((u) => ({ ...u, task: task.description })))
-    .sort((a, c) => a.at - c.at)
-    .slice(-FOOTER_UPDATES);
-  for (const update of updates) {
-    const owner = tasks.length > 1 ? `${cut(update.task, FOOTER_TASK_CHARS)}: ` : '';
-    b.newline().add('  ⎿ [')
-      .dateTime(clockTime(update.at), update.at)
-      .add(`] ${owner}${cut(update.text, FOOTER_UPDATE_CHARS)}`);
+  b.add(`🔄 ${tasks.length} tasks running in background`);
+  for (const task of tasks.slice(0, FOOTER_MAX_TASKS)) {
+    b.newline().add(`  • ${cut(task.description, FOOTER_TASK_CHARS)}`);
+    const latest = task.updates?.at(-1);
+    if (latest) addUpdate(latest, '    ');
   }
+  const more = tasks.length - FOOTER_MAX_TASKS;
+  if (more > 0) b.newline().add(`  … +${more} more · /tasks`);
   return b.build();
 }
 

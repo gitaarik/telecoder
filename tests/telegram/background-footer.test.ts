@@ -1,7 +1,8 @@
 /**
  * The "Running in background" footer under a turn's status line. It only
  * named the task, so a long one looked stuck; it now lists the latest things
- * the tasks reported doing, timed like the action log's entries.
+ * the tasks reported doing, timed like the action log's entries. With more
+ * than one task it named none of them; now it lists each.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -26,17 +27,28 @@ describe('renderBackgroundFooter', () => {
     expect(footer.entities[0]).toMatchObject({ type: 'date_time', unix_time: at(14, 2) / 1000 });
   });
 
-  it('merges several tasks by time, keeps the latest three, and says whose each is', () => {
+  it('lists every task by name, each with its latest update', () => {
     const footer = renderBackgroundFooter([
       { description: 'Build', updates: [{ at: at(10, 0), text: 'a' }, { at: at(10, 3), text: 'c' }] },
       { description: 'Watch CI', updates: [{ at: at(10, 1), text: 'b' }, { at: at(10, 4), text: 'd' }] },
+      { description: 'Explore auth' },
     ])!;
     expect(footer.text.split('\n')).toEqual([
-      '🔄 2 tasks running in background',
-      '  ⎿ [10:01] Watch CI: b',
-      '  ⎿ [10:03] Build: c',
-      '  ⎿ [10:04] Watch CI: d',
+      '🔄 3 tasks running in background',
+      '  • Build',
+      '    ⎿ [10:03] c',
+      '  • Watch CI',
+      '    ⎿ [10:04] d',
+      '  • Explore auth',
     ]);
+  });
+
+  it('caps a long list and points at /tasks for the rest', () => {
+    const tasks = Array.from({ length: 8 }, (_, i) => ({ description: `Task ${i + 1}` }));
+    const lines = renderBackgroundFooter(tasks)!.text.split('\n');
+    expect(lines[0]).toBe('🔄 8 tasks running in background');
+    expect(lines.slice(1, -1)).toEqual(tasks.slice(0, 6).map((t) => `  • ${t.description}`));
+    expect(lines.at(-1)).toBe('  … +2 more · /tasks');
   });
 });
 
