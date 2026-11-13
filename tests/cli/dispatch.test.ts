@@ -86,12 +86,6 @@ describe('dispatch', () => {
     expect(io.lines[0]).toMatch(/^\d+\.\d+\.\d+/);
   });
 
-  it('says init is coming soon', async () => {
-    const io = captureIo();
-    expect(await dispatch(['init'], { io })).toBe(0);
-    expect(io.lines[0]).toContain('coming soon');
-  });
-
   it('shows the service subcommands for a bare "service"', async () => {
     const io = captureIo();
     expect(await dispatch(['service'], { io })).toBe(0);

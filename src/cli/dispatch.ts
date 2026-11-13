@@ -48,7 +48,8 @@ export const COMMANDS: Record<string, CommandSpec> = {
     load: () => import('./commands/doctor.js'),
   },
   init: {
-    summary: 'Set up a bot: token, allowed users, config file (coming soon)',
+    summary: 'Set up a bot step by step: token, owner, workspace; writes the .env',
+    usage: '[--token-env VAR] [--owner-id ID] [--workspace DIR] [--transport sdk|pty] [--yes]',
     load: () => import('./commands/init.js'),
   },
   service: {

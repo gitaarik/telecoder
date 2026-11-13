@@ -64,7 +64,7 @@ export function checkToken(token: string | undefined, where: string): CheckResul
 
 export function checkAllowedUsers(raw: string | undefined): CheckResult {
   if (!raw?.trim()) {
-    return fail('ALLOWED_USER_IDS is not set', 'Put your numeric Telegram id there (get it from @userinfobot).');
+    return fail('ALLOWED_USER_IDS is not set', '"telecoder init" finds your numeric Telegram id, or get it from @userinfobot.');
   }
   const parsed = parseIdList('ALLOWED_USER_IDS', raw);
   if (!parsed.ok) return fail('ALLOWED_USER_IDS is invalid', parsed.error);
@@ -125,7 +125,7 @@ export function claudeAuthEnv(
   return env;
 }
 
-async function checkClaude(executable: string, env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
+export async function checkClaude(executable: string, env: NodeJS.ProcessEnv = process.env): Promise<CheckResult[]> {
   const bin = path.isAbsolute(executable) || executable.includes('/') ? executable : resolveBin(executable);
   const version = await exec(bin, ['--version'], 15_000, env);
   if (version.code !== 0) {
@@ -151,7 +151,7 @@ async function checkClaude(executable: string, env: NodeJS.ProcessEnv): Promise<
   return results;
 }
 
-async function checkNodePty(): Promise<CheckResult[]> {
+export async function checkNodePty(): Promise<CheckResult[]> {
   try {
     await import('node-pty');
     return [ok('node-pty loads')];
@@ -214,7 +214,7 @@ export async function runChecks(args: string[]): Promise<CheckResult[]> {
       results.push(fail(`Can't read ${envPath}`, error instanceof Error ? error.message : String(error)));
     }
   } else if (!fs.existsSync(instancesPath)) {
-    results.push(fail(`No config file at ${envPath}`, 'Run "telecoder init" (coming soon), or copy .env.example there and fill it in.'));
+    results.push(fail(`No config file at ${envPath}`, 'Run "telecoder init" to set one up.'));
   }
 
   // The environment wins over the file, as it does in the bot.

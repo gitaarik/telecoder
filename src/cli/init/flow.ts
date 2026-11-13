@@ -1,0 +1,656 @@
+/**
+ * The `telecoder init` wizard, free of the terminal and the network: the
+ * prompts come through a Prompter and Telegram through a TelegramClient, so the
+ * tests drive the whole flow with fakes. commands/init.ts wires up the real ones.
+ *
+ * The steps: check the machine (doctor's checks), decide what to do with an
+ * existing .env, get and check the bot token, find the owner's id by having
+ * them message the bot, pick a workspace and a transport, two optional
+ * features, write the file, and have the bot say hello.
+ *
+ * Secrets are never printed: not the token, not the Groq key, not in errors
+ * (telegram.ts redacts those) and not in the summary before writing.
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
+import { parse as parseEnv } from 'dotenv';
+import type { CheckResult } from '../commands/doctor.js';
+import { isWellFormedBotToken, MALFORMED_TOKEN_MESSAGE, REJECTED_TOKEN_MESSAGE } from '../../utils/bot-token.js';
+import { parseIdList } from '../../utils/id-list.js';
+import { redactSecrets } from '../../utils/sanitize.js';
+import { backupFile, renderEnv, updateEnvText, writeEnvFile, type EnvUpdates } from './env-file.js';
+import { isAbort, type Prompter } from './prompter.js';
+import {
+  TelegramApiError,
+  TelegramNetworkError,
+  type TelegramClient,
+  type TgEntity,
+  type TgUser,
+} from './telegram.js';
+
+export type Transport = 'sdk' | 'pty';
+
+export interface InitOptions {
+  /** Name of an environment variable holding the token. Never the token itself. */
+  tokenEnv?: string;
+  ownerId?: string;
+  workspace?: string;
+  transport?: Transport;
+  /** Name of an environment variable holding a Groq API key; turns voice on. */
+  groqKeyEnv?: string;
+  telegraph?: boolean;
+  /** Don't ask: take the defaults, replace an existing .env (backed up), remove a webhook. */
+  yes?: boolean;
+  /** Skip the hello from the bot at the end. */
+  noTestMessage?: boolean;
+}
+
+export interface Preflight {
+  node: CheckResult;
+  /** doctor's checkClaude: [not found] or [version, login]. */
+  claude: CheckResult[];
+  nodePty: CheckResult[];
+}
+
+export interface InitDeps {
+  prompter: Prompter;
+  makeClient: (token: string) => TelegramClient;
+  preflight: () => Promise<Preflight>;
+  envPath: string;
+  /** Whether the .env's directory is TeleCoder's own (so it may be chmod 0700). */
+  ownDir: boolean;
+  env: NodeJS.ProcessEnv;
+  homedir: string;
+  claudeBin: string;
+  /** A source checkout starts with npm, not the telecoder command. */
+  isCheckout?: boolean;
+  now?: () => Date;
+  /** How long to wait for the owner's /start. */
+  ownerWaitMs?: number;
+  /** getUpdates long-poll timeout, in seconds. */
+  pollTimeoutSec?: number;
+}
+
+/** Why the wizard stopped without finishing. The message is for the user. */
+class Stop extends Error {
+  constructor(message: string, readonly code = 1) {
+    super(message);
+  }
+}
+
+const ICON = { ok: '✓', warn: '!', fail: '✗' } as const;
+
+/** The hello the bot sends at the end: the start command set as code. */
+export function testMessage(startCommand: string): { text: string; entities: TgEntity[] } {
+  const before = '✅ TeleCoder is set up. Start it with ';
+  return {
+    text: `${before}${startCommand}.`,
+    // String length is UTF-16 units, which is what Telegram's offsets count.
+    entities: [{ type: 'code', offset: before.length, length: startCommand.length }],
+  };
+}
+
+export async function runInit(opts: InitOptions, rawDeps: InitDeps): Promise<number> {
+  const deps = { ...rawDeps, prompter: collapseBlankLines(rawDeps.prompter) };
+  const p = deps.prompter;
+  const interactive = p.interactive && !opts.yes;
+  let wrote = false;
+  try {
+    await wizard(opts, deps, interactive, () => { wrote = true; });
+    return 0;
+  } catch (error) {
+    if (isAbort(error)) {
+      p.say('');
+      p.say(wrote ? 'Cancelled.' : 'Cancelled. Nothing was written.');
+      return 130;
+    }
+    if (error instanceof Stop) {
+      if (error.message) p.say(error.message);
+      return error.code;
+    }
+    throw error;
+  }
+}
+
+/**
+ * The steps end with a blank line each; when one asked nothing (a flag or a
+ * kept value answered it) that would leave a stack of them.
+ */
+function collapseBlankLines(p: Prompter): Prompter {
+  let blank = true;
+  const answered = <T>(pending: Promise<T>) => { blank = false; return pending; };
+  return {
+    interactive: p.interactive,
+    signal: p.signal,
+    say: (line = '') => {
+      if (line === '' && blank) return;
+      blank = line === '';
+      p.say(line);
+    },
+    ask: (q, o) => answered(p.ask(q, o)),
+    secret: (q) => answered(p.secret(q)),
+    confirm: (q, d) => answered(p.confirm(q, d)),
+    choose: (q, c, d) => answered(p.choose(q, c, d)),
+    runAttached: (cmd, args) => { blank = false; return p.runAttached(cmd, args); },
+    close: () => p.close(),
+  };
+}
+
+async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, markWritten: () => void): Promise<void> {
+  const p = deps.prompter;
+  const startCommand = deps.isCheckout ? 'npm start' : 'telecoder start';
+
+  p.say('TeleCoder setup');
+  p.say('');
+
+  // ── 1. The machine ──────────────────────────────────────────
+  const pre = await deps.preflight();
+  const show = (r: CheckResult) => {
+    p.say(`${ICON[r.status]} ${r.label}`);
+    for (const line of r.detail ?? []) p.say(`    ${line}`);
+  };
+  show(pre.node);
+  if (pre.node.status === 'fail') throw new Stop('\nInstall a newer Node.js, then run "telecoder init" again.');
+  for (const r of pre.claude) show(r);
+  if (pre.claude[0]?.status === 'fail') {
+    throw new Stop('\nTeleCoder drives Claude Code, so it has to be installed first. Then run "telecoder init" again.');
+  }
+  if (pre.claude[1]?.status === 'fail') await offerLogin(deps, interactive);
+  for (const r of pre.nodePty) show(r);
+  const ptyWorks = pre.nodePty.every((r) => r.status === 'ok');
+  if (!ptyWorks) p.say('    Only the PTY transport needs it; the default SDK transport works without.');
+  p.say('');
+
+  // ── 2. An existing .env ─────────────────────────────────────
+  let existing: Record<string, string> = {};
+  let existingText: string | undefined;
+  if (fs.existsSync(deps.envPath)) {
+    existingText = fs.readFileSync(deps.envPath, 'utf-8');
+    if (!interactive) {
+      if (!opts.yes) {
+        throw new Stop(`${deps.envPath} already exists. Run "telecoder init" in a terminal to edit it, ` +
+          'or pass --yes to replace it (the old one is kept as a backup).');
+      }
+      existingText = undefined;
+    } else {
+      p.say(`There is already a config at ${deps.envPath}.`);
+      const choice = await p.choose('What do you want to do?', [
+        { key: 'keep', label: 'Keep it as it is, and stop here' },
+        { key: 'edit', label: 'Go through the setup with its values as the defaults' },
+        { key: 'over', label: 'Start over with a new file' },
+      ], 'keep');
+      if (choice === 'keep') throw new Stop(`Kept ${deps.envPath} as it is. "telecoder doctor" checks it.`, 0);
+      if (choice === 'edit') existing = parseEnv(existingText);
+      else existingText = undefined;
+    }
+    const backup = backupFile(deps.envPath, deps.now?.());
+    p.say(`Backed up the current file to ${backup}`);
+    p.say('');
+  }
+  const editing = existingText !== undefined;
+
+  // ── 3. Bot token ────────────────────────────────────────────
+  const { token, bot, client } = await stepToken(opts, deps, interactive, editing ? existing.TELEGRAM_BOT_TOKEN : undefined);
+  p.say(`Connected to @${bot.username}`);
+  p.say('');
+
+  // ── 4. Owner ────────────────────────────────────────────────
+  const owner = await stepOwner(opts, deps, interactive, client, bot, editing ? existing.ALLOWED_USER_IDS : undefined,
+    Boolean(existing.ADMIN_USER_IDS || existing.APPROVER_USER_IDS));
+  p.say('');
+
+  // ── 5. Workspace ────────────────────────────────────────────
+  const workspace = await stepWorkspace(opts, deps, interactive, editing ? existing.WORKSPACE_DIR : undefined);
+  p.say('');
+
+  // ── 6. Transport ────────────────────────────────────────────
+  const currentTransport = existing.CLAUDE_METHOD_DEFAULT === 'pty' ? 'pty' : 'sdk';
+  let transport: Transport = opts.transport ?? currentTransport;
+  if (interactive && !opts.transport) {
+    transport = await p.choose('How should TeleCoder run Claude Code? (/method switches it per chat later)', [
+      { key: 'sdk', label: 'SDK: the Claude Agent SDK. Simplest, and it tracks cost per turn.' },
+      { key: 'pty', label: 'PTY: your own `claude` CLI in a terminal, its dialogs relayed to Telegram. More moving parts; needs node-pty.' },
+    ], currentTransport);
+  }
+  if (transport === 'pty' && !ptyWorks) p.say('! node-pty did not load (see above): PTY chats will fail until it does.');
+  p.say('');
+
+  // ── 7. Optional features ────────────────────────────────────
+  const groqKey = await stepVoice(opts, deps, interactive, editing ? existing.GROQ_API_KEY : undefined);
+  const wasTelegraph = /^(true|1|yes)$/i.test(existing.TELEGRAPH_ENABLED ?? '');
+  let telegraph = opts.telegraph ?? wasTelegraph;
+  if (interactive && opts.telegraph === undefined) {
+    telegraph = await p.confirm(
+      'Publish long replies as Telegraph (Instant View) pages too? The pages are public to anyone with the link, and can\'t be deleted.',
+      wasTelegraph,
+    );
+  }
+  p.say('');
+
+  // ── 8. Write ────────────────────────────────────────────────
+  const values: Record<string, string> = {
+    TELEGRAM_BOT_TOKEN: token,
+    ALLOWED_USER_IDS: owner.idList,
+    WORKSPACE_DIR: workspace,
+    CLAUDE_METHOD_DEFAULT: transport,
+  };
+  if (groqKey) values.GROQ_API_KEY = groqKey;
+  if (telegraph) values.TELEGRAPH_ENABLED = 'true';
+
+  p.say(`About to write ${deps.envPath}:`);
+  p.say(`  Bot              @${bot.username} (token hidden)`);
+  p.say(`  Allowed users    ${owner.idList}`);
+  p.say(`  Workspace        ${workspace}`);
+  p.say(`  Transport        ${transport.toUpperCase()}`);
+  p.say(`  Voice            ${groqKey ? 'on (Groq key hidden)' : 'off'}`);
+  p.say(`  Telegraph        ${telegraph ? 'on' : 'off'}`);
+  if (interactive && !await p.confirm('Write it?', true)) throw new Stop('Nothing was written.', 1);
+
+  let content: string;
+  if (existingText !== undefined) {
+    const updates: EnvUpdates = {};
+    for (const [key, value] of Object.entries(values)) if (existing[key] !== value) updates[key] = value;
+    if (!groqKey && existing.GROQ_API_KEY) updates.GROQ_API_KEY = undefined;
+    if (!telegraph && wasTelegraph) updates.TELEGRAPH_ENABLED = 'false';
+    content = updateEnvText(existingText, updates);
+  } else {
+    content = renderEnv(values);
+  }
+  writeEnvFile(deps.envPath, content, { ownDir: deps.ownDir });
+  markWritten();
+  p.say(`✓ Wrote ${deps.envPath} (readable by you only)`);
+  if (owner.otherRoles) {
+    p.say('! ADMIN_USER_IDS / APPROVER_USER_IDS are set in this file: check they are still in ALLOWED_USER_IDS.');
+  }
+
+  // ── 9. Hello, and what next ─────────────────────────────────
+  if (!opts.noTestMessage) {
+    try {
+      const hello = testMessage(startCommand);
+      await client.sendMessage(owner.id, hello.text, hello.entities);
+      p.say('✓ Sent you a test message on Telegram');
+    } catch (error) {
+      p.say(`! Couldn't send you a test message: ${describeTelegramError(error)}`);
+      if (error instanceof TelegramApiError && error.code === 403) {
+        p.say(`    Open https://t.me/${bot.username} and press Start, so the bot is allowed to message you.`);
+      }
+    }
+  }
+
+  p.say('');
+  p.say('Now:');
+  p.say(`  ${startCommand.padEnd(18)}run the bot, then message it on Telegram`);
+  p.say(`  ${'telecoder doctor'.padEnd(18)}check the setup again any time`);
+  // ── MERGE POINT: telecoder service install ──────────────────
+  // The single call site for the service installer. When
+  // src/cli/commands/service.ts exports runServiceInstall(opts), replace the
+  // line below with an offer to run it — interactive:
+  //   if (await p.confirm('Install it as a background service now?', true)) await runServiceInstall({ … });
+  // and keep this line as the non-interactive fallback.
+  p.say('Next: run `telecoder service install` to keep it running in the background.');
+}
+
+// ── Steps ─────────────────────────────────────────────────────
+
+async function offerLogin(deps: InitDeps, interactive: boolean): Promise<void> {
+  const p = deps.prompter;
+  p.say('    TeleCoder answers as your Claude Code login, so it needs one. Either:');
+  p.say('      - run "claude auth login" (or "claude", then /login) as the user the bot runs as, or');
+  p.say('      - on a machine you won\'t sign in on, run "claude setup-token" and put the token it');
+  p.say('        prints in CLAUDE_CODE_OAUTH_TOKEN; or set ANTHROPIC_API_KEY (billed per use).');
+  if (!interactive) {
+    p.say('    Carrying on: the bot will start without it, but can\'t answer until it has one.');
+    return;
+  }
+  if (await p.confirm('Log in now? (runs "claude auth login")', true)) {
+    const status = p.runAttached(deps.claudeBin, ['auth', 'login']);
+    p.say(status === 0 ? '✓ Logged in' : '! The login didn\'t finish; carrying on. Run "claude auth login" later.');
+  } else {
+    p.say('    Carrying on without it.');
+  }
+}
+
+/** Pasted tokens come with stray whitespace or quotes more often than not. */
+export function cleanToken(raw: string): string {
+  return raw.trim().replace(/^(['"])(.*)\1$/, '$2').trim();
+}
+
+async function stepToken(
+  opts: InitOptions,
+  deps: InitDeps,
+  interactive: boolean,
+  current: string | undefined,
+): Promise<{ token: string; bot: TgUser; client: TelegramClient }> {
+  const p = deps.prompter;
+
+  const check = async (token: string) => {
+    const client = deps.makeClient(token);
+    const bot = await client.getMe();
+    return { token, bot, client };
+  };
+
+  if (opts.tokenEnv) {
+    const token = cleanToken(deps.env[opts.tokenEnv] ?? '');
+    if (!token) throw new Stop(`--token-env ${opts.tokenEnv}: that environment variable is empty or not set.`);
+    if (!isWellFormedBotToken(token)) throw new Stop(MALFORMED_TOKEN_MESSAGE);
+    try {
+      return await check(token);
+    } catch (error) {
+      throw new Stop(describeTelegramError(error));
+    }
+  }
+  if (!interactive) {
+    throw new Stop('No bot token: pass --token-env VAR, naming an environment variable that holds it ' +
+      '(not the token itself: arguments show up in ps). Or run "telecoder init" in a terminal.');
+  }
+
+  if (current && isWellFormedBotToken(current)) {
+    try {
+      const found = await check(current);
+      if (await p.confirm(`Keep the current token, for @${found.bot.username}?`, true)) return found;
+    } catch (error) {
+      p.say(`The current token doesn't work: ${describeTelegramError(error)}`);
+    }
+  }
+
+  p.say('Bot token. If you don\'t have a bot yet:');
+  p.say('  1. In Telegram, open @BotFather (https://t.me/BotFather) and send /newbot.');
+  p.say('  2. Pick a display name, then a username ending in "bot".');
+  p.say('  3. It replies with a token like 1234567890:AAH…: copy it and paste it here.');
+  for (;;) {
+    const token = cleanToken(await p.secret('Bot token:'));
+    if (!token) continue;
+    if (!isWellFormedBotToken(token)) {
+      p.say(MALFORMED_TOKEN_MESSAGE);
+      continue;
+    }
+    for (;;) {
+      try {
+        return await check(token);
+      } catch (error) {
+        p.say(describeTelegramError(error));
+        if (error instanceof TelegramNetworkError && await p.confirm('Try again?', true)) continue;
+        break;
+      }
+    }
+  }
+}
+
+interface Owner {
+  id: number;
+  idList: string;
+  /** The file names admins or approvers, which may no longer fit. */
+  otherRoles?: boolean;
+}
+
+async function stepOwner(
+  opts: InitOptions,
+  deps: InitDeps,
+  interactive: boolean,
+  client: TelegramClient,
+  bot: TgUser,
+  current: string | undefined,
+  hasRoles: boolean,
+): Promise<Owner> {
+  const p = deps.prompter;
+
+  // Telegram doesn't deliver updates to getUpdates — or to the bot — while a
+  // webhook is set, so look first.
+  const webhookOk = await checkWebhook(deps, interactive, client, opts.yes ?? false);
+
+  if (opts.ownerId !== undefined) {
+    const id = parseOwnerId(opts.ownerId);
+    if (typeof id === 'string') throw new Stop(`--owner-id: ${id}`);
+    return { id, idList: String(id) };
+  }
+  if (!interactive) {
+    throw new Stop('No owner: pass --owner-id with your numeric Telegram user id. Or run "telecoder init" in a terminal, ' +
+      'which finds it when you message the bot.');
+  }
+
+  if (current) {
+    const parsed = parseIdList('ALLOWED_USER_IDS', current);
+    if (parsed.ok && parsed.ids.length && await p.confirm(`Keep the allowed users, ${parsed.ids.join(', ')}?`, true)) {
+      return { id: parsed.ids[0], idList: parsed.ids.join(',') };
+    }
+  }
+  const otherRoles = hasRoles;
+
+  p.say('Who owns this bot: TeleCoder only answers the Telegram accounts you allow.');
+  if (webhookOk) {
+    const captured = await captureOwner(deps, client, bot);
+    if (captured) return { id: captured, idList: String(captured), otherRoles };
+  }
+  for (;;) {
+    const answer = await p.ask('Your numeric Telegram user id (message @userinfobot to get it):');
+    const id = parseOwnerId(answer);
+    if (typeof id === 'number') return { id, idList: String(id), otherRoles };
+    p.say(id);
+  }
+}
+
+/** A user id, or why it isn't one. */
+export function parseOwnerId(raw: string): number | string {
+  const trimmed = raw.trim();
+  if (!trimmed) return 'Type the number, like 412345678.';
+  const parsed = parseIdList('ALLOWED_USER_IDS', trimmed);
+  if (!parsed.ok) return parsed.error;
+  if (parsed.ids.length !== 1 || parsed.ids[0] <= 0) return 'One user id, a positive number like 412345678.';
+  return parsed.ids[0];
+}
+
+async function checkWebhook(deps: InitDeps, interactive: boolean, client: TelegramClient, yes: boolean): Promise<boolean> {
+  const p = deps.prompter;
+  let info;
+  try {
+    info = await client.getWebhookInfo();
+  } catch (error) {
+    p.say(`! Couldn't check the bot's webhook: ${describeTelegramError(error)}`);
+    return false;
+  }
+  if (!info.url) return true;
+
+  p.say(`! This bot has a webhook set, to ${redactSecrets(info.url)}: Telegram is sending its messages to`);
+  p.say('  another program. TeleCoder fetches them itself, which only works once the webhook is removed.');
+  const remove = interactive ? await p.confirm('Remove the webhook?', false) : yes;
+  if (!remove) {
+    p.say('  Left it in place. TeleCoder won\'t receive messages until it is removed.');
+    return false;
+  }
+  try {
+    await client.deleteWebhook();
+    p.say('✓ Removed the webhook');
+    return true;
+  } catch (error) {
+    p.say(`! Couldn't remove it: ${describeTelegramError(error)}`);
+    return false;
+  }
+}
+
+function describeUser(user: TgUser): string {
+  const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || 'someone';
+  return `${name}${user.username ? ` (@${user.username})` : ''}`;
+}
+
+/**
+ * Wait for the owner to message the bot, and take their id from it. Typing an
+ * id instead works at any point. Returns null when nothing usable arrived, for
+ * the caller to ask for the id outright.
+ */
+async function captureOwner(deps: InitDeps, client: TelegramClient, bot: TgUser): Promise<number | null> {
+  const p = deps.prompter;
+  const waitMs = deps.ownerWaitMs ?? 5 * 60_000;
+  const pollTimeout = deps.pollTimeoutSec ?? 30;
+  const now = () => (deps.now?.() ?? new Date()).getTime();
+
+  // Whatever is already queued predates this run, and could be anyone's:
+  // skip it, so only a message sent from here on counts.
+  let offset: number | undefined;
+  try {
+    const queued = await client.getUpdates({ timeout: 0, signal: p.signal });
+    if (queued.length) offset = queued[queued.length - 1].update_id + 1;
+  } catch (error) {
+    if (isAbort(error)) throw error;
+    p.say(`! ${describePollError(error)}`);
+    return null;
+  }
+
+  p.say(`Now open https://t.me/${bot.username} and send /start, from your own account.`);
+  p.say(`Waiting for it, up to ${Math.round(waitMs / 60_000)} minutes. Or type your numeric id and press Enter. Ctrl+C cancels.`);
+  const deadline = now() + waitMs;
+  let found: number | null = null;
+
+  while (found === null && now() < deadline) {
+    const stopPoll = new AbortController();
+    const stopAsk = new AbortController();
+    const poll = (async () => {
+      while (now() < deadline) {
+        const timeout = Math.max(0, Math.min(pollTimeout, Math.ceil((deadline - now()) / 1000)));
+        const updates = await client.getUpdates({
+          offset, timeout, signal: AbortSignal.any([p.signal, stopPoll.signal]),
+        });
+        let candidate: TgUser | undefined;
+        for (const u of updates) {
+          offset = u.update_id + 1;
+          const m = u.message;
+          if (!candidate && m?.from && !m.from.is_bot && m.chat.type === 'private') candidate = m.from;
+        }
+        if (candidate) return { kind: 'message' as const, user: candidate };
+      }
+      return { kind: 'timeout' as const };
+    })();
+    const typed = p.ask('>', { signal: stopAsk.signal }).then((text) => ({ kind: 'typed' as const, text }));
+
+    let outcome;
+    try {
+      outcome = await Promise.race([poll, typed]);
+    } catch (error) {
+      stopPoll.abort();
+      stopAsk.abort();
+      await Promise.allSettled([poll, typed]);
+      if (isAbort(error) || p.signal.aborted) throw error;
+      p.say(`! ${describePollError(error)}`);
+      return null;
+    }
+    // Whichever lost is cancelled, and its rejection swallowed.
+    if (outcome.kind === 'typed') stopPoll.abort();
+    else stopAsk.abort();
+    await Promise.allSettled([poll, typed]);
+    if (p.signal.aborted) throw p.signal.reason;
+
+    if (outcome.kind === 'typed') {
+      const id = parseOwnerId(outcome.text);
+      if (typeof id === 'number') found = id;
+      else p.say(id);
+    } else if (outcome.kind === 'message') {
+      const user = outcome.user;
+      if (await p.confirm(`Is this you: ${describeUser(user)}, id ${user.id}?`, true)) found = user.id;
+      else p.say('Waiting for another message. Or type your id.');
+    } else {
+      p.say('No message arrived in time.');
+      break;
+    }
+  }
+
+  // Mark what was read as handled, or the bot's first poll replays the /start.
+  if (offset !== undefined) {
+    try {
+      await client.getUpdates({ offset, timeout: 0 });
+    } catch {
+      // Harmless: the bot answers one /start twice, at worst.
+    }
+  }
+  return found;
+}
+
+function describePollError(error: unknown): string {
+  if (error instanceof TelegramApiError && error.code === 409) {
+    return 'Something else is already reading this bot\'s messages: probably TeleCoder or another program ' +
+      'running with the same token. Stop it, or type your id below.';
+  }
+  return `Couldn't wait for your message: ${describeTelegramError(error)}`;
+}
+
+async function stepWorkspace(opts: InitOptions, deps: InitDeps, interactive: boolean, current: string | undefined): Promise<string> {
+  const p = deps.prompter;
+  if (opts.workspace !== undefined) {
+    const resolved = resolveDir(opts.workspace, deps.homedir);
+    if (typeof resolved !== 'string' || !isDir(resolved)) throw new Stop(`--workspace: ${opts.workspace} is not a directory.`);
+    return resolved;
+  }
+  const def = current ?? suggestWorkspace(deps.homedir);
+  if (!interactive) return def;
+
+  p.say('Workspace: the folder your projects are in. /project picks one of them for Claude to work in,');
+  p.say('and admins can fetch files from anywhere inside it with /file.');
+  for (;;) {
+    const answer = await p.ask('Workspace directory:', { default: tildify(def, deps.homedir) });
+    const resolved = resolveDir(answer, deps.homedir);
+    if (isDir(resolved)) return resolved;
+    p.say(`${resolved} is not a directory. Create it first, or pick another.`);
+  }
+}
+
+/** ~/projects or the like when there is one, else the home directory. */
+export function suggestWorkspace(homedir: string, exists: (p: string) => boolean = isDir): string {
+  for (const name of ['projects', 'Projects', 'dev', 'code', 'src', 'repos']) {
+    const dir = path.join(homedir, name);
+    if (exists(dir)) return dir;
+  }
+  return homedir;
+}
+
+function resolveDir(input: string, homedir: string): string {
+  const trimmed = input.trim();
+  const expanded = trimmed === '~' ? homedir : trimmed.startsWith('~/') ? path.join(homedir, trimmed.slice(2)) : trimmed;
+  return path.resolve(expanded);
+}
+
+function tildify(dir: string, homedir: string): string {
+  if (dir === homedir) return '~';
+  return dir.startsWith(homedir + path.sep) ? `~/${dir.slice(homedir.length + 1)}` : dir;
+}
+
+function isDir(dir: string): boolean {
+  try {
+    return fs.statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+async function stepVoice(opts: InitOptions, deps: InitDeps, interactive: boolean, current: string | undefined): Promise<string | undefined> {
+  const p = deps.prompter;
+  if (opts.groqKeyEnv) {
+    const key = deps.env[opts.groqKeyEnv]?.trim();
+    if (!key) throw new Stop(`--groq-key-env ${opts.groqKeyEnv}: that environment variable is empty or not set.`);
+    return key;
+  }
+  if (!interactive) return current;
+  const on = await p.confirm(
+    'Transcribe voice messages? Needs a Groq API key (https://console.groq.com/keys; it has a free tier).',
+    Boolean(current),
+  );
+  if (!on) return undefined;
+  if (current && await p.confirm('Keep the current Groq key?', true)) return current;
+  for (;;) {
+    const key = (await p.secret('Groq API key:')).trim();
+    if (key) {
+      if (!key.startsWith('gsk_')) p.say('! Groq keys usually start with gsk_; using it anyway.');
+      return key;
+    }
+  }
+}
+
+/** One sentence about a failed Bot API call, in the wording the bot itself uses. */
+export function describeTelegramError(error: unknown): string {
+  if (error instanceof TelegramApiError) {
+    if (error.method === 'getMe' && (error.code === 401 || error.code === 404)) return REJECTED_TOKEN_MESSAGE;
+    return `Telegram said: ${error.description}`;
+  }
+  if (error instanceof TelegramNetworkError) {
+    return `Couldn't reach api.telegram.org (${error.message}). Check the network connection, and try again.`;
+  }
+  return redactSecrets(error instanceof Error ? error.message : String(error));
+}

@@ -36,7 +36,7 @@ export function missingConfigMessage(envPath: string): string[] {
   return [
     `No TeleCoder config found: ${envPath} doesn't exist.`,
     '',
-    'Run "telecoder init" to set one up. (Not built yet — until it is, copy',
+    'Run "telecoder init" to set one up. (Or copy',
     `${path.join(PACKAGE_ROOT, '.env.example')} to ${envPath} and fill in`,
     'TELEGRAM_BOT_TOKEN and ALLOWED_USER_IDS.)',
     '',
