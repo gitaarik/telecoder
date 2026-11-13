@@ -381,6 +381,9 @@ export async function sendToAgent(
   // Between a result and the next turn, when the query is only being kept
   // open for liveTasks.
   let waitingOnTasks = false;
+  // Foreground shell commands still running. The CLI ends each one at its
+  // own timeout, so a quiet one is not stuck.
+  const runningShells = new Set<string>();
 
   try {
     const controller = abortController || new AbortController();
@@ -647,6 +650,7 @@ export async function sendToAgent(
           // Waiting on a quiet background shell is no stall: nothing is
           // expected until it ends.
           shouldPauseTimeouts: () => hasPendingQuestionForSession(sessionKey) || waitingOnTasks,
+          shouldPauseStaleTool: () => runningShells.size > 0,
         })
       : null;
     watchdog?.start();
@@ -796,6 +800,9 @@ export async function sendToAgent(
             if ('id' in block && typeof block.id === 'string') {
               toolUseIdToName.set(block.id, block.name);
               toolUseIdToInput.set(block.id, toolInput);
+              if ((block.name === 'Bash' || block.name === 'PowerShell') && !isBackgroundedToolCall) {
+                runningShells.add(block.id);
+              }
               if (SILENT_TOOL_NAMES.has(block.name) || isBackgroundedToolCall) {
                 // Backgrounded tasks return a "running in the background"
                 // placeholder; the real outcome surfaces via task_notification.
@@ -1001,6 +1008,7 @@ export async function sendToAgent(
             if (!block || typeof block !== 'object') continue;
             const b = block as { type?: string; tool_use_id?: string; content?: unknown; is_error?: boolean };
             if (b.type !== 'tool_result' || typeof b.tool_use_id !== 'string') continue;
+            runningShells.delete(b.tool_use_id);
             if (silentToolUseIds.has(b.tool_use_id)) continue;
             const isError = b.is_error === true;
             // Successful Edit/Write: render the captured before/after content

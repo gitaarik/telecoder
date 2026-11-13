@@ -41,6 +41,12 @@ export interface WatchdogOptions {
    * moment the wait ends.
    */
   shouldPauseTimeouts?: () => boolean;
+  /**
+   * True while a tool that ends itself is running, such as a shell command
+   * with its own timeout. A quiet one sends only heartbeats, which is no
+   * stall, so the stale tool timeout waits. The silence timeout still applies.
+   */
+  shouldPauseStaleTool?: () => boolean;
 }
 
 export class AgentWatchdog {
@@ -55,6 +61,7 @@ export class AgentWatchdog {
   private onSilenceTimeout?: () => void;
   private onStaleToolTimeout?: () => void;
   private shouldPauseTimeouts?: () => boolean;
+  private shouldPauseStaleTool?: () => boolean;
 
   private startTime: number = 0;
   private lastActivityTime: number = 0;
@@ -75,6 +82,7 @@ export class AgentWatchdog {
     this.onSilenceTimeout = options.onSilenceTimeout;
     this.onStaleToolTimeout = options.onStaleToolTimeout;
     this.shouldPauseTimeouts = options.shouldPauseTimeouts;
+    this.shouldPauseStaleTool = options.shouldPauseStaleTool;
   }
 
   /**
@@ -121,6 +129,8 @@ export class AgentWatchdog {
     }
 
     const now = Date.now();
+    // Counted from when the tool ends, not from before it started.
+    if (this.shouldPauseStaleTool?.()) this.lastMeaningfulActivityTime = now;
     const sinceLastActivity = now - this.lastActivityTime;
     const sinceLastMeaningful = now - this.lastMeaningfulActivityTime;
     const totalElapsed = now - this.startTime;
