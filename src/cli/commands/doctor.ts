@@ -88,9 +88,11 @@ export function parseAuthStatus(stdout: string): { loggedIn: boolean; method?: s
 
 // ── Checks that look at the machine ────────────────────────────
 
-function exec(cmd: string, args: string[], timeout = 15_000): Promise<{ code: number | null; stdout: string; stderr: string }> {
+function exec(
+  cmd: string, args: string[], timeout = 15_000, env?: NodeJS.ProcessEnv,
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    execFile(cmd, args, { timeout, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile(cmd, args, { timeout, maxBuffer: 1024 * 1024, env }, (error, stdout, stderr) => {
       const code = error ? (typeof error.code === 'number' ? error.code : null) : 0;
       resolve({ code, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') });
     });
@@ -102,22 +104,45 @@ function onPath(name: string): boolean {
   return path.isAbsolute(resolved);
 }
 
-async function checkClaude(executable: string): Promise<CheckResult[]> {
+/**
+ * The variables in the .env that change how claude logs in. The bot loads
+ * them into its own environment, so `claude auth status` has to see them too,
+ * or a login kept in the .env reads as none.
+ */
+const CLAUDE_AUTH_VARS = [
+  'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CONFIG_DIR',
+  'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY',
+];
+
+export function claudeAuthEnv(
+  value: (key: string) => string | undefined, base: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const env = { ...base };
+  for (const key of CLAUDE_AUTH_VARS) {
+    const v = value(key);
+    if (v) env[key] = v;
+  }
+  return env;
+}
+
+async function checkClaude(executable: string, env: NodeJS.ProcessEnv): Promise<CheckResult[]> {
   const bin = path.isAbsolute(executable) || executable.includes('/') ? executable : resolveBin(executable);
-  const version = await exec(bin, ['--version'], 15_000);
+  const version = await exec(bin, ['--version'], 15_000, env);
   if (version.code !== 0) {
     return [fail(`Claude Code CLI not found (${executable})`,
-      'Install it: npm install -g @anthropic-ai/claude-code — or set CLAUDE_EXECUTABLE_PATH.')];
+      'Install it: curl -fsSL https://claude.ai/install.sh | bash — or set CLAUDE_EXECUTABLE_PATH.')];
   }
   const results = [ok(`Claude Code ${version.stdout.trim().split('\n')[0]}`)];
 
-  const auth = await exec(bin, ['auth', 'status', '--json'], 20_000);
+  const auth = await exec(bin, ['auth', 'status', '--json'], 20_000, env);
   const status = parseAuthStatus(auth.stdout);
   if (status?.loggedIn) {
     results.push(ok(`Claude Code is logged in${status.method ? ` (${status.method})` : ''}`));
   } else if (status) {
-    results.push(fail('Claude Code is not logged in', 'Run "claude" once and log in, or set ANTHROPIC_API_KEY.'));
-  } else if (process.env.ANTHROPIC_API_KEY || fs.existsSync(path.join(os.homedir(), '.claude', '.credentials.json'))) {
+    results.push(fail('Claude Code is not logged in',
+      'Run "claude" once and log in, or run "claude setup-token" and set CLAUDE_CODE_OAUTH_TOKEN in the .env.'));
+  } else if (env.ANTHROPIC_API_KEY || env.CLAUDE_CODE_OAUTH_TOKEN
+    || fs.existsSync(path.join(os.homedir(), '.claude', '.credentials.json'))) {
     // An older CLI without `auth status`: credentials on disk are the best sign.
     results.push(ok('Claude Code credentials found'));
   } else {
@@ -221,7 +246,7 @@ export async function runChecks(args: string[]): Promise<CheckResult[]> {
     results.push(checkAllowedUsers(value('ALLOWED_USER_IDS')));
   }
 
-  results.push(...await checkClaude(value('CLAUDE_EXECUTABLE_PATH') || 'claude'));
+  results.push(...await checkClaude(value('CLAUDE_EXECUTABLE_PATH') || 'claude', claudeAuthEnv(value)));
   results.push(...await checkNodePty());
 
   if (live) {

@@ -142,7 +142,7 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 | **Linux or macOS** | Windows isn't supported natively: the permission hook, restarts (systemd or a bash script) and process tracking (`/proc`) assume a Unix system. WSL 2 is Linux underneath, so it should work there as on Linux, but that is untested. |
 | **Node.js 22+** | with npm. TeleCoder refuses to start on anything older. |
 | **A C++ toolchain** (Linux) | `node-pty` is compiled during `npm install` on Linux, which needs `python3`, `make` and `g++`: `sudo apt install python3 make g++` (Debian, Ubuntu) or `sudo dnf install python3 make gcc-c++` (Fedora, RHEL). macOS uses a prebuilt binary. |
-| **Claude Code CLI, logged in** | Install it and run `claude` once and `/login`, as the user the bot will run as. For a machine you won't sign in on, `claude setup-token` makes a long-lived token to put in `CLAUDE_CODE_OAUTH_TOKEN`; an `ANTHROPIC_API_KEY` works too, billed per use. The bot warns at startup if it finds no login, and replies with how to log in if a message fails on it. |
+| **Claude Code CLI, logged in** | Install it with `curl -fsSL https://claude.ai/install.sh \| bash` (it goes in `~/.local/bin`; log in again if that isn't on your `PATH` yet) and run `claude` once and `/login`, as the user the bot will run as. For a machine you won't sign in on, `claude setup-token` makes a long-lived token to put in `CLAUDE_CODE_OAUTH_TOKEN`; an `ANTHROPIC_API_KEY` works too, billed per use. The bot warns at startup if it finds no login, and replies with how to log in if a message fails on it. |
 | **Telegram bot token** | from [@BotFather](https://t.me/botfather) |
 | **Your Telegram user ID** | the number, not your @username: message [@userinfobot](https://t.me/userinfobot) |
 | **ffmpeg** (optional) | only for spoken replies through Groq (`/tts`). Transcribing voice notes doesn't need it. |
@@ -191,7 +191,8 @@ ALLOWED_USER_IDS=your_user_id
 
 ```bash
 npm install
-npm run dev        # dev mode with hot reload
+npx tsx src/cli.ts doctor   # checks Node, the claude CLI and its login, and your config
+npm run dev                 # dev mode with hot reload
 ```
 
 Open your bot in Telegram → `/start`

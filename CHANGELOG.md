@@ -102,6 +102,14 @@ reasoning — the commit bodies are the long form, this is the index.
   `CLAUDE_CODE_OAUTH_TOKEN`, without refusing to start (macOS keeps the login
   in the keychain, where the check can't see it).
 
+- **`doctor` sees a login kept in the `.env`** — a `CLAUDE_CODE_OAUTH_TOKEN`
+  or `ANTHROPIC_API_KEY` set in the `.env` works for the bot, but `doctor`
+  ran `claude auth status` without it and reported "not logged in". It now
+  hands claude the login variables from the `.env` (and nothing else from
+  it), its hint mentions `claude setup-token`, and its install hint is the
+  native installer: `npm install -g @anthropic-ai/claude-code` fails with
+  EACCES for a normal user on a distro's Node.
+
 - **Node.js 22 or newer is required** — Node 20 reached end of life in April
   2026. `engines.node` is now `>=22`, CI runs on Node 22 and 24, and the bot
   and the launcher check the version before loading anything else, saying

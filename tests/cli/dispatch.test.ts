@@ -7,6 +7,7 @@ import {
   tokenLooksValid,
   checkAllowedUsers,
   parseAuthStatus,
+  claudeAuthEnv,
 } from '../../src/cli/commands/doctor.js';
 
 function captureIo(): CliIo & { lines: string[]; errors: string[] } {
@@ -142,6 +143,12 @@ describe('doctor checks', () => {
     expect(parseAuthStatus('{"loggedIn":true,"authMethod":"claude.ai"}')).toEqual({ loggedIn: true, method: 'claude.ai' });
     expect(parseAuthStatus('{"loggedIn":false}')).toEqual({ loggedIn: false, method: undefined });
     expect(parseAuthStatus('error: unknown command')).toBeNull();
+  });
+
+  it('hands claude the login kept in the .env, and nothing else from it', () => {
+    const file: Record<string, string> = { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-x', TELEGRAM_BOT_TOKEN: '1:abc' };
+    const env = claudeAuthEnv((key) => file[key], { PATH: '/bin' });
+    expect(env).toEqual({ PATH: '/bin', CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-x' });
   });
 });
 
