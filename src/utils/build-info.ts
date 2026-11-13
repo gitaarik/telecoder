@@ -13,6 +13,7 @@
 
 import { readFileSync } from 'fs';
 import { formatTimeAgo } from './format.js';
+import { isCheckout } from './install-mode.js';
 
 export interface BuildInfo {
   /** package.json's, the only name a build has outside a git checkout. */
@@ -61,7 +62,11 @@ export function getLatestBuild(): BuildInfo | null {
   return readBuildInfo(STAMP);
 }
 
-/** getRunningBuild, in words. */
+/**
+ * getRunningBuild, in words. An npm install goes by its version: the commit it
+ * was published from names nothing its owner has a copy of.
+ */
 export function describeRunningBuild(): string | null {
-  return runningBuild && describeBuild(runningBuild);
+  if (!runningBuild) return null;
+  return describeBuild(isCheckout() ? runningBuild : { version: runningBuild.version, builtAt: runningBuild.builtAt });
 }

@@ -38,8 +38,8 @@ export interface CommandSpec {
 
 export const COMMANDS: Record<string, CommandSpec> = {
   start: {
-    summary: 'Run the bot (several bots when instances.json exists)',
-    usage: '[--single | --multi] [--config <instances.json>]',
+    summary: 'Run the bot; all of instances.json when it exists',
+    usage: '[--single|--multi]',
     load: () => import('./commands/start.js'),
   },
   doctor: {
