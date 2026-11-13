@@ -40,6 +40,14 @@ import {
 import { launcherRestartHint } from '../../../utils/stale-launcher.js';
 import { describeRunningBuild, getLatestBuild, getRunningBuild } from '../../../utils/build-info.js';
 import { checkCode, checkRemote, describeCodeCheck, describeRemoteCheck } from '../../../utils/version-check.js';
+import { isCheckout, detectPackageRunner, getInstalledVersion } from '../../../utils/install-mode.js';
+import {
+  compareInstalled,
+  describeNpmCheck,
+  getLatestVersion,
+  installLatestGlobally,
+  updateCommand,
+} from '../../../utils/npm-version.js';
 
 /** Write the reload marker so autoResumeAfterReload picks up sessions on restart. */
 export function writeReloadMarker(): void {
@@ -121,6 +129,12 @@ async function runClaudeUpdate(): Promise<string> {
 }
 
 export async function handleUpdate(ctx: Context): Promise<void> {
+  // An npm install updates itself too; a checkout updates with git pull and
+  // /rebuildbot, so there /update stays about Claude Code alone.
+  if (!isCheckout()) {
+    await offerPackageUpdate(ctx);
+    return;
+  }
   const version = await getClaudeVersion();
   const prompt = version
     ? `⬆️ Update Claude Code? (currently ${version})`
@@ -154,6 +168,10 @@ export async function handleUpdateCallback(ctx: Context): Promise<void> {
     await ctx.reply('❌ Update cancelled.');
     return;
   }
+  if (data === 'update:telecoder') {
+    await updateTeleCoder(ctx);
+    return;
+  }
   if (data !== 'update:confirm') return;
 
   const chatId = ctx.chat?.id;
@@ -175,6 +193,82 @@ export async function handleUpdateCallback(ctx: Context): Promise<void> {
         .add('.');
     } else if (/npm|installed via/i.test(message)) {
       b.newline(2).add('This install may be managed by npm — update it there instead.');
+    }
+    await replyParts(ctx, b.build());
+  } finally {
+    if (chatId !== undefined) {
+      try {
+        await ctx.api.deleteMessage(chatId, ack.message_id);
+      } catch {
+        // ignore cleanup errors
+      }
+    }
+  }
+}
+
+/** The /update menu of a package install: TeleCoder itself, or Claude Code. */
+async function offerPackageUpdate(ctx: Context): Promise<void> {
+  const [claudeVersion, latest] = await Promise.all([getClaudeVersion(), getLatestVersion()]);
+  const check = compareInstalled(getInstalledVersion(), latest);
+  const runner = detectPackageRunner();
+
+  const lines = [
+    '⬆️ What should be updated?',
+    '',
+    `TeleCoder: ${describeNpmCheck(check, runner)}`,
+    `Claude Code: ${claudeVersion ? `currently ${claudeVersion}` : 'version unknown'}`,
+  ];
+  // Only a global install can replace itself: npx and a local install are
+  // updated from wherever they were started.
+  const telecoderButton = runner === 'global'
+    ? [{ text: '⬆️ TeleCoder', callback_data: 'update:telecoder' }]
+    : [];
+  await ctx.reply(lines.join('\n'), {
+    reply_markup: {
+      inline_keyboard: [
+        [...telecoderButton, { text: '⬆️ Claude Code', callback_data: 'update:confirm' }],
+        [{ text: '❌ Cancel', callback_data: 'update:cancel' }],
+      ],
+    },
+  });
+}
+
+/** `npm install -g telecoder@latest`, then say how to start running it. */
+async function updateTeleCoder(ctx: Context): Promise<void> {
+  const runner = detectPackageRunner();
+  if (runner !== 'global') {
+    await replyFormatted(
+      ctx,
+      new EntityText()
+        .add('This TeleCoder was not installed with ')
+        .code('npm install -g')
+        .add(", so it can't replace itself. Update it with ")
+        .code(updateCommand(runner))
+        .add(' and restart it.')
+        .build(),
+    );
+    return;
+  }
+
+  const chatId = ctx.chat?.id;
+  const ack = await ctx.reply('⬆️ Updating TeleCoder…');
+  try {
+    const raw = await installLatestGlobally();
+    // Read back from disk: npm replaced the package directory this runs from.
+    const installed = getInstalledVersion();
+    const b = new EntityText().bold('⬆️ TeleCoder Update').newline(2);
+    if (raw) b.pre(raw.slice(-1500)).newline(2);
+    b.add(installed ? `v${installed} is installed. ` : 'Installed. ')
+      .add('It runs from the next restart: /restartbot.');
+    await replyParts(ctx, b.build());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    const b = new EntityText().add('❌ Update failed:').newline(2).pre(message.slice(-1500));
+    if (/EACCES|permission denied/i.test(message)) {
+      b.newline(2)
+        .add("npm can't write to its global directory as this user. Run ")
+        .code(updateCommand('global'))
+        .add(' yourself (with the rights it needs), then /restartbot.');
     }
     await replyParts(ctx, b.build());
   } finally {
@@ -227,6 +321,10 @@ export async function handleBotStatus(ctx: Context): Promise<void> {
 }
 
 export async function handleVersion(ctx: Context): Promise<void> {
+  if (!isCheckout()) {
+    await handlePackageVersion(ctx);
+    return;
+  }
   const [code, remote, warning] = await Promise.all([
     checkCode(getRunningBuild(), getLatestBuild(), PROJECT_ROOT),
     checkRemote(PROJECT_ROOT),
@@ -243,13 +341,26 @@ export async function handleVersion(ctx: Context): Promise<void> {
   await ctx.reply(warning ? `${answer}\n\n${warning}` : answer);
 }
 
+/** /version for a package install: the installed version against npm's latest. */
+async function handlePackageVersion(ctx: Context): Promise<void> {
+  const installed = getInstalledVersion();
+  const [latest, warning] = await Promise.all([getLatestVersion(), staleLauncherWarning()]);
+  const answer = [
+    `Running: TeleCoder v${installed ?? '?'}`,
+    describeNpmCheck(compareInstalled(installed, latest), detectPackageRunner()),
+  ].join('\n');
+  await ctx.reply(warning ? `${answer}\n\n${warning}` : answer);
+}
+
 /**
- * How this process gets replaced when it stops: by systemd, or by the botctl
- * script starting a successor.
+ * How this process gets replaced when it stops: by systemd, by the botctl
+ * script starting a successor (a checkout), or by whatever supervises a
+ * package install bringing it back after it exits.
  */
 type RestartPlan =
   | { kind: 'systemd'; unit: SystemdUnit }
-  | { kind: 'botctl' };
+  | { kind: 'botctl' }
+  | { kind: 'exit' };
 
 /**
  * Work out how to restart, without doing anything yet.
@@ -314,6 +425,24 @@ async function planRestart(): Promise<{ plan: RestartPlan } | { error: EntityMes
     return { plan: { kind: 'systemd', unit } };
   }
 
+  if (!isCheckout()) {
+    // A package install has no botctl. It expects a supervisor (a systemd or
+    // launchd unit with Restart=always, pm2, ...) that starts it again when it
+    // exits — and in a terminal there is none, so there it says so instead.
+    if (process.stdin.isTTY && process.stdout.isTTY) {
+      return {
+        error: new EntityText()
+          .add('This bot is running in a terminal, so nothing would start it again after it exits.')
+          .newline(2)
+          .add('Stop it there and run ')
+          .code('telecoder start')
+          .add(' again, or run it as a service so restarts work from chat.')
+          .build(),
+      };
+    }
+    return { plan: { kind: 'exit' } };
+  }
+
   if (!botctlExists()) {
     return {
       error: new EntityText()
@@ -333,6 +462,14 @@ async function planRestart(): Promise<{ plan: RestartPlan } | { error: EntityMes
  * process is on its way out by the time this returns.
  */
 function executeRestart(plan: RestartPlan): void {
+  if (plan.kind === 'exit') {
+    // Same as the systemd path below: the exit is the restart, non-zero so a
+    // supervisor that only restarts on failure acts on it too.
+    console.log('[Restart] Exiting for the service manager to start the bot again');
+    process.exitCode = RESTART_EXIT_CODE;
+    process.kill(process.pid, 'SIGTERM');
+    return;
+  }
   if (plan.kind === 'systemd') {
     // The exit *is* the restart. Non-zero so both Restart=always and
     // Restart=on-failure act on it; SIGTERM rather than process.exit so the
@@ -650,7 +787,21 @@ async function restartAllWhenIdle(ctx: Context, warning: string): Promise<void> 
   }
 }
 
+/**
+ * /rebuildbot needs the source to build, which only a checkout has. Says so,
+ * and returns true, when this isn't one.
+ */
+async function refuseRebuildOutsideCheckout(ctx: Context): Promise<boolean> {
+  if (isCheckout()) return false;
+  await ctx.reply(
+    '⚠️ /rebuildbot rebuilds a source checkout of TeleCoder, and this one was installed from npm — there is no source here to build. '
+    + 'Use /update to install a newer release, and /restartbot to restart.',
+  );
+  return true;
+}
+
 export async function handleRebuild(ctx: Context): Promise<void> {
+  if (await refuseRebuildOutsideCheckout(ctx)) return;
   const args = ctx.message?.text?.split(/\s+/).slice(1).join(' ').trim();
 
   // Legacy direct invocation: /rebuildbot all
@@ -713,6 +864,8 @@ export async function handleRebuildCallback(ctx: Context): Promise<void> {
     await ctx.reply('❌ Rebuild cancelled.');
     return;
   }
+
+  if (await refuseRebuildOutsideCheckout(ctx)) return;
 
   if (data === 'rebuild:all') {
     await performRebuild(ctx, 'all');

@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { hasGuestUsers } from '../utils/admins.js';
+import { isCheckout } from '../utils/install-mode.js';
 import { EntityText, type EntityMessage } from '../telegram/entities.js';
 
 export interface ParsedCommand {
@@ -136,7 +137,9 @@ export function getAvailableCommands(): EntityMessage {
       '• `/botstatus` - Show bot process status',
       '• `/version` - Show the running version and whether it\'s the latest',
       `• \`/restartbot\` - Restart the bot process${adminTag}`,
-      `• \`/rebuildbot\` - Rebuild and restart with auto-resume; \`/rebuildbot idle\` waits for each bot to finish first${adminTag}`,
+      ...(isCheckout()
+        ? [`• \`/rebuildbot\` - Rebuild and restart with auto-resume; \`/rebuildbot idle\` waits for each bot to finish first${adminTag}`]
+        : []),
       '• `/ping` - Check if bot is responsive',
       '• `/cancel` - Stop the current request and drop anything queued',
       '• `/mode` - How much Claude asks before acting',

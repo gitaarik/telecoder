@@ -10,7 +10,6 @@
 import { Context } from 'grammy';
 import * as fs from 'fs';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
 import { sessionManager } from '../../../claude/session-manager.js';
 import {
   getModel,
@@ -26,10 +25,10 @@ import { userPreferences } from '../../../providers/user-preferences.js';
 import { getPtyProvider } from '../../../providers/claude-provider.js';
 import { getSessionKeyFromCtx, parseSessionKey, type SettingsScope } from '../../../utils/session-key.js';
 import { formatTimeAgo } from '../../../utils/format.js';
+import { PACKAGE_ROOT } from '../../../utils/install-mode.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-/** Repo root — four levels up from `src/bot/handlers/command/`. */
-export const PROJECT_ROOT = path.resolve(__dirname, '../../../..');
+/** Repo root (the package root, in an npm install). */
+export const PROJECT_ROOT = PACKAGE_ROOT;
 export const BOTCTL_PATH = path.join(PROJECT_ROOT, 'scripts', 'telecoder-botctl.sh');
 
 export function botctlExists(): boolean {

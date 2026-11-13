@@ -134,6 +134,7 @@ import { resolvePendingPoll } from '../claude/poll-user.js';
 import { captureSecretMessages, handleSecretCallback } from '../claude/secret-request.js';
 import { registerBotCommandName } from '../claude/command-parser.js';
 import { withRunningNote } from './handlers/running-note.js';
+import { isCheckout } from '../utils/install-mode.js';
 
 // Resolve sequentialize constraint: same-chat updates are ordered,
 // but /cancel is registered BEFORE this middleware so it bypasses it.
@@ -296,11 +297,12 @@ export async function createBot(): Promise<Bot> {
     { command: 'botstatus', description: '🩺 Show bot process status' },
     { command: 'version', description: '🏷️ Show the running version and whether it is the latest' },
     { command: 'restartbot', description: '🔁 Restart the bot' },
-    { command: 'rebuildbot', description: '🔄 Rebuild and restart with session restore' },
+    // An npm install has no source to rebuild; /update replaces it instead.
+    ...(isCheckout() ? [{ command: 'rebuildbot', description: '🔄 Rebuild and restart with session restore' }] : []),
     { command: 'context', description: '🧠 Show Claude context usage' },
     { command: 'cost', description: '💰 Show usage limits and cost' },
     { command: 'compact', description: '🗜️ Compact the context window' },
-    { command: 'update', description: '⬆️ Update the Claude Code CLI' },
+    { command: 'update', description: isCheckout() ? '⬆️ Update the Claude Code CLI' : '⬆️ Update TeleCoder or the Claude Code CLI' },
     { command: 'plan', description: '📋 Start planning mode' },
     { command: 'explore', description: '🔍 Explore codebase' },
     { command: 'loop', description: '🔄 Run in loop mode' },
