@@ -65,6 +65,12 @@ export interface InitDeps {
   claudeBin: string;
   /** A source checkout starts with npm, not the telecoder command. */
   isCheckout?: boolean;
+  /**
+   * Called when the owner asks for the background service at the end. The
+   * caller installs it once the wizard's prompter is closed, since the
+   * installer asks its own questions on the same terminal.
+   */
+  requestService?: () => void;
   now?: () => Date;
   /** How long to wait for the owner's /start. */
   ownerWaitMs?: number;
@@ -282,12 +288,12 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
   p.say('Now:');
   p.say(`  ${startCommand.padEnd(18)}run the bot, then message it on Telegram`);
   p.say(`  ${'telecoder doctor'.padEnd(18)}check the setup again any time`);
-  // ── MERGE POINT: telecoder service install ──────────────────
-  // The single call site for the service installer. When
-  // src/cli/commands/service.ts exports runServiceInstall(opts), replace the
-  // line below with an offer to run it — interactive:
-  //   if (await p.confirm('Install it as a background service now?', true)) await runServiceInstall({ … });
-  // and keep this line as the non-interactive fallback.
+  // A checkout runs under pm2 or botctl; the service is for npm installs.
+  if (interactive && deps.requestService && !deps.isCheckout
+    && await p.confirm('Keep it running in the background now (telecoder service install)?', true)) {
+    deps.requestService();
+    return;
+  }
   p.say('Next: run `telecoder service install` to keep it running in the background.');
 }
 

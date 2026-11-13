@@ -14,6 +14,7 @@ import { isCheckout } from '../../utils/install-mode.js';
 import { legacyEnv } from '../../utils/legacy-env.js';
 import { checkClaude, checkNodePty, checkNodeVersion } from './doctor.js';
 import { runInit, type InitOptions } from '../init/flow.js';
+import { runServiceInstall } from './service.js';
 import { createTerminalPrompter } from '../init/prompter.js';
 import { createTelegramClient, DEFAULT_API_ROOT } from '../init/telegram.js';
 
@@ -81,8 +82,10 @@ export async function run(args: string[], io: CliIo): Promise<CommandResult> {
   const apiRoot = process.env.TELECODER_TELEGRAM_API_ROOT || DEFAULT_API_ROOT;
 
   const prompter = createTerminalPrompter();
+  let serviceRequested = false;
+  let code: CommandResult;
   try {
-    return await runInit(parsed.opts, {
+    code = await runInit(parsed.opts, {
       prompter,
       makeClient: (token) => createTelegramClient(token, { apiRoot }),
       preflight: async () => ({
@@ -98,8 +101,14 @@ export async function run(args: string[], io: CliIo): Promise<CommandResult> {
       homedir: os.homedir(),
       claudeBin,
       isCheckout: isCheckout(),
+      requestService: () => { serviceRequested = true; },
     });
   } finally {
     prompter.close();
   }
+  if (code === 0 && serviceRequested) {
+    io.out('');
+    return runServiceInstall({ io });
+  }
+  return code;
 }

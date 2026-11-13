@@ -209,6 +209,36 @@ describe('telecoder init: interactive', () => {
     expect(allOutput(prompter)).not.toContain('AAHgood');
   });
 
+  it('offers the background service at the end, and hands it to the caller on yes', async () => {
+    for (const yes of [true, false]) {
+      const tg = fakeTelegram();
+      tg.updates = [[privateMessage(5)]];
+      let requested = false;
+      const { prompter, result } = run(
+        [GOOD, WAIT, true, '', '', false, false, true, yes],
+        tg, {}, { requestService: () => { requested = true; } },
+      );
+      expect(await result).toBe(0);
+      expect(prompter.asked).toContain('Keep it running in the background now (telecoder service install)?');
+      expect(requested).toBe(yes);
+      expect(prompter.said.includes('Next: run `telecoder service install` to keep it running in the background.')).toBe(!yes);
+      fs.rmSync(envPath, { force: true });
+    }
+  });
+
+  it("doesn't offer the service in a checkout, which runs under pm2 or botctl", async () => {
+    const tg = fakeTelegram();
+    tg.updates = [[privateMessage(5)]];
+    let requested = false;
+    const { prompter, result } = run(
+      [GOOD, WAIT, true, '', '', false, false, true],
+      tg, {}, { isCheckout: true, requestService: () => { requested = true; } },
+    );
+    expect(await result).toBe(0);
+    expect(requested).toBe(false);
+    expect(prompter.asked.join('\n')).not.toContain('background now');
+  });
+
   it('writes the file 0600 in a 0700 directory', async () => {
     const tg = fakeTelegram();
     const { result } = run([GOOD, '412345678', '', '', false, false, true], tg, {}, {}, true);
