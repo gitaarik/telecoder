@@ -10,6 +10,7 @@ import { sessionManager } from './session-manager.js';
 import { EntityText, clip } from '../telegram/entities.js';
 import { resolveApproversInChat, appendApproverLine } from '../telegram/admin-mention.js';
 import { consumeAutoApproval, formatRemaining, type AutoApproveWindow } from './auto-approve.js';
+import { sanitizeError } from '../utils/sanitize.js';
 
 /**
  * Pattern-based permission gate for PreToolUse. When enabled, certain tool calls
@@ -209,6 +210,36 @@ export async function evaluateToolCall(req: GateRequest): Promise<GateDecision> 
     };
   }
   return { block: false, reason: '' };
+}
+
+/**
+ * The gate as a transport's PreToolUse hook calls it: the PTY's IPC handler
+ * and the SDK's in-process hook both go through here, so the two can't drift
+ * apart in what they check or how they fail.
+ *
+ * Fails closed. A gate that let a call through because it broke while judging
+ * it would be no gate on exactly the calls it exists for.
+ */
+export async function gateToolCall(req: GateRequest): Promise<GateDecision> {
+  try {
+    if (!isPermissionGateEnabled()) return { block: false, reason: '' };
+    return await evaluateToolCall(req);
+  } catch (err) {
+    console.error('[PermissionGate] evaluation failed, denying:', sanitizeError(err));
+    return {
+      block: true,
+      reason: 'TeleCoder permission gate could not evaluate this call, so it was denied.',
+    };
+  }
+}
+
+/**
+ * How long a hook should give the gate before giving up on it: the prompt's
+ * own timeout plus slack, so the gate's denial is what ends an unanswered
+ * prompt rather than the hook runner — which would let the call through.
+ */
+export function gateHookTimeoutSeconds(): number {
+  return Math.ceil(promptTimeoutMs() / 1000) + 120;
 }
 
 /**

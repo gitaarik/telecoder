@@ -32,6 +32,7 @@ import { isNativeCompactCommand } from './command-parser.js';
 import { recordAvailableCommands } from './available-commands.js';
 import { permissionModeInfo, transportDefaultMode } from './permission-mode.js';
 import { enabledPluginsSetting } from './enabled-plugins.js';
+import { forgetTurnContext, noteTurnContext, permissionGateHook } from './sdk-permission-gate.js';
 import { getSessionTopic, getMsSinceTopicSet } from '../bot/handlers/command/topic-store.js';
 import {
   createAgentTimer,
@@ -268,6 +269,9 @@ export async function sendToAgent(
   // result message's own text is empty for a manual compact, so the
   // confirmation has to be synthesized from the boundary.
   const manualCompact = isNativeCompactCommand(message);
+  // Whoever's turn this is answers for the tool calls the permission gate
+  // stops from here on, in this query or a held one this turn joins.
+  noteTurnContext(sessionKey, options.telegramCtx as Context | undefined);
 
   async function emitTaskEvent(event: TaskEvent): Promise<void> {
     try {
@@ -517,11 +521,19 @@ export async function sendToAgent(
         }],
       };
 
+      // The permission gate, as the PTY transport runs it — see
+      // sdk-permission-gate.ts. Always registered, and first: the verbose
+      // logging below adds its own PreToolUse matcher after it.
+      const gateHook = permissionGateHook(sessionKey);
+      const gateHooks: Partial<Record<HookEvent, HookCallbackMatcher[]>> = {
+        PreToolUse: [gateHook],
+      };
+
       // SDK hook logging: only register the noisy hooks (PreToolUse, PostToolUse, etc.)
       // when LOG_AGENT_HOOKS is true. Session lifecycle hooks are always registered.
       const verboseHooks: Partial<Record<HookEvent, HookCallbackMatcher[]>> = config.LOG_AGENT_HOOKS
         ? {
-          PreToolUse: [{
+          PreToolUse: [gateHook, {
             hooks: [async (input) => {
               logAt('verbose', '[Hook] PreToolUse', input);
               return { continue: true };
@@ -588,6 +600,7 @@ export async function sendToAgent(
         LOG_LEVELS[getLogLevel()] >= LOG_LEVELS.verbose
           ? {
             ...preCompactHook,
+            ...gateHooks,
             ...verboseHooks,
             ...autoTopicHook,
             SessionStart: [{
@@ -603,7 +616,7 @@ export async function sendToAgent(
               }],
             }],
           }
-          : { ...preCompactHook, ...autoTopicHook };
+          : { ...preCompactHook, ...gateHooks, ...autoTopicHook };
 
       // Validate cwd exists — stale sessions may reference paths from another OS
       let cwd = session.workingDirectory;
@@ -1537,6 +1550,7 @@ export function clearConversation(sessionKey: string): void {
   chatSessionIds.delete(sessionKey);
   chatUsageCache.delete(sessionKey);
   clearSessionCost(sessionKey);
+  forgetTurnContext(sessionKey);
   taskTracker.clear(sessionKey);
 }
 

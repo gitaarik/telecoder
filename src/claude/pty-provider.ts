@@ -30,7 +30,7 @@ import {
 import './mcp-bridge.js';
 import { onAsyncToolArmed, markTurnStart, markTurnEnd, markSelfTurnInterrupted, teardown as teardownMonitorRelay, relayPushNotification, classifyAsyncTool, movedToBackground, type AsyncToolKind } from './monitor-relay.js';
 import { relayUpdateBanner, scrapeUpdateBanner } from './update-banner-relay.js';
-import { evaluateToolCall, isPermissionGateEnabled, DENY_MARKER_START, DENY_MARKER_END } from './permission-gate.js';
+import { gateToolCall, isPermissionGateEnabled, DENY_MARKER_START, DENY_MARKER_END } from './permission-gate.js';
 import {
   buildSettingsJson,
   buildMcpConfigJson,
@@ -2435,13 +2435,14 @@ registerIpcHandler('/hook/preToolUse', async (turn, body) => {
     if (message) relayPushNotification(turn.sessionKey, message);
   }
 
-  // Permission gate: opt-in via TELECODER_PERMISSION_PROMPTS=1. For tools
-  // matching a dangerous pattern, blocks the call and waits for Telegram
+  // Permission gate: on with guests or TELECODER_PERMISSION_PROMPTS=1. For
+  // tools matching a dangerous pattern, blocks the call and waits for Telegram
   // approval. Decision returned as a deny-marker string the shell wrapper
-  // parses to exit 2 (claude code's "block this tool" signal).
+  // parses to exit 2 (claude code's "block this tool" signal). gateToolCall is
+  // shared with the SDK transport's hook (sdk-permission-gate.ts).
   if (isPermissionGateEnabled()) {
     const ctx = (turn.options as { telegramCtx?: Context }).telegramCtx;
-    const decision = await evaluateToolCall({
+    const decision = await gateToolCall({
       sessionKey: turn.sessionKey,
       toolName,
       toolInput,
