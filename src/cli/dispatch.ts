@@ -49,7 +49,7 @@ export const COMMANDS: Record<string, CommandSpec> = {
   },
   init: {
     summary: 'Set up a bot step by step: token, owner, workspace; writes the .env',
-    usage: '[--token-env VAR] [--owner-id ID] [--workspace DIR] [--transport sdk|pty] [--yes]',
+    usage: '[options]',
     load: () => import('./commands/init.js'),
   },
   service: {
