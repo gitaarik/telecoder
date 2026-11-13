@@ -144,7 +144,34 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 | **Telegram bot token** | from [@BotFather](https://t.me/botfather) |
 | **Your Telegram user ID** | from [@userinfobot](https://t.me/userinfobot) |
 
-### Setup
+### Install from npm
+
+```bash
+npm install -g telecoder
+mkdir -p ~/.telecoder
+cp "$(npm root -g)/telecoder/.env.example" ~/.telecoder/.env
+```
+
+Edit `~/.telecoder/.env` (set `TELECODER_HOME` to keep it somewhere else):
+
+```bash
+TELEGRAM_BOT_TOKEN=your_bot_token
+ALLOWED_USER_IDS=your_user_id
+```
+
+```bash
+telecoder doctor   # checks Node, the claude CLI and its login, and your config
+telecoder start    # runs every bot in ~/.telecoder/instances.json instead, if there is one
+```
+
+Open your bot in Telegram → `/start`
+
+`/restartbot` restarts an npm install by exiting, so run it under something that
+starts it again — a systemd unit with `Restart=always`, launchd with `KeepAlive`,
+or pm2. `/update` installs the latest release; `/rebuildbot` is for source
+checkouts only.
+
+### From source
 
 ```bash
 git clone https://github.com/gitaarik/telecoder.git
@@ -152,14 +179,12 @@ cd telecoder
 cp .env.example .env
 ```
 
-Edit `.env`:
+Edit `.env` — a `.env` or `instances.json` next to `package.json` is used instead of `~/.telecoder`:
 
 ```bash
 TELEGRAM_BOT_TOKEN=your_bot_token
 ALLOWED_USER_IDS=your_user_id
 ```
-
-### Run
 
 ```bash
 npm install
@@ -503,8 +528,8 @@ your secrets, which is the only form of that answer worth trusting.
 | `/botstatus` | Bot process status and the version it's running |
 | `/version` | The running version and whether it's the latest, against the code in the checkout and the branch it tracks |
 | `/restartbot` | Restart the bot — admin-only |
-| `/rebuildbot` | Rebuild code and restart — this instance, all, or all once each is idle (`/rebuildbot idle`) — admin-only |
-| `/update` | Update the Claude Code CLI — admin-only |
+| `/rebuildbot` | Rebuild code and restart — this instance, all, or all once each is idle (`/rebuildbot idle`) — admin-only, source checkouts only |
+| `/update` | Update the Claude Code CLI, or TeleCoder itself on an npm install — admin-only |
 | `/cancel` | Stop the running turn and drop every message waiting behind it (alias: `/stop`) |
 | `/commands` | Show all commands |
 

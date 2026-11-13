@@ -2086,6 +2086,16 @@
             exactly as they are, and the turn ends saying so rather than hanging.</p>
           </div>
           <div class="feature-card" data-category="reliability">
+            <div class="feature-icon"><svg><use href="#i-tools"/></svg></div>
+            <h3>One command to install and check</h3>
+            <p><code>npm install -g telecoder</code> gives you a <code>telecoder</code> command.
+            <code>telecoder doctor</code> checks Node, the <code>claude</code> CLI and its login, the
+            terminal-mode dependency and your config before anything starts, without spending a
+            token; <code>telecoder start</code> runs one bot, or all of them when there is an
+            <code>instances.json</code>. Config lives in <code>~/.telecoder</code>, and
+            <code>/update</code> installs a new release from the chat.</p>
+          </div>
+          <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-throttle"/></svg></div>
             <h3>It survives your usage limit</h3>
             <p>When Claude Max throttles mid-turn, one tap switches to CCR and replays the message
@@ -2495,7 +2505,23 @@
             <h3>Quick Start</h3>
             <div class="code-block">
               <div class="code-header">
-                <span>Terminal</span>
+                <span>Install from npm</span>
+                <button type="button" class="copy-btn" onclick="copyCode(this)">Copy</button>
+              </div>
+              <div class="code-content">
+                <pre><span class="command">npm install -g</span> telecoder
+<span class="command">mkdir -p</span> ~/.telecoder
+<span class="command">cp</span> "$(npm root -g)/telecoder/.env.example" ~/.telecoder/.env
+<span class="comment"># Edit ~/.telecoder/.env with your credentials</span>
+<span class="command">telecoder doctor</span>
+<span class="command">telecoder start</span></pre>
+              </div>
+            </div>
+            <p>An npm install restarts from chat by exiting, so run <code>telecoder start</code> under
+            something that starts it again: systemd with <code>Restart=always</code>, launchd or pm2.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span>From source</span>
                 <button type="button" class="copy-btn" onclick="copyCode(this)">Copy</button>
               </div>
               <div class="code-content">
@@ -2515,15 +2541,15 @@
               <div class="step-item">
                 <span class="step-number">1</span>
                 <div class="step-content">
-                  <h4>Clone the repository</h4>
-                  <p>Download the project using <code>git clone</code></p>
+                  <h4>Install TeleCoder</h4>
+                  <p><code>npm install -g telecoder</code>, or clone the repository with <code>git clone</code> to work from source</p>
                 </div>
               </div>
               <div class="step-item">
                 <span class="step-number">2</span>
                 <div class="step-content">
                   <h4>Install dependencies</h4>
-                  <p>Run <code>npm install</code> in the project directory</p>
+                  <p>From source only: run <code>npm install</code> in the project directory</p>
                 </div>
               </div>
               <div class="step-item">
@@ -2548,7 +2574,8 @@
                 <span class="step-number">5</span>
                 <div class="step-content">
                   <h4>Connect the bot to TeleCoder</h4>
-                  <p>Copy <code>.env.example</code> to <code>.env</code>, then set
+                  <p>Copy <code>.env.example</code> to <code>~/.telecoder/.env</code> (from source:
+                  <code>.env</code> in the project directory), then set
                   <code>TELEGRAM_BOT_TOKEN</code> to the token BotFather gave you and
                   <code>ALLOWED_USER_IDS</code> to your numeric ID.</p>
                 </div>
@@ -2557,7 +2584,7 @@
                 <span class="step-number">6</span>
                 <div class="step-content">
                   <h4>Run the bot</h4>
-                  <p>Start with <code>npm run dev</code> for development or <code>npm start</code> for production</p>
+                  <p><code>telecoder doctor</code> checks the setup and <code>telecoder start</code> runs it; from source, <code>npm run dev</code> for development or <code>npm start</code> for production</p>
                 </div>
               </div>
               <div class="step-item">
@@ -3159,7 +3186,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/rebuildbot</code>
-              <span class="command-desc">Rebuild code and restart — inline menu picks this instance, all instances, all instances each once it is idle, or cancel. <code>/rebuildbot idle</code> picks the last directly. <strong>Admin-only</strong> when the bot has non-admin users.</span>
+              <span class="command-desc">Rebuild code and restart — inline menu picks this instance, all instances, all instances each once it is idle, or cancel. <code>/rebuildbot idle</code> picks the last directly. Source checkouts only — an npm install updates with <code>/update</code>. <strong>Admin-only</strong> when the bot has non-admin users.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/permissions</code>
@@ -3179,7 +3206,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/update</code>
-              <span class="command-desc">Update the Claude Code CLI — confirms with current version, then runs claude update. <strong>Admin-only</strong> when the bot has non-admin users.</span>
+              <span class="command-desc">Update the Claude Code CLI — confirms with current version, then runs claude update. On an npm install it also offers to update TeleCoder itself (<code>npm install -g telecoder@latest</code>). <strong>Admin-only</strong> when the bot has non-admin users.</span>
             </div>
           </div>
         </div>

@@ -5,6 +5,27 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ## Unreleased
 
+### Install
+
+- **`npm install -g telecoder`** — TeleCoder installs as an npm package with
+  a `telecoder` command: `telecoder start` runs one bot, or every bot in
+  `instances.json` when there is one; `telecoder doctor` checks Node, the
+  `claude` CLI and its login (without spending anything), node-pty and the
+  toolchain it needs, and the config, with `--live` asking Telegram about the
+  token; `telecoder --version` and `telecoder help` do what they say. `init`
+  and `service install` are placeholders for now.
+- **Config lives in `~/.telecoder`** for an npm install (`TELECODER_HOME`
+  moves it): `.env`, `instances.json` and the Telegraph account file sit next
+  to the existing state files. A source checkout with a `.env` or
+  `instances.json` next to `package.json` keeps using those, exactly as
+  before.
+- **An npm install updates and restarts without a checkout** — `/update`
+  also offers `npm install -g telecoder@latest`, `/version` compares the
+  installed version with the latest release, and `/restartbot` exits for the
+  service manager to start it again (so run it under systemd with
+  `Restart=always`, launchd or pm2). `/rebuildbot` is for source checkouts
+  only and says so elsewhere.
+
 ### Security
 
 - **`/file` and `/telegraph <path>` can't hand out credentials** — both
