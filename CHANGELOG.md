@@ -5,6 +5,16 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ## Unreleased
 
+### Security
+
+- **The bot token stays out of `ps` and out of error messages** — photos,
+  documents and voice notes were fetched with `curl`, whose command line
+  carried `https://api.telegram.org/file/bot<token>/…` for any local user to
+  read, and a failed download sent that command line, token and all, back to
+  the chat. Downloads now use Node's own `fetch`, with the same timeouts and
+  retries. `sanitizeError` also redacts Telegram bot tokens, API keys, bearer
+  headers and credentials in URLs from anything it is given.
+
 ### Multiple bots
 
 - **`instances.json` is read while the launcher runs** — adding a bot used to

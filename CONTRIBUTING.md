@@ -28,7 +28,7 @@ the [Quick Start](README.md#quick-start).
 
 - TypeScript, with functional patterns preferred
 - Reuse the helpers in `src/utils/`, especially for anything that handles outside input:
-  `isValidProtocol()` for URLs, `sanitizePath()` for paths, `sanitizeError()` before
+  `isValidDownloadUrl()` and `downloadFileSecure()` for URLs, `sanitizePath()` for paths, `sanitizeError()` before
   logging, `isValidImageFile()` for images
 - Never put tokens or secrets in process arguments, in the repository or in test fixtures
 

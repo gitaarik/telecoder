@@ -57,11 +57,11 @@ Before committing, verify that `docs/index.html` reflects ALL:
 ## Security Checklist
 
 Before committing changes that handle external input:
-- [ ] URL protocol validation using `isValidProtocol()` from `src/utils/download.ts`
+- [ ] URL validation using `isValidDownloadUrl()` from `src/utils/download.ts` (downloads go through `downloadFileSecure()`)
 - [ ] Path sanitization using `sanitizePath()` from `src/utils/sanitize.ts`
-- [ ] Error sanitization using `sanitizeError()` before logging
+- [ ] Error sanitization using `sanitizeError()` before logging (it also redacts bot tokens and API keys; `redactSecrets()` for non-error strings)
 - [ ] File content validation using `isValidImageFile()` for images
-- [ ] No tokens or secrets in process arguments (use stdin for curl)
+- [ ] No tokens or secrets in process arguments (download with `downloadFileSecure()`, which uses in-process fetch, not curl)
 
 ## Git Workflow
 

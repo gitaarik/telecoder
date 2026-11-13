@@ -79,7 +79,7 @@ export async function handleVoice(ctx: Context): Promise<void> {
     }
     const fileUrl = getTelegramFileUrl(config.TELEGRAM_BOT_TOKEN, file.file_path);
 
-    // Download using curl with secure stdin config (prevents token exposure in ps)
+    // In-process fetch: the token-bearing URL never reaches a process argument list.
     const ext = voice.mime_type?.includes('ogg') ? '.ogg' : '.oga';
     tempFilePath = path.join(os.tmpdir(), `telecoder_voice_${messageId}${ext}`);
 
