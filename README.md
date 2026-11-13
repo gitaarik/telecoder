@@ -35,7 +35,7 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 
 | Area | Technology |
 |------|------------|
-| Language and runtime | TypeScript on Node.js 20+ |
+| Language and runtime | TypeScript on Node.js 22+ |
 | Telegram | [grammY](https://grammy.dev/) |
 | Claude Code transports | [Claude Agent SDK](https://docs.anthropic.com/en/docs/claude-code), or the real `claude` CLI through `node-pty` and `@xterm/headless` |
 | Agent tools | [Model Context Protocol](https://modelcontextprotocol.io/) server, for the tools that reach back into Telegram |
@@ -43,12 +43,12 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 | Tests | Vitest |
 | Optional | Groq and OpenAI for speech, and `ffmpeg` for Groq's spoken replies |
 
-**Project status:** in active development, and used every day for my own development work, including building TeleCoder itself. The latest tagged release is v1.1.0, with newer work under "Unreleased" in the [changelog](CHANGELOG.md). The code is about 42k lines of TypeScript, plus 21k lines of tests (122 test files, 1,574 tests). See the [roadmap](ROADMAP.md) for what's next.
+**Project status:** in active development, and used every day for my own development work, including building TeleCoder itself. The latest tagged release is v1.1.0, with newer work under "Unreleased" in the [changelog](CHANGELOG.md). The code is about 49k lines of TypeScript, plus 29k lines of tests (167 test files, 2,089 tests). See the [roadmap](ROADMAP.md) for what's next.
 
 > [!NOTE]
 > TeleCoder began as a fork of [Claudegram by @NachoSEO](https://github.com/NachoSEO/claudegram),
 > whose last commit was in March 2026. It has been developed independently since April 2026 by
-> [@gitaarik](https://github.com/gitaarik): 370+ commits, adding about 76k lines and removing 22k.
+> [@gitaarik](https://github.com/gitaarik): 430+ commits, adding about 98k lines and removing 28k.
 > The commit history since the fork is all in this repository, which was created in July 2026 when
 > the project was renamed, so its GitHub creation date is later than its first commits.
 > See [Credits](#credits) for attribution.
@@ -139,10 +139,13 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 
 | Requirement | Notes |
 |-------------|-------|
-| **Node.js 20+** | with npm |
-| **Claude Code CLI** | installed and authenticated — `claude` in your PATH |
+| **Linux or macOS** | Windows isn't supported natively: the permission hook, restarts (systemd or a bash script) and process tracking (`/proc`) assume a Unix system. WSL 2 is Linux underneath, so it should work there as on Linux, but that is untested. |
+| **Node.js 22+** | with npm. TeleCoder refuses to start on anything older. |
+| **A C++ toolchain** (Linux) | `node-pty` is compiled during `npm install` on Linux, which needs `python3`, `make` and `g++`: `sudo apt install python3 make g++` (Debian, Ubuntu) or `sudo dnf install python3 make gcc-c++` (Fedora, RHEL). macOS uses a prebuilt binary. |
+| **Claude Code CLI, logged in** | Install it and run `claude` once and `/login`, as the user the bot will run as. For a machine you won't sign in on, `claude setup-token` makes a long-lived token to put in `CLAUDE_CODE_OAUTH_TOKEN`; an `ANTHROPIC_API_KEY` works too, billed per use. The bot warns at startup if it finds no login, and replies with how to log in if a message fails on it. |
 | **Telegram bot token** | from [@BotFather](https://t.me/botfather) |
-| **Your Telegram user ID** | from [@userinfobot](https://t.me/userinfobot) |
+| **Your Telegram user ID** | the number, not your @username: message [@userinfobot](https://t.me/userinfobot) |
+| **ffmpeg** (optional) | only for spoken replies through Groq (`/tts`). Transcribing voice notes doesn't need it. |
 
 ### Install from npm
 

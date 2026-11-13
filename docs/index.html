@@ -2483,8 +2483,9 @@
             <div class="prereq-group">
               <p class="prereq-label">Required</p>
               <div class="prereq-grid">
-                <span class="prereq-badge">Node.js 20+ and npm</span>
-                <span class="prereq-badge">Claude Code CLI, authenticated</span>
+                <span class="prereq-badge">Linux or macOS</span>
+                <span class="prereq-badge">Node.js 22+ and npm</span>
+                <span class="prereq-badge">Claude Code CLI, logged in</span>
                 <span class="prereq-badge">Telegram bot token</span>
                 <span class="prereq-badge">Your Telegram user ID</span>
               </div>
@@ -2495,6 +2496,12 @@
                 <span class="prereq-badge either">Claude Pro or Max subscription</span>
                 <span class="prereq-badge either">Anthropic API key</span>
               </div>
+            </div>
+            <div class="prereq-note">
+              <strong>Logging in:</strong> run <code>claude</code> and <code>/login</code> on the bot&rsquo;s machine, as the user it runs as. For a machine you won&rsquo;t sign in on, <code>claude setup-token</code> makes a long-lived token for <code>CLAUDE_CODE_OAUTH_TOKEN</code>; an <code>ANTHROPIC_API_KEY</code> works too.
+            </div>
+            <div class="prereq-note">
+              <strong>On Linux:</strong> <code>npm install</code> compiles <code>node-pty</code>, which needs <code>python3</code>, <code>make</code> and <code>g++</code> (<code>sudo apt install python3 make g++</code>, or <code>sudo dnf install python3 make gcc-c++</code>). Windows isn&rsquo;t supported natively; WSL 2 should work as Linux does, but is untested. <code>ffmpeg</code> is only needed for spoken replies through Groq.
             </div>
             <div class="prereq-note">
               <strong>Note:</strong> On macOS, TeleCoder uses <code>caffeinate</code> to prevent sleep during long operations.
