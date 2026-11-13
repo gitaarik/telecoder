@@ -10,7 +10,7 @@
 import * as os from 'os';
 import type { CliIo, CommandResult } from '../dispatch.js';
 import { getConfigHomeInfo, configFile } from '../../utils/config-home.js';
-import { isCheckout } from '../../utils/install-mode.js';
+import { isCheckout, detectPackageRunner } from '../../utils/install-mode.js';
 import { legacyEnv } from '../../utils/legacy-env.js';
 import { checkClaude, checkNodePty, checkNodeVersion } from './doctor.js';
 import { runInit, type InitOptions } from '../init/flow.js';
@@ -101,7 +101,9 @@ export async function run(args: string[], io: CliIo): Promise<CommandResult> {
       homedir: os.homedir(),
       claudeBin,
       isCheckout: isCheckout(),
-      requestService: () => { serviceRequested = true; },
+      // Not from npx: its cache can be cleared under the unit, and the installer
+      // refuses it anyway.
+      requestService: detectPackageRunner() === 'npx' ? undefined : () => { serviceRequested = true; },
     });
   } finally {
     prompter.close();
