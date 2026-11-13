@@ -55,6 +55,13 @@
  * A question left unanswered while the conversation moves on would scroll out of
  * sight, so once another turn has run it's taken down and asked again below the
  * new reply, without a buzz the second time.
+ *
+ * A message doesn't have to wait for the turn at all. "Ask as /btw" answers it
+ * on the side straight away, and "Ask in a fork" sends it to a new thread whose
+ * conversation is this one as it stood before the running turn, so the two carry
+ * on side by side. Either way it leaves the line, as a taken-back message does.
+ * What does the asking lives with the handlers, which hand it in through
+ * `setQueuedDiverters`, so this file doesn't pull in the agent.
  */
 
 import * as path from 'path';
@@ -98,7 +105,7 @@ const REMIND_POLL_MS = 1_000;
 
 const CALLBACK_PREFIX = 'queued:';
 /** A bare message id is Take back, which is what acks already in chats carry. */
-const CALLBACK_PATTERN = /^queued:(?:(park|send|drop):)?(\d+)$/;
+const CALLBACK_PATTERN = /^queued:(?:(park|send|drop|btw|fork):)?(\d+)$/;
 
 const BEHIND_TURN = '⏳ Queued behind the running turn.';
 const BEHIND_OWN_TURN = '⏳ Queued behind a turn Claude started itself.';
@@ -118,6 +125,8 @@ const LATER_COMMAND = /^\/later(?:@\w+)?(?:\s+|$)/i;
 const SENT = '📤 Sent.';
 const DROPPED = '🗑 Dropped before it reached Claude.';
 const NOT_YOURS = 'Only the person who sent this, or an admin, can do that.';
+const ASKED_AS_BTW = '💬 Asked as /btw instead. The answer is below.';
+const ASKED_IN_FORK = '🍴 Asked in a fork instead:';
 
 /** An update carrying a message, the only kind this file holds on to. */
 type MessageUpdate = Update & { message: NonNullable<Update['message']> };
@@ -134,6 +143,12 @@ interface QueuedMessage {
   takenBack: boolean;
   /** Set aside: it leaves the line the way a taken-back message does, but isn't gone. */
   parked: boolean;
+  /** Plain text, which is all /btw takes. */
+  canBtw: boolean;
+  /** In a chat where a fork gets a thread of its own. */
+  canFork: boolean;
+  /** A fork is being opened for it: it keeps its place until that works out. */
+  diverting: boolean;
   /** Set until the ack is due, and cleared early if it never becomes due. */
   ackTimer: NodeJS.Timeout | null;
   /** The ack on its way, resolving to its message id. Undefined if it never landed. */
@@ -180,6 +195,25 @@ const inFlight = new Map<SessionKey, number>();
 
 /** Replays a message on Send, and posts the questions. */
 let botRef: Bot | undefined;
+
+/** Where "Ask as /btw" and "Ask in a fork" send a message. */
+export interface QueuedDiverters {
+  /** Answer it on the side, alongside the running turn. */
+  btw(ctx: Context, sessionKey: SessionKey, question: string): Promise<void>;
+  /**
+   * Open a thread with the conversation as it stood before the running turn,
+   * ready for the message, which is sent there once this resolves.
+   */
+  fork(ctx: Context, sessionKey: SessionKey, message: Message):
+    Promise<{ threadId: number; name: string; link?: string } | { error: string }>;
+}
+
+let diverters: QueuedDiverters | undefined;
+
+/** Called once at startup by whatever wires the handlers. */
+export function setQueuedDiverters(d: QueuedDiverters | undefined): void {
+  diverters = d;
+}
 let reminderTimer: NodeJS.Timeout | null = null;
 let reminding = false;
 /** Messages whose chat refused the question. Tried again after a restart. */
@@ -212,19 +246,31 @@ function takeBackButton(messageId: number) {
   return { text: '🗑 Take back', callback_data: `${CALLBACK_PREFIX}${messageId}` };
 }
 
-async function postAck(api: Api, entry: QueuedMessage): Promise<number | undefined> {
-  const buttons = [takeBackButton(entry.messageId)];
+function ackKeyboard(entry: QueuedMessage) {
+  const first = [takeBackButton(entry.messageId)];
   // A bot command has no answer to read first, so there's nothing to decide after.
   if (entry.forClaude) {
-    buttons.push({ text: '🔔 Ask me after', callback_data: `${CALLBACK_PREFIX}park:${entry.messageId}` });
+    first.push({ text: '🔔 Ask me after', callback_data: `${CALLBACK_PREFIX}park:${entry.messageId}` });
   }
+  // Four don't fit across a phone, so the ways around the wait get a row of their own.
+  const second = [];
+  if (entry.canBtw && diverters) {
+    second.push({ text: '💬 Ask as /btw', callback_data: `${CALLBACK_PREFIX}btw:${entry.messageId}` });
+  }
+  if (entry.canFork && diverters) {
+    second.push({ text: '🍴 Ask in a fork', callback_data: `${CALLBACK_PREFIX}fork:${entry.messageId}` });
+  }
+  return { inline_keyboard: second.length > 0 ? [first, second] : [first] };
+}
+
+async function postAck(api: Api, entry: QueuedMessage): Promise<number | undefined> {
   try {
     const sent = await api.sendMessage(entry.chatId, ackText(entry.sessionKey), {
       // It's answering the message it hangs off, and the person who sent that
       // is looking at the chat, so a buzz would say nothing. Sent regardless of
       // whether that message still exists: deleting it doesn't recall it.
       reply_parameters: { message_id: entry.messageId, allow_sending_without_reply: true },
-      reply_markup: { inline_keyboard: [buttons] },
+      reply_markup: ackKeyboard(entry),
       disable_notification: true,
       ...(entry.threadId !== undefined ? { message_thread_id: entry.threadId } : {}),
     });
@@ -262,6 +308,10 @@ function noteArrival(ctx: Context): QueuedMessage | null {
   }
 
   const { api } = ctx;
+  // A slash command typed at Claude means something to the conversation it's
+  // in, so it neither goes on the side nor somewhere new.
+  const typed = msg.text ?? msg.caption ?? '';
+  const command = typed.trimStart().startsWith('/');
   const entry: QueuedMessage = {
     chatId: keyInfo.chatId,
     threadId: keyInfo.threadId,
@@ -272,6 +322,9 @@ function noteArrival(ctx: Context): QueuedMessage | null {
     forClaude,
     takenBack: false,
     parked: false,
+    canBtw: forClaude && msg.text !== undefined && msg.text.trim() !== '' && !command,
+    canFork: forClaude && !command && ctx.chat?.type === 'private' && ctx.me?.has_topics_enabled === true,
+    diverting: false,
     ackTimer: null,
     ack: null,
   };
@@ -583,7 +636,7 @@ function sendParked(message: ParkedMessage): void {
 async function waitForClaude(entry: QueuedMessage): Promise<void> {
   let ownTurnSince: number | null = null;
   while (!entry.takenBack && !entry.parked) {
-    if (isProcessing(entry.sessionKey)) {
+    if (entry.diverting || isProcessing(entry.sessionKey)) {
       ownTurnSince = null;
     } else if (!getPtyProvider().isSessionGenerating(entry.sessionKey)) {
       return;
@@ -613,7 +666,10 @@ export const trackQueuedMessage: MiddlewareFn<Context> = async (ctx, next) => {
 export const holdQueuedMessage: MiddlewareFn<Context> = async (ctx, next) => {
   const msg = ctx.message;
   const chatId = ctx.chat?.id;
-  const entry = msg && chatId !== undefined ? queued.get(entryKey(chatId, msg.message_id)) : undefined;
+  const found = msg && chatId !== undefined ? queued.get(entryKey(chatId, msg.message_id)) : undefined;
+  // A message asked in a fork arrives again under its own id, in the fork's
+  // thread, while the original is still being dropped here.
+  const entry = found?.sessionKey === getSessionKeyFromCtx(ctx)?.sessionKey ? found : undefined;
   if (!entry) return next();
 
   if (entry.forClaude) await waitForClaude(entry);
@@ -737,6 +793,102 @@ async function handleParkTap(ctx: Context, key: string): Promise<void> {
   }
 }
 
+/** The checks every button on the ack makes first. The entry when the tap can go ahead. */
+async function claimWaiting(ctx: Context, key: string): Promise<QueuedMessage | undefined> {
+  const entry = queued.get(key);
+  if (!entry) {
+    await answerNoLongerWaiting(ctx);
+    return undefined;
+  }
+  if (entry.takenBack || entry.parked || entry.diverting) {
+    await ctx.answerCallbackQuery({
+      text: entry.takenBack ? 'Already taken back.' : entry.parked ? 'Already set aside.' : 'Already opening a fork.',
+    });
+    return undefined;
+  }
+  if (!maySettle(ctx, entry.senderId)) {
+    await ctx.answerCallbackQuery({ text: NOT_YOURS, show_alert: true });
+    return undefined;
+  }
+  return entry;
+}
+
+async function handleBtwTap(ctx: Context, key: string): Promise<void> {
+  const entry = await claimWaiting(ctx, key);
+  const question = entry?.update.message.text?.trim();
+  if (!entry || !question || !diverters) return;
+
+  // Before anything that awaits, or the turn could end and let it through as well.
+  takeBack(ctx.api, entry, ASKED_AS_BTW);
+  console.log(`[Queued] Asked message ${entry.messageId} in ${entry.sessionKey} as /btw`);
+  await ctx.answerCallbackQuery({ text: 'Asking on the side.' });
+  // Not awaited: the answer can take minutes, and the tap is done with.
+  const { btw } = diverters;
+  void btw(ctx, entry.sessionKey, question).catch((err: unknown) => {
+    console.error(`[Queued] /btw for message ${entry.messageId} failed:`, sanitizeError(err));
+  });
+}
+
+/**
+ * The message as if it had been sent in the new thread: the same update, with
+ * the thread's id on it, through the whole chain the way Send replays one.
+ */
+function sendIntoThread(update: MessageUpdate, threadId: number): void {
+  const copy = structuredClone(update);
+  copy.message.message_thread_id = threadId;
+  (copy.message as { is_topic_message?: boolean }).is_topic_message = true;
+  delete (copy.message as { reply_to_message?: unknown }).reply_to_message;
+  copy.message.date = Math.floor(Date.now() / 1000);
+  markAlreadyAddressed(copy);
+  void botRef?.handleUpdate(copy).catch((err: unknown) => {
+    console.error(`[Queued] Sending message ${update.message.message_id} into the fork failed:`, sanitizeError(err));
+  });
+}
+
+async function handleForkTap(ctx: Context, key: string): Promise<void> {
+  const entry = await claimWaiting(ctx, key);
+  if (!entry || !diverters) return;
+
+  // Holds its place while the thread is opened, so it can go back in line if
+  // that fails, and doesn't slip through to the running conversation meanwhile.
+  entry.diverting = true;
+  await ctx.answerCallbackQuery({ text: 'Opening a fork…' });
+  let opened: Awaited<ReturnType<QueuedDiverters['fork']>>;
+  try {
+    opened = await diverters.fork(ctx, entry.sessionKey, entry.update.message);
+  } catch (err) {
+    console.error(`[Queued] Fork for message ${entry.messageId} failed:`, sanitizeError(err));
+    opened = { error: 'Could not open a fork.' };
+  }
+
+  if ('error' in opened) {
+    entry.diverting = false;
+    // Cancelled meanwhile, so there's no place in line to give back.
+    if (entry.takenBack) return;
+    try {
+      await ctx.editMessageText(`${ackText(entry.sessionKey)}\n🍴 ${opened.error}`, { reply_markup: ackKeyboard(entry) });
+    } catch (err) {
+      console.warn('[Queued] Could not update the ack:', sanitizeError(err));
+    }
+    return;
+  }
+
+  entry.diverting = false;
+  entry.takenBack = true;
+  stopAckTimer(entry);
+  console.log(`[Queued] Asked message ${entry.messageId} in ${entry.sessionKey} in a fork, thread ${opened.threadId}`);
+  sendIntoThread(entry.update, opened.threadId);
+  try {
+    await ctx.editMessageText(`${ASKED_IN_FORK} ${opened.name}`, {
+      reply_markup: {
+        inline_keyboard: opened.link ? [[{ text: `Open ${opened.name}`, url: opened.link }]] : [],
+      },
+    });
+  } catch (err) {
+    console.warn('[Queued] Could not update the ack:', sanitizeError(err));
+  }
+}
+
 async function handleReminderTap(ctx: Context, key: string, action: 'send' | 'drop'): Promise<void> {
   const message = parked.get(key);
   if (!message) {
@@ -776,5 +928,7 @@ export async function handleQueuedCallback(ctx: Context): Promise<void> {
   const key = entryKey(chatId, Number(match[2]));
   if (action === 'park') return handleParkTap(ctx, key);
   if (action === 'send' || action === 'drop') return handleReminderTap(ctx, key, action);
+  if (action === 'btw') return handleBtwTap(ctx, key);
+  if (action === 'fork') return handleForkTap(ctx, key);
   return handleTakeBackTap(ctx, key);
 }

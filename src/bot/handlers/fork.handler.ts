@@ -31,6 +31,7 @@
  */
 
 import { Context, Bot } from 'grammy';
+import type { Message } from 'grammy/types';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -54,6 +55,7 @@ import {
   lastAssistantTurnText,
   lastExchangeIn,
   rewriteJsonlSessionId,
+  forkPastRunningTurn,
   type RecapExchange,
 } from '../../claude/session-jsonl.js';
 import { sessionManager } from '../../claude/session-manager.js';
@@ -459,35 +461,17 @@ async function forkIntoThread(
   offset: MessageOffsetEntry,
   opts: { replyTo?: number } = {},
 ): Promise<void> {
-  const chatId = ctx.chat?.id;
-  if (!chatId) {
-    await tell(ctx, 'Cannot identify this chat.');
-    return;
-  }
-
-  const projectLabel = path.basename(fork.projectPath);
-  const name = threadName(fork.topic ?? '', FORK_THREAD_PREFIX, isHomeProject(fork.projectPath) ? '' : projectLabel)
-    || `${FORK_THREAD_PREFIX}${projectLabel}`;
-  let threadId: number;
-  try {
-    threadId = (await ctx.api.createForumTopic(chatId, name)).message_thread_id;
-  } catch (err) {
-    console.error('[Fork] createForumTopic failed:', err instanceof Error ? err.message : err);
-    await tell(ctx, 'Could not open a new thread.');
+  const opened = await openForkThread(ctx, sessionKey, fork, {
+    above: 'The conversation it was forked from carries on in its own thread.',
+  });
+  if ('error' in opened) {
+    await tell(ctx, opened.error);
     return;
   }
   if (ctx.callbackQuery) await ctx.answerCallbackQuery({ text: 'Forked into a new thread.' });
+  const { name, link } = opened;
+  const projectLabel = path.basename(fork.projectPath);
 
-  const threadKey = buildSessionKey(chatId, threadId);
-  adoptThread(threadKey, name, FORK_THREAD_PREFIX);
-  userPreferences.copyScope(sessionKey, threadKey);
-
-  const threadCtx = buildSyntheticCtx({ api: ctx.api, sessionKey: threadKey, syntheticText: '' });
-  await loadFork(threadCtx, threadKey, fork, {
-    above: 'The conversation it was forked from carries on in its own thread.',
-  });
-
-  const link = ctx.me?.username ? `https://t.me/${ctx.me.username}/${threadId}` : undefined;
   const b = new EntityText().add('✅ ').bold('Forked into a new thread').newline(2);
   if (link) b.link(name, link);
   else b.bold(name);
@@ -508,6 +492,112 @@ async function forkIntoThread(
   } catch (err) {
     console.debug('[Fork] forkIntoThread edit failed:', err instanceof Error ? err.message : err);
   }
+}
+
+/**
+ * Open a new thread named after the conversation, with this thread's
+ * settings, and load the fork into it with its banner. Nothing is said here.
+ */
+async function openForkThread(
+  ctx: Context,
+  sessionKey: string,
+  fork: PendingFork,
+  marker: ForkMarkerOptions,
+): Promise<{ threadId: number; threadKey: string; name: string; link?: string } | { error: string }> {
+  const chatId = ctx.chat?.id;
+  if (!chatId) return { error: 'Cannot identify this chat.' };
+
+  const projectLabel = path.basename(fork.projectPath);
+  const name = threadName(fork.topic ?? '', FORK_THREAD_PREFIX, isHomeProject(fork.projectPath) ? '' : projectLabel)
+    || `${FORK_THREAD_PREFIX}${projectLabel}`;
+  let threadId: number;
+  try {
+    threadId = (await ctx.api.createForumTopic(chatId, name)).message_thread_id;
+  } catch (err) {
+    console.error('[Fork] createForumTopic failed:', err instanceof Error ? err.message : err);
+    return { error: 'Could not open a new thread.' };
+  }
+
+  const threadKey = buildSessionKey(chatId, threadId);
+  adoptThread(threadKey, name, FORK_THREAD_PREFIX);
+  userPreferences.copyScope(sessionKey, threadKey);
+
+  const threadCtx = buildSyntheticCtx({ api: ctx.api, sessionKey: threadKey, syntheticText: '' });
+  await loadFork(threadCtx, threadKey, fork, marker);
+
+  const link = ctx.me?.username ? `https://t.me/${ctx.me.username}/${threadId}` : undefined;
+  return { threadId, threadKey, name, link };
+}
+
+/**
+ * What a fork taken while a turn is running has Claude say about that turn.
+ * In Claude's voice, because it stands as Claude's reply to the prompt.
+ */
+export const STILL_RUNNING_NOTE = 'TeleCoder forked this conversation while the original was still working on the '
+  + 'message above, so none of that work happened here. The original is still on it, in the same working '
+  + "directory, so files may change while this fork runs. I won't redo or undo that work, and I'll check a "
+  + "file's current state before relying on it.";
+
+/** What one sent while a turn was running says, on one line, for the `You:` line in the fork. */
+function describeMessage(message: Message): string {
+  const words = message.text ?? message.caption;
+  if (words?.trim()) return words;
+  return message.voice ? '🎤 voice note' : message.photo ? '🖼 photo' : message.document ? '📎 file' : 'message';
+}
+
+/**
+ * "Ask in a fork" on a message waiting behind a running turn: the conversation
+ * as it stood before that turn goes into a new thread, with the running prompt
+ * and a reply saying it's still being worked on elsewhere (see
+ * forkPastRunningTurn), and a `You:` line showing what's about to be asked
+ * there. Sending the message itself is the caller's: it's the queue that holds
+ * the update.
+ */
+export async function forkPastRunningTurnIntoThread(
+  ctx: Context,
+  sessionKey: string,
+  message: Message,
+): Promise<{ threadId: number; name: string; link?: string } | { error: string }> {
+  if (!canForkToThread(ctx)) return { error: 'Forks need threads, which are off for this bot.' };
+  const session = sessionManager.getSession(sessionKey);
+  if (!session?.claudeSessionId) return { error: 'No conversation to fork yet.' };
+  const sourceJsonl = sessionJsonlPath(session.workingDirectory, session.claudeSessionId);
+  let raw: string;
+  try {
+    raw = fs.readFileSync(sourceJsonl, 'utf-8');
+  } catch {
+    return { error: 'No transcript on disk to fork.' };
+  }
+
+  const { jsonl, noted } = forkPastRunningTurn(raw, STILL_RUNNING_NOTE);
+  if (!noted) console.warn(`[Fork] ${sessionKey}: running turn not on disk yet, forking without the note`);
+  const fork: PendingFork = {
+    fromBotName: BOT_NAME,
+    fromBotId: BOT_ID,
+    fromChatId: ctx.chat?.id,
+    projectPath: session.workingDirectory,
+    jsonl,
+    topic: getSessionTopic(sessionKey),
+    assistantPreview: lastAssistantTurnText(jsonl)?.substring(0, 200),
+    createdAt: new Date().toISOString(),
+  };
+
+  const opened = await openForkThread(ctx, sessionKey, fork, {
+    above: 'The conversation it was forked from carries on in its own thread, still working on that prompt.',
+  });
+  if ('error' in opened) return opened;
+
+  try {
+    await sendFormatted(
+      ctx.api,
+      ctx.chat!.id,
+      youLine(describeMessage(message), MARKER_PROMPT_LEN),
+      { message_thread_id: opened.threadId },
+    );
+  } catch (err) {
+    console.warn('[Fork] Could not post the You line:', err instanceof Error ? err.message : err);
+  }
+  return { threadId: opened.threadId, name: opened.name, link: opened.link };
 }
 
 async function onCancel(ctx: Context): Promise<void> {

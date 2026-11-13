@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as crypto from 'crypto';
 
 export interface RecapExchange {
   user: string;
@@ -920,4 +921,85 @@ export function rewriteJsonlSessionId(jsonl: string, newSessionId: string): stri
     }
   }
   return out.join('\n');
+}
+
+/**
+ * Whether a record closes a turn: the reply's last record, which Claude Code
+ * stamps `end_turn`, the error record a turn that died on its API call ends
+ * with, or the note an interrupted one leaves in the user's place.
+ */
+function endsTurn(rec: JsonlRecord): boolean {
+  if (rec.type === 'assistant') {
+    return (rec.message as { stop_reason?: unknown } | undefined)?.stop_reason === 'end_turn' || isApiErrorRecord(rec);
+  }
+  return rec.type === 'user' && /^\[Request interrupted/.test(extractText(rec.message?.content).trim());
+}
+
+/**
+ * A transcript whose last turn is still running, as a fork that leaves that
+ * turn out but knows it's under way: everything up to the last turn that
+ * ended, then what opened the running one (the prompt, or a background task
+ * reporting back), then `note` as the reply to it.
+ *
+ * The running turn's own records stay out because half a turn doesn't resume:
+ * a tool call with no result is one the API turns down. The prompt goes in as
+ * its own record, copied whole, rather than quoted in the next message, so
+ * however long it is nothing blurs it into what's sent next, and the fork
+ * remembers it through a resume. The reply has no thinking block, since one
+ * needs a signature only the API can make.
+ *
+ * Without anything on disk yet for the running turn, there's nothing to answer
+ * with the note, and the fork is the transcript up to the last turn that ended.
+ */
+export function forkPastRunningTurn(raw: string, note: string): { jsonl: string; noted: boolean } {
+  const lines = raw.split('\n').filter((line) => line.trim());
+  const records = lines.map((line): JsonlRecord | undefined => {
+    try { return JSON.parse(line) as JsonlRecord; }
+    catch { return undefined; }
+  });
+
+  let cut = 0;
+  records.forEach((rec, i) => { if (rec && endsTurn(rec)) cut = i + 1; });
+  // What opened the running turn: everything after the cut up to its first reply.
+  let opened = records.findIndex((rec, i) => i >= cut && rec?.type === 'assistant');
+  if (opened === -1) opened = records.length;
+
+  const settled = lines.slice(0, cut);
+  const opening = records.slice(cut, opened);
+  const parent = [...opening].reverse().find((rec) => rec?.type === 'user' && typeof rec.uuid === 'string') as
+    (JsonlRecord & Record<string, unknown>) | undefined;
+  if (!parent) return { jsonl: joinLines(settled), noted: false };
+
+  // Shaped like a reply Claude Code wrote, from the last real one there is.
+  const template = records.slice(0, cut).reverse().find((rec) => rec?.type === 'assistant' && !isApiErrorRecord(rec)) as
+    (JsonlRecord & Record<string, unknown> & { message?: Record<string, unknown> }) | undefined;
+  const reply = {
+    parentUuid: parent.uuid,
+    isSidechain: false,
+    userType: parent.userType ?? 'external',
+    cwd: parent.cwd,
+    sessionId: parent.sessionId,
+    version: parent.version,
+    gitBranch: parent.gitBranch,
+    message: {
+      id: `msg_${crypto.randomUUID().replace(/-/g, '')}`,
+      type: 'message',
+      role: 'assistant',
+      model: template?.message?.model ?? 'claude',
+      content: [{ type: 'text', text: note }],
+      stop_reason: 'end_turn',
+      stop_sequence: null,
+      // The context as it stood before the running prompt, near enough for the
+      // status line until the fork's first turn reports its own.
+      usage: template?.message?.usage ?? { input_tokens: 0, output_tokens: 0 },
+    },
+    type: 'assistant',
+    uuid: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+  };
+  return { jsonl: joinLines([...settled, ...lines.slice(cut, opened), JSON.stringify(reply)]), noted: true };
+}
+
+function joinLines(lines: string[]): string {
+  return lines.length > 0 ? `${lines.join('\n')}\n` : '';
 }

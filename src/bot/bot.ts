@@ -15,6 +15,7 @@ import {
   handleEditedMessage,
   handleLater,
   initParkedMessages,
+  setQueuedDiverters,
 } from './middleware/queued-messages.js';
 import {
   handleStart,
@@ -94,7 +95,8 @@ import {
 } from './handlers/command.handler.js';
 import { handleMessage, handleCcrThrottleCallback } from './handlers/message.handler.js';
 import { handleSchedule, handleSchedules, handleUnschedule } from './handlers/schedule.handler.js';
-import { handleForkCallback, handleAcceptCommand, handleDeclineCommand, handleForkCommand } from './handlers/fork.handler.js';
+import { handleForkCallback, handleAcceptCommand, handleDeclineCommand, handleForkCommand, forkPastRunningTurnIntoThread } from './handlers/fork.handler.js';
+import { askBtw } from './handlers/command/btw.js';
 import { handleNewBot, handleManagedBotCreated } from './handlers/newbot.handler.js';
 import { handleTreeCommand, handleTreeCallback } from './handlers/tree.handler.js';
 import { handlePromptsCommand, handlePromptsCallback } from './handlers/prompts.handler.js';
@@ -528,6 +530,7 @@ export async function createBot(): Promise<Bot> {
   // so it can't wait in line itself.
   bot.on('edited_message', handleEditedMessage);
   initParkedMessages(bot);
+  setQueuedDiverters({ btw: askBtw, fork: forkPastRunningTurnIntoThread });
   // Menu buttons for /restartbot and /rebuildbot must bypass sequentialize
   // for the same reason their parent commands do: users tap these precisely
   // when the bot is hung, so the callback can't be queued behind the stuck

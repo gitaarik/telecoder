@@ -21,7 +21,7 @@ import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 export async function handleBtw(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
-  const { sessionKey, chatId } = keyInfo;
+  const { sessionKey } = keyInfo;
 
   const text = ctx.message?.text || '';
   const question = text.replace(/^\/btw\s*/i, '').trim();
@@ -31,6 +31,15 @@ export async function handleBtw(ctx: Context): Promise<void> {
     return;
   }
 
+  await askBtw(ctx, sessionKey, question);
+}
+
+/**
+ * Answer `question` alongside the running turn, without it reaching the main
+ * conversation. Also what "Ask as /btw" on a queued message calls, with the
+ * context of the tap rather than of a typed command.
+ */
+export async function askBtw(ctx: Context, sessionKey: string, question: string): Promise<void> {
   // PTY mode has no SDK Query to hang askSideQuestion off — answer from a
   // read-only fork of the live session instead. Only Claude sessions have a
   // resumable JSONL transcript; ccr falls through to the SDK path.

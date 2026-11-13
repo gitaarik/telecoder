@@ -62,6 +62,7 @@ const {
   initParkedMessages,
   forgetParkedMessages,
   armReminders,
+  setQueuedDiverters,
 } = await import('../../src/bot/middleware/queued-messages.js');
 const { queueRequest, setAbortController, setActiveQuery, isProcessing } = await import('../../src/claude/request-queue.js');
 const { handleCancel } = await import('../../src/bot/handlers/command.handler.js');
@@ -85,6 +86,8 @@ let bot: Bot;
 let started: string[];
 /** Who each of those prompts came from. */
 let startedBy: (number | undefined)[];
+/** The thread each message reached the handlers in, by its text. */
+let arrivedIn: { text: string; thread: number | undefined }[];
 /** Bot commands that ran, in the order they did. */
 let commandsRun: string[];
 /** The turn each prompt is running, for the test to finish. */
@@ -143,13 +146,16 @@ function makeBot(): Bot {
   b.on('edited_message', handleEditedMessage);
   initParkedMessages(b);
   b.use(trackQueuedMessage);
-  b.use(sequentialize((ctx: Context) => (ctx.chat ? String(ctx.chat.id) : undefined)));
+  // Per thread, as in src/bot/bot.ts, so a fork's thread doesn't wait behind this one.
+  b.use(sequentialize((ctx: Context) => (ctx.chat ? `${ctx.chat.id}:${ctx.message?.message_thread_id ?? ''}` : undefined)));
   b.use(holdQueuedMessage);
   registerBotCommandName('clear');
   b.command('clear', () => { commandsRun.push('/clear'); });
   b.on('message:text', async (ctx) => {
     const { text } = ctx.message;
     if (text === 'slow') await slowGate;
+    arrivedIn.push({ text, thread: ctx.message.message_thread_id });
+    if (ctx.message.message_thread_id !== undefined) return;
     startedBy.push(ctx.from?.id);
     await queueRequest(String(CHAT), text, () => runTurn(text));
   });
@@ -242,6 +248,7 @@ beforeEach(() => {
   fx.relay.repliesSent = Promise.resolve();
   started = [];
   startedBy = [];
+  arrivedIn = [];
   commandsRun = [];
   turns = new Map();
   pending = [];
@@ -253,6 +260,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   config.CANCEL_ON_NEW_MESSAGE = false;
+  setQueuedDiverters(undefined);
   await drain();
   forgetParkedMessages();
   fs.rmSync(PARKED_FILE, { force: true });
@@ -1542,5 +1550,159 @@ describe('/later', () => {
     await tapButton(`queued:send:${id}`);
     await advance();
     expect(started).toEqual(['first', 'and rename the flag']);
+  });
+});
+
+describe('asking a waiting message some other way', () => {
+  let btwAsked: string[];
+  let forkFor: string[];
+  /** What the fork resolves to. Replace with a pending promise to hold it open. */
+  let forkResult: Promise<{ threadId: number; name: string; link?: string } | { error: string }>;
+
+  beforeEach(() => {
+    btwAsked = [];
+    forkFor = [];
+    forkResult = Promise.resolve({ threadId: 77, name: '🍴 topic', link: 'https://t.me/probe_bot/77' });
+    setQueuedDiverters({
+      btw: async (_ctx, _key, question) => { btwAsked.push(question); },
+      fork: (_ctx, _key, message) => { forkFor.push(message.text ?? ''); return forkResult; },
+    });
+    (bot.botInfo as { has_topics_enabled?: boolean }).has_topics_enabled = true;
+  });
+
+  /** A turn running, and `text` waiting behind it with its ack up as message 5000. */
+  async function waiting(text = 'second'): Promise<number> {
+    send('first');
+    await advance();
+    const id = send(text);
+    await advance();
+    return id;
+  }
+
+  it('offers /btw and a fork on a row of their own', async () => {
+    const id = await waiting();
+
+    expect(acksFor(id)[0]?.payload.reply_markup).toEqual({
+      inline_keyboard: [
+        [
+          { text: '🗑 Take back', callback_data: `queued:${id}` },
+          { text: '🔔 Ask me after', callback_data: `queued:park:${id}` },
+        ],
+        [
+          { text: '💬 Ask as /btw', callback_data: `queued:btw:${id}` },
+          { text: '🍴 Ask in a fork', callback_data: `queued:fork:${id}` },
+        ],
+      ],
+    });
+  });
+
+  it("offers no fork where threads are off, since that's where a fork goes", async () => {
+    (bot.botInfo as { has_topics_enabled?: boolean }).has_topics_enabled = false;
+    const id = await waiting();
+
+    expect((acksFor(id)[0]?.payload.reply_markup as { inline_keyboard: unknown[][] }).inline_keyboard[1]).toEqual([
+      { text: '💬 Ask as /btw', callback_data: `queued:btw:${id}` },
+    ]);
+  });
+
+  it('offers neither on a slash command, which means something only where it was typed', async () => {
+    const id = await waiting('/compact');
+
+    expect((acksFor(id)[0]?.payload.reply_markup as { inline_keyboard: unknown[][] }).inline_keyboard).toHaveLength(1);
+  });
+
+  it('asks it as /btw at once, and it never reaches Claude', async () => {
+    const id = await waiting();
+    await tapButton(`queued:btw:${id}`, { ackId: 5000 });
+
+    expect(btwAsked).toEqual(['second']);
+    expect(answers()).toEqual(['Asking on the side.']);
+    expect(edits().at(-1)).toBe('💬 Asked as /btw instead. The answer is below.');
+
+    turns.get('first')!.release();
+    await advance();
+    expect(started).toEqual(['first']);
+    expect(turns.get('first')!.cancelled).toBe(false);
+  });
+
+  it('sends it into the fork, and not into the conversation it was waiting in', async () => {
+    const id = await waiting();
+    await tapButton(`queued:fork:${id}`, { ackId: 5000 });
+    await advance();
+
+    expect(forkFor).toEqual(['second']);
+    expect(arrivedIn).toEqual([{ text: 'first', thread: undefined }, { text: 'second', thread: 77 }]);
+    expect(callsTo('editMessageText').at(-1)?.payload).toMatchObject({
+      message_id: 5000,
+      text: '🍴 Asked in a fork instead: 🍴 topic',
+      reply_markup: { inline_keyboard: [[{ text: 'Open 🍴 topic', url: 'https://t.me/probe_bot/77' }]] },
+    });
+
+    turns.get('first')!.release();
+    await advance();
+    expect(started).toEqual(['first']);
+    expect(arrivedIn.filter((a) => a.thread === undefined).map((a) => a.text)).toEqual(['first']);
+  });
+
+  it("doesn't slip through to the running conversation while the fork is opening", async () => {
+    let finish!: (v: { threadId: number; name: string }) => void;
+    forkResult = new Promise((resolve) => { finish = resolve; });
+    const id = await waiting();
+    const tap = tapButton(`queued:fork:${id}`, { ackId: 5000 });
+    await advance();
+
+    turns.get('first')!.release();
+    await advance();
+    expect(started).toEqual(['first']);
+
+    finish({ threadId: 77, name: '🍴 topic' });
+    await tap;
+    await advance();
+    expect(started).toEqual(['first']);
+    expect(arrivedIn.at(-1)).toEqual({ text: 'second', thread: 77 });
+  });
+
+  it('goes back in line when the fork fails, and says why', async () => {
+    forkResult = Promise.resolve({ error: 'Could not open a new thread.' });
+    const id = await waiting();
+    await tapButton(`queued:fork:${id}`, { ackId: 5000 });
+
+    expect(callsTo('editMessageText').at(-1)?.payload).toMatchObject({
+      text: '⏳ Queued behind the running turn.\n🍴 Could not open a new thread.',
+    });
+    expect((callsTo('editMessageText').at(-1)?.payload.reply_markup as { inline_keyboard: unknown[][] }).inline_keyboard)
+      .toHaveLength(2);
+
+    turns.get('first')!.release();
+    await advance();
+    expect(started).toEqual(['first', 'second']);
+  });
+
+  it('answers a second tap while the fork is opening without opening another', async () => {
+    let finish!: (v: { threadId: number; name: string }) => void;
+    forkResult = new Promise((resolve) => { finish = resolve; });
+    const id = await waiting();
+    const tap = tapButton(`queued:fork:${id}`, { ackId: 5000 });
+    await advance();
+    await tapButton(`queued:fork:${id}`, { ackId: 5000 });
+    await tapButton(`queued:btw:${id}`, { ackId: 5000 });
+
+    expect(forkFor).toEqual(['second']);
+    expect(btwAsked).toEqual([]);
+    expect(answers().slice(1)).toEqual(['Already opening a fork.', 'Already opening a fork.']);
+    finish({ threadId: 77, name: '🍴 topic' });
+    await tap;
+  });
+
+  it('is refused to someone else in the chat', async () => {
+    const id = await waiting();
+    await tapButton(`queued:btw:${id}`, { from: STRANGER, ackId: 5000 });
+    await tapButton(`queued:fork:${id}`, { from: STRANGER, ackId: 5000 });
+
+    expect(btwAsked).toEqual([]);
+    expect(forkFor).toEqual([]);
+    turns.get('first')!.release();
+    await advance();
+    expect(started).toEqual(['first', 'second']);
   });
 });
