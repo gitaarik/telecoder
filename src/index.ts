@@ -38,6 +38,7 @@ import { tickWasStalled } from './utils/host-stall.js';
 import { describeRunningBuild } from './utils/build-info.js';
 import { migrateLegacyStateDirAndLog } from './utils/state-dir-migration.js';
 import { verifyBotTokenOrExit } from './startup/verify-token.js';
+import { warnIfClaudeNotLoggedIn } from './claude/claude-auth.js';
 import { redactSecrets } from './utils/sanitize.js';
 
 export { requestRestart, requestSiblingRestart, requestRestartAll } from './worker-restart.js';
@@ -131,6 +132,11 @@ async function main() {
 
   // Prevent system sleep on macOS (only when running standalone, not as worker)
   if (isMainThread) preventSleep();
+
+  // Only a warning: a login this can't see (the macOS keychain, a helper
+  // script) would otherwise lock the bot out. A turn that does fail on it
+  // says how to sign in.
+  warnIfClaudeNotLoggedIn();
 
   const bot = await createBot(botInfo);
 

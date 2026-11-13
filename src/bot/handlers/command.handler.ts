@@ -89,6 +89,7 @@ export {
 } from './command/session.js';
 export { handleResume, handleResumeCallback } from './command/resume.js';
 import { buildTelegraphMenu } from './command/settings.js';
+import { turnErrorReply } from '../../claude/claude-auth.js';
 export {
   handleStreaming,
   handleModeCallback,
@@ -512,8 +513,7 @@ export async function handlePlan(ctx: Context): Promise<void> {
     });
   } catch (error) {
     if ((error as Error).message === 'Queue cleared') return;
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    await ctx.reply(`❌ Error: ${errorMessage}`);
+    await ctx.reply(turnErrorReply(error));
   }
 }
 
@@ -567,8 +567,7 @@ export async function handleExplore(ctx: Context): Promise<void> {
     });
   } catch (error) {
     if ((error as Error).message === 'Queue cleared') return;
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    await ctx.reply(`❌ Error: ${errorMessage}`);
+    await ctx.reply(turnErrorReply(error));
   }
 }
 
@@ -867,8 +866,7 @@ export async function handleLoop(ctx: Context): Promise<void> {
     });
   } catch (error) {
     if ((error as Error).message === 'Queue cleared') return;
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    await ctx.reply(`❌ Error: ${errorMessage}`);
+    await ctx.reply(turnErrorReply(error));
   }
 }
 

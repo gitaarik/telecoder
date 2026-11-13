@@ -71,6 +71,7 @@ interface ConversationMessage {
 import { SYSTEM_PROMPT } from './system-prompt.js';
 import { stripReasoningSummary } from '../utils/reasoning-summary.js';
 import { findModelUsageKey } from './model-catalog.js';
+import { ClaudeNotLoggedInError, CLAUDE_NOT_LOGGED_IN_REPLY, isClaudeAuthError } from './claude-auth.js';
 
 const conversationHistory = new BoundedMap<string, ConversationMessage[]>(1000);
 
@@ -890,6 +891,12 @@ export async function sendToAgent(
         logAt('trace', `[Claude] [${formatDuration(getElapsedMs(timer))}] Message: ${responseMessage.type}`);
 
         if (responseMessage.type === 'assistant') {
+          // The CLI's answer when it has no credentials is a synthetic
+          // assistant message, "Not logged in · Please run /login". Stop here
+          // rather than stream that into the chat as if it were the reply.
+          if (responseMessage.error === 'authentication_failed') {
+            throw new ClaudeNotLoggedInError();
+          }
           logAt('verbose', '[Claude] Assistant content blocks:', responseMessage.message.content.length);
           if (responseMessage.parent_tool_use_id === null && responseMessage.message.usage) {
             lastMainCall = {
@@ -1325,7 +1332,9 @@ export async function sendToAgent(
 
             fullText = throttleInfo
               ? `⚠️ ${throttleInfo.message}`
-              : `Error: ${responseMessage.subtype}`;
+              : isClaudeAuthError(upstreamText)
+                ? `🔑 ${CLAUDE_NOT_LOGGED_IN_REPLY}`
+                : `Error: ${responseMessage.subtype}`;
             progress(fullText);
           }
         }
@@ -1365,6 +1374,8 @@ export async function sendToAgent(
           toolsUsed,
         };
       }
+
+      if (error instanceof ClaudeNotLoggedInError) throw error;
 
       // If we got a result, ignore process exit errors (SDK quirk)
       if (gotResult && error instanceof Error && error.message.includes('exited with code')) {

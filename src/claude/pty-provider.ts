@@ -69,6 +69,7 @@ import {
   type ModePty,
 } from './permission-mode.js';
 import { parseModal } from './tui-modal.js';
+import { claudeSetupScreen, ClaudeNotLoggedInError } from './claude-auth.js';
 import { dialogResumeState, turnHold } from './turn-end.js';
 import { isSuggestionsEnabled } from '../telegram/suggestions-settings.js';
 import { resolveBin } from '../utils/resolve-bin.js';
@@ -1591,6 +1592,15 @@ export class PtyProvider implements Provider {
       }
       if (verdict === 'aborted') return 'aborted';
       if (verdict === 'busy') throw new Error(stillWorkingError());
+      // A CLI that was never set up or signed in opens its first-run screens
+      // instead of the input box. The theme picker and the login menu would
+      // parse as dialogs, but relaying them only leads to a sign-in link and a
+      // code prompt the chat can't complete — that wants the bot's machine.
+      const setup = claudeSetupScreen(this._getScreenText(session));
+      if (setup && (verdict === 'modal' || verdict === 'unready')) {
+        console.warn(`[PtyProvider] ${sessionKey}: claude is at its ${setup} screen — not logged in or not set up`);
+        throw new ClaudeNotLoggedInError(setup);
+      }
       if (verdict === 'modal' && !relayed) {
         relayed = true;
         // Throws unless a key was actually pressed, in which case we go round

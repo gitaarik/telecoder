@@ -90,6 +90,18 @@ reasoning — the commit bodies are the long form, this is the index.
   on its configuration says so under its own name and isn't respawned into
   the same error; fixing its `instances.json` entry starts it again.
 
+- **"Claude Code isn't logged in" says how to log in** — on a machine where
+  nobody had signed in, every message came back as `❌ Error: Claude error:
+  Claude Code returned an error result: Not logged in · Please run /login`,
+  and in PTY mode the CLI's first-run theme and login screens were relayed to
+  the chat as dialogs that led nowhere. Both transports now reply that Claude
+  Code on the bot's machine isn't logged in, and to run `claude` and /login
+  there (or `claude setup-token` for a long-lived token); an invalid API key
+  or a 401 from the API gets the same reply. Startup also warns when there is
+  no `~/.claude/.credentials.json` and no `ANTHROPIC_API_KEY` or
+  `CLAUDE_CODE_OAUTH_TOKEN`, without refusing to start (macOS keeps the login
+  in the keychain, where the check can't see it).
+
 ### Multiple bots
 
 - **`instances.json` is read while the launcher runs** — adding a bot used to

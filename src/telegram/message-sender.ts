@@ -41,6 +41,7 @@ import { PREMIUM_MODEL_ICON } from '../claude/model-catalog.js';
 import { getPremiumModel } from '../providers/provider-router.js';
 import * as fs from 'fs';
 import * as path from 'path';
+import { isClaudeAuthError } from '../claude/claude-auth.js';
 
 export const FORK_KEYBOARD = { inline_keyboard: [[{ text: '🍴 Fork', callback_data: 'fork:pick' }]] };
 
@@ -1415,7 +1416,9 @@ export class MessageSender {
   async cancelStreaming(ctx: Context, reason: string | Error = '⚠️ Request cancelled'): Promise<void> {
     const banner = typeof reason === 'string'
       ? reason
-      : (reason?.name === 'ClaudeApiError' ? '⚠️ Claude API error — turn aborted' : '⚠️ Request cancelled');
+      : isClaudeAuthError(reason?.message) || reason?.name === 'ClaudeNotLoggedInError'
+        ? "🔑 Claude Code isn't logged in — turn aborted"
+        : (reason?.name === 'ClaudeApiError' ? '⚠️ Claude API error — turn aborted' : '⚠️ Request cancelled');
 
     const keyInfo = getSessionKeyFromCtx(ctx);
     if (!keyInfo) return;

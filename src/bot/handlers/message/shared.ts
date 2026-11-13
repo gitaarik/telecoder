@@ -22,6 +22,7 @@ import { resolveShareableFile } from '../../file-access.js';
 import { getSessionTopic, setSessionTopic } from '../command.handler.js';
 import { getMsSinceTopicSet } from '../command/topic-store.js';
 import { requireSession } from '../session-guard.js';
+import { turnErrorReply } from '../../../claude/claude-auth.js';
 
 export { requireSession } from '../session-guard.js';
 
@@ -122,8 +123,9 @@ export async function runQueuedTurn(
     await queueRequest(sessionKey, message, run);
   } catch (error) {
     if ((error as Error).message === 'Queue cleared') return;
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[${label}] Turn failed:`, error);
-    await ctx.reply(`❌ Error: ${errorMessage}`);
+    // An auth failure gets a reply saying how to sign in rather than the
+    // CLI's own "Please run /login", which nobody can do from a phone.
+    await ctx.reply(turnErrorReply(error));
   }
 }
