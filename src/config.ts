@@ -1,12 +1,13 @@
 import { config as loadEnv } from 'dotenv';
 import { z } from 'zod';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
 import { legacyEnv } from './utils/legacy-env.js';
 import { parseIdList } from './utils/id-list.js';
+import { configFile } from './utils/config-home.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const defaultEnvPath = path.resolve(__dirname, '..', '.env');
+// Next to package.json in a checkout, ~/.telecoder/.env for an npm install —
+// see utils/config-home.ts.
+const defaultEnvPath = configFile('.env');
 // Read from the real process env, not the .env file — this is the var that
 // says *which* .env to load, so it can't come from inside one.
 const envPath = legacyEnv('ENV_PATH') || defaultEnvPath;

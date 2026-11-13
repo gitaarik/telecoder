@@ -29,9 +29,10 @@ import { tickWasStalled, withinStallCooldown, shouldEscalateWedged } from './uti
 import { fingerprintModuleGraph, launcherHasChanged } from './utils/stale-launcher.js';
 import { PrefsRelay } from './utils/prefs-relay.js';
 import { IdleRestart } from './utils/idle-restart.js';
+import { configFile } from './utils/config-home.js';
+import { PACKAGE_ROOT, isCheckout } from './utils/install-mode.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(__dirname, '..');
+const projectRoot = PACKAGE_ROOT;
 
 // Heartbeat: workers ping the launcher periodically. If a worker goes silent
 // for too long, the launcher force-terminates and respawns it.
@@ -98,7 +99,9 @@ const CONFIG_SETTLE_MS = 500;
 function loadInstancesConfig(configPath: string): ResolvedInstance[] {
   if (!existsSync(configPath)) {
     console.error(`\u274c Instances config not found: ${configPath}`);
-    console.error('  Copy instances.json.example to instances.json and configure your bots.');
+    console.error(isCheckout()
+      ? '  Copy instances.json.example to instances.json and configure your bots.'
+      : '  Create it to run several bots (see instances.json.example in the TeleCoder repo), or run "telecoder start" without one for a single bot.');
     process.exit(1);
   }
 
@@ -125,10 +128,10 @@ const args = process.argv.slice(2);
 const configFlagIdx = args.indexOf('--config');
 const configPath = configFlagIdx !== -1 && args[configFlagIdx + 1]
   ? path.resolve(args[configFlagIdx + 1])
-  : path.join(projectRoot, 'instances.json');
+  : configFile('instances.json');
 
 // Load base .env so all env vars are available as defaults
-const envPath = legacyEnv('ENV_PATH') || path.join(projectRoot, '.env');
+const envPath = legacyEnv('ENV_PATH') || configFile('.env');
 loadEnv({ path: envPath });
 
 // Before any worker exists to be reading or writing the state directory.
@@ -140,8 +143,9 @@ const instances = loadInstancesConfig(configPath);
 
 console.log(`\ud83d\ude80 Launching ${instances.length} bot instance(s)...`);
 
-// Resolve the worker entry point (compiled JS or tsx for dev)
-const workerEntry = existsSync(path.join(projectRoot, 'dist', 'index.js'))
+// Resolve the worker entry point (compiled JS, or tsx for dev in a checkout —
+// a package install has no src/ and no tsx, only dist/)
+const workerEntry = !isCheckout() || existsSync(path.join(projectRoot, 'dist', 'index.js'))
   ? path.join(projectRoot, 'dist', 'index.js')
   : path.join(projectRoot, 'src', 'index.ts');
 

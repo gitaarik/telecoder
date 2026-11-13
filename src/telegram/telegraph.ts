@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import { isTelegraphEnabled } from './telegraph-settings.js';
 import { atomicWriteFileSync } from '../utils/atomic-write.js';
+import { configFile } from '../utils/config-home.js';
 
 // Zod schema for Telegraph account file
 const telegraphAccountSchema = z.object({
@@ -25,7 +26,9 @@ const TELEGRAPH_THRESHOLD = 2500;
  */
 export async function initTelegraph(): Promise<void> {
   try {
-    const accountFile = path.join(process.cwd(), '.telegraph-account.json');
+    // In the config home (the checkout root, or ~/.telecoder for an npm
+    // install), not the cwd, which a service manager can set to anywhere.
+    const accountFile = configFile('.telegraph-account.json');
 
     if (fs.existsSync(accountFile)) {
       // Load existing account with schema validation

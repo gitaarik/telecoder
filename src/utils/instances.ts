@@ -6,14 +6,9 @@
  */
 
 import { readFileSync, existsSync, writeFileSync, renameSync } from 'fs';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
 import { stripJsonComments, expandName, withInstanceAdded, type ResolvedInstance } from './instance-config.js';
 import { legacyEnv } from './legacy-env.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// src/utils/instances.ts → projectRoot; dist/utils/instances.js → projectRoot
-const projectRoot = path.resolve(__dirname, '..', '..');
+import { configFile } from './config-home.js';
 
 export interface BotInstance {
   name: string;
@@ -35,7 +30,7 @@ let cachedAtMs = 0;
 const CACHE_TTL_MS = 5_000;
 
 function configPath(): string {
-  return legacyEnv('INSTANCES_CONFIG') || path.join(projectRoot, 'instances.json');
+  return legacyEnv('INSTANCES_CONFIG') || configFile('instances.json');
 }
 
 /**
