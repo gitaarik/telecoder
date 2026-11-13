@@ -135,6 +135,15 @@ interface StreamState {
   overflowIds: number[];
   /** A refresh held back by the edit throttle, due when the throttle allows. */
   flushTimer: NodeJS.Timeout | null;
+  /**
+   * Live edits sent and not yet answered. One can outlast the turn: autoRetry
+   * holds an edit Telegram rate-limited for up to a minute, then sends it
+   * again. finishStreaming and cancelStreaming wait for these before their own
+   * edit, so a late "Writing…" can't land on top of the final text.
+   */
+  liveEdits: Set<Promise<boolean>>;
+  /** Set once finish or cancel has begun; no live edit starts after it. */
+  ended: boolean;
   /** Gap between edits that show new text; grows after Telegram rate-limits us. */
   streamIntervalMs: number;
   lastUpdate: number;
@@ -579,6 +588,8 @@ export class MessageSender {
       shown: [],
       overflowIds: [],
       flushTimer: null,
+      liveEdits: new Set(),
+      ended: false,
       streamIntervalMs: ctx.chat?.type === 'private' ? STREAM_EDIT_INTERVAL_MS : GROUP_STREAM_EDIT_INTERVAL_MS,
       lastUpdate: now,
       typingInterval,
@@ -1076,12 +1087,14 @@ export class MessageSender {
   private async flushLive(ctx: Context, state: StreamState, immediate = false): Promise<void> {
     // Verify state is still active
     const currentState = this.streamStates.get(state.sessionKey);
-    if (!currentState || currentState !== state || !state.messageId) return;
+    if (!currentState || currentState !== state || state.ended || !state.messageId) return;
 
     // Once the action log is in the chat it carries the status line, which it
     // redraws on its own throttle. The bubble's footer just points down at it.
     if (state.terminalMode && actionLogger.showsStatus(state.sessionKey)) {
       await actionLogger.refreshStatus(state.sessionKey, immediate);
+      // The turn may have ended while the log was drawn.
+      if (state.ended) return;
     }
 
     const now = Date.now();
@@ -1097,7 +1110,11 @@ export class MessageSender {
 
     const content = state.content;
     state.lastUpdate = now;
-    if (await this.showLive(ctx, state, this.liveMessages(state, this.liveFooter(state)))) {
+    const edit = this.showLive(ctx, state, this.liveMessages(state, this.liveFooter(state)));
+    state.liveEdits.add(edit);
+    const shown = await edit.finally(() => state.liveEdits.delete(edit));
+    if (state.ended) return;
+    if (shown) {
       state.shownContent = content;
       // Successful edit — clear any rate-limit annotation after it's been shown once
       state.lastRateLimitDurationMs = 0;
@@ -1156,6 +1173,16 @@ export class MessageSender {
       }
       return false;
     }
+  }
+
+  /**
+   * Stop live edits and wait out the ones already sent, so the turn's last
+   * edit is the one the bubble keeps. Edits land in the order Telegram gets
+   * them, and an edit autoRetry is holding after a 429 gets there late.
+   */
+  private async endLiveEdits(state: StreamState): Promise<void> {
+    state.ended = true;
+    await Promise.allSettled([...state.liveEdits]);
   }
 
   /** Edit one message, treating "message is not modified" as done. */
@@ -1274,6 +1301,7 @@ export class MessageSender {
     this.stopTypingIndicator(state);
     this.stopSpinnerAnimation(state);
     state.currentOperation = null;
+    await this.endLiveEdits(state);
 
     // Track the last Telegram message we posted in this turn so the /fork
     // button can be anchored to the final user-visible message (so a tap
@@ -1367,6 +1395,7 @@ export class MessageSender {
       // Stop typing indicator and spinner
       this.stopTypingIndicator(state);
       this.stopSpinnerAnimation(state);
+      await this.endLiveEdits(state);
 
       if (state.messageId) {
         // Shown in full, unthrottled: this is the last edit the turn makes.

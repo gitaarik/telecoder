@@ -165,6 +165,36 @@ describe('live reply', () => {
     expect(chat.api.deleteMessage).toHaveBeenCalledWith(105, overflowId);
   });
 
+  it('waits for a live edit still in flight, so a late Writing line cannot cover the final text', async () => {
+    const sender = new MessageSender();
+    const chat = fakeChat(107);
+    await sender.startStreaming(chat.ctx, 'hi');
+    vi.advanceTimersByTime(2000);
+
+    // The live edit is held, as autoRetry holds one Telegram rate-limited, and
+    // the bubble shows whichever edit lands last.
+    const landed: string[] = [];
+    let release!: () => void;
+    chat.api.editMessageText.mockImplementationOnce(async (...args: unknown[]) => {
+      await new Promise<void>((resolve) => { release = resolve; });
+      landed.push(args[2] as string);
+      return true;
+    });
+    chat.api.editMessageText.mockImplementation(async (...args: unknown[]) => {
+      landed.push(args[2] as string);
+      return true;
+    });
+    sender.updateStream(chat.ctx, 'The answer');
+    await vi.advanceTimersByTimeAsync(0);
+
+    const finished = sender.finishStreaming(chat.ctx, 'The answer');
+    await vi.advanceTimersByTimeAsync(0);
+    release();
+    await finished;
+
+    expect(landed.at(-1)).toBe('The answer');
+  });
+
   it('keeps what was written when the turn is cancelled, the banner in place of the status', async () => {
     const sender = new MessageSender();
     const chat = fakeChat(106);
