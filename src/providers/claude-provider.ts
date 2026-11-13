@@ -15,8 +15,7 @@ export function getPtyProvider(): PtyProvider {
 
 function getMethod(scope: SettingsScope): 'sdk' | 'pty' {
   // The thread's or chat's /method wins; CLAUDE_METHOD_DEFAULT decides for one
-  // that has never picked one. A supervised bot sets it to 'pty', where the permission
-  // gate's PreToolUse hook actually runs.
+  // that has never picked one. The permission gate runs on both.
   return userPreferences.getMethod(scope) || config.CLAUDE_METHOD_DEFAULT;
 }
 

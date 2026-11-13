@@ -415,8 +415,7 @@ export async function createBot(): Promise<Bot> {
   cmd('status', withRunningNote(handleStatus));
   cmd('version', withRunningNote(handleVersion));
   // Lifecycle and transport are admin-only: they act on every session in the
-  // bot, not just the caller's, and /method decides whether the permission gate
-  // (a PreToolUse hook, so PTY-only) is in the loop at all.
+  // bot, not just the caller's.
   cmd('restartbot', adminOnly(handleRestartBot));
   cmd('rebuildbot', adminOnly(handleRebuild));
   // Access control is admin-only and bypasses sequentialize: a stranger

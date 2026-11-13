@@ -616,20 +616,6 @@ export async function handlePermissions(ctx: Context): Promise<void> {
       .code('TELECODER_PERMISSION_PROMPTS=0').add(' to turn it off.'));
   }
 
-  // The gate is a PreToolUse hook on the spawned CLI, so it only exists on the
-  // PTY transport. Reporting "enabled" in a chat where the hook can never fire
-  // would be worse than reporting nothing.
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (enabled && keyInfo) {
-    const { getActiveMethod } = await import('../../providers/claude-provider.js');
-    if (getActiveMethod(keyInfo.sessionKey) !== 'pty') {
-      line();
-      line((b) => b.add('⚠️ This chat is on the ').bold('SDK')
-        .add(' transport, where the gate does not run — it is a hook on the ').code('claude')
-        .add(' CLI. Switch with ').code('/method pty').add('.'));
-    }
-  }
-
   if (enabled) {
     const { isScopeGuardEnabled, getAllowedRoots } = await import('../../claude/scope-guard.js');
     line();

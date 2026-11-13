@@ -249,7 +249,8 @@ the real backend per request.
 CCR runs the same agent, so nearly everything carries over. The exception:
 
 - **PTY transport** — `ccr` always takes the SDK path, along with the PTY-only
-  features layered on it
+  features layered on it. The permission gate isn't one of them: it runs on the
+  SDK path too
 
 ```bash
 # .env
@@ -286,7 +287,6 @@ ADMIN_USER_IDS=111               # just you
 APPROVER_USER_IDS=222            # can unblock a prompt, owns nothing
 ALLOWED_GROUP_IDS=-1001234567890 # the group you share
 RESTRICT_TO_GROUPS=true          # guests can't take it into a DM
-CLAUDE_METHOD_DEFAULT=pty        # the transport the gate runs on
 WORKSPACE_DIR=/srv/shared        # the only projects the picker offers
 ```
 
@@ -323,9 +323,11 @@ What that buys you:
 - **The gate turns itself on.** With guests present you get prompts without
   setting a second variable; `TELECODER_PERMISSION_PROMPTS=0` opts out.
 - **Lifecycle and transport are yours.** `/update`, `/restartbot`,
-  `/rebuildbot`, `/method`, `/provider` and `/ccr` refuse a guest — `/method`
-  most of all, since the gate is a hook on the `claude` CLI and only exists on
-  the PTY transport.
+  `/rebuildbot`, `/method`, `/provider` and `/ccr` refuse a guest.
+- **The same gate on every transport.** It is a PreToolUse hook on the SDK
+  transport (the default, and the one CCR uses) and on the PTY one, in every
+  `/mode` including bypass, and it covers subagents' tool calls too. If it
+  breaks while judging a call, the call is denied.
 - **Out-of-scope paths prompt too.** `cat ~/.ssh/id_rsa`, an edit to a project
   nobody was invited to, a read of this bot's own `.env` — all held. System
   paths and language toolchains stay readable without prompting, because a
@@ -337,8 +339,7 @@ What that buys you:
   roots. The judge only ever *asks*; it never refuses on its own, and it fails
   open, with the scope guard underneath as the deterministic backstop.
 - **`/permissions` reports the truth.** Gate state, scope roots, which charter
-  is in force, your role, the guarded patterns, and a warning if the current
-  chat is on a transport where the gate can't fire.
+  is in force, your role, and the guarded patterns.
 - **Letting someone in takes one tap.** A stranger who posts in the shared group
   gets a refusal *and* an approve card naming them, mentioning the admins so it
   notifies you in a muted group. Tap Allow and they're a guest immediately — no
@@ -578,7 +579,7 @@ and nothing below changes anything.
 | `SCOPE_ALLOWED_PATHS` | — | Extra in-bounds directories, comma-separated |
 | `CHARTER_JUDGE` | `auto` | Read each guest message against a charter before it runs |
 | `CHARTER_FILE` | `WORKSPACE_DIR/CHARTER.md` | The charter the judge reads |
-| `CLAUDE_METHOD_DEFAULT` | `sdk` | Transport for chats that haven't run `/method`; the gate only runs on `pty` |
+| `CLAUDE_METHOD_DEFAULT` | `sdk` | Transport for chats that haven't run `/method`; the gate runs on both |
 
 See [Sharing a bot](#sharing-a-bot) for how the pieces fit together.
 
@@ -733,7 +734,8 @@ Then `/continue` or `/resume` in Telegram to restore your session.
   in the chat need not mean being able to prompt the agent (`GROUP_MEMBERS_DEFAULT`)
 - **Addressed-only** — `GROUP_REQUIRE_MENTION` keeps human conversation in a
   shared group from becoming prompts
-- **Permission gate** — dangerous Bash patterns pause for an admin's approval
+- **Permission gate** — dangerous Bash patterns pause for an admin's approval,
+  on the SDK and PTY transports alike (CCR included), subagents too
 - **Scope guard** — tool calls reaching outside the shared projects, or at any
   credential path, pause too
 - **Charter judge** — guest messages are read against a charter before they run

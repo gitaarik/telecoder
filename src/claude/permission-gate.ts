@@ -16,8 +16,10 @@ import { sanitizeError } from '../utils/sanitize.js';
  * Pattern-based permission gate for PreToolUse. When enabled, certain tool calls
  * (destructive bash patterns, force-pushes, DROP TABLE, etc.) trigger a Telegram
  * approval prompt before executing. On approve, the hook returns ok and claude
- * proceeds; on deny or timeout, the hook returns a deny marker (consumed by the
- * shell wrapper in pty-provider.ts) and claude sees a tool-blocked error.
+ * proceeds; on deny or timeout, claude sees a tool-blocked error. The PTY
+ * transport's hook returns a deny marker (consumed by the shell wrapper in
+ * pty-spawn-config.ts); the SDK transport's (sdk-permission-gate.ts) a deny
+ * decision. Both go through gateToolCall.
  *
  * Soft by design: hooks can't override --disallowedTools deny rules, and the
  * patterns list is intentionally conservative — false positives are worse here

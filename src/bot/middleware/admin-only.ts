@@ -4,9 +4,8 @@
  *
  * Restarting the bot, rebuilding it, pulling an update, or switching the
  * transport are not "things you do with the agent" — they are things you do to
- * everyone else's session, and on a shared bot they also reach the guardrails
- * themselves: the permission gate is a hook on the PTY transport, so anyone who
- * can flip a chat to SDK can turn the gate off without ever being told no.
+ * everyone else's session — and a restart or rebuild cuts short every turn
+ * that is waiting on someone's answer, the permission gate's prompts included.
  *
  * Wrapping is per handler rather than one middleware matching a name list,
  * because the list would live a long way from the registrations it governs and

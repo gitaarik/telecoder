@@ -2222,7 +2222,8 @@
             <h3>Dangerous commands wait for an admin</h3>
             <p>A guarded pattern — <code>rm -rf</code>, <code>sudo</code>, a force-push, a
             <code>DROP TABLE</code> — pauses the tool call and posts an approval prompt only an
-            admin can answer. It mentions them by name, so it lands even in a muted group.</p>
+            admin can answer. It mentions them by name, so it lands even in a muted group. It runs
+            on the SDK and PTY transports alike, CCR and subagents included.</p>
           </div>
           <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-vault"/></svg></div>
@@ -2635,7 +2636,8 @@ CCR_AUTOSTART=true</pre>
             <a href="https://github.com/musistudio/claude-code-router" target="_blank" rel="noopener">CCR
             repository</a>.</p>
             <div class="config-note">
-              CCR always takes the SDK path, so PTY-only behaviour does not carry across — and
+              CCR always takes the SDK path, so PTY-only behaviour does not carry across (the
+              permission gate runs on the SDK path too) — and
               the two backends never share a session, since one model cannot replay another's
               thinking blocks. Switching starts a fresh session with a plain-text summary
               carried over.
@@ -2718,7 +2720,7 @@ CCR_AUTOSTART=true</pre>
                 </tr>
                 <tr>
                   <td class="var-name">CLAUDE_METHOD_DEFAULT</td>
-                  <td>Transport for chats that haven't run /method; the permission gate only runs on pty (default: sdk)</td>
+                  <td>Transport for chats that haven't run /method; the permission gate runs on both (default: sdk)</td>
                   <td class="required-optional">Optional</td>
                 </tr>
                 <tr><td colspan="3" style="color: var(--brand); font-weight: 600; padding-top: 1.25rem;">Claude</td></tr>
@@ -3145,7 +3147,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/permissions</code>
-              <span class="command-desc">Show the permission-gate state, the scope guard's in-bounds roots, which charter is in force, your role (admin or guest), the patterns it enforces, and a warning when the current chat is on a transport the gate cannot run on.</span>
+              <span class="command-desc">Show the permission-gate state, the scope guard's in-bounds roots, which charter is in force, your role (admin or guest), and the patterns it enforces.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/users</code>

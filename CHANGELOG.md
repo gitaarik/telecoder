@@ -394,6 +394,15 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Sharing a bot
 
+- **The permission gate runs on the SDK transport and CCR** — it was a hook on
+  the PTY CLI only, while the default transport is SDK and CCR always takes it.
+  There the curated tool list pre-approves Bash, Write and Edit, so a guest let
+  in on a default install ran shell commands with no prompt at all. The SDK
+  transport now registers the same check as an in-process PreToolUse hook, in
+  every `/mode` and for subagents' tool calls, and a gate that throws denies
+  the call. One test table runs through both transports, and `/permissions` no
+  longer needs its "this chat's transport has no gate" warning.
+
 - **Auto-approve windows** — `/autoapprove 30m` lets the permission gate approve
   instead of asking, for a stated length of time on one chat. A job made of
   guarded commands cost a tap each, and a guardrail people tap without reading

@@ -213,9 +213,7 @@ const envSchema = z.object({
     .transform((val) => val.toLowerCase() === 'true'),
   BOT_MODE: z.enum(['dev', 'prod']).default('dev'),
   // Transport a chat uses until someone picks one with /method. The permission
-  // gate is a PreToolUse hook on the spawned CLI, so it only exists on 'pty' —
-  // a supervised bot wants that as the default rather than relying on someone
-  // remembering to switch. Per-chat /method still wins.
+  // gate runs on both (a PreToolUse hook either way). Per-chat /method wins.
   CLAUDE_METHOD_DEFAULT: z.enum(['sdk', 'pty']).default('sdk'),
   STREAMING_MODE: z.enum(['streaming', 'wait']).default('streaming'),
   STREAMING_DEBOUNCE_MS: z

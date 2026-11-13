@@ -28,18 +28,9 @@ CLI reads.
   of odd behaviour in chat
 - Report clearly when the installed CLI is newer than the last version tested
 
-### 3. Permission gate on every transport (6–8 h)
-
-The permission gate is a hook on the `claude` CLI, so it only runs on the PTY transport.
-A chat on the SDK transport, or on CCR (which always takes the SDK path), gets no gate,
-and `/permissions` can only warn about it.
-
-- Enforce the same guarded patterns and scope guard through the SDK's permission callback
-- Share one test suite across both transports, so they can't drift apart
-
 ## After that
 
-### 4. Split the largest modules (8–12 h)
+### 3. Split the largest modules (8–12 h)
 
 Behaviour stays the same, and tests come first where coverage is thin:
 
@@ -50,7 +41,7 @@ Behaviour stays the same, and tests come first where coverage is thin:
 | `src/claude/agent.ts` | 1,387 |
 | `src/bot/handlers/command/settings.ts` | 1,153 |
 
-### 5. Codex alongside Claude Code (25–35 h)
+### 4. Codex alongside Claude Code (25–35 h)
 
 When my Claude subscription runs out, the fallback today is CCR, which points Claude Code
 at DeepSeek through a local router. Codex, on a ChatGPT plan, would be a fallback with its
@@ -64,7 +55,7 @@ Codex doesn't appear to make that split, so scraping a second TUI would buy noth
 - Add a Codex provider on `codex app-server`: streamed replies, tool indicators, edit
   diffs, interrupting a turn, and usage
 - Route Codex's approval requests through the permission gate and scope guard, using the
-  Telegram prompt the PTY transport already has
+  Telegram prompt both Claude transports already have
 - Load TeleCoder's stdio MCP server (`src/bin/mcp-server.ts`) into Codex, and support
   `/model`, reasoning effort and images
 - Offer Codex in `/provider` and the throttle failover. A switch forks the conversation
@@ -72,20 +63,20 @@ Codex doesn't appear to make that split, so scraping a second TUI would buy noth
 - Give Claude-only features such as `/tree`, background tasks and plugins a clear "not on
   Codex" reply, and list what stays behind, as the README does for CCR
 
-### 6. Settle the "interrupted by user" misattribution (2–4 h)
+### 5. Settle the "interrupted by user" misattribution (2–4 h)
 
 Long background tasks sometimes report "Request interrupted by user" when nobody
 interrupted them. The foreground variant is understood; the background one is still open.
 Findings so far are in
 [`docs/debugging/interrupted-by-user-misattribution.md`](docs/debugging/interrupted-by-user-misattribution.md).
 
-### 7. Files over 20 MB (4–6 h)
+### 6. Files over 20 MB (4–6 h)
 
 Telegram's cloud Bot API won't let a bot download a file over 20 MB. Add optional support
 for a self-hosted Telegram Bot API server: an opt-in Compose file, docs, and a safe
 migration path, since moving a bot token to a local server is hard to undo.
 
-### 8. Easier setup and releases (5–8 h)
+### 7. Easier setup and releases (5–8 h)
 
 - A `doctor` command that checks the bot token, the `claude` login and `ffmpeg`, and says
   exactly what to fix
