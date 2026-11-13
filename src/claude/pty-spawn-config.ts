@@ -19,8 +19,18 @@ import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from '../config.js';
-import { DENY_MARKER_START, DENY_MARKER_END } from './permission-gate.js';
+import {
+  ALLOW_MARKER,
+  DENY_MARKER_START,
+  DENY_MARKER_END,
+  hookCurlTimeoutSeconds,
+  hookTimeoutSeconds,
+} from './permission-gate.js';
+import { IPC_TOKEN_ENV, IPC_TOKEN_HEADER } from './ipc-server.js';
 import { enabledPluginsSetting } from './enabled-plugins.js';
+
+/** What claude is told when the PreToolUse hook gets no verdict from the bot. */
+export const GATE_UNREACHABLE_REASON = 'TeleCoder permission gate unreachable — tool blocked';
 
 const PROVIDER_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const MCP_SERVER_JS = path.resolve(PROVIDER_DIR, '../bin/mcp-server.js');
@@ -54,8 +64,13 @@ function hasAcceptedBypassWarning(): boolean {
 
 /**
  * Build the `--settings` JSON we inject at spawn time. Each registered hook
- * runs a `curl` POST to our loopback IPC server; the hook command is wrapped
- * so it always exits 0 (so a transient IPC failure never blocks claude).
+ * runs a `curl` POST to our loopback IPC server. The observing hooks always
+ * exit 0 (so a transient IPC failure never blocks claude); PreToolUse is the
+ * permission gate and fails closed — see below.
+ *
+ * Every hook sends the IPC token as a header, read from the pty's environment
+ * at run time ($TELECODER_IPC_TOKEN) rather than written into this JSON: the
+ * JSON is a command-line argument, which any local user can read in `ps`.
  *
  * Stop / SubagentStop are intentionally NOT registered here — Phase 2 will
  * use them as the end-of-turn signal. UserPromptSubmit is similarly deferred.
@@ -67,29 +82,35 @@ function hasAcceptedBypassWarning(): boolean {
  * the bypass warning comes the same way, for the same reason.
  */
 export function buildSettingsJson(ipcPort: number): string {
-  const hookCommand = (eventName: string) =>
-    `curl -s -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:${ipcPort}/hook/${eventName}' >/dev/null 2>&1; exit 0`;
+  const curl = (eventName: string, extra = '') =>
+    `curl -s${extra} -X POST -H 'Content-Type: application/json' -H "${IPC_TOKEN_HEADER}: $${IPC_TOKEN_ENV}" ` +
+    `--data-binary @- 'http://127.0.0.1:${ipcPort}/hook/${eventName}'`;
+  const hookCommand = (eventName: string) => `${curl(eventName)} >/dev/null 2>&1; exit 0`;
 
-  // PreToolUse needs a richer wrapper so it can BLOCK tool execution when
-  // the IPC handler decides to deny. The marker protocol: if the IPC response
-  // body contains DENY_MARKER_START + <reason> + DENY_MARKER_END, exit 2
-  // (claude code's signal for "block this tool, feed the stderr back to the
-  // model") with the reason on stderr. Otherwise exit 0 and let the tool
-  // proceed.
+  // PreToolUse needs a richer wrapper: it is the permission gate. The marker
+  // protocol: if the IPC response body contains DENY_MARKER_START + <reason> +
+  // DENY_MARKER_END, exit 2 (claude code's signal for "block this tool, feed
+  // the stderr back to the model") with the reason on stderr. If the body is
+  // exactly the JSON string ALLOW_MARKER, exit 0 and let the tool proceed.
+  // Anything else — no reply because the bot is restarting, a 401 or 500, a
+  // curl timeout — blocks the tool too: a gate that can't be asked is closed.
   //
   // The markers are interpolated from permission-gate.ts rather than spelled
-  // out here: this hook is the reader and evaluateToolCall() is the writer, so
-  // a literal copy that drifts would make the `case` stop matching and the
-  // gate would fail OPEN — denied tools would silently run.
+  // out here: this hook is the reader and the preToolUse handler is the
+  // writer, so a literal copy that drifts would make the `case` stop matching.
+  // With the gate failing closed that would block every tool, which is loud;
+  // it used to fail open, which was silent.
   //
   // We use shell parameter expansion instead of jq so no extra binary is
   // required. The markers are intentionally distinctive so they can't collide
   // with normal JSON content.
   const preToolUseCommand =
-    `RESP=$(curl -s --max-time 900 -X POST -H 'Content-Type: application/json' --data-binary @- 'http://127.0.0.1:${ipcPort}/hook/preToolUse' 2>/dev/null); ` +
+    `RESP=$(${curl('preToolUse', ` --max-time ${hookCurlTimeoutSeconds()}`)} 2>/dev/null); ` +
     `case "$RESP" in *${DENY_MARKER_START}*) ` +
     `REASON=\${RESP##*${DENY_MARKER_START}}; REASON=\${REASON%%${DENY_MARKER_END}*}; ` +
-    `printf '%s' "$REASON" >&2; exit 2 ;; esac; exit 0`;
+    `printf '%s' "$REASON" >&2; exit 2 ;; ` +
+    `'"${ALLOW_MARKER}"') exit 0 ;; esac; ` +
+    `printf '%s' '${GATE_UNREACHABLE_REASON}' >&2; exit 2`;
 
   const enabledPlugins = enabledPluginsSetting();
 
@@ -97,7 +118,7 @@ export function buildSettingsJson(ipcPort: number): string {
     ...(enabledPlugins ? { enabledPlugins } : {}),
     ...(hasAcceptedBypassWarning() ? { skipDangerousModePermissionPrompt: true } : {}),
     hooks: {
-      PreToolUse: [{ hooks: [{ type: 'command', command: preToolUseCommand }] }],
+      PreToolUse: [{ hooks: [{ type: 'command', command: preToolUseCommand, timeout: hookTimeoutSeconds() }] }],
       PostToolUse: [{ hooks: [{ type: 'command', command: hookCommand('postToolUse') }] }],
       PostToolUseFailure: [{ hooks: [{ type: 'command', command: hookCommand('postToolUseFailure') }] }],
       Stop: [{ hooks: [{ type: 'command', command: hookCommand('stop') }] }],
@@ -216,7 +237,13 @@ export function buildMcpEnv(required: Record<string, string>): Record<string, st
   // verbatim — the subprocess only reads TELECODER_*, so passing the old key
   // through unchanged would silently drop the override. New name wins when both
   // are set, which is why this runs as two passes instead of one.
+  //
+  // Never the IPC token: this env lands in --mcp-config, a command-line
+  // argument. The MCP subprocess inherits the token from claude's own
+  // environment instead (see the pty spawn), and a bot started from inside
+  // another bot's pty would otherwise publish its parent's.
   for (const [k, v] of Object.entries(process.env)) {
+    if (k === IPC_TOKEN_ENV) continue;
     if (k.startsWith('TELECODER_') && typeof v === 'string' && env[k] === undefined) {
       env[k] = v;
     }
@@ -224,6 +251,7 @@ export function buildMcpEnv(required: Record<string, string>): Record<string, st
   for (const [k, v] of Object.entries(process.env)) {
     if (!k.startsWith('CLAUDEGRAM_') || typeof v !== 'string') continue;
     const renamed = `TELECODER_${k.slice('CLAUDEGRAM_'.length)}`;
+    if (renamed === IPC_TOKEN_ENV) continue;
     if (env[renamed] === undefined) env[renamed] = v;
   }
   return env;

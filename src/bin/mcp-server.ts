@@ -11,6 +11,8 @@
  * them, both from the same build — so unlike the user-settable vars they carry
  * no pre-rename CLAUDEGRAM_* fallback:
  *   TELECODER_IPC_PORT          loopback IPC server port
+ *   TELECODER_IPC_TOKEN         secret the IPC server requires on every call;
+ *                               inherited from claude's env, never in args
  *   TELECODER_CLAUDE_SESSION_ID claude's session_id; used as the IPC routing key
  *   TELECODER_WORKSPACE_ROOT    workspace root for security checks
  *   TELECODER_TELEGRAPH_ENABLED feature flag for publish_telegraph
@@ -27,6 +29,7 @@ import { toolResult, type IpcReply } from './tool-result.js';
 const workspaceRoot = process.env.TELECODER_WORKSPACE_ROOT || path.resolve(process.cwd());
 const ipcPort = process.env.TELECODER_IPC_PORT;
 const claudeSessionId = process.env.TELECODER_CLAUDE_SESSION_ID || '';
+const ipcToken = process.env.TELECODER_IPC_TOKEN || '';
 
 /**
  * POST a JSON payload to the bot's loopback IPC server. claude's session_id
@@ -69,6 +72,7 @@ function ipc<T = unknown>(
         headers: {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(body),
+          'X-TeleCoder-Token': ipcToken,
         },
       },
       (res) => {

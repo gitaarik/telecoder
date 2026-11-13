@@ -20,7 +20,7 @@ vi.mock('../../src/telegram/message-sender.js', () => ({
   },
 }));
 
-const { startIpcServer, getIpcPort, registerActiveTurn, unregisterActiveTurn } = await import('../../src/claude/ipc-server.js');
+const { startIpcServer, getIpcPort, getIpcToken, registerActiveTurn, unregisterActiveTurn } = await import('../../src/claude/ipc-server.js');
 await import('../../src/claude/mcp-bridge.js');
 const { captureSecretMessages, hasPendingSecret } = await import('../../src/claude/secret-request.js');
 const { toolResult } = await import('../../src/bin/tool-result.js');
@@ -49,7 +49,7 @@ function post(
       port: getIpcPort(),
       path: '/mcp/request_secret',
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data), 'X-TeleCoder-Token': getIpcToken() },
     }, (res) => {
       let text = '';
       res.on('data', (chunk) => { text += chunk; });

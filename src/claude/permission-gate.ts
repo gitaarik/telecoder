@@ -15,11 +15,12 @@ import { sanitizeError } from '../utils/sanitize.js';
 /**
  * Pattern-based permission gate for PreToolUse. When enabled, certain tool calls
  * (destructive bash patterns, force-pushes, DROP TABLE, etc.) trigger a Telegram
- * approval prompt before executing. On approve, the hook returns ok and claude
- * proceeds; on deny or timeout, claude sees a tool-blocked error. The PTY
- * transport's hook returns a deny marker (consumed by the shell wrapper in
- * pty-spawn-config.ts); the SDK transport's (sdk-permission-gate.ts) a deny
- * decision. Both go through gateToolCall.
+ * approval prompt before executing. On approve, the hook returns the allow
+ * marker and claude proceeds; on deny or timeout, claude sees a tool-blocked
+ * error. The PTY transport's hook returns the markers (consumed by the shell
+ * wrapper in pty-spawn-config.ts, which blocks on anything else too); the SDK
+ * transport's (sdk-permission-gate.ts) a deny decision. Both go through
+ * gateToolCall.
  *
  * Soft by design: hooks can't override --disallowedTools deny rules, and the
  * patterns list is intentionally conservative — false positives are worse here
@@ -36,10 +37,36 @@ import { sanitizeError } from '../utils/sanitize.js';
 
 export const DENY_MARKER_START = '__TELECODER_DENY__';
 export const DENY_MARKER_END = '__END__';
+/**
+ * The whole reply body that lets a tool run. The hook fails closed: anything
+ * but exactly this — an empty reply while the bot restarts, a 500, a curl
+ * timeout — blocks the tool, so every path that means "allowed" says so.
+ */
+export const ALLOW_MARKER = '__TELECODER_ALLOW__';
 
-function promptTimeoutMs(): number {
+export function promptTimeoutMs(): number {
   const minutes = config.PERMISSION_PROMPT_TIMEOUT_MINUTES;
   return (Number.isFinite(minutes) && minutes > 0 ? minutes : 10) * 60 * 1000;
+}
+
+/**
+ * How long the PreToolUse hook's curl waits for the bot, in seconds: the
+ * prompt timeout plus room to post the prompt and close it. Under that, curl
+ * gives up on a prompt still open and the tool is blocked before anyone could
+ * answer it.
+ */
+export function hookCurlTimeoutSeconds(): number {
+  return Math.ceil(promptTimeoutMs() / 1000) + 120;
+}
+
+/**
+ * The `timeout` the PreToolUse hook is registered with, in seconds. Past
+ * curl's own, so claude never kills the hook while curl still waits on the
+ * bot: claude's default (600s) is exactly the default prompt timeout, and a
+ * hook killed by claude is a race the user doesn't see.
+ */
+export function hookTimeoutSeconds(): number {
+  return hookCurlTimeoutSeconds() + 30;
 }
 
 /** Longest command text we paste into the prompt before clipping. */

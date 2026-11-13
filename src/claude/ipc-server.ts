@@ -1,4 +1,5 @@
 import * as http from 'http';
+import { randomBytes, timingSafeEqual } from 'crypto';
 import type { AgentOptions } from '../providers/types.js';
 import { legacyEnv } from '../utils/legacy-env.js';
 
@@ -13,6 +14,13 @@ import { legacyEnv } from '../utils/legacy-env.js';
  * The server is bound to 127.0.0.1 only. Port is auto-picked at startup unless
  * TELECODER_IPC_PORT is set, and surfaced via getIpcPort() / getIpcUrl() so the
  * spawned subprocesses can be told where to reach us.
+ *
+ * Loopback is not the same as private: any local user can connect, and the
+ * claude session id that routes a call is in `ps` (it is a `claude` argument).
+ * So every request must carry this process's random token in the
+ * X-TeleCoder-Token header, or it is turned away with a 401. The token reaches
+ * the hooks and the MCP subprocess through the pty's environment
+ * (TELECODER_IPC_TOKEN), never through process arguments.
  *
  * Dispatch model: producers POST to /<category>/<name> (e.g. /hook/preToolUse,
  * /mcp/send_file). The category/name combo is the handler key. Handlers register
@@ -100,13 +108,53 @@ export type IpcHandler = (
   signal: AbortSignal,
 ) => Promise<unknown> | unknown;
 
-const handlers = new Map<string, IpcHandler>();
+export interface IpcHandlerOptions {
+  /**
+   * Run in the session's chat when no turn of TeleCoder's is running, as an
+   * MCP tool does. On for /mcp/* routes; a hook opts in when skipping it
+   * between turns would leave something unguarded.
+   */
+  betweenTurns?: boolean;
+  /**
+   * The reply when there is neither a turn nor a chat to run in. Without it a
+   * hook gets a bare ack and a tool gets NO_CHAT_MESSAGE.
+   */
+  noTurn?: (body: Record<string, unknown>) => unknown;
+}
 
-export function registerIpcHandler(path: string, fn: IpcHandler): void {
+interface RegisteredHandler extends IpcHandlerOptions {
+  fn: IpcHandler;
+}
+
+const handlers = new Map<string, RegisteredHandler>();
+
+export function registerIpcHandler(path: string, fn: IpcHandler, options: IpcHandlerOptions = {}): void {
   if (handlers.has(path)) {
     console.warn(`[IPC] Replacing existing handler for ${path}`);
   }
-  handlers.set(path, fn);
+  handlers.set(path, { fn, ...options });
+}
+
+/** The env var a child reads the IPC token from. */
+export const IPC_TOKEN_ENV = 'TELECODER_IPC_TOKEN';
+/** The header every IPC request carries it in. */
+export const IPC_TOKEN_HEADER = 'X-TeleCoder-Token';
+
+/** Made once per bot process; a restarted bot respawns its ptys with the new one. */
+const ipcToken = randomBytes(32).toString('hex');
+
+/** The token to hand a child that calls this server, in its environment only. */
+export function getIpcToken(): string {
+  return ipcToken;
+}
+
+/** Constant-time check of a request's token header. */
+function hasValidToken(req: http.IncomingMessage): boolean {
+  const presented = req.headers[IPC_TOKEN_HEADER.toLowerCase()];
+  if (typeof presented !== 'string') return false;
+  const given = Buffer.from(presented);
+  const expected = Buffer.from(ipcToken);
+  return given.length === expected.length && timingSafeEqual(given, expected);
 }
 
 let ipcPort: number | null = null;
@@ -137,6 +185,14 @@ export async function startIpcServer(): Promise<{ port: number }> {
   if (ipcServerInstance) return { port: getIpcPort() };
 
   const server = http.createServer((req, res) => {
+    if (!hasValidToken(req)) {
+      // Not logged with the session id or path: neither came from anyone we
+      // trust, and a log line per probe is a log anyone local can fill.
+      req.resume();
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'unauthorized' }));
+      return;
+    }
     if (req.method !== 'POST') {
       res.writeHead(405, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'method not allowed' }));
@@ -157,8 +213,8 @@ export async function startIpcServer(): Promise<{ port: number }> {
         return;
       }
 
-      const handler = handlers.get(path);
-      if (!handler) {
+      const registered = handlers.get(path);
+      if (!registered) {
         // 404 is intentional — callers can probe for endpoint availability.
         // Hooks ignore body so this won't block claude either way.
         console.warn(`[IPC] No handler for ${path}`);
@@ -168,19 +224,26 @@ export async function startIpcServer(): Promise<{ port: number }> {
       }
 
       // An MCP tool called outside TeleCoder's turns runs in the session's
-      // chat. A hook doesn't: hooks drive a turn's own UI and its permission
-      // gate, and outside one they go on being acked and ignored.
+      // chat, and so does a hook that asks to (the permission gate, which a
+      // background agent or a turn claude started itself must not skip).
+      // Other hooks drive a turn's own UI, and outside one they go on being
+      // acked and ignored.
       const isTool = path.startsWith('/mcp/');
+      const betweenTurns = registered.betweenTurns ?? isTool;
       const sessionId = extractSessionId(payload, req);
       const turn = sessionId
-        ? activeTurns.get(sessionId) ?? (isTool ? sessionChats.get(sessionId) : undefined)
+        ? activeTurns.get(sessionId) ?? (betweenTurns ? sessionChats.get(sessionId) : undefined)
         : undefined;
       if (!turn) {
         // Don't fail a hook — hooks that fail noisily can block claude. Just
-        // log and ack. A tool is told what didn't happen.
+        // log and ack, unless the route says what no turn means for it. A
+        // tool is told what didn't happen.
         console.warn(`[IPC] ${path} received with no active turn (sessionId=${sessionId ?? 'missing'})`);
+        const reply = registered.noTurn
+          ? registered.noTurn(payload)
+          : isTool ? { success: false, message: NO_CHAT_MESSAGE } : { ok: true, ignored: true };
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(isTool ? { success: false, message: NO_CHAT_MESSAGE } : { ok: true, ignored: true }));
+        res.end(JSON.stringify(reply));
         return;
       }
 
@@ -190,7 +253,7 @@ export async function startIpcServer(): Promise<{ port: number }> {
       });
 
       try {
-        const result = await handler(turn, payload, hangUp.signal);
+        const result = await registered.fn(turn, payload, hangUp.signal);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(result ?? { ok: true }));
       } catch (err) {

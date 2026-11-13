@@ -18,6 +18,8 @@ import { legacyEnv } from '../utils/legacy-env.js';
 import { userPreferences } from '../providers/user-preferences.js';
 import {
   getIpcPort,
+  getIpcToken,
+  IPC_TOKEN_ENV,
   registerActiveTurn,
   registerIpcHandler,
   registerSessionChat,
@@ -30,7 +32,8 @@ import {
 import './mcp-bridge.js';
 import { onAsyncToolArmed, markTurnStart, markTurnEnd, markSelfTurnInterrupted, teardown as teardownMonitorRelay, relayPushNotification, classifyAsyncTool, movedToBackground, type AsyncToolKind } from './monitor-relay.js';
 import { relayUpdateBanner, scrapeUpdateBanner } from './update-banner-relay.js';
-import { gateToolCall, isPermissionGateEnabled, DENY_MARKER_START, DENY_MARKER_END } from './permission-gate.js';
+import { gateToolCall, isPermissionGateEnabled, ALLOW_MARKER, DENY_MARKER_START, DENY_MARKER_END } from './permission-gate.js';
+import { sanitizeError } from '../utils/sanitize.js';
 import {
   buildSettingsJson,
   buildMcpConfigJson,
@@ -1140,6 +1143,9 @@ export class PtyProvider implements Provider {
       env: {
         ...envWithoutParentSession(),
         TERM: 'xterm-256color',
+        // The IPC server's token, for the hooks and the MCP subprocess (which
+        // inherits claude's env). Here and nowhere in `args`, which `ps` shows.
+        [IPC_TOKEN_ENV]: getIpcToken(),
         // Belt and braces alongside the stripped markers above: whatever else
         // the bot inherited, this pty must write its session log — the bot has
         // no other way to read the model's reply.
@@ -2415,31 +2421,55 @@ function armAsyncTool(
   );
 }
 
+/**
+ * What the PreToolUse hook is told when no turn or chat matches its session:
+ * a pty TeleCoder has no chat on record for. Allowed where the gate is off, as
+ * every hook outside a turn always was; denied where it is on, since nobody
+ * can be asked.
+ */
+export function preToolUseWithoutChat(): string {
+  if (!isPermissionGateEnabled()) return ALLOW_MARKER;
+  return `${DENY_MARKER_START}TeleCoder permission gate is on but has no Telegram chat on record for this session, so nobody can approve tools. Denied.${DENY_MARKER_END}`;
+}
+
 registerIpcHandler('/hook/preToolUse', async (turn, body) => {
   const toolName = String(body.tool_name ?? 'unknown');
   const toolInput = (body.tool_input ?? {}) as Record<string, unknown>;
-  turn.onToolStart?.();
-  fireAndForget('onToolStart', () => turn.options.onToolStart?.(toolName, toolInput));
 
-  // Arm the relay so any task-notifications that fire AFTER this turn ends
-  // still get routed to Telegram, and register the task with the tracker
-  // behind /tasks. See classifyAsyncTool for which tools qualify.
-  const asyncKind = classifyAsyncTool(toolName, toolInput);
-  if (asyncKind) armAsyncTool(turn, asyncKind, toolInput, body.tool_use_id);
+  // A call from between TeleCoder's turns — a background agent, a turn claude
+  // started itself — comes here only to pass the gate. Its UI is the monitor
+  // relay's, as before.
+  if (!turn.selfStarted) {
+    // The hook fails closed, so a bug in the bookkeeping must not reach the
+    // reply: it would block every tool rather than miss a UI update.
+    try {
+      turn.onToolStart?.();
+      fireAndForget('onToolStart', () => turn.options.onToolStart?.(toolName, toolInput));
 
-  // PushNotification: claude's "ping the user" tool. The native impl fires
-  // an OS-level notification on the bot host (no real user there); for us
-  // Telegram is the notification surface, so we relay the message text.
-  if (toolName === 'PushNotification') {
-    const message = String(toolInput.message ?? '').trim();
-    if (message) relayPushNotification(turn.sessionKey, message);
+      // Arm the relay so any task-notifications that fire AFTER this turn ends
+      // still get routed to Telegram, and register the task with the tracker
+      // behind /tasks. See classifyAsyncTool for which tools qualify.
+      const asyncKind = classifyAsyncTool(toolName, toolInput);
+      if (asyncKind) armAsyncTool(turn, asyncKind, toolInput, body.tool_use_id);
+
+      // PushNotification: claude's "ping the user" tool. The native impl fires
+      // an OS-level notification on the bot host (no real user there); for us
+      // Telegram is the notification surface, so we relay the message text.
+      if (toolName === 'PushNotification') {
+        const message = String(toolInput.message ?? '').trim();
+        if (message) relayPushNotification(turn.sessionKey, message);
+      }
+    } catch (err) {
+      console.error('[PTY hook] preToolUse bookkeeping threw:', sanitizeError(err));
+    }
   }
 
   // Permission gate: on with guests or TELECODER_PERMISSION_PROMPTS=1. For
   // tools matching a dangerous pattern, blocks the call and waits for Telegram
-  // approval. Decision returned as a deny-marker string the shell wrapper
-  // parses to exit 2 (claude code's "block this tool" signal). gateToolCall is
-  // shared with the SDK transport's hook (sdk-permission-gate.ts).
+  // approval. Decision returned as a marker string the shell wrapper parses:
+  // the deny marker exits 2 (claude code's "block this tool" signal), the
+  // allow marker exits 0, and anything else blocks too. gateToolCall is shared
+  // with the SDK transport's hook (sdk-permission-gate.ts).
   if (isPermissionGateEnabled()) {
     const ctx = (turn.options as { telegramCtx?: Context }).telegramCtx;
     const decision = await gateToolCall({
@@ -2452,13 +2482,13 @@ registerIpcHandler('/hook/preToolUse', async (turn, body) => {
       // Bump the inflight counter back down — the tool isn't actually going
       // to run, so PostToolUse won't fire and inflightTools would otherwise
       // stay stuck high.
-      turn.onToolEnd?.();
+      if (!turn.selfStarted) turn.onToolEnd?.();
       return `${DENY_MARKER_START}${decision.reason}${DENY_MARKER_END}`;
     }
   }
 
-  return { ok: true };
-});
+  return ALLOW_MARKER;
+}, { betweenTurns: true, noTurn: preToolUseWithoutChat });
 
 registerIpcHandler('/hook/postToolUse', (turn, body) => {
   const toolName = String(body.tool_name ?? 'unknown');

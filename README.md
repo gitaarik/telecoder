@@ -746,6 +746,13 @@ Then `/continue` or `/resume` in Telegram to restore your session.
 - **Secret requests** — a key Claude asks for goes from your message into the
   command it named, and the message is deleted; Claude sees only the result.
   Private chats with an admin only
+- **Gate fails closed** — in PTY mode a tool runs only on the bot's explicit
+  allow: if the bot can't be reached (restarting, erroring), the tool is
+  blocked. Background agents and turns Claude starts on its own between your
+  messages go through the gate too, in the chat the session belongs to
+- **Local IPC token** — the loopback server the hooks and MCP tools talk to
+  requires a random per-process token, passed through the environment only,
+  so other users on the machine can't drive it
 
 ### What it stores and sends
 

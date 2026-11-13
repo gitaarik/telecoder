@@ -32,6 +32,7 @@ vi.mock('../../src/telegram/message-sender.js', () => ({
 const {
   startIpcServer,
   getIpcPort,
+  getIpcToken,
   registerIpcHandler,
   registerActiveTurn,
   unregisterActiveTurn,
@@ -51,7 +52,7 @@ function post(route: string, sessionId: string, body: Record<string, unknown> = 
       port: getIpcPort(),
       path: route,
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) },
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data), 'X-TeleCoder-Token': getIpcToken() },
     }, (res) => {
       let text = '';
       res.on('data', (chunk) => { text += chunk; });
