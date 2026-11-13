@@ -9,6 +9,8 @@
  *   npx tsx src/launcher.ts                 # dev mode
  */
 
+// First, so an old Node.js is told so before any other module loads.
+import './node-version-check.js';
 import { Worker, isMainThread } from 'worker_threads';
 import { readFileSync, existsSync, mkdirSync, writeFileSync, watchFile } from 'fs';
 import { config as loadEnv } from 'dotenv';

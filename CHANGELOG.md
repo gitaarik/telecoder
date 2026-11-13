@@ -102,6 +102,12 @@ reasoning — the commit bodies are the long form, this is the index.
   `CLAUDE_CODE_OAUTH_TOKEN`, without refusing to start (macOS keeps the login
   in the keychain, where the check can't see it).
 
+- **Node.js 22 or newer is required** — Node 20 reached end of life in April
+  2026. `engines.node` is now `>=22`, CI runs on Node 22 and 24, and the bot
+  and the launcher check the version before loading anything else, saying
+  which version they found and what to install instead of failing somewhere
+  further in.
+
 ### Multiple bots
 
 - **`instances.json` is read while the launcher runs** — adding a bot used to

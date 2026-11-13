@@ -11,6 +11,8 @@
  * because they were part of this module's public surface.
  */
 
+// First, so an old Node.js is told so before any other module loads.
+import './node-version-check.js';
 import { run } from '@grammyjs/runner';
 import { isMainThread, parentPort } from 'worker_threads';
 import { createBot } from './bot/bot.js';
