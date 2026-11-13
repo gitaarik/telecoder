@@ -39,6 +39,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
 
 const { sendToAgent } = await import('../../src/claude/agent.js');
 const { sessionManager } = await import('../../src/claude/session-manager.js');
+const { getHeldQuery } = await import('../../src/claude/held-query.js');
 
 const SESSION = 'sess-1';
 const init = { type: 'system', subtype: 'init', session_id: SESSION, model: 'm', cwd: process.cwd(), tools: [], slash_commands: [], skills: [] };
@@ -78,8 +79,10 @@ describe('SDK sub-turn replies', () => {
       onProgress: (t) => { progress.push(t); },
       onSubTurnResponse: (t) => { subTurns.push(t); },
     });
+    // The reply is back while the monitor keeps the query open.
+    await getHeldQuery('chat:1')?.feed.closed;
 
-    expect(subTurns).toEqual(['📡 1000/13325 boards', '📡 2000/13325 boards']);
+    await vi.waitFor(() => expect(subTurns).toEqual(['📡 1000/13325 boards', '📡 2000/13325 boards']));
     expect(response.text).not.toContain('📡');
     expect(progress.some((t) => t.includes('📡'))).toBe(false);
   });

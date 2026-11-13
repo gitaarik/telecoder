@@ -54,7 +54,8 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
 
 const { sendToAgent } = await import('../../src/claude/agent.js');
 const { sessionManager } = await import('../../src/claude/session-manager.js');
-const { cancelRequest, setActiveQuery } = await import('../../src/claude/request-queue.js');
+const { cancelRequest, clearActiveQuery } = await import('../../src/claude/request-queue.js');
+const { getHeldQuery } = await import('../../src/claude/held-query.js');
 
 const SESSION = 'sess-1';
 const KEY = 'chat:1';
@@ -94,22 +95,27 @@ describe('SDK input held open for background tasks', () => {
     ];
     const subTurns: string[] = [];
     await sendToAgent(KEY, 'build it', { onSubTurnResponse: (t) => { subTurns.push(t); } });
+    await getHeldQuery(KEY)?.feed.closed;
     expect(seen).toEqual([false, true]);
-    expect(subTurns).toEqual(['Snapshot done.']);
+    await vi.waitFor(() => expect(subTurns).toEqual(['Snapshot done.']));
   });
 
   it('lets a cancel end the wait', async () => {
+    let cancelled: boolean | undefined;
     fx.script = [
       init, backgroundBash, started, text('Building.'), result('Building.'),
       look,
       async () => {
-        // agent.ts registers the query itself; cancelRequest only needs one.
-        setActiveQuery(KEY, { interrupt: async () => {} } as never);
-        await cancelRequest(KEY);
+        // The turn is over, and the queue has dropped its handles: a /cancel
+        // now finds only the query kept open.
+        clearActiveQuery(KEY);
+        cancelled = await cancelRequest(KEY);
       },
       look,
     ];
     await sendToAgent(KEY, 'build it');
+    await getHeldQuery(KEY)?.feed.closed;
+    expect(cancelled).toBe(true);
     expect(seen).toEqual([false, true]);
   });
 });

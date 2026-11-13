@@ -1,5 +1,6 @@
 import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import { markInFlight, clearInFlight } from './in-flight-tracker.js';
+import { releaseHeldQuery } from './held-query.js';
 
 type QueuedRequest<T> = {
   message: string;
@@ -10,10 +11,6 @@ type QueuedRequest<T> = {
 
 const activeAbortControllers: Map<string, AbortController> = new Map();
 const activeQueries: Map<string, Query> = new Map();
-// Ends the prompt stream of a query that has answered but is kept open for
-// background work it started — see turnInput in agent.ts. An interrupt alone
-// doesn't end that wait: the turn it would stop has already finished.
-const inputReleases: Map<string, () => void> = new Map();
 const pendingQueues: Map<string, Array<QueuedRequest<unknown>>> = new Map();
 const processingFlags: Map<string, boolean> = new Map();
 // Tracks chats where a cancel was initiated — checked by agent.ts to detect
@@ -42,14 +39,6 @@ export function getActiveQuery(sessionKey: string): Query | undefined {
 
 export function clearActiveQuery(sessionKey: string): void {
   activeQueries.delete(sessionKey);
-}
-
-export function setInputRelease(sessionKey: string, release: () => void): void {
-  inputReleases.set(sessionKey, release);
-}
-
-export function clearInputRelease(sessionKey: string): void {
-  inputReleases.delete(sessionKey);
 }
 
 export function isCancelled(sessionKey: string): boolean {
@@ -122,7 +111,6 @@ async function processQueue(sessionKey: string): Promise<void> {
     processingFlags.set(sessionKey, false);
     clearAbortController(sessionKey);
     clearActiveQuery(sessionKey);
-    clearInputRelease(sessionKey);
     clearCancelled(sessionKey);
     clearInFlight(sessionKey);
 
@@ -140,8 +128,8 @@ export async function cancelRequest(sessionKey: string): Promise<boolean> {
     // Set the cancelled flag BEFORE interrupt so agent.ts can detect it
     // when the error_during_execution result arrives.
     // Do NOT call controller.abort() — that crashes the SDK subprocess.
+    // The input stays open: background tasks the turn started outlive it.
     cancelledChats.add(sessionKey);
-    inputReleases.get(sessionKey)?.();
     try {
       await q.interrupt();
     } catch (err) {
@@ -160,7 +148,9 @@ export async function cancelRequest(sessionKey: string): Promise<boolean> {
     return true;
   }
 
-  return false;
+  // No turn running, but a query answered earlier is still open for its
+  // background work: stop that.
+  return releaseHeldQuery(sessionKey);
 }
 
 export function clearQueue(sessionKey: string): number {
