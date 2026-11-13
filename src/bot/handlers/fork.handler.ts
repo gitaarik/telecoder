@@ -71,6 +71,8 @@ import { adoptThread, threadName } from '../../telegram/thread-titles.js';
 import { isHomeProject } from '../../utils/home-project.js';
 import { userPreferences } from '../../providers/user-preferences.js';
 import { buildSyntheticCtx } from '../../claude/synthetic-ctx.js';
+import { replayIntoThread } from '../middleware/queued-messages.js';
+import { sanitizeError } from '../../utils/sanitize.js';
 
 const BOT_NAME = config.BOT_NAME;
 
@@ -546,6 +548,38 @@ function describeMessage(message: Message): string {
 }
 
 /**
+ * The conversation as it stands, for a fork taken whether or not a turn is
+ * running: up to the last turn that ended, with the running one's prompt and
+ * STILL_RUNNING_NOTE after it when there is one (see forkPastRunningTurn).
+ */
+function forkOfLatest(ctx: Context, sessionKey: string): { fork: PendingFork; noted: boolean } | { error: string } {
+  const session = sessionManager.getSession(sessionKey);
+  if (!session?.claudeSessionId) return { error: 'No conversation to fork yet.' };
+  const sourceJsonl = sessionJsonlPath(session.workingDirectory, session.claudeSessionId);
+  let raw: string;
+  try {
+    raw = fs.readFileSync(sourceJsonl, 'utf-8');
+  } catch {
+    return { error: 'No transcript on disk to fork.' };
+  }
+
+  const { jsonl, noted } = forkPastRunningTurn(raw, STILL_RUNNING_NOTE);
+  return {
+    noted,
+    fork: {
+      fromBotName: BOT_NAME,
+      fromBotId: BOT_ID,
+      fromChatId: ctx.chat?.id,
+      projectPath: session.workingDirectory,
+      jsonl,
+      topic: getSessionTopic(sessionKey),
+      assistantPreview: lastAssistantTurnText(jsonl)?.substring(0, 200),
+      createdAt: new Date().toISOString(),
+    },
+  };
+}
+
+/**
  * "Ask in a fork" on a message waiting behind a running turn: the conversation
  * as it stood before that turn goes into a new thread, with the running prompt
  * and a reply saying it's still being worked on elsewhere (see
@@ -559,28 +593,10 @@ export async function forkPastRunningTurnIntoThread(
   message: Message,
 ): Promise<{ threadId: number; name: string; link?: string } | { error: string }> {
   if (!canForkToThread(ctx)) return { error: 'Forks need threads, which are off for this bot.' };
-  const session = sessionManager.getSession(sessionKey);
-  if (!session?.claudeSessionId) return { error: 'No conversation to fork yet.' };
-  const sourceJsonl = sessionJsonlPath(session.workingDirectory, session.claudeSessionId);
-  let raw: string;
-  try {
-    raw = fs.readFileSync(sourceJsonl, 'utf-8');
-  } catch {
-    return { error: 'No transcript on disk to fork.' };
-  }
-
-  const { jsonl, noted } = forkPastRunningTurn(raw, STILL_RUNNING_NOTE);
+  const latest = forkOfLatest(ctx, sessionKey);
+  if ('error' in latest) return latest;
+  const { fork, noted } = latest;
   if (!noted) console.warn(`[Fork] ${sessionKey}: running turn not on disk yet, forking without the note`);
-  const fork: PendingFork = {
-    fromBotName: BOT_NAME,
-    fromBotId: BOT_ID,
-    fromChatId: ctx.chat?.id,
-    projectPath: session.workingDirectory,
-    jsonl,
-    topic: getSessionTopic(sessionKey),
-    assistantPreview: lastAssistantTurnText(jsonl)?.substring(0, 200),
-    createdAt: new Date().toISOString(),
-  };
 
   const opened = await openForkThread(ctx, sessionKey, fork, {
     above: 'The conversation it was forked from carries on in its own thread, still working on that prompt.',
@@ -725,6 +741,110 @@ export async function handleForkCommand(ctx: Context): Promise<void> {
       .build(),
     { reply_markup: { inline_keyboard: picker.keyboard } },
   );
+}
+
+/**
+ * What the spun-off conversation is compacted around: the task, and that the
+ * rest of the work stays with the conversation it came from.
+ */
+export function spinoffCompactFocus(task: string): string {
+  return 'This conversation is being spun off into a new session for one task, which is the next message. '
+    + 'Keep what that task needs: the decisions, constraints and knowledge of the code that bear on it. '
+    + 'The original conversation carries on separately in the same working directory, with its own work '
+    + 'and background tasks; mention those only as far as they affect this task, and as belonging to the '
+    + `other session, not this one. The task: ${task}`;
+}
+
+/**
+ * /spinoff <task> — split one task off into a conversation of its own. The
+ * conversation as it stands (past a running turn, as "Ask in a fork" takes
+ * it) goes into a new thread, is compacted there around the task, and the
+ * task goes in as the first prompt. This thread carries on unchanged, so it
+ * works mid-turn: it's registered ahead of sequentialize, and the new thread
+ * has a queue of its own.
+ *
+ * Unlike a /fork, which takes the whole conversation along, the spinoff
+ * starts with only what its task needs, and starts on it without waiting for
+ * another message.
+ */
+export async function handleSpinoffCommand(ctx: Context): Promise<void> {
+  const keyInfo = getSessionKeyFromCtx(ctx);
+  const message = ctx.message;
+  if (!keyInfo || !message?.text) return;
+
+  const argStart = message.text.match(/^\/spinoff(?:@\w+)?\s*/i)?.[0].length ?? message.text.length;
+  const task = message.text.slice(argStart).trim();
+  if (!task) {
+    await ctx.reply(
+      'Usage: /spinoff <task>\n\n'
+      + 'Opens a new thread with this conversation compacted around the task, and starts on it there. '
+      + 'This thread carries on as it is.',
+    );
+    return;
+  }
+  if (!canForkToThread(ctx)) {
+    await ctx.reply('A spinoff opens a new thread, and threads are off for this bot.');
+    return;
+  }
+
+  const latest = forkOfLatest(ctx, keyInfo.sessionKey);
+  if ('error' in latest) {
+    await ctx.reply(latest.error);
+    return;
+  }
+  const opened = await openForkThread(ctx, keyInfo.sessionKey, latest.fork, {
+    above: 'The conversation it was spun off from carries on in its own thread. '
+      + 'This one is compacted around the task below first, then starts on it.',
+  });
+  if ('error' in opened) {
+    await ctx.reply(opened.error);
+    return;
+  }
+
+  let taskLineId: number | undefined;
+  try {
+    taskLineId = (await sendFormatted(ctx.api, message.chat.id, youLine(task, MARKER_PROMPT_LEN), {
+      message_thread_id: opened.threadId,
+    })).message_id;
+  } catch (err) {
+    console.warn('[Spinoff] Could not post the You line:', sanitizeError(err));
+  }
+
+  const b = new EntityText().add('🍴 ').bold('Spun off into ');
+  if (opened.link) b.link(opened.name, opened.link);
+  else b.bold(opened.name);
+  b.newline(2).italic('It compacts this conversation around the task, then starts on it. This thread carries on unchanged.');
+  try {
+    await replyFormatted(ctx, b.build(), {
+      reply_parameters: { message_id: message.message_id },
+      ...(opened.link ? { reply_markup: { inline_keyboard: [[{ text: `Open ${opened.name}`, url: opened.link }]] } } : {}),
+    });
+  } catch (err) {
+    console.warn('[Spinoff] Could not confirm:', sanitizeError(err));
+  }
+
+  // The compact and then the task, each as if typed in the new thread. Each
+  // replay settles once its turn is over, so the task waits for the compact.
+  // Their own ids, or the message handler would take the second for a retry
+  // of the first: the /spinoff's for the compact (the handler never saw it),
+  // the You line's for the task.
+  const compact = `/compact ${spinoffCompactFocus(task)}`;
+  const taskEntities = message.entities
+    ?.filter((e) => e.offset >= argStart && e.type !== 'bot_command')
+    .map((e) => ({ ...e, offset: e.offset - argStart }));
+  void (async () => {
+    await replayIntoThread(ctx.update, opened.threadId, {
+      text: compact,
+      entities: [{ type: 'bot_command', offset: 0, length: '/compact'.length }],
+    });
+    await replayIntoThread(ctx.update, opened.threadId, {
+      text: task,
+      entities: taskEntities?.length ? taskEntities : undefined,
+      ...(taskLineId ? { message_id: taskLineId } : {}),
+    });
+  })().catch((err: unknown) => {
+    console.error(`[Spinoff] Starting the spinoff in thread ${opened.threadId} failed:`, sanitizeError(err));
+  });
 }
 
 export async function handleAcceptCommand(ctx: Context): Promise<void> {

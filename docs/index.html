@@ -2293,6 +2293,14 @@
             either way.</p>
           </div>
           <div class="feature-card" data-category="sessions">
+            <div class="feature-icon"><svg><use href="#i-fork"/></svg></div>
+            <h3>Spin a task off</h3>
+            <p><code>/spinoff &lt;task&gt;</code> splits one task off into a new thread: the
+            conversation is compacted there around that task, and work on it starts right away.
+            The original carries on as it was, even mid-turn &mdash; handy when a session has
+            planned more than it should take on itself.</p>
+          </div>
+          <div class="feature-card" data-category="sessions">
             <div class="feature-icon"><svg><use href="#i-tree"/></svg></div>
             <h3>Find your way back through forks</h3>
             <p><code>/tree</code> draws every branch of a forked conversation in one message
@@ -2923,6 +2931,10 @@ CCR_AUTOSTART=true</pre>
             <div class="command-row">
               <code class="command-code">/fork</code>
               <span class="command-desc">Fork the current conversation — straight into a new thread on a bot with threads; otherwise into a new branch on this same bot, or hand it off to a sibling bot (alternative to tapping the 🍴 Fork button on a past assistant message)</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/spinoff &lt;task&gt;</code>
+              <span class="command-desc">Split a task off into a new thread: the conversation is compacted there around the task, which then starts at once. Works mid-turn; this thread carries on unchanged. Needs a bot with threads</span>
             </div>
             <div class="command-row">
               <code class="command-code">/tree</code>

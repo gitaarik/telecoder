@@ -834,15 +834,28 @@ async function handleBtwTap(ctx: Context, key: string): Promise<void> {
  * the thread's id on it, through the whole chain the way Send replays one.
  */
 function sendIntoThread(update: MessageUpdate, threadId: number): void {
-  const copy = structuredClone(update);
+  void replayIntoThread(update, threadId).catch((err: unknown) => {
+    console.error(`[Queued] Sending message ${update.message.message_id} into the fork failed:`, sanitizeError(err));
+  });
+}
+
+/**
+ * sendIntoThread's replay, for a caller that sends something of its own into a
+ * thread: `changes` go over the message first (its text, entities, id), and the
+ * promise settles once the whole chain has handled it, which for a prompt is
+ * once its turn is over. A different id is how two replays of one update stay
+ * apart: the message handler drops an id it has already seen as a retry.
+ */
+export async function replayIntoThread(update: Update, threadId: number, changes: Partial<Message> = {}): Promise<void> {
+  if (!update.message || !botRef) return;
+  const copy = structuredClone(update) as MessageUpdate;
+  Object.assign(copy.message, changes);
   copy.message.message_thread_id = threadId;
   (copy.message as { is_topic_message?: boolean }).is_topic_message = true;
   delete (copy.message as { reply_to_message?: unknown }).reply_to_message;
   copy.message.date = Math.floor(Date.now() / 1000);
   markAlreadyAddressed(copy);
-  void botRef?.handleUpdate(copy).catch((err: unknown) => {
-    console.error(`[Queued] Sending message ${update.message.message_id} into the fork failed:`, sanitizeError(err));
-  });
+  await botRef.handleUpdate(copy);
 }
 
 async function handleForkTap(ctx: Context, key: string): Promise<void> {

@@ -95,7 +95,7 @@ import {
 } from './handlers/command.handler.js';
 import { handleMessage, handleCcrThrottleCallback } from './handlers/message.handler.js';
 import { handleSchedule, handleSchedules, handleUnschedule } from './handlers/schedule.handler.js';
-import { handleForkCallback, handleAcceptCommand, handleDeclineCommand, handleForkCommand, forkPastRunningTurnIntoThread } from './handlers/fork.handler.js';
+import { handleForkCallback, handleAcceptCommand, handleDeclineCommand, handleForkCommand, handleSpinoffCommand, forkPastRunningTurnIntoThread } from './handlers/fork.handler.js';
 import { askBtw } from './handlers/command/btw.js';
 import { handleNewBot, handleManagedBotCreated } from './handlers/newbot.handler.js';
 import { handleTreeCommand, handleTreeCallback } from './handlers/tree.handler.js';
@@ -306,6 +306,7 @@ export async function createBot(): Promise<Bot> {
     { command: 'loop', description: '🔄 Run in loop mode' },
     { command: 'sessions', description: '📚 View saved sessions' },
     { command: 'fork', description: '🍴 Fork this conversation to another bot' },
+    { command: 'spinoff', description: '🍴 Split a task off into a new thread' },
     { command: 'tree', description: '🌳 Show where this conversation branched, and jump between branches' },
     { command: 'accept', description: '📦 Accept a pending fork from another bot' },
     { command: 'decline', description: '🚫 Discard a pending fork' },
@@ -425,6 +426,7 @@ export async function createBot(): Promise<Bot> {
   cmd('deny', adminOnly(handleDeny));
   cmd('users', adminOnly(handleUsers));
   cmd('btw', withRunningNote(handleBtw)); // Side question — must bypass queue to work mid-task
+  cmd('spinoff', handleSpinoffCommand); // Splits a task off into a new thread — bypasses the queue so it works mid-task
   // Sets an idea aside for after the turn, so it can't wait behind that turn. And
   // with nothing running, it's the one message that doesn't start one.
   cmd('later', withRunningNote(handleLater));
