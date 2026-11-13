@@ -12,7 +12,7 @@ import { getActiveQuery } from '../../../claude/request-queue.js';
 import { askForkedSideQuestion, type SideQuestionProgress } from '../../../claude/side-question.js';
 import { messageSender } from '../../../telegram/message-sender.js';
 import { getActiveProviderName } from '../../../providers/provider-router.js';
-import { userPreferences } from '../../../providers/user-preferences.js';
+import { getActiveMethod } from '../../../providers/claude-provider.js';
 import { sanitizeError } from '../../../utils/sanitize.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 
@@ -44,7 +44,7 @@ export async function askBtw(ctx: Context, sessionKey: string, question: string)
   // read-only fork of the live session instead. Only Claude sessions have a
   // resumable JSONL transcript; ccr falls through to the SDK path.
   const usesPty = getActiveProviderName(sessionKey) === 'claude'
-    && userPreferences.getMethod(sessionKey) === 'pty';
+    && getActiveMethod(sessionKey) === 'pty';
   if (usesPty) {
     await handleBtwViaFork(ctx, sessionKey, question);
     return;
@@ -67,8 +67,17 @@ export async function askBtw(ctx: Context, sessionKey: string, question: string)
     return;
   }
 
+  // The SDK reports no progress for a side question, so the line just shows
+  // it's alive with a ticking elapsed — without it nothing appears until the
+  // whole answer lands.
+  const headline = `💬 /btw — ${btwLabel(question)}`;
+  const ack = await ctx.reply(`${headline}\nasking on the side… (main task keeps running)`);
+  const progress = new BtwProgressLine(ctx, ctx.chat!.id, ack.message_id, headline);
+  const startedAt = Date.now();
+
   try {
     const result = await (queryAny.askSideQuestion as (q: string) => Promise<{ response: string; synthetic: boolean } | null>)(question);
+    await progress.finish(0, Date.now() - startedAt);
     if (!result || !result.response) {
       await ctx.reply("I don't have enough context to answer that.");
       return;
@@ -77,6 +86,7 @@ export async function askBtw(ctx: Context, sessionKey: string, question: string)
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
     console.error('[btw] Error:', msg);
+    await progress.fail();
     await ctx.reply(`Failed to answer side question: ${msg}`);
   }
 }
