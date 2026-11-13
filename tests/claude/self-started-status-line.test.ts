@@ -140,7 +140,7 @@ describe('the status line under a reply claude started on its own', () => {
       '▸ Why does checkout fail?',
       '▸ Review the fix in the background',
       '',
-      '📁 shop · 🧠 Auto · 🤖 opus-5-5 · 📊 25% · 💰 $0.00',
+      '📁 shop · 🧠 Auto · 🤖 opus-5-5 · 🟡 25% · 💰 $0.00',
     ].join('\n')]);
 
     // And /status and /context now agree with it.

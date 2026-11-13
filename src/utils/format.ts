@@ -16,13 +16,37 @@ export function fmtTokens(n: number): string {
   return String(n);
 }
 
-/** Ten-cell context-usage bar, colour-coded green / amber / red at 60% and 80%. */
-export function getProgressBar(pct: number): string {
+/**
+ * Ten-cell usage bar, colour-coded green / amber / red at 60% and 80%. Pass
+ * `color` to colour it by something other than the fill, as the context bar
+ * does with `contextHealthColor`.
+ */
+export function getProgressBar(pct: number, color?: string): string {
   const clamped = Math.max(0, Math.min(100, pct));
   const filled = Math.round(clamped / 10);
   const empty = 10 - filled;
-  const color = clamped >= 80 ? '🔴' : clamped >= 60 ? '🟡' : '🟢';
-  return color + ' [' + '█'.repeat(filled) + '░'.repeat(empty) + ']';
+  const shade = color ?? (clamped >= 80 ? '🔴' : clamped >= 60 ? '🟡' : '🟢');
+  return shade + ' [' + '█'.repeat(filled) + '░'.repeat(empty) + ']';
+}
+
+/** Context size from which answers get slower, costlier and less sharp. */
+export const CONTEXT_WARN_TOKENS = 150_000;
+/** Context size from which it's time to /clear, fork or /compact. */
+export const CONTEXT_HIGH_TOKENS = 300_000;
+
+/**
+ * How healthy a context of `used` tokens is, as 🟢 / 🟡 / 🔴.
+ *
+ * The share of the window alone doesn't say it: with the 1M window a context
+ * at 30% is already 300k tokens, where every turn costs more and recall gets
+ * patchier, long before auto-compact would step in. So whichever comes first
+ * counts — the absolute size, or 60% / 80% of the window.
+ */
+export function contextHealthColor(used: number, contextWindow: number): '🟢' | '🟡' | '🔴' {
+  const pct = contextWindow > 0 ? (used / contextWindow) * 100 : 0;
+  if (used >= CONTEXT_HIGH_TOKENS || pct >= 80) return '🔴';
+  if (used >= CONTEXT_WARN_TOKENS || pct >= 60) return '🟡';
+  return '🟢';
 }
 
 /**

@@ -104,6 +104,13 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Agent
 
+- **The status line turns amber, then red, as the context grows** — the
+  `📊 34%` stat looked the same at 15% as at 80%, and with the 1M window even
+  80% is far past the point where turns get slower, costlier and less sharp.
+  The chart now becomes `🟡` from 150k tokens or 60% of the window, and `🔴`
+  from 300k or 80%, whichever comes first, a cue to `/clear`, fork or
+  `/compact`. The usage footer and `/context` bars follow the same rule.
+
 - **Fable gets a 💎 while it's on** — the model showed as one more `🤖` stat
   in the status line, easy to read past, and not at all with the status line
   off, so a Fable picked for one hard task went on spending the plan's limits

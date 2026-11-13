@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fmtTokens, formatCompactionConfirmation } from '../../src/utils/format.js';
+import { contextHealthColor, fmtTokens, formatCompactionConfirmation, getProgressBar } from '../../src/utils/format.js';
 
 describe('fmtTokens', () => {
   it('formats by magnitude', () => {
@@ -20,5 +20,30 @@ describe('formatCompactionConfirmation', () => {
       .toBe('🗜️ Context compacted — was 23.0k tokens.');
     expect(formatCompactionConfirmation({ preTokens: 23_044, postTokens: 0 }))
       .toBe('🗜️ Context compacted — was 23.0k tokens.');
+  });
+});
+
+describe('contextHealthColor', () => {
+  it('goes by absolute size in a large window', () => {
+    expect(contextHealthColor(100_000, 1_000_000)).toBe('🟢');
+    expect(contextHealthColor(150_000, 1_000_000)).toBe('🟡');
+    expect(contextHealthColor(300_000, 1_000_000)).toBe('🔴');
+  });
+
+  it('goes by share of the window when that comes first', () => {
+    expect(contextHealthColor(100_000, 200_000)).toBe('🟢');
+    expect(contextHealthColor(120_000, 200_000)).toBe('🟡');
+    expect(contextHealthColor(160_000, 200_000)).toBe('🔴');
+  });
+
+  it('copes with an unknown window', () => {
+    expect(contextHealthColor(50_000, 0)).toBe('🟢');
+    expect(contextHealthColor(400_000, 0)).toBe('🔴');
+  });
+});
+
+describe('getProgressBar colour override', () => {
+  it('keeps the fill but takes the given colour', () => {
+    expect(getProgressBar(20, '🔴')).toBe('🔴 [' + '█'.repeat(2) + '░'.repeat(8) + ']');
   });
 });

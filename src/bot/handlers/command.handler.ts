@@ -11,7 +11,7 @@ import { createTelegraphFromFile } from '../../telegram/telegraph.js';
 import { EntityText, joinMessages, trimMessage, type EntityMessage } from '../../telegram/entities.js';
 import { replyFormatted, replyParts } from '../../telegram/send.js';
 import { maybeSendVoiceReply } from '../../tts/voice-reply.js';
-import { fmtTokens, getProgressBar } from '../../utils/format.js';
+import { contextHealthColor, fmtTokens, getProgressBar } from '../../utils/format.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
@@ -355,10 +355,11 @@ export async function handleContext(ctx: Context): Promise<void> {
   // Try cached SDK usage first (instant, no CLI shell-out)
   const cached = getCachedUsage(sessionKey);
   if (cached) {
+    const used = contextTokens(cached);
     const pct = cached.contextWindow > 0
-      ? Math.round((contextTokens(cached) / cached.contextWindow) * 100)
+      ? Math.round((used / cached.contextWindow) * 100)
       : 0;
-    const bar = getProgressBar(pct);
+    const bar = getProgressBar(pct, contextHealthColor(used, cached.contextWindow));
 
     const output = `## 🧠 Context Usage\n\n`
       + `${bar} **${pct}%** of context window\n\n`

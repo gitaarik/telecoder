@@ -39,7 +39,7 @@ import {
   resolveVerbosityFlags,
   type VerbosityLevel,
 } from '../../../utils/verbosity.js';
-import { fmtTokens, getProgressBar } from '../../../utils/format.js';
+import { contextHealthColor, fmtTokens, getProgressBar } from '../../../utils/format.js';
 import { getSessionKeyFromCtx, parseSessionKey, type SettingsScope } from '../../../utils/session-key.js';
 import {
   PERMISSION_MODES,
@@ -612,7 +612,8 @@ function usageFooter(chatId: number, usage: AgentUsage | undefined): string | un
   if (!usage || !resolveVerbosityFlags(chatId).showUsageFooter) return undefined;
   const used = contextTokens(usage);
   const pct = usage.contextWindow > 0 ? Math.round((used / usage.contextWindow) * 100) : 0;
-  return `${getProgressBar(pct)} ${pct}% context · ${fmtTokens(used)}/${fmtTokens(usage.contextWindow)} · $${usage.totalCostUsd.toFixed(4)} · ${usage.numTurns} turns`;
+  const bar = getProgressBar(pct, contextHealthColor(used, usage.contextWindow));
+  return `${bar} ${pct}% context · ${fmtTokens(used)}/${fmtTokens(usage.contextWindow)} · $${usage.totalCostUsd.toFixed(4)} · ${usage.numTurns} turns`;
 }
 
 /**
@@ -682,7 +683,10 @@ function buildStatusLine(
       if (usage.contextWindow > 0) {
         const used = contextTokens(usage);
         const pct = Math.round((used / usage.contextWindow) * 100);
-        stats.push(`📊 ${pct}%`);
+        // The chart while it's healthy; amber or red once it's grown big
+        // enough that a /clear or fork is worth thinking about.
+        const health = contextHealthColor(used, usage.contextWindow);
+        stats.push(`${health === '🟢' ? '📊' : health} ${pct}%`);
       }
       stats.push(`💰 $${usage.totalCostUsd.toFixed(2)}`);
     }

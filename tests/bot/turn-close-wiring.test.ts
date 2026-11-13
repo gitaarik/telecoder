@@ -265,7 +265,7 @@ describe('a turn started by a command with its task on the same line', () => {
     ['/explore', '/explore how do refunds work?', 'how do refunds work?', STATS],
     // With the model and the context the session last had, a loop's response
     // having none of its own to give.
-    ['/loop', '/loop fix the failing tests', 'fix the failing tests', STATS.replace('12%', '30%')],
+    ['/loop', '/loop fix the failing tests', 'fix the failing tests', STATS.replace('📊 12%', '🔴 30%')],
   ])('%s ends with the status line', async (_name, text, prompt, stats) => {
     const posted = await endOfTurn(() => receive({ text }));
 
