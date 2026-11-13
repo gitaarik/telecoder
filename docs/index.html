@@ -3085,11 +3085,15 @@ CCR_AUTOSTART=true</pre>
           <div class="commands-grid">
             <div class="command-row">
               <code class="command-code">/file &lt;path&gt;</code>
-              <span class="command-desc">Get a project file as Telegram download</span>
+              <span class="command-desc">Get a file as a Telegram download. Guests get files from the chat's project only; admins from anywhere in <code>WORKSPACE_DIR</code>. Credential paths (<code>.env</code>, <code>~/.ssh</code>, <code>~/.claude</code> and the like) are refused for everyone</span>
             </div>
             <div class="command-row">
               <code class="command-code">/telegraph</code>
-              <span class="command-desc">Toggle the Instant View link that long responses get underneath them, or publish a file as a page</span>
+              <span class="command-desc">Toggle the Instant View link that long responses get underneath them (needs <code>TELEGRAPH_ENABLED=true</code>)</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/telegraph &lt;path&gt;</code>
+              <span class="command-desc">Publish a project file as a public Telegraph page. Needs <code>TELEGRAPH_ENABLED=true</code>. <strong>Admin-only</strong></span>
             </div>
           </div>
         </div>

@@ -8,20 +8,17 @@
  */
 
 import { Context } from 'grammy';
-import * as fs from 'fs';
 import * as path from 'path';
 import { config } from '../../../config.js';
 import { sessionManager } from '../../../claude/session-manager.js';
 import { queueRequest } from '../../../claude/request-queue.js';
 import { summarizeTopicWithHaiku } from '../../../claude/auto-topic-haiku.js';
 import { readLastAiTitle } from '../../../claude/session-jsonl.js';
-import { EntityText } from '../../../telegram/entities.js';
-import { replyFormatted } from '../../../telegram/send.js';
 import { isBotNameEnabled } from '../../../telegram/botname-settings.js';
 import { namesThread } from '../../../telegram/thread-titles.js';
 import { userPreferences } from '../../../providers/user-preferences.js';
 import { parseSessionKey } from '../../../utils/session-key.js';
-import { getWorkspaceRoot, isPathWithinRoot } from '../../../utils/workspace-guard.js';
+import { resolveShareableFile } from '../../file-access.js';
 import { getSessionTopic, setSessionTopic } from '../command.handler.js';
 import { getMsSinceTopicSet } from '../command/topic-store.js';
 import { requireSession } from '../session-guard.js';
@@ -85,7 +82,9 @@ export function fireAutoTopic(ctx: Context, sessionKey: string, userMessage: str
 
 /**
  * Resolve a user-typed file path against the active session, enforcing the
- * workspace boundary and that the target is an existing regular file.
+ * file-access rules (see bot/file-access.ts: the credential denylist for
+ * everyone, the project directory for guests, the workspace for admins) and
+ * that the target is an existing regular file.
  *
  * Every rejection is reported to the chat and returns null, so callers only
  * need to early-return. Shared by the /file and /telegraph reply handlers —
@@ -97,32 +96,10 @@ export async function resolveUserFilePath(
   sessionKey: string,
   filePath: string,
 ): Promise<string | null> {
-  const trimmedPath = filePath.trim();
-
   const session = await requireSession(ctx, sessionKey);
   if (!session) return null;
 
-  const fullPath = trimmedPath.startsWith('/')
-    ? trimmedPath
-    : path.join(session.workingDirectory, trimmedPath);
-  const workspaceRoot = getWorkspaceRoot();
-
-  if (!isPathWithinRoot(workspaceRoot, fullPath)) {
-    await replyFormatted(ctx, new EntityText().add('❌ File path must be within workspace root: ').code(workspaceRoot).build());
-    return null;
-  }
-
-  if (!fs.existsSync(fullPath)) {
-    await replyFormatted(ctx, new EntityText().add('❌ File not found: ').code(trimmedPath).build());
-    return null;
-  }
-
-  if (fs.statSync(fullPath).isDirectory()) {
-    await replyFormatted(ctx, new EntityText().add("❌ That's a directory, not a file: ").code(trimmedPath).build());
-    return null;
-  }
-
-  return fullPath;
+  return resolveShareableFile(ctx, session.workingDirectory, filePath);
 }
 
 /**

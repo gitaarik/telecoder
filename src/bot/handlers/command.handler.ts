@@ -12,10 +12,9 @@ import { EntityText, joinMessages, trimMessage, type EntityMessage } from '../..
 import { replyFormatted, replyParts } from '../../telegram/send.js';
 import { maybeSendVoiceReply } from '../../tts/voice-reply.js';
 import { contextHealthColor, fmtTokens, getProgressBar } from '../../utils/format.js';
-import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
-import { getWorkspaceRoot, isPathWithinRoot } from '../../utils/workspace-guard.js';
+import { refuseFilePublish, resolveShareableFile } from '../file-access.js';
 import { resolveClaudeExecutableForMethod } from '../../utils/resolve-claude-bin.js';
 import { getActiveMethod, getPtyProvider } from '../../providers/claude-provider.js';
 import { contextTokens } from '../../providers/types.js';
@@ -908,25 +907,8 @@ export async function handleFile(ctx: Context): Promise<void> {
     return;
   }
 
-  const fullPath = filePath.startsWith('/')
-    ? filePath
-    : path.join(session.workingDirectory, filePath);
-  const workspaceRoot = getWorkspaceRoot();
-
-  if (!isPathWithinRoot(workspaceRoot, fullPath)) {
-    await replyFormatted(ctx, new EntityText().add('❌ File path must be within workspace root: ').code(workspaceRoot).build());
-    return;
-  }
-
-  if (!fs.existsSync(fullPath)) {
-    await replyFormatted(ctx, new EntityText().add('❌ File not found: ').code(filePath).build());
-    return;
-  }
-
-  if (fs.statSync(fullPath).isDirectory()) {
-    await replyFormatted(ctx, new EntityText().add('❌ Path is a directory, not a file: ').code(filePath).build());
-    return;
-  }
+  const fullPath = await resolveShareableFile(ctx, session.workingDirectory, filePath);
+  if (!fullPath) return;
 
   const success = await messageSender.sendDocument(ctx, fullPath, `📎 ${path.basename(fullPath)}`);
 
@@ -952,23 +934,13 @@ export async function handleTelegraph(ctx: Context): Promise<void> {
     return;
   }
 
+  if (await refuseFilePublish(ctx)) return;
+
   const session = await requireActiveSession(ctx, sessionKey);
   if (!session) return;
 
-  const fullPath = filePath.startsWith('/')
-    ? filePath
-    : path.join(session.workingDirectory, filePath);
-  const workspaceRoot = getWorkspaceRoot();
-
-  if (!isPathWithinRoot(workspaceRoot, fullPath)) {
-    await replyFormatted(ctx, new EntityText().add('❌ File path must be within workspace root: ').code(workspaceRoot).build());
-    return;
-  }
-
-  if (!fs.existsSync(fullPath)) {
-    await replyFormatted(ctx, new EntityText().add('❌ File not found: ').code(filePath).build());
-    return;
-  }
+  const fullPath = await resolveShareableFile(ctx, session.workingDirectory, filePath);
+  if (!fullPath) return;
 
   const ext = path.extname(fullPath).toLowerCase();
   if (ext !== '.md' && ext !== '.markdown') {

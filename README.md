@@ -125,7 +125,7 @@ This is not a simple API wrapper. It's the real Claude Code agent with tool acce
 ### Files & Uploads
 - Send photos or image documents; saved under `.telecoder/uploads/` in the project, a folder
   that keeps itself out of git
-- `/file` sends you any file from the project
+- `/file` sends you a file from the project (credential files such as `.env` and `~/.ssh` are never sent)
 
 </td>
 </tr>
@@ -472,8 +472,9 @@ your secrets, which is the only form of that answer worth trusting.
 ### Files & Output
 | Command | Description |
 |---------|-------------|
-| `/file` | Download a project file |
+| `/file <path>` | Download a file. Guests get files from the chat's project only; admins from anywhere in `WORKSPACE_DIR`. Credential and bot-state paths (`.env`, `~/.ssh`, `~/.claude`, cloud CLI configs and the like) are refused for everyone |
 | `/telegraph` | Toggle Instant View for long responses in this chat (needs `TELEGRAPH_ENABLED=true`) |
+| `/telegraph <path>` | Publish a project file as a public Telegraph page. **Admin-only**, needs `TELEGRAPH_ENABLED=true`, same path rules as `/file` |
 | `/suggestions` | Toggle predicted next-prompt buttons under each response |
 
 ### Voice & TTS

@@ -7,6 +7,18 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Security
 
+- **`/file` and `/telegraph <path>` can't hand out credentials** — both
+  accepted any path under `WORKSPACE_DIR`, which defaults to your home
+  directory, so any guest on a shared bot could fetch
+  `~/.claude/.credentials.json` with `/file`, or publish `~/.ssh/id_rsa` as a
+  public page with `/telegraph`. Guests are now confined to the chat's project
+  directory, admins keep the whole workspace, and the scope guard's list of
+  credential and bot-state paths (`.env` files, `~/.ssh`, `~/.aws`,
+  `~/.claude`, `~/.telecoder`, cloud CLI configs and so on) is refused for
+  everyone, admins included. Symlinks are followed before anything is
+  decided. `/telegraph <path>` is admin-only; `/telegraph` on its own still
+  shows the per-chat toggle to everyone.
+
 - **Telegraph is off unless you turn it on** — `TELEGRAPH_ENABLED` defaulted
   to `true`, so every reply over 2500 characters, every `/handoff` and every
   verbose action log became a public telegra.ph page without anyone choosing

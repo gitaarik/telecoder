@@ -22,6 +22,7 @@ import {
   clearTopicAndRefreshBotName,
 } from '../command.handler.js';
 import { fireAutoTopic, requireSession, resolveUserFilePath, runQueuedTurn } from './shared.js';
+import { refuseFilePublish } from '../../file-access.js';
 import { progressCallbacks, toolCallbacks, withStreamingTurn } from '../../../telegram/streaming-turn.js';
 import { closeTurn, relayCatchUpIfMissed } from './turn-notify.js';
 
@@ -135,6 +136,7 @@ export async function handleAgentReply(
 
 // Handle reply to telegraph ForceReply prompt
 export async function handleTelegraphReply(ctx: Context, sessionKey: string, filePath: string): Promise<void> {
+  if (await refuseFilePublish(ctx)) return;
   const fullPath = await resolveUserFilePath(ctx, sessionKey, filePath);
   if (!fullPath) return;
 
