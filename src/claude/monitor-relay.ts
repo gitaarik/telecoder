@@ -714,12 +714,16 @@ function stripSummaryPrefix(summary: string): string {
  * its turn's reply, sent when the turn closes.
  */
 function postMonitorEvent(sessionKey: string, notif: TaskNotification): void {
+  const summary = notif.summary ? stripSummaryPrefix(notif.summary) : '';
+  // The footer under a running turn's status line shows it too, beside
+  // the task it came from.
+  taskTracker.noteUpdate(sessionKey, notif.toolUseId, summary || notif.event.split('\n')[0]);
   // A monitor firing is the whole reason the user armed it, so it always
   // wants the user's attention — the card decides whether that means a fresh
   // message or a silent edit onto one it posted moments ago.
   noteMonitorEvent(
     sessionKey,
-    notif.summary ? stripSummaryPrefix(notif.summary) : '',
+    summary,
     notif.event,
     { notify: true },
   );

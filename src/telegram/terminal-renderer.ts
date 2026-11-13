@@ -4,6 +4,7 @@
  */
 
 import { formatDuration } from '../utils/agent-timer.js';
+import { EntityText, type EntityMessage } from './entities.js';
 
 // Tool icons (emoji-based for mobile friendliness)
 export const TOOL_ICONS: Record<string, string> = {
@@ -610,20 +611,55 @@ function truncateUrl(url: string | undefined, maxLen: number = 40): string | und
   return url.substring(0, maxLen - 3) + '...';
 }
 
+/** Update lines the footer shows, across all its tasks. */
+const FOOTER_UPDATES = 3;
+const FOOTER_UPDATE_CHARS = 80;
+const FOOTER_TASK_CHARS = 30;
+
+function cut(text: string, max: number): string {
+  return text.length > max ? text.substring(0, max - 3) + '...' : text;
+}
+
 /**
  * Render a compact background-task footer for the streaming status block.
- * - 0 tasks: empty string (caller can unconditionally append).
+ * - 0 tasks: null.
  * - 1 task: "🔄 Running in background: <description>" (truncated).
  * - N tasks: "🔄 N tasks running in background".
+ *
+ * Under it go the latest things the tasks reported doing, timed as the action
+ * log times its entries, so a long task shows it's getting somewhere. With
+ * more than one task each line says whose it is.
  */
-export function renderBackgroundFooter(tasks: Array<{ description: string }>): string {
-  if (tasks.length === 0) return '';
+export function renderBackgroundFooter(
+  tasks: Array<{ description: string; updates?: Array<{ at: number; text: string }> }>,
+): EntityMessage | null {
+  if (tasks.length === 0) return null;
+  const b = new EntityText();
   if (tasks.length === 1) {
-    const desc = tasks[0].description;
-    const truncated = desc.length > 60 ? desc.substring(0, 57) + '...' : desc;
-    return `🔄 Running in background: ${truncated}`;
+    b.add(`🔄 Running in background: ${cut(tasks[0].description, 60)}`);
+  } else {
+    b.add(`🔄 ${tasks.length} tasks running in background`);
   }
-  return `🔄 ${tasks.length} tasks running in background`;
+
+  const updates = tasks
+    .flatMap((task) => (task.updates ?? []).map((u) => ({ ...u, task: task.description })))
+    .sort((a, c) => a.at - c.at)
+    .slice(-FOOTER_UPDATES);
+  for (const update of updates) {
+    const owner = tasks.length > 1 ? `${cut(update.task, FOOTER_TASK_CHARS)}: ` : '';
+    b.newline().add('  ⎿ [')
+      .dateTime(clockTime(update.at), update.at)
+      .add(`] ${owner}${cut(update.text, FOOTER_UPDATE_CHARS)}`);
+  }
+  return b.build();
+}
+
+/**
+ * A time as the server's clock reads it, for the clients that can't show a
+ * `date_time` entity.
+ */
+function clockTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
 }
 
 /**

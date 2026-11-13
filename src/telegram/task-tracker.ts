@@ -9,6 +9,15 @@
 
 import type { TaskEvent, TaskStatus, TaskUsage } from '../providers/types.js';
 
+/** One timed line of what a task is doing, for the running-in-background footer. */
+export interface TaskUpdate {
+  at: number;
+  text: string;
+}
+
+/** Updates kept per task: the footer shares the status bubble, so only the latest few. */
+const MAX_TASK_UPDATES = 3;
+
 export interface TaskState {
   id: string;
   description: string;
@@ -29,6 +38,11 @@ export interface TaskState {
   lastActivityAt: number;
   endedAt?: number;
   lastProgress?: { summary?: string; lastToolName?: string; usage?: TaskUsage };
+  /**
+   * The latest things the task reported doing, oldest first, capped at
+   * MAX_TASK_UPDATES: SDK progress events, and in PTY mode monitor firings.
+   */
+  updates?: TaskUpdate[];
   outputFile?: string;
   finalSummary?: string;
   error?: string;
@@ -93,6 +107,10 @@ class TaskTracker {
           lastToolName: event.lastToolName,
           usage: event.usage,
         };
+        const text = existing.taskType === 'monitor_mcp'
+          ? event.summary ?? event.description
+          : [event.lastToolName, event.description].filter(Boolean).join(' · ');
+        if (text) pushUpdate(existing, text);
         return existing;
       }
       case 'updated': {
@@ -152,6 +170,17 @@ class TaskTracker {
     }
   }
 
+  /**
+   * Record something a task did that arrived outside an SDK progress event:
+   * a PTY monitor firing. Unknown tasks are ignored.
+   */
+  noteUpdate(sessionKey: string, taskId: string, text: string, at = Date.now()): void {
+    const task = this.sessionTasks.get(sessionKey)?.get(taskId);
+    if (!task) return;
+    task.lastActivityAt = at;
+    pushUpdate(task, text, at);
+  }
+
   getTask(sessionKey: string, taskId: string): TaskState | undefined {
     return this.sessionTasks.get(sessionKey)?.get(taskId);
   }
@@ -208,6 +237,18 @@ class TaskTracker {
   clear(sessionKey: string): void {
     this.sessionTasks.delete(sessionKey);
   }
+}
+
+function pushUpdate(task: TaskState, text: string, at = Date.now()): void {
+  const line = text.replace(/\s+/g, ' ').trim();
+  if (!line) return;
+  const updates = task.updates ?? [];
+  // A repeat says nothing new; moving its time up keeps the footer honest
+  // about when the task last spoke.
+  const last = updates[updates.length - 1];
+  if (last?.text === line) last.at = at;
+  else updates.push({ at, text: line });
+  task.updates = updates.slice(-MAX_TASK_UPDATES);
 }
 
 export const taskTracker = new TaskTracker();

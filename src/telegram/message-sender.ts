@@ -262,8 +262,8 @@ export interface StatusBubbleView {
   pausedMs?: number;
   /** Claude Code's live spinner tip (PTY mode); null when none is on screen. */
   tip: string | null;
-  /** Background-task footer; empty when nothing runs in the background. */
-  footer: string;
+  /** Background-task footer; null when nothing runs in the background. */
+  footer: EntityMessage | null;
   /** The reply has grown in the last few seconds: say "Writing", not "Thinking". */
   writing?: boolean;
   /** The premium model the turn runs on, if any. */
@@ -314,7 +314,7 @@ export function renderStatusBubble(view: StatusBubbleView): EntityMessage {
   // on screen when the model blocked, and it dilutes the one line that matters.
   if (view.tip && !view.awaitingAnswer) b.newline().add(`  ⎿ 💡 ${view.tip}`);
 
-  if (view.footer) b.newline(2).add(view.footer);
+  if (view.footer) b.newline(2).append(view.footer);
 
   return b.build();
 }

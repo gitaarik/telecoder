@@ -16,7 +16,7 @@ const view = (over: Partial<StatusBubbleView> = {}): StatusBubbleView => ({
   spinnerIndex: 0,
   elapsedMs: 0,
   tip: null,
-  footer: '',
+  footer: null,
   ...over,
 });
 
@@ -68,7 +68,7 @@ describe('renderStatusBubble', () => {
     const { text, entities } = renderStatusBubble(view({
       operation: { name: 'Bash', commandBlock: 'npm test' },
       tip: 'Use /btw to ask a side question',
-      footer: '🔄 2 tasks running in background',
+      footer: { text: '🔄 2 tasks running in background', entities: [] },
     }));
 
     const blockEnd = entities[0].offset + entities[0].length;
