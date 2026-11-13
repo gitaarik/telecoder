@@ -1,9 +1,11 @@
 import { startIpcServer } from '../claude/ipc-server.js';
 import { Bot, type Context } from 'grammy';
+import type { UserFromGetMe } from 'grammy/types';
 import type { MessageEntity } from 'grammy/types';
 import { autoRetry } from '@grammyjs/auto-retry';
 import { sequentialize } from '@grammyjs/runner';
-import { HttpsProxyAgent } from 'https-proxy-agent';
+import { telegramClientOptions, telegramProxyUrl } from '../telegram/client-options.js';
+import { redactSecrets } from '../utils/sanitize.js';
 import { config } from '../config.js';
 import { buildSessionKey } from '../utils/session-key.js';
 import { authMiddleware } from './middleware/auth.middleware.js';
@@ -242,33 +244,27 @@ function getSequentializeKey(ctx: Context): string | undefined {
   return buildSessionKey(chatId, threadId);
 }
 
-export async function createBot(): Promise<Bot> {
+/**
+ * `botInfo` is what the startup token check already fetched (see
+ * startup/verify-token.ts). Handing it in makes `bot.init()` a no-op instead
+ * of a second getMe.
+ */
+export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // Start the IPC server for hook callbacks and the standalone MCP subprocess.
   // Awaited so the bound port is known before anything else tries to spawn a
   // subprocess that needs to reach us.
   await startIpcServer();
 
   // Support HTTP/HTTPS/SOCKS proxy for Telegram API (useful in restricted networks)
-  const proxyUrl = config.TELEGRAM_PROXY_URL
-    || process.env.HTTPS_PROXY || process.env.https_proxy
-    || process.env.HTTP_PROXY || process.env.http_proxy;
-
-  const baseFetchConfig = proxyUrl
-    ? { agent: new HttpsProxyAgent(proxyUrl) }
-    : undefined;
-
+  const proxyUrl = telegramProxyUrl();
   if (proxyUrl) {
-    console.log(`[Bot] Using proxy: ${proxyUrl}`);
+    // A proxy URL can carry a user and password.
+    console.log(`[Bot] Using proxy: ${redactSecrets(proxyUrl)}`);
   }
 
   const bot = new Bot(config.TELEGRAM_BOT_TOKEN, {
-    client: {
-      // Default is 500s which causes long hangs on network interruptions.
-      // 60s is enough for long polling (30s) + file uploads while recovering
-      // from stuck connections much faster.
-      timeoutSeconds: 60,
-      baseFetchConfig,
-    },
+    botInfo,
+    client: telegramClientOptions(),
   });
 
   // Note which messages are ForceReply prompts, so a reply answering one still

@@ -31,6 +31,7 @@ import { PrefsRelay } from './utils/prefs-relay.js';
 import { IdleRestart } from './utils/idle-restart.js';
 import { configFile } from './utils/config-home.js';
 import { PACKAGE_ROOT, isCheckout } from './utils/install-mode.js';
+import { EXIT_CONFIG } from './utils/exit-codes.js';
 
 const projectRoot = PACKAGE_ROOT;
 
@@ -762,6 +763,20 @@ function spawnWorker(inst: ResolvedInstance): Worker {
       crashStreaks.delete(inst.name);
       console.log(`[Launcher] Respawning ${inst.name} in 1s...`);
       scheduleRespawn(inst, 1000);
+      return;
+    }
+
+    // The bot stopped on its own configuration — a missing setting, or a
+    // token Telegram rejected — and has already said what is wrong, naming
+    // itself. Respawning would print the same thing four times over.
+    if (code === EXIT_CONFIG) {
+      crashStreaks.delete(inst.name);
+      console.error(
+        `[Launcher] ${inst.name} stopped on a configuration problem (its message is above) — not restarting it. ` +
+        `Fix its entry in ${path.basename(configPath)} and it starts again; for a fix in .env, restart the launcher.`
+      );
+      releaseName(inst.name);
+      shutdownIfNothingLeft(1);
       return;
     }
 

@@ -17,7 +17,8 @@ export default defineConfig({
       HOME: testHome,
       // Point at a non-existent env file so tests are isolated from the dev .env.
       TELECODER_ENV_PATH: '/nonexistent/telecoder-test.env',
-      TELEGRAM_BOT_TOKEN: '123456789:TEST_TOKEN',
+      // Shaped like a real token: config.ts rejects anything that isn't.
+      TELEGRAM_BOT_TOKEN: '123456789:TEST_TOKEN_aaaaaaaaaaaaaaaaaaaaaaaaaa',
       ALLOWED_USER_IDS: '1,2,3',
       ALLOWED_GROUP_IDS: '-1009990001',
       WORKSPACE_DIR: '/tmp/telecoder-test-workspace',

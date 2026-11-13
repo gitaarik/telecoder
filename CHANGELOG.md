@@ -68,6 +68,28 @@ reasoning — the commit bodies are the long form, this is the index.
   retries. `sanitizeError` also redacts Telegram bot tokens, API keys, bearer
   headers and credentials in URLs from anything it is given.
 
+### First run
+
+- **A missing or wrong setting is explained, not dumped** — with no `.env`, a
+  first start printed Zod's raw JSON (`invalid_type`, "expected string,
+  received undefined") instead of saying a token was needed. Startup now
+  prints one plain report: which `.env` was read, or that none was found;
+  each missing or invalid setting with where to get it (`@BotFather` for the
+  token, `@userinfobot` for your ID); and `telecoder init` or copying
+  `.env.example` when there is no file. The ID-list and admin checks report
+  the same way. It exits 1, with no stack trace.
+
+- **A bad bot token is caught before anything starts** — a placeholder or
+  revoked token ended in `Fatal error: GrammyError: Call to 'getMe' failed!
+  (401)` and a stack trace, after the IPC server had started. A token that
+  isn't shaped like one now fails the config check, and a well-formed one is
+  checked with `getMe` before any other service starts: a rejected token says
+  to get a fresh one from @BotFather, and a network failure says
+  api.telegram.org couldn't be reached and points at `TELEGRAM_PROXY_URL`.
+  The token is never printed. Under the multi-bot launcher, a bot that stops
+  on its configuration says so under its own name and isn't respawned into
+  the same error; fixing its `instances.json` entry starts it again.
+
 ### Multiple bots
 
 - **`instances.json` is read while the launcher runs** — adding a bot used to

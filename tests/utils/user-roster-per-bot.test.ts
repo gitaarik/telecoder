@@ -29,7 +29,7 @@ afterEach(() => {
 
 /** Start (or restart) a bot: a new process with that bot's token, on the shared state dir. */
 async function startBot(id: string) {
-  vi.stubEnv('TELEGRAM_BOT_TOKEN', `${id}:TEST_TOKEN`);
+  vi.stubEnv('TELEGRAM_BOT_TOKEN', `${id}:TEST_TOKEN_aaaaaaaaaaaaaaaaaaaaaaaaaa`);
   vi.resetModules();
   const roster = await import('../../src/utils/user-roster.js');
   // Every bot reads its roster as it boots, to log who it lets in (src/index.ts).

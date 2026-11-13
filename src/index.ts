@@ -37,6 +37,8 @@ import { notifyInterruptedSessions, notifyRestartComplete } from './startup/noti
 import { tickWasStalled } from './utils/host-stall.js';
 import { describeRunningBuild } from './utils/build-info.js';
 import { migrateLegacyStateDirAndLog } from './utils/state-dir-migration.js';
+import { verifyBotTokenOrExit } from './startup/verify-token.js';
+import { redactSecrets } from './utils/sanitize.js';
 
 export { requestRestart, requestSiblingRestart, requestRestartAll } from './worker-restart.js';
 
@@ -76,6 +78,9 @@ const SHUTDOWN_TIMEOUT_MS = 5_000;
 
 async function main() {
   console.log('🤖 Starting TeleCoder...');
+  // Before anything else starts: a token Telegram turns down stops the bot
+  // here with one sentence, rather than after the IPC server is listening.
+  const botInfo = await verifyBotTokenOrExit();
   // A single bot run without the launcher has nobody to move the pre-rename
   // state directory for it. Stores loaded during import may already hold the
   // old path; the link the move leaves there keeps those working too.
@@ -127,9 +132,9 @@ async function main() {
   // Prevent system sleep on macOS (only when running standalone, not as worker)
   if (isMainThread) preventSleep();
 
-  const bot = await createBot();
+  const bot = await createBot(botInfo);
 
-  // Initialize bot (fetches bot info from Telegram)
+  // Already initialised from the token check above, so this makes no request.
   await bot.init();
   console.log(`✅ Bot started as @${bot.botInfo.username}`);
   resumeThreadsSetup(bot);
@@ -373,7 +378,9 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('Fatal error:', error);
+  // grammY puts the request URL, token and all, into some of its errors.
+  const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  console.error('Fatal error:', redactSecrets(detail));
   allowSleep();
   process.exit(1);
 });

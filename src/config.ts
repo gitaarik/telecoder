@@ -4,6 +4,11 @@ import * as path from 'path';
 import { legacyEnv } from './utils/legacy-env.js';
 import { parseIdList } from './utils/id-list.js';
 import { configFile } from './utils/config-home.js';
+import { isWellFormedBotToken, MALFORMED_TOKEN_MESSAGE } from './utils/bot-token.js';
+import {
+  envFileStatus, formatConfigReport, problemsFromIssues, type ConfigProblem,
+} from './config-report.js';
+import { exitForConfigError } from './utils/exit-codes.js';
 
 // Next to package.json in a checkout, ~/.telecoder/.env for an npm install —
 // see utils/config-home.ts.
@@ -63,7 +68,12 @@ const idList = (name: string, kind: 'user' | 'group' = 'user') =>
   };
 
 const envSchema = z.object({
-  TELEGRAM_BOT_TOKEN: z.string().min(1, 'Telegram bot token is required'),
+  // Checked by shape here, before anything uses it; whether Telegram accepts
+  // it is checked at startup (startup/verify-token.ts).
+  TELEGRAM_BOT_TOKEN: z
+    .string()
+    .min(1, 'Telegram bot token is required')
+    .refine(isWellFormedBotToken, MALFORMED_TOKEN_MESSAGE),
   ALLOWED_USER_IDS: z
     .string()
     .min(1, 'At least one allowed user ID is required (your own numeric Telegram id — get it from @userinfobot)')
@@ -414,12 +424,25 @@ const envSchema = z.object({
     .transform((val) => val.toLowerCase() === 'true'),
 });
 
+/**
+ * Print the configuration report and stop. Everything that keeps the bot from
+ * starting goes through here, so a first run sees one message in one shape —
+ * which file was read, what is wrong, and how to fix it — whichever check
+ * caught it. See config-report.ts.
+ */
+function failConfig(problems: ConfigProblem[]): never {
+  console.error(formatConfigReport(
+    problems,
+    { path: envPath, status: envFileStatus(loadedEnv) },
+    { instanceName: process.env.TELECODER_INSTANCE_NAME },
+  ));
+  exitForConfigError();
+}
+
 const parsed = envSchema.safeParse(process.env);
 
 if (!parsed.success) {
-  console.error('❌ Invalid environment configuration:');
-  console.error(z.prettifyError(parsed.error));
-  process.exit(1);
+  failConfig(problemsFromIssues(parsed.error.issues, process.env));
 }
 
 /**
@@ -437,14 +460,14 @@ if (parsed.data.ADMIN_USER_IDS.length > 0) {
     (id) => !parsed.data.ALLOWED_USER_IDS.includes(id)
   );
   if (orphaned.length > 0) {
-    console.error('❌ Invalid environment configuration:');
-    console.error(
-      `  ADMIN_USER_IDS lists ${orphaned.join(', ')}, which ALLOWED_USER_IDS does not.\n` +
-      '  ADMIN_USER_IDS picks the admins out of ALLOWED_USER_IDS; it does not grant access\n' +
-      '  on its own, so an id in one and not the other can never do anything.\n' +
-      `  Add ${orphaned.length === 1 ? 'it' : 'them'} to ALLOWED_USER_IDS too — the same id in both lines is normal.`
-    );
-    process.exit(1);
+    failConfig([{
+      key: 'ADMIN_USER_IDS',
+      message:
+        `ADMIN_USER_IDS lists ${orphaned.join(', ')}, which ALLOWED_USER_IDS does not. ` +
+        'ADMIN_USER_IDS picks the admins out of ALLOWED_USER_IDS; it does not grant access ' +
+        'on its own, so an id in one and not the other can never do anything. ' +
+        `Add ${orphaned.length === 1 ? 'it' : 'them'} to ALLOWED_USER_IDS too — the same id in both lines is normal.`,
+    }]);
   }
 }
 
@@ -460,17 +483,14 @@ if (parsed.data.ADMIN_USER_IDS.length > 0) {
  * it. Checking only ALLOWED_USER_IDS here was wrong in precisely the case the
  * tier exists for — a friend admitted from chat is never in that line.
  */
-if (parsed.data.APPROVER_USER_IDS.length > 0) {
-  if (parsed.data.ADMIN_USER_IDS.length === 0) {
-    console.error('\u274c Invalid environment configuration:');
-    console.error(
-      '  APPROVER_USER_IDS is set but ADMIN_USER_IDS is not.\n' +
-      '  With no admin subset configured every allowed user is already an admin and can\n' +
-      '  approve anything, so this list would promote nobody and change nothing.\n' +
-      '  Set ADMIN_USER_IDS to the people who own the bot, and leave the rest here.'
-    );
-    process.exit(1);
-  }
+if (parsed.data.APPROVER_USER_IDS.length > 0 && parsed.data.ADMIN_USER_IDS.length === 0) {
+  failConfig([{
+    key: 'APPROVER_USER_IDS',
+    message:
+      'APPROVER_USER_IDS is set but ADMIN_USER_IDS is not. With no admin subset configured every ' +
+      'allowed user is already an admin and can approve anything, so this list would promote nobody ' +
+      'and change nothing. Set ADMIN_USER_IDS to the people who own the bot, and leave the rest here.',
+  }]);
 }
 
 export const config = { ...parsed.data };
