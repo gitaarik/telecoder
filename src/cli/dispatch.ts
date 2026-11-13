@@ -52,8 +52,8 @@ export const COMMANDS: Record<string, CommandSpec> = {
     load: () => import('./commands/init.js'),
   },
   service: {
-    summary: 'Install TeleCoder as a background service (coming soon)',
-    usage: 'install',
+    summary: 'Run it in the background: systemd (Linux) or launchd (macOS)',
+    usage: 'install|status|logs|restart|uninstall',
     load: () => import('./commands/service.js'),
   },
   help: {

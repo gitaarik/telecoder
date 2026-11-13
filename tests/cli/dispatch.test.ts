@@ -86,13 +86,16 @@ describe('dispatch', () => {
     expect(io.lines[0]).toMatch(/^\d+\.\d+\.\d+/);
   });
 
-  it('says init and service are coming soon', async () => {
+  it('says init is coming soon', async () => {
     const io = captureIo();
     expect(await dispatch(['init'], { io })).toBe(0);
     expect(io.lines[0]).toContain('coming soon');
-    const io2 = captureIo();
-    expect(await dispatch(['service', 'install'], { io: io2 })).toBe(0);
-    expect(io2.lines[0]).toContain('coming soon');
+  });
+
+  it('shows the service subcommands for a bare "service"', async () => {
+    const io = captureIo();
+    expect(await dispatch(['service'], { io })).toBe(0);
+    expect(io.lines[0]).toContain('Usage: telecoder service');
   });
 });
 
