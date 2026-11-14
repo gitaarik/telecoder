@@ -2,882 +2,124 @@
 
 # TeleCoder
 
-**Claude Code from Telegram.** Your agent runs on your machine — you drive it from your phone.
+**Claude Code in Telegram.** The real agent runs on your machine; you drive it from Telegram's
+native apps, with a thread per conversation, forks and the full CLI.
 
 [![CI](https://github.com/gitaarik/telecoder/actions/workflows/ci.yml/badge.svg)](https://github.com/gitaarik/telecoder/actions/workflows/ci.yml)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Claude](https://img.shields.io/badge/Claude_Code-SDK_%2B_PTY-cc785c?logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
-[![Telegram](https://img.shields.io/badge/Telegram_Bot-grammY-26a5e4?logo=telegram&logoColor=white)](https://grammy.dev/)
+[![npm](https://img.shields.io/npm/v/telecoder?color=cc785c)](https://www.npmjs.com/package/telecoder)
+[![Node](https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-[Website](https://telecoder.dev) · [Quick Start](#quick-start) · [Commands](#commands) · [Roadmap](ROADMAP.md) · [Changelog](CHANGELOG.md)
-
-<br />
-
-```
-  Telegram  ──▶  grammY bot  ──▶  Claude Code (SDK or PTY)  ──▶  Your machine
-  voice/text     command router    agentic runtime               bash, files, code
-```
+[Website](https://telecoder.dev) · [Quick start](#quick-start) · [Features](docs/features.md) · [Commands](docs/commands.md) · [Docs](#documentation) · [Changelog](CHANGELOG.md)
 
 </div>
 
----
-
-## What is this?
-
-TeleCoder bridges Telegram to a **full Claude Code agent** running locally on your machine. Send a message in Telegram — Claude reads your files, runs commands, writes code, transcribes voice notes, and speaks responses back. All from your phone.
-
-This is not a simple API wrapper. It's the real Claude Code agent with tool access — Bash, file I/O, code editing, web browsing — packaged behind a Telegram interface with streaming responses, session memory, and rich output formatting.
-
-**Who it's for:** developers who already use Claude Code and want to keep working when they're away from their desk. You host it yourself, on your own machine and with your own Claude account. You can share a bot with a small group you trust ([Sharing a bot](#sharing-a-bot)), but there is no hosted version.
-
-**Built with:**
-
-| Area | Technology |
-|------|------------|
-| Language and runtime | TypeScript on Node.js 22+ |
-| Telegram | [grammY](https://grammy.dev/) |
-| Claude Code transports | [Claude Agent SDK](https://docs.anthropic.com/en/docs/claude-code), or the real `claude` CLI through `node-pty` and `@xterm/headless` |
-| Agent tools | [Model Context Protocol](https://modelcontextprotocol.io/) server, for the tools that reach back into Telegram |
-| Config and scheduling | Zod, croner |
-| Tests | Vitest |
-| Optional | Groq and OpenAI for speech, and `ffmpeg` for Groq's spoken replies |
-
-**Project status:** in active development, and used every day for my own development work, including building TeleCoder itself. The latest tagged release is v1.1.0, with newer work under "Unreleased" in the [changelog](CHANGELOG.md). The code is about 49k lines of TypeScript, plus 29k lines of tests (167 test files, 2,089 tests). See the [roadmap](ROADMAP.md) for what's next.
-
-> [!NOTE]
-> TeleCoder began as a fork of [Claudegram by @NachoSEO](https://github.com/NachoSEO/claudegram),
-> whose last commit was in March 2026. It has been developed independently since April 2026 by
-> [@gitaarik](https://github.com/gitaarik): 430+ commits, adding about 98k lines and removing 28k.
-> The commit history since the fork is all in this repository, which was created in July 2026 when
-> the project was renamed, so its GitHub creation date is later than its first commits.
-> See [Credits](#credits) for attribution.
->
-> TeleCoder is an independent project, not affiliated with or endorsed by Anthropic or Telegram.
+<!-- Demo GIF goes here: a thread, a fork into a new thread, a permission prompt, a voice note. -->
 
 ---
 
-## Features
+## Why TeleCoder
 
-<table>
-<tr>
-<td width="50%" valign="top">
+Claude Code is at its best when you can reach it from anywhere. Browser UIs get you there, but
+they're web pages on a phone. Telegram already has fast, polished apps for Android, iOS, macOS,
+Windows and Linux, with keyboard shortcuts, offline drafts, notifications and voice notes.
+TeleCoder puts Claude Code inside them.
 
-### Agent Core
-- Full Claude Code with tool access (Bash, Read, Write, Edit, Glob, Grep)
-- Two transports: the Agent SDK, or the real `claude` CLI in a pseudo-terminal
-- Session resume across messages — Claude remembers everything
-- Project-based working directories
-- Streaming responses: the reply shows while Claude writes it, in both transports
-- Model and effort pickers, plan, explore and loop modes
-- Provider router with one-tap failover when Max throttles ([details](#providers))
+- **Native apps, not a web page.** Every device you own already runs a fast Telegram client.
+  The bot polls Telegram, so there's no port to open, no tunnel and no web server.
+- **A thread per conversation.** Each thread is its own Claude session, in groups and in
+  private chats. Start a thread and you have a new session; run five tasks side by side and
+  switch between them like chats.
+- **Forks.** `/fork` copies the conversation into a new thread; `/spinoff` splits a task off
+  with a compacted copy of the context; `/tree` draws the branches and lets you jump between
+  them.
+- **The full CLI, not a subset.** In PTY mode TeleCoder drives the real `claude` TUI, so a
+  project's `CLAUDE.md`, settings, skills and slash commands work as they do in your terminal,
+  and its permission dialogs arrive as buttons. `/model`, `/effort`, `/compact`, `/context`,
+  `/cost` and `/resume` are there too. The Agent SDK mode is the lighter default.
+- **Claude can reach you.** It can ask with buttons, send you files, ask for an API key
+  (your message is deleted the moment it arrives), schedule prompts, and report background
+  tasks as they finish.
+- **Built for working away from your desk.** Voice notes in, spoken replies out. `/btw` asks
+  a side question without stopping the task, `/steer` corrects it mid-turn, and `/later` sets
+  an idea aside for when Claude is done. Sessions carry on by themselves after a restart.
+- **More than one bot.** Run a bot per project from one process, and make a new one from
+  chat with `/newbot`, without a BotFather conversation.
+- **Shareable, carefully.** Admins, guests and approvers, a permission gate on every
+  transport, a scope guard for paths, and a charter checked before a guest's message runs.
 
-### Multiple Bots
-- Run several bots from one launcher, each with its own sessions and preferences
-- Add, remove or change a bot in `instances.json` while the others keep running
-- Create a bot for a project from Telegram with `/newbot`, no BotFather needed
-- Hand a conversation to a sibling bot with `/fork`
-- Apply a setting everywhere with `/model sonnet all`
-- [Setup](#running-several-bots)
+The full list is in [docs/features.md](docs/features.md).
 
-### Sessions
-- `/resume`, `/continue` and `/recap` to get back to earlier work
-- `/fork` and `/tree` to branch a conversation and navigate its branches
-- `/teleport` to continue a session in your terminal
-- Chats carry on by themselves after a restart
-- Each forum topic runs as an independent session
+## How it compares
 
-### Background & Scheduled Work
-- Background tasks and Monitor events relayed to Telegram as they happen
-- `/tasks` and `/shells` to inspect and stop what's running
-- `/schedule` for recurring prompts (`every 5m`, `daily 9am`, or cron)
+- **Claude Code Channels** (the official Telegram and Discord plugin) pushes chat messages
+  into a Claude Code session you started in a terminal. It's a good fit for nudging one running
+  session. TeleCoder starts and keeps its own sessions, so you get as many as you have
+  threads, plus forks, resume, voice and the commands above.
+- **Remote Control** lets you look in on a terminal session from the Claude app. Use it when
+  you want the session you already have, on Anthropic's own UI.
+- **[claude-code-telegram](https://github.com/RichardAtCT/claude-code-telegram)** is the
+  most popular community bot: Python, SDK-based, with cost caps and webhooks. TeleCoder
+  adds the PTY mode with full CLI parity, threads, forks and multiple bots.
+- **Web UIs** such as [CloudCLI](https://github.com/siteboon/claudecodeui) give you a
+  browser dashboard with file trees and diffs. TeleCoder gives up the dashboard for native
+  apps, notifications and voice.
 
-### Reliability
-- Agent watchdog that detects silent or stuck tools, with `/cancel` working during hangs
-- Rapid split pastes combined into one prompt
-- Messages that have to wait say so, and can be taken back or set aside to decide on after the answer
+## Quick start
 
-</td>
-<td width="50%" valign="top">
-
-### Claude Can Reach You
-- MCP tools let Claude ask with buttons or polls, send files and schedule prompts
-- Secrets stay out of the chat: you send a key, the bot deletes it and hands it to the command Claude named, and a Claude token can be made on the spot with `claude setup-token`
-- CLI permission dialogs relayed to Telegram in PTY mode
-- Talk naturally — Claude picks the right tool without explicit commands
-
-### Sharing & Permissions
-- Admins, approvers, guests, and per-group contributors and spectators
-- Permission gate, scope guard and a plain-language charter ([details](#sharing-a-bot))
-
-### Voice & Audio
-- Send a voice note → transcribed via Groq Whisper → fed to Claude
-- `/transcribe` — standalone transcription (reply-to or prompt)
-- `/tts` — agent responses spoken back as Telegram voice notes, via Groq Orpheus or OpenAI
-
-### Rich Output
-- Formatting sent as Telegram entities: nothing to escape, and a long reply splits anywhere without breaking its bold, links or code blocks
-- Optional Telegraph Instant View for long responses (opt-in with `TELEGRAPH_ENABLED=true`; pages are public)
-- Smart chunking that preserves code blocks
-- Terminal-style tool status (`/terminalui`)
-- Inline keyboards for settings (model, mode, TTS, clear)
-
-### Files & Uploads
-- Send photos or image documents; saved under `.telecoder/uploads/` in the project, a folder
-  that keeps itself out of git
-- `/file` sends you a file from the project (credential files such as `.env` and `~/.ssh` are never sent)
-
-</td>
-</tr>
-</table>
-
----
-
-## Quick Start
-
-### Prerequisites
-
-| Requirement | Notes |
-|-------------|-------|
-| **Linux or macOS** | Windows isn't supported natively: the permission hook, restarts (systemd or a bash script) and process tracking (`/proc`) assume a Unix system. WSL 2 is Linux underneath, so it should work there as on Linux, but that is untested. |
-| **Node.js 22+** | with npm. TeleCoder refuses to start on anything older. |
-| **A C++ toolchain** (Linux) | `node-pty` is compiled during `npm install` on Linux, which needs `python3`, `make` and `g++`: `sudo apt install python3 make g++` (Debian, Ubuntu) or `sudo dnf install python3 make gcc-c++` (Fedora, RHEL). macOS uses a prebuilt binary. |
-| **Claude Code CLI, logged in** | Install it with `curl -fsSL https://claude.ai/install.sh \| bash` (it goes in `~/.local/bin`; log in again if that isn't on your `PATH` yet) and run `claude` once and `/login`, as the user the bot will run as. For a machine you won't sign in on, `claude setup-token` makes a long-lived token to put in `CLAUDE_CODE_OAUTH_TOKEN`; an `ANTHROPIC_API_KEY` works too, billed per use. The bot warns at startup if it finds no login, and replies with how to log in if a message fails on it. |
-| **Telegram bot token** | from [@BotFather](https://t.me/botfather) |
-| **Your Telegram user ID** | the number, not your @username. `telecoder init` finds it when you message your bot; by hand, message [@userinfobot](https://t.me/userinfobot) |
-| **ffmpeg** (optional) | only for spoken replies through Groq (`/tts`). Transcribing voice notes doesn't need it. |
-
-### Install from npm
+You need Linux or macOS, [Node.js 22+](https://nodejs.org/), the
+[Claude Code CLI](https://platform.claude.com/docs/en/claude-code) installed and logged in, and
+a bot token from [@BotFather](https://t.me/BotFather). On Linux, `npm install` compiles
+`node-pty`, which needs `python3`, `make` and `g++`.
 
 ```bash
 npm install -g telecoder
-telecoder init     # or, without installing first: npx telecoder init
+telecoder init              # bot token, your user ID, projects folder: about two minutes
+telecoder service install   # keep it running, and start it at boot
 ```
 
-`telecoder init` checks Node and the `claude` CLI and its login, asks for the
-bot token from @BotFather and checks it with Telegram, then has you send the
-bot `/start` to learn your user id, so there's no @userinfobot step. It asks
-for the folder your projects are in, SDK or PTY, and whether to turn on voice
-transcription or Telegraph, and writes `~/.telecoder/.env` (set
-`TELECODER_HOME` to keep it somewhere else) with just those settings, readable
-by you only. Every other setting stays at its default; `.env.example` lists
-them all. Run it again to change an answer. For scripts, the flags
-`--token-env VAR`, `--owner-id`, `--workspace`, `--transport` and `--yes`
-skip the questions (`telecoder help init`).
-
-```bash
-telecoder start    # runs every bot in ~/.telecoder/instances.json instead, if there is one
-telecoder doctor   # checks Node, the claude CLI and its login, and your config
-```
-
-Open your bot in Telegram → `/start`
-
-`/update` installs the latest release; `/rebuildbot` is for source checkouts only.
-
-### Run it in the background
-
-`telecoder start` runs in your terminal and stops with it. To keep the bot running,
-start it at boot, and let `/restartbot` restart it from chat (an npm install restarts
-by exiting, for its service manager to start it again):
-
-```bash
-telecoder service install     # systemd user unit on Linux, LaunchAgent on macOS
-telecoder service status      # is it running?
-telecoder service logs        # follow its output (--no-follow: the last 100 lines)
-telecoder service restart     # also brings it back after a config error stopped it
-telecoder service uninstall   # stop it and remove the unit
-```
-
-- **Linux** writes `~/.config/systemd/user/telecoder.service` and enables it. The unit
-  runs the `node` and `telecoder` it was installed with, from `~/.telecoder` (or
-  `TELECODER_HOME`), with a `PATH` that finds `claude`, `git` and `ffmpeg`. It holds no
-  secrets — the bot reads its `.env`. It restarts on any exit except a configuration
-  error (exit 78: fix the `.env`, then `telecoder service restart`), and
-  `systemctl --user stop telecoder` stops it for good. It asks before turning on
-  *lingering* (`loginctl enable-linger`), which keeps user services running after you
-  log out and starts them at boot; `--yes` answers yes to everything, `--no-linger`
-  skips it. Under `sudo -u` it finds the user's systemd manager by itself when one is
-  running; when none is (no login and no lingering, as for a service account) it says
-  to run `sudo loginctl enable-linger <user>` first. Without a usable `systemd --user`
-  at all (a container, WSL without systemd) it prints the unit and other ways to run
-  it instead.
-- **macOS** writes `~/Library/LaunchAgents/dev.telecoder.telecoder.plist` and loads it;
-  output goes to `~/Library/Logs/telecoder/telecoder.log`. A LaunchAgent runs while you
-  are logged in. launchd can't exempt one exit code from `KeepAlive`, so under launchd a
-  bot stopped by a configuration error exits 0 instead, which it leaves alone.
-
-Run `telecoder service install` again after moving `node`, `claude` or your config:
-it shows what changes and asks before replacing the unit. `--name <name>` installs a
-second one side by side, and `--dry-run` prints the file without writing anything. An
-`npx telecoder` isn't installed anywhere lasting, so install it with
-`npm install -g telecoder` first. A source checkout is run with
-[the bot control script](#bot-control-script) or `npm start` as before;
-`node dist/cli.js service install --from-checkout` installs a unit for it anyway.
-
-### From source
-
-```bash
-git clone https://github.com/gitaarik/telecoder.git
-cd telecoder
-cp .env.example .env
-```
-
-Edit `.env` — a `.env` or `instances.json` next to `package.json` is used instead of `~/.telecoder`:
-
-```bash
-TELEGRAM_BOT_TOKEN=your_bot_token
-ALLOWED_USER_IDS=your_user_id
-```
-
-```bash
-npm install
-npx tsx src/cli.ts doctor   # checks Node, the claude CLI and its login, and your config
-npm run dev                 # dev mode with hot reload
-```
-
-Open your bot in Telegram → `/start`
-
-### Run the tests
-
-The test suite needs no bot token, Claude login or `.env`:
-
-```bash
-npm install
-npm test
-```
-
----
-
-## Running several bots
-
-One launcher can run several bots, each in its own worker with its own sessions and
-preferences. That lets you keep separate conversations going, and hand one from bot to bot
-with `/fork`.
-
-```bash
-cp instances.json.example instances.json   # add your bot tokens; this file is gitignored
-npm run dev:multi                          # or, after a build: npm run start:multi
-```
-
-The launcher keeps watching `instances.json` while it runs. Add a token and that bot
-starts; take one out and it stops; change a bot's token or settings and only that bot
-restarts, picking its sessions back up. The rest carry on. A file that doesn't parse, or
-lists no bots, is ignored until it's fixed, so a half-saved edit takes nothing down.
-
-A bot can also create bots, so a new one for a project costs a tap rather than a
-BotFather chat. Turn on Bot Management Mode for one bot in [@BotFather](https://t.me/BotFather)'s
-Mini App, then send it `/newbot <project>`, or ask Claude for a bot for a project in
-a private chat with it. It offers a button that opens Telegram's
-create-a-bot screen with a name and username filled in; once you confirm, it fetches the
-new bot's token, restricts the bot to you, and adds it to `instances.json` with
-`HOME_PROJECT` set, which the launcher picks up. A bot with a `HOME_PROJECT` starts
-conversations there without a `/project` first, and leaves that project out of its thread
-names and its display name. Telegram has no API to turn on threads for a bot, so for a
-bot with threads, turn on Threaded Mode for it in the same Mini App: the new bot sends
-you the steps with your first message, and says so once they're on. `/newbot` rewrites
-`instances.json`, so it refuses a file with `//` comments rather than lose them.
-
----
-
-## Providers
-
-Claude Code is the backend. What varies is the model behind it: a provider router
-sits in front of every message, so when Max throttles or you want a different model,
-the bot keeps working instead of stopping.
-
-| Provider | What it is | Enable |
-|----------|------------|--------|
-| `claude` | Claude Code itself, over one of two transports (`/method`): **SDK** (default, Claude Agent SDK) or **PTY** (drives the real `claude` CLI in a pseudo-terminal) | on by default |
-| `ccr` | The same `claude` binary, routed through a local [Claude Code Router](https://github.com/musistudio/claude-code-router) proxy so non-Anthropic models can back it | `CCR_ENABLED=true` |
-
-`/provider` opens a picker listing the enabled backends. `/ccr` is a one-tap toggle
-between Claude and CCR for the common "I'm throttled, keep going" case. Both are
-sticky — the choice holds until you switch back.
-
-### Throttle failover
-
-When a Max usage-limit throttle is detected mid-turn, the bot doesn't just surface
-the error — it offers a **🔌 Switch to CCR & retry** button, with the reset time when
-one can be parsed from the response. One tap moves the session to CCR and replays the
-message you just sent. Set `CCR_AUTO_PROMPT_ON_THROTTLE=false` for a plain error instead.
-
-If the CCR proxy isn't reachable, `CCR_AUTOSTART=true` runs `ccr start` in the background
-rather than letting the request hang on a refused connection.
-
-### Switching mid-conversation
-
-Sessions can't cross backends — one model can't replay another's thinking blocks, and
-attempting it fails with a signature error. So a switch that would abandon a live session
-asks for confirmation first, then **forks**: a fresh session starts on the new backend,
-carrying a plain-text summary of the conversation so far. The model preference is cleared
-at the same time, since `opus`/`sonnet`/`haiku` don't map 1:1 once CCR's router decides
-the real backend per request.
-
-### What stays behind on CCR
-
-CCR runs the same agent, so nearly everything carries over. The exception:
-
-- **PTY transport** — `ccr` always takes the SDK path, along with the PTY-only
-  features layered on it. The permission gate isn't one of them: it runs on the
-  SDK path too
-
-```bash
-# .env
-CCR_ENABLED=true
-CCR_BASE_URL=http://localhost:3456
-CCR_AUTH_TOKEN=your_ccr_token
-CCR_AUTO_PROMPT_ON_THROTTLE=true
-CCR_AUTOSTART=false
-```
-
----
-
-## Sharing a bot
-
-TeleCoder's original access model is one flat list: everyone in
-`ALLOWED_USER_IDS` can do everything. That is right for a bot with one user, and
-it stops being right the moment you add a second — an approval prompt the person
-who triggered it can tap themselves is not an approval.
-
-So an instance can split its users into **admins** and **guests**. Guests use the
-agent normally; admins own the parts that reach past their own session.
-
-One owner answering every prompt becomes its own bottleneck, though, so there is
-a tier in between: an **approver** is a guest who can answer someone else's
-permission prompt. They stay a guest in every other respect — the charter judge
-still reads their messages, the gate still stops their tool calls, and the
-lifecycle commands still refuse them — and they cannot approve their own
-request, which is what keeps the prompt meaningful.
-
-```bash
-# .env — a bot shared with friends in one group
-ALLOWED_USER_IDS=111,222,333     # you and two friends
-ADMIN_USER_IDS=111               # just you
-APPROVER_USER_IDS=222            # can unblock a prompt, owns nothing
-ALLOWED_GROUP_IDS=-1001234567890 # the group you share
-RESTRICT_TO_GROUPS=true          # guests can't take it into a DM
-WORKSPACE_DIR=/srv/shared        # the only projects the picker offers
-```
-
-Three layers decide what needs a human, from cheapest to smartest:
-
-| Layer | Catches | Costs |
-|-------|---------|-------|
-| **Permission gate** | destructive commands — `rm -rf`, `sudo`, force-push, `DROP TABLE` | a regex |
-| **Scope guard** | a tool call naming a path outside the projects, or any credential path | a path check |
-| **Charter judge** | what neither of those can see — "open a tunnel to this box", "email me the projects folder" | a Haiku call, ~5s per guest message |
-
-The first two stop a tool call mid-turn. The third runs *before* the message
-reaches Claude, so a held request is still a sentence a person can read rather
-than a diff to review afterwards.
-
-What that buys you:
-
-- **Approval prompts go to admins, and to whoever you name in
-  `APPROVER_USER_IDS`.** A guarded command pauses, and the prompt names them
-  with a real Telegram mention — so it notifies you even in a muted group, and
-  even if you have no @username. Everyone else tapping it gets told who they're
-  waiting on; an approver tapping their *own* request gets told why that one is
-  the exception. Unanswered, it denies after
-  `PERMISSION_PROMPT_TIMEOUT_MINUTES`.
-- **A decision can be made once instead of forty times.** A job built out of
-  guarded commands — a dependency bump that runs `rm -rf node_modules` four
-  times, a rebase that force-pushes twice — costs a tap each, and a guardrail
-  people tap without reading is worse than one that isn't there. So
-  `/autoapprove 30m` answers them in advance for one chat. Admins and approvers
-  can open one; it posts every command it waves through, announces itself when
-  it lapses, and a restart closes it. `mkfs`, `dd of=/dev/…`, `DROP DATABASE`,
-  `terraform destroy` and credential reads still ask, because those are not
-  tedium. `/autoapprove off` ends it early, `/autoapprove status` reads it back.
-- **The gate turns itself on.** With guests present you get prompts without
-  setting a second variable; `TELECODER_PERMISSION_PROMPTS=0` opts out.
-- **Lifecycle and transport are yours.** `/update`, `/restartbot`,
-  `/rebuildbot`, `/method`, `/provider` and `/ccr` refuse a guest.
-- **The same gate on every transport.** It is a PreToolUse hook on the SDK
-  transport (the default, and the one CCR uses) and on the PTY one, in every
-  `/mode` including bypass, and it covers subagents' tool calls too. If it
-  breaks while judging a call, the call is denied.
-- **Out-of-scope paths prompt too.** `cat ~/.ssh/id_rsa`, an edit to a project
-  nobody was invited to, a read of this bot's own `.env` — all held. System
-  paths and language toolchains stay readable without prompting, because a
-  guardrail that fires on `cat /etc/os-release` is one people learn to tap
-  through.
-- **A charter in plain language.** Drop a `CHARTER.md` in your workspace root
-  (or point `CHARTER_FILE` at one) and every guest message is read against it
-  first. No charter, no problem — a default is generated from the allowed
-  roots. The judge only ever *asks*; it never refuses on its own, and it fails
-  open, with the scope guard underneath as the deterministic backstop.
-- **`/permissions` reports the truth.** Gate state, scope roots, which charter
-  is in force, your role, and the guarded patterns.
-- **Letting someone in takes one tap.** A stranger who posts in the shared group
-  gets a refusal *and* an approve card naming them, mentioning the admins so it
-  notifies you in a muted group. Tap Allow and they're a guest immediately — no
-  `.env` edit, no restart. Someone added to the group is asked about the moment
-  they join, before they've said anything.
-
-Write the house rules in `CHARTER.md` at your workspace root — see
-[`docs/CHARTER.example.md`](docs/CHARTER.example.md) for a starting point.
-
-### Admitting people from chat
-
-`ALLOWED_USER_IDS` is read once at startup, so every new person there costs an
-edit and a restart. `/allow` is the runtime half of the same list:
-
-| Command | What it does |
-|---------|--------------|
-| `/users` | Who can use this bot: admins, `.env` guests, guests admitted from chat, and people seen in the group but not let in |
-| `/allow` | Admit someone as a **guest** — reply to their message, or `/allow @user` / `/allow 12345` |
-| `/deny` | Remove someone `/allow` admitted |
-
-All three are admin-only, and take effect immediately. With several bots, each
-keeps its own list: `/allow` lets someone into the bot you sent it to and no other,
-and `/deny` takes them out of that one.
-
-**Reply to their message rather than typing a handle.** Telegram gives bots no
-way to resolve a `@username` — there is no such API call, `getChatAdministrators`
-covers only a group's admins, and nothing enumerates ordinary members. So the
-only handles this bot can match are the ones it has watched go by, and a reply
-is both exact and the one form that works for the many people who have no
-username at all. A handle it hasn't seen gets told so, rather than failing
-mysteriously.
-
-Ids are the identity throughout. A Telegram username can be dropped and claimed
-by someone else, so it's re-resolved on every use and never stored as the thing
-being allowed.
-
-Admitting someone makes them a guest, which switches on the permission gate, the
-scope guard and the charter judge if they weren't already on. `/deny` on an id
-that came from `ALLOWED_USER_IDS` reports where it actually lives instead of
-appearing to work until the next restart.
-
-> [!IMPORTANT]
-> All of the above is supervision, not isolation. Claude still runs as your Unix
-> user, so a guest's session can reach anything that user can — auto mode asks
-> before the riskier steps, but it is Claude's judgement, not a boundary.
-> `WORKSPACE_DIR` scopes the project picker, not the filesystem. For a real
-> boundary, run the shared instance as its own Unix account — below.
-
-### A real boundary: its own Unix account
-
-Supervision decides what needs your attention. Unix decides what is reachable at
-all. If the people you're sharing with shouldn't be able to read your other
-projects even in principle, the shared bot needs an account that owns nothing but
-the shared projects:
-
-```bash
-sudo ./scripts/setup-shared-bot-user.sh --operator "$USER"
-```
-
-That script locks down your home directory, creates a `telefriends` account with
-no sudo and no docker (the docker group is root-equivalent), gives it a projects
-directory and its own TeleCoder checkout, writes a starter `.env` with the
-sharing settings already filled in, and installs a lingering `systemd --user`
-service so it survives a reboot. Authenticating Claude and pasting the bot token
-stay yours — both are interactive, and neither belongs in a script's arguments.
-
-It ends by verifying its own work, which you can re-run at any time:
-
-```bash
-sudo ./scripts/setup-shared-bot-user.sh --verify
-```
-
-The check doesn't reason about modes; it becomes the account and *tries* to read
-your secrets, which is the only form of that answer worth trusting.
-
-> [!WARNING]
-> Check this before adding any account: a home directory at mode `0751` lets
-> other accounts traverse into it, so every world-readable file inside is
-> reachable by absolute path — and a `.env` written at the default `0664` is one
-> of them. `--verify` reports it; the setup script fixes it.
-
----
-
-## Commands
-
-### Session
-| Command | Description |
-|---------|-------------|
-| `/start` | Welcome message |
-| `/project` | Set working directory (interactive picker) |
-| `/newproject <name>` | Create and switch to a new project |
-| `/newbot [project]` | Create a bot for a project (this chat's if none is given) without BotFather. Needs Bot Management Mode on the bot you send it to |
-| `/projectcommands` | List every slash command available here — project, built-in skills, plugins — and the ones TeleCoder shadows |
-| `/clear` | Clear conversation history (project stays selected) |
-| `/status` | Current session info |
-| `/sessions` | List saved sessions |
-| `/resume [words\|id]` | Pick, search or open any Claude Code session, like Claude Code's own `/resume` |
-| `/continue` | Resume most recent session |
-| `/recap [N]` | Re-read the last N exchanges of the current session (default 3), ending with the same status message as a normal turn |
-| `/prompts [N]` | List just the last N prompts you sent, without the replies (default 15, max 25) |
-| `/sync` | Resend the latest assistant reply from the session log if Telegram missed any of it |
-| `/handoff` | Dump the conversation to markdown as a downloadable file, plus a Telegraph link when Telegraph is on |
-| `/fork` | Fork the conversation — into a new thread on a bot with threads, otherwise a new branch on this bot or a hand-off to a sibling bot |
-| `/tree` | Draw the conversation's fork tree; tap a point to carry on that branch or branch from it |
-| `/accept` | Accept a pending fork from another bot |
-| `/decline` | Discard a pending fork without loading it |
-| `/schedule <when> <prompt>` | Schedule a recurring prompt (`every 5m`, `daily 9am`, or raw cron) |
-| `/schedules` | List active scheduled tasks for this chat |
-| `/unschedule <id>` | Remove a scheduled task by id |
-| `/teleport` | Move session to terminal (forked) |
-
-### Agent Modes
-| Command | Description |
-|---------|-------------|
-| `/plan` | Plan mode for complex tasks |
-| `/explore` | Explore codebase to answer questions |
-| `/loop` | Run iteratively until task complete |
-| `/model` | Switch Sonnet / Opus / Haiku — this bot, or add `all` for every instance |
-| `/effort` | Set reasoning effort (low / medium / high / xhigh / max / auto); `all` works here too |
-| `/btw` | Ask a side question without interrupting the running task |
-| `/steer <text>` | Stop the running turn and send the text in its place, as a correction; `⚡ Interrupt & send` on a queued message does the same |
-| `/later [text]` | Set an idea aside without sending it; once Claude is done, the bot asks whether to send it, with Send and Drop. Alone, lists what's set aside |
-| `/mode` | How much Claude asks before acting (manual / accept edits / plan / auto / bypass) — admin-only |
-| `/streaming` | Toggle streaming / wait replies |
-| `/method` | Switch Claude transport (SDK / PTY) — admin-only |
-| `/provider` | Switch backend — Claude / CCR (shown when `CCR_ENABLED`) — admin-only |
-| `/ccr` | Sticky toggle between Claude and CCR routing (shown when `CCR_ENABLED`) — admin-only |
-| `/verbosity` | Pick verbosity tier (quiet / normal / verbose / debug) |
-| `/terminalui` | Toggle terminal-style display |
-
-### Files & Output
-| Command | Description |
-|---------|-------------|
-| `/file <path>` | Download a file. Guests get files from the chat's project only; admins from anywhere in `WORKSPACE_DIR`. Credential and bot-state paths (`.env`, `~/.ssh`, `~/.claude`, cloud CLI configs and the like) are refused for everyone |
-| `/telegraph` | Toggle Instant View for long responses in this chat (needs `TELEGRAPH_ENABLED=true`) |
-| `/telegraph <path>` | Publish a project file as a public Telegraph page. **Admin-only**, needs `TELEGRAPH_ENABLED=true`, same path rules as `/file` |
-| `/suggestions` | Toggle predicted next-prompt buttons under each response |
-
-### Voice & TTS
-| Command | Description |
-|---------|-------------|
-| `/tts` | Toggle voice replies, pick voice |
-| `/transcribe` | Transcribe audio to text |
-| *Send voice note* | Auto-transcribed → processed by Claude |
-
-### Utility
-| Command | Description |
-|---------|-------------|
-| `/ping` | Health check |
-| `/context` | Show Claude context / token usage |
-| `/cost` | Show usage limits and cost as Claude Code reports them — session/weekly limits on a subscription, dollar totals on API billing — plus TeleCoder's own running tally for the conversation, which the CLI cannot keep (SDK mode only) |
-| `/compact` | Compact the context window (SDK and PTY), reporting the token reduction |
-| `/statusline` | Toggle the status line that closes every reply (project, effort, model, context %, cost) |
-| `/botname` | Toggle dynamic bot name (shows the active project) |
-| `/topic` | Set or clear the conversation topic |
-| `/tasks` | List active background tasks |
-| `/shells` | List and kill OS-level background shells from the PTY session |
-| `/permissions` | Show the permission-gate state, your role, and the patterns it enforces |
-| `/users` | Who can use this bot — admins, guests, and people seen but not let in — admin-only |
-| `/allow` | Let someone in as a guest — reply to their message, or `/allow @user` — admin-only |
-| `/deny` | Remove someone admitted with `/allow` — admin-only |
-| `/botstatus` | Bot process status and the version it's running |
-| `/version` | The running version and whether it's the latest, against the code in the checkout and the branch it tracks |
-| `/restartbot` | Restart the bot — admin-only |
-| `/rebuildbot` | Rebuild code and restart — this instance, all, or all once each is idle (`/rebuildbot idle`) — admin-only, source checkouts only |
-| `/update` | Update the Claude Code CLI, or TeleCoder itself on an npm install — admin-only |
-| `/cancel` | Stop the running turn and drop every message waiting behind it (alias: `/stop`) |
-| `/commands` | Show all commands |
-
-### Group Access
-| Command | Description |
-|---------|-------------|
-| `/members` | Who may prompt the agent in this group, and the default for everyone else |
-| `/allow` | In a group, let someone prompt the agent here; in a DM, admit them everywhere — admin only |
-| `/deny` | In a group, make someone a spectator here; in a DM, remove them entirely — admin only |
-
-Name a person by replying to one of their messages with the command; `@handle`
-works once the bot has seen them post, and a numeric user id always works.
-
----
-
-## Optional Integrations
-
-<details>
-<summary><strong>Voice Transcription — Groq Whisper</strong></summary>
-
-```bash
-# .env
-GROQ_API_KEY=your_groq_key
-```
-
-</details>
-
-<details>
-<summary><strong>Text-to-Speech — Groq Orpheus or OpenAI</strong></summary>
-
-Groq is the default and uses `GROQ_API_KEY`. To use OpenAI instead:
-
-```bash
-# .env
-TTS_PROVIDER=openai
-OPENAI_API_KEY=your_openai_key
-TTS_MODEL=gpt-4o-mini-tts
-TTS_VOICE=coral
-TTS_RESPONSE_FORMAT=opus
-```
-
-13 OpenAI voices available: `alloy`, `ash`, `ballad`, `cedar`, `coral`, `echo`, `fable`, `marin`, `nova`, `onyx`, `sage`, `shimmer`, `verse`
-
-</details>
-
----
-
-## Configuration Reference
-
-All config lives in `.env`. See [`.env.example`](.env.example) for the full annotated reference.
-
-### Required
-
-| Variable | Description |
-|----------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather |
-| `ALLOWED_USER_IDS` | Comma-separated numeric Telegram user IDs (not `@usernames`). The bot refuses to start on a non-numeric entry or on the `.env.example` placeholder `123456789`. Someone not on the list who DMs the bot is told their ID, and it is logged |
-
-### Sharing (admins & guests)
-
-Only needed for a bot other people use. Unset, every allowed user is an admin
-and nothing below changes anything.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ADMIN_USER_IDS` | all allowed users | Who may approve permission prompts and run lifecycle/transport commands |
-| `APPROVER_USER_IDS` | — | Guests who may answer someone else's prompt — never their own — and get no lifecycle commands. Needs `ADMIN_USER_IDS`; the ids must be allowed, from `.env` or `/allow` |
-| `ALLOWED_GROUP_IDS` | — | Group/supergroup chat IDs the bot is shared in |
-| `RESTRICT_TO_GROUPS` | `false` | Confine guests to those groups; admins can still DM the bot |
-| `TELECODER_PERMISSION_PROMPTS` | on when guests exist | `1`/`0` to force the permission gate on or off |
-| `PERMISSION_PROMPT_TIMEOUT_MINUTES` | `10` | How long a prompt or held message waits for an admin |
-| `SCOPE_GUARD` | `auto` | Prompt on tool calls naming paths outside the shared projects |
-| `SCOPE_ALLOWED_PATHS` | — | Extra in-bounds directories, comma-separated |
-| `CHARTER_JUDGE` | `auto` | Read each guest message against a charter before it runs |
-| `CHARTER_FILE` | `WORKSPACE_DIR/CHARTER.md` | The charter the judge reads |
-| `CLAUDE_METHOD_DEFAULT` | `sdk` | Transport for chats that haven't run `/method`; the gate runs on both |
-
-See [Sharing a bot](#sharing-a-bot) for how the pieces fit together.
-
-### Core
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ADMIN_USER_IDS` | all allowed users | Subset of `ALLOWED_USER_IDS` that owns the bot (restart, rebuild, project, access) |
-| `ANTHROPIC_API_KEY` | — | API key (optional with Claude Max subscription) |
-| `WORKSPACE_DIR` | `$HOME` | Root directory for project picker |
-| `CLAUDE_EXECUTABLE_PATH` | `claude` | Path to Claude Code CLI |
-| `CLAUDE_PLUGINS` | — | Marketplace plugins to enable in the agent, as `plugin@marketplace` ids, comma-separated |
-| `BOT_NAME` | `TeleCoder` | Bot name in system prompt |
-| `STREAMING_MODE` | `streaming` | `streaming` or `wait` |
-| `TELEGRAPH_ENABLED` | `false` | Opt-in. Also publish long replies, `/handoff` notes and the full action log to telegra.ph as Instant View pages. **Pages are public** to anyone with the link and can't be deleted. Off, long replies arrive as chunked messages and `/handoff` as a file |
-| `DANGEROUS_MODE` | `false` | Auto-approve all tool permissions |
-| `CANCEL_ON_NEW_MESSAGE` | `false` | Auto-cancel running query on new message |
-| `QUESTION_TIMEOUT_MINUTES` | `10` | How long a question from Claude (buttons, polls, relayed dialogs) waits before the turn carries on without an answer and the question closes |
-| `CLAUDE_SDK_LOG_LEVEL` | `off` | SDK log level: off, basic, verbose, trace |
-
-### Group chats
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ALLOWED_GROUP_IDS` | — | Group/supergroup IDs the bot may be used in |
-| `GROUP_MEMBERS_DEFAULT` | `spectator` | What membership alone grants: `spectator` or `contributor` |
-| `GROUP_REQUIRE_MENTION` | `true` | Only treat messages that address the bot as prompts |
-| `GROUP_REPLY_IS_MENTION` | `false` | Treat any reply to the bot as addressing it |
-
-Access in a group has three tiers. **Admins** (`ADMIN_USER_IDS`, or everyone in
-`ALLOWED_USER_IDS` when that is unset) have full access everywhere and are the
-only ones who can hand out the rest. **Contributors** can prompt the agent in
-that group. **Spectators** are in the chat and ignored by the bot — they read
-along and talk to everyone, and the bot only answers them with a (rate-limited)
-note if they address it directly, alongside a card an admin can tap to let them
-in.
-
-This layers on the bot's roster rather than replacing it: anyone in
-`ALLOWED_USER_IDS`, or admitted with `/allow` in a DM, is a contributor in every
-group without a per-group grant. `/users` reads back that bot-wide list;
-`/members` reads back one group.
-
-`GROUP_MEMBERS_DEFAULT` picks which of the last two an ungranted member lands
-in. `spectator` is the default: nobody can prompt the agent until an admin runs
-`/allow`, so adding someone to the chat is not the same as handing them a shell.
-`contributor` makes Telegram membership the whole gate — right for a group of
-peers who all own the box.
-
-Commands that reconfigure the bot rather than drive the conversation stay with
-admins — `/restartbot`, `/rebuildbot`, `/update`, `/permissions`, `/teleport`,
-`/project`, `/newproject`, `/allow` and `/deny`, along with the inline buttons
-those open. A contributor drives the conversation; only an admin repoints or
-restarts the bot. `/members` is readable by anyone who can prompt.
-
-### Providers
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CCR_ENABLED` | `false` | Enable `/ccr` and CCR in `/provider` |
-| `CCR_BASE_URL` | `http://localhost:3456` | Where CCR's local proxy listens |
-| `CCR_AUTH_TOKEN` | — | CCR's local auth token |
-| `CCR_AUTO_PROMPT_ON_THROTTLE` | `true` | Offer a one-tap CCR retry on Max throttle |
-| `CCR_AUTOSTART` | `false` | Run `ccr start` when the proxy isn't reachable |
-| `CCR_BINARY` | `ccr` | Path or name of the `ccr` binary for autostart |
-
-### Voice & TTS
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GROQ_API_KEY` | — | Groq API key for Whisper |
-| `OPENAI_API_KEY` | — | OpenAI API key for TTS |
-| `TTS_PROVIDER` | `groq` | `groq` (Orpheus) or `openai` |
-| `TTS_VOICE` | `coral` | Default TTS voice |
-| `TTS_MODEL` | `gpt-4o-mini-tts` | TTS model |
-| `VOICE_SHOW_TRANSCRIPT` | `true` | Show transcript text before agent response |
-
----
-
-## Architecture
-
-```
-Telegram ⇄ grammY bot ⇄ provider router ─┬─ claude: Agent SDK ─────┐
-           auth, group roles,            ├─ claude: PTY (real CLI) ┼─▶ tools on your machine
-           batching, queueing            └─ ccr: Agent SDK ────────┘
-                ▲
-                └── MCP server: lets the agent ask questions, send files and schedule prompts
-```
-
-| Path | What's there |
-|------|--------------|
-| `src/index.ts`, `src/launcher.ts` | Entry points for one bot, or several in worker threads |
-| `src/config.ts` | Zod-validated environment config |
-| `src/bot/` | Bot setup, command and message handlers, middleware, group access |
-| `src/providers/` | Provider router, SDK and CCR providers, switching, per-user preferences |
-| `src/claude/` | PTY provider and TUI parsing, session state and history, watchdog, permission gate, scope guard, charter judge, scheduler, MCP tools |
-| `src/bin/` | The MCP server process |
-| `src/telegram/` | Streaming, markdown to entities, splitting, Telegraph, task cards |
-| `src/startup/` | Restoring chats after a restart |
-| `src/audio/`, `src/tts/` | Speech: voice transcription and spoken replies |
-| `src/utils/` | Shared helpers, including download, path and error sanitizing |
-| `tests/` | Vitest suite, mirroring `src/` |
-| `scripts/` | Bot control and shared-bot account setup |
-| `docs/` | Website, [PTY design notes](docs/design/pty-provider.md), [debugging notes](docs/debugging/interrupted-by-user-misattribution.md), [example charter](docs/CHARTER.example.md) |
-| `prototypes/pty/` | The prototype that came before the PTY provider |
-
----
-
-## Development
-
-```bash
-npm run dev            # Dev mode with hot reload (tsx watch)
-npm run dev:multi      # Run the bots in instances.json
-npm test               # Run the test suite
-npm run test:coverage  # Tests with a coverage report
-npm run typecheck      # Type check only
-npm run build          # Compile to dist/
-npm start              # Run compiled build
-```
-
-CI runs the type check, tests and build on every push. See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-### Bot Control Script
-
-```bash
-./scripts/telecoder-botctl.sh dev start       # Start dev mode
-./scripts/telecoder-botctl.sh dev restart     # Restart dev
-./scripts/telecoder-botctl.sh prod start      # Start production
-./scripts/telecoder-botctl.sh dev log         # Tail logs
-./scripts/telecoder-botctl.sh dev status      # Check if running
-```
-
-### Self-Editing Workflow
-
-If TeleCoder is editing its own codebase, use **prod mode** to avoid hot-reload restarts:
-
-```bash
-./scripts/telecoder-botctl.sh prod start      # No hot reload
-# ... let Claude edit files ...
-./scripts/telecoder-botctl.sh prod restart    # Apply changes
-```
-
-Then `/continue` or `/resume` in Telegram to restore your session.
-
----
-
-## Security
-
-- **User whitelist** — only approved Telegram IDs can interact
-- **Admins & guests** — a shared bot can reserve approvals, lifecycle and
-  transport for `ADMIN_USER_IDS`; see [Sharing a bot](#sharing-a-bot)
-- **Group confinement** — `RESTRICT_TO_GROUPS` keeps guests out of private chats
-- **Group roles** — inside a group, admins / contributors / spectators, so being
-  in the chat need not mean being able to prompt the agent (`GROUP_MEMBERS_DEFAULT`)
-- **Addressed-only** — `GROUP_REQUIRE_MENTION` keeps human conversation in a
-  shared group from becoming prompts
-- **Permission gate** — dangerous Bash patterns pause for an admin's approval,
-  on the SDK and PTY transports alike (CCR included), subagents too
-- **Scope guard** — tool calls reaching outside the shared projects, or at any
-  credential path, pause too
-- **Charter judge** — guest messages are read against a charter before they run
-- **Project sandbox** — the project picker is scoped to `WORKSPACE_DIR`
-- **Permission mode** — `/mode` sets how much Claude asks before acting
-- **Dangerous mode** — opt-in auto-approve for all tool permissions
-- **Secrets** — loaded from `.env` (gitignored), never committed
-- **Secret requests** — a key Claude asks for goes from your message into the
-  command it named, and the message is deleted; Claude sees only the result.
-  Private chats with an admin only
-- **Gate fails closed** — in PTY mode a tool runs only on the bot's explicit
-  allow: if the bot can't be reached (restarting, erroring), the tool is
-  blocked. Background agents and turns Claude starts on its own between your
-  messages go through the gate too, in the chat the session belongs to
-- **Local IPC token** — the loopback server the hooks and MCP tools talk to
-  requires a random per-process token, passed through the environment only,
-  so other users on the machine can't drive it
-
-### What it stores and sends
-
-TeleCoder has no server of its own. Its state stays on your machine, in `~/.telecoder`
-(owner-only permissions), and includes session metadata and preferences. Before November 2026
-it was `~/.claudegram`: the launcher moves that across on its first start and leaves a link
-at the old path. On a shared bot it
-also includes the Telegram ids and names of the people it has seen or let in.
-
-Your messages go to Telegram and to Claude Code, and from there to the model provider you
-use. A secret you send when Claude asks for one is the exception: it goes to Telegram like any
-message, until the bot deletes it, and from there only into the command Claude named. A Claude
-token made with `claude setup-token` doesn't go through Telegram at all. Claude Code keeps its own session transcripts in `~/.claude`. Voice and text-to-speech
-go to Groq or OpenAI, and only if you configure them. Nothing goes to Telegraph unless you set
-`TELEGRAPH_ENABLED=true`; with it on, long replies, `/handoff` notes and action logs are
-published there, and those pages are public to anyone with the link.
-
----
+`telecoder init` checks the token with Telegram, learns your user ID when you send the bot
+`/start`, and writes `~/.telecoder/.env`, readable by you only. Then open your bot in Telegram,
+pick a project with `/project` and start talking.
+
+`telecoder doctor` checks your setup, `telecoder service logs` follows the output and `/update`
+upgrades from chat. To run from a git checkout instead, see
+[docs/install.md](docs/install.md#from-source).
+
+## Documentation
+
+- [Install and run](docs/install.md): prerequisites, the wizard, the background service, running from source
+- [Features](docs/features.md): everything TeleCoder does
+- [Commands](docs/commands.md): every bot command
+- [Multiple bots](docs/multiple-bots.md): `instances.json`, `/newbot` and a home project per bot
+- [Providers](docs/providers.md): SDK or PTY, and Claude Code Router for when Max throttles
+- [Sharing a bot](docs/sharing.md): admins, guests, group roles, the permission gate and a separate Unix account
+- [Configuration](docs/configuration.md): every `.env` setting
+- [Security](docs/security.md): what's protected, what's stored and where data goes
+- [Architecture and development](docs/architecture.md): how it's built, and how to work on it
+- [Roadmap](ROADMAP.md), [changelog](CHANGELOG.md) and [contributing](CONTRIBUTING.md)
+
+## Project status
+
+In active development, and used every day for my own work, including building TeleCoder
+itself. The latest tagged release is v1.1.0, with newer work under "Unreleased" in the
+[changelog](CHANGELOG.md). The code is about 53k lines of TypeScript, plus 31k lines of tests
+(175 test files, 2,238 tests), and CI runs the type check, tests and build on every push.
+
+TeleCoder is self-hosted: it runs on your machine with your own Claude account, and there is no
+hosted version.
 
 ## Credits
 
-TeleCoder is a derivative of [Claudegram](https://github.com/NachoSEO/claudegram), created by
-[@NachoSEO](https://github.com/NachoSEO) and MIT-licensed. That project is the foundation this
-one is built on, and its copyright notice is retained in [LICENSE](LICENSE).
+TeleCoder began as a fork of [Claudegram](https://github.com/NachoSEO/claudegram) by
+[@NachoSEO](https://github.com/NachoSEO), MIT-licensed, whose last commit was in March 2026.
+Claudegram's copyright notice is kept in [LICENSE](LICENSE). Since April 2026 TeleCoder has
+been developed independently by [@gitaarik](https://github.com/gitaarik): 450+ commits, adding
+about 107k lines and removing 29k. The history since the fork is all in this repository, which
+was created in July 2026 when the project was renamed, so its GitHub creation date is later than
+its first commits.
 
-TeleCoder is maintained independently by [@gitaarik](https://github.com/gitaarik) and adds:
-
-- **Auto-topic & dynamic bot name** — bot display name reflects current
-  work topic, derived via parallel Haiku side-call; per-chat /topic and
-  /botname controls
-- **Multi-instance launcher** — run multiple bots from one process with
-  per-bot session scoping, per-bot model/effort preferences, and an opt-in
-  fan-out (`/model sonnet all`) that relays a setting to every instance
-- **Background task lifecycle** — surface SDK task lifecycle (started,
-  progress, notifications) in the streaming UI; /tasks command to inspect
-- **Monitor events** — separate Telegram messages for streaming Monitor
-  tool output
-- **Reasoning effort control** — /effort command (low/medium/high/xhigh/
-  max) with icon prefix in bot name; /btw side-question command
-- **Plan mode surfacing** — extract plan content from spontaneous plan
-  mode and inject into chat
-- **Skills + task list** — full SDK skill discovery; Claude Code's task
-  list (TaskCreate/TaskUpdate) as a live per-turn card, shown again when a
-  session is restored
-- **send_file MCP tool** — Claude can deliver files directly via Telegram
-- **Session resilience** — auto-restore on restart (/rebuildbot), persistent
-  topic + preview across restarts, last-response display on resume
-- **Agent watchdog** — silence/stuck-tool detection, force-abort on stuck
-  queries, /cancel works during hangs
-- **Message batching middleware** — joins the parts of a paste Telegram
-  split up into one prompt (on by default; only 2000+ char messages wait)
-- **SDK isolation** — bot runs in a clean SDK env to avoid user-level
-  plugin tool-deferral interfering with proactive MCP calls
+TeleCoder is an independent project, not affiliated with or endorsed by Anthropic or Telegram.
 
 ## License
 

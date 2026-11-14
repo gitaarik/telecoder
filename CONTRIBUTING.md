@@ -21,7 +21,8 @@ the [Quick Start](README.md#quick-start).
 
 - `npm run typecheck`, `npm test` and `npm run build` pass (CI runs the same three)
 - New behaviour has tests
-- Commands and user-facing features are reflected in `README.md` and `docs/index.html`
+- Commands and user-facing features are reflected in `docs/commands.md`, `docs/features.md`
+  and `docs/index.html`
 - User-visible changes have an entry under "Unreleased" in `CHANGELOG.md`
 
 ## Code

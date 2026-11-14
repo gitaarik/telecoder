@@ -61,7 +61,7 @@ Codex doesn't appear to make that split, so scraping a second TUI would buy noth
 - Offer Codex in `/provider` and the throttle failover. A switch forks the conversation
   with a summary, as switching to CCR does
 - Give Claude-only features such as `/tree`, background tasks and plugins a clear "not on
-  Codex" reply, and list what stays behind, as the README does for CCR
+  Codex" reply, and list what stays behind, as [`docs/providers.md`](docs/providers.md) does for CCR
 
 ### 5. Settle the "interrupted by user" misattribution (2–4 h)
 
@@ -76,11 +76,8 @@ Telegram's cloud Bot API won't let a bot download a file over 20 MB. Add optiona
 for a self-hosted Telegram Bot API server: an opt-in Compose file, docs, and a safe
 migration path, since moving a bot token to a local server is hard to undo.
 
-### 7. Easier setup and releases (5–8 h)
+### 7. Regular releases (1–2 h)
 
-- A `doctor` command that checks the bot token, the `claude` login and `ffmpeg`, and says
-  exactly what to fix
-- Move the full configuration reference out of the README into `docs/`
 - Cut v1.2.0 from the changelog's large "Unreleased" section, and publish release notes
   for each version from then on
 

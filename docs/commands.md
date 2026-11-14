@@ -1,0 +1,99 @@
+# Commands
+
+Every command TeleCoder registers. `/commands` lists them in Telegram, and Telegram's own `/` menu shows the ones that apply to your setup (`/provider` and `/ccr` only with `CCR_ENABLED`, `/transcribe` only with voice turned on, `/rebuildbot` only in a source checkout). *Admin-only* matters on a shared bot: see [Sharing a bot](sharing.md). With one user, you are the admin.
+
+## Session
+| Command | Description |
+|---------|-------------|
+| `/start` | Welcome message |
+| `/project` | Set working directory (interactive picker) — admin-only |
+| `/newproject <name>` | Create and switch to a new project — admin-only |
+| `/newbot [project]` | Create a bot for a project (this chat's if none is given) without BotFather. Needs Bot Management Mode on the bot you send it to ([details](multiple-bots.md)) — admin-only |
+| `/projectcommands` | List every slash command available here — project, built-in skills, plugins — and the ones TeleCoder shadows |
+| `/clear` | Clear conversation history (project stays selected) |
+| `/status` | Current session info |
+| `/sessions` | List saved sessions |
+| `/resume [words\|id]` | Pick, search or open any Claude Code session, like Claude Code's own `/resume` |
+| `/continue` | Resume most recent session |
+| `/recap [N]` | Re-read the last N exchanges of the current session (default 3), ending with the same status message as a normal turn |
+| `/prompts [N]` | List just the last N prompts you sent, without the replies (default 15, max 25) |
+| `/sync` | Resend the latest assistant reply from the session log if Telegram missed any of it |
+| `/handoff` | Dump the conversation to markdown as a downloadable file, plus a Telegraph link when Telegraph is on |
+| `/fork` | Fork the conversation — into a new thread on a bot with threads, otherwise a new branch on this bot or a hand-off to a sibling bot |
+| `/spinoff <task>` | Split a task off into a new thread, with the context compacted around it and the task as its first prompt. As a reply, it forks from that message |
+| `/tree` | Draw the conversation's fork tree; tap a point to carry on that branch or branch from it |
+| `/accept` | Accept a pending fork from another bot |
+| `/decline` | Discard a pending fork without loading it |
+| `/schedule <when> <prompt>` | Schedule a recurring prompt (`every 5m`, `daily 9am`, or raw cron) |
+| `/schedules` | List active scheduled tasks for this chat |
+| `/unschedule <id>` | Remove a scheduled task by id |
+| `/teleport` | Move session to terminal (forked) — admin-only |
+
+## Agent modes
+| Command | Description |
+|---------|-------------|
+| `/plan` | Plan mode for complex tasks |
+| `/explore` | Explore codebase to answer questions |
+| `/loop <task>` | Run iteratively until the task is complete |
+| `/model` | Switch Sonnet / Opus / Haiku — this bot, or add `all` for every instance |
+| `/effort` | Set reasoning effort (low / medium / high / xhigh / max / auto); `all` works here too |
+| `/btw` | Ask a side question without interrupting the running task |
+| `/steer <text>` | Stop the running turn and send the text in its place, as a correction; `⚡ Interrupt & send` on a queued message does the same |
+| `/later [text]` | Set an idea aside without sending it; once Claude is done, the bot asks whether to send it, with Send and Drop. Alone, lists what's set aside |
+| `/mode` | How much Claude asks before acting (manual / accept edits / plan / auto / bypass) — admin-only |
+| `/autoapprove <duration>` | Answer the permission gate's prompts in advance in this chat for a while (`30m`), posting each command it lets through; `off` ends it, `status` reads it back. The most destructive commands still ask — admins and approvers |
+| `/streaming` | Toggle streaming / wait replies |
+| `/method` | Switch Claude transport (SDK / PTY) — admin-only |
+| `/provider` | Switch backend — Claude / CCR (shown when `CCR_ENABLED`) — admin-only |
+| `/ccr` | Sticky toggle between Claude and CCR routing (shown when `CCR_ENABLED`) — admin-only |
+| `/verbosity` | Pick verbosity tier (quiet / normal / verbose / debug) |
+| `/terminalui` | Toggle terminal-style display |
+
+## Files and output
+| Command | Description |
+|---------|-------------|
+| `/file <path>` | Download a file. Guests get files from the chat's project only; admins from anywhere in `WORKSPACE_DIR`. Credential and bot-state paths (`.env`, `~/.ssh`, `~/.claude`, cloud CLI configs and the like) are refused for everyone |
+| `/telegraph` | Toggle Instant View for long responses in this chat (needs `TELEGRAPH_ENABLED=true`) |
+| `/telegraph <path>` | Publish a project file as a public Telegraph page. **Admin-only**, needs `TELEGRAPH_ENABLED=true`, same path rules as `/file` |
+| `/suggestions` | Toggle predicted next-prompt buttons under each response |
+
+## Voice and TTS
+| Command | Description |
+|---------|-------------|
+| `/tts` | Toggle voice replies, pick voice |
+| `/transcribe` | Transcribe audio to text |
+| *Send voice note* | Auto-transcribed → processed by Claude |
+
+## Utility
+| Command | Description |
+|---------|-------------|
+| `/ping` | Health check |
+| `/context` | Show Claude context / token usage |
+| `/cost` | Show usage limits and cost as Claude Code reports them — session/weekly limits on a subscription, dollar totals on API billing — plus TeleCoder's own running tally for the conversation, which the CLI cannot keep (SDK mode only) |
+| `/compact` | Compact the context window (SDK and PTY), reporting the token reduction |
+| `/statusline` | Toggle the status line that closes every reply (project, effort, model, context %, cost) |
+| `/botname` | Toggle dynamic bot name (shows the active project) |
+| `/topic` | Set or clear the conversation topic |
+| `/tasks` | List active background tasks |
+| `/shells` | List and kill OS-level background shells from the PTY session |
+| `/permissions` | Show the permission-gate state, your role, and the patterns it enforces — admin-only |
+| `/users` | Who can use this bot — admins, guests, and people seen but not let in — admin-only |
+| `/allow` | Let someone in as a guest — reply to their message, or `/allow @user` — admin-only |
+| `/deny` | Remove someone admitted with `/allow` — admin-only |
+| `/botstatus` | Bot process status and the version it's running |
+| `/version` | The running version and whether it's the latest, against the code in the checkout and the branch it tracks |
+| `/restartbot` | Restart the bot — admin-only |
+| `/rebuildbot` | Rebuild code and restart — this instance, all, or all once each is idle (`/rebuildbot idle`) — admin-only, source checkouts only |
+| `/update` | Update the Claude Code CLI, or TeleCoder itself on an npm install — admin-only |
+| `/cancel` | Stop the running turn and drop every message waiting behind it (alias: `/stop`) |
+| `/commands` | Show all commands |
+
+## Group access
+| Command | Description |
+|---------|-------------|
+| `/members` | Who may prompt the agent in this group, and the default for everyone else |
+| `/allow` | In a group, let someone prompt the agent here; in a DM, admit them everywhere — admin only |
+| `/deny` | In a group, make someone a spectator here; in a DM, remove them entirely — admin only |
+
+Name a person by replying to one of their messages with the command; `@handle`
+works once the bot has seen them post, and a numeric user id always works.

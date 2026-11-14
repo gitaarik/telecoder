@@ -55,6 +55,13 @@ reasoning — the commit bodies are the long form, this is the index.
   service manager to start it again (`telecoder service install` sets one
   up; pm2 works too). `/rebuildbot` is for source checkouts
   only and says so elsewhere.
+- **A shorter README** — the README is now the pitch, how TeleCoder compares,
+  a three-command quick start and links; the reference moved to `docs/`
+  (install, features, commands, multiple bots, providers, sharing,
+  configuration, security, architecture). Corrected on the way: the
+  `CLAUDE_SDK_LOG_LEVEL` and Groq `TTS_VOICE` defaults, `HOME_PROJECT`,
+  `/spinoff` and `/autoapprove` in the command list, and which commands are
+  admin-only.
 
 ### Security
 
@@ -1049,8 +1056,6 @@ reasoning — the commit bodies are the long form, this is the index.
   checks the unit's `Restart=` first and refuses — while still running — rather
   than announcing a restart it cannot come back from. The shipped unit moves to
   `Restart=always`.
-
-### Reliability
 
 - **A lost hook could outrank the Stop signal and hang a finished turn** — the
   end-of-turn check refuses to finish while the hooks say a tool is still open,
