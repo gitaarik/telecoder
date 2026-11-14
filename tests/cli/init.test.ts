@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { parse as parseEnv } from 'dotenv';
-import { runInit, parseOwnerId, cleanToken, suggestWorkspace, type InitDeps, type InitOptions, type Preflight } from '../../src/cli/init/flow.js';
+import { runInit, parseOwnerId, OWNER_CAPTURED_REPLY, cleanToken, suggestWorkspace, type InitDeps, type InitOptions, type Preflight } from '../../src/cli/init/flow.js';
 import { renderEnv, updateEnvText, backupName } from '../../src/cli/init/env-file.js';
 import { AbortedError, type Prompter } from '../../src/cli/init/prompter.js';
 import {
@@ -197,8 +197,10 @@ describe('telecoder init: interactive', () => {
     expect(prompter.said.join('\n')).toContain('https://t.me/my_coder_bot');
     expect(prompter.asked).toContain('Is this you: Ada (@ada), id 412345678?');
 
-    const send = tg.calls.find((c) => c.method === 'sendMessage');
-    expect(send?.params).toEqual({
+    const sends = tg.calls.filter((c) => c.method === 'sendMessage').map((c) => c.params);
+    // The /start is answered at once, so it doesn't look lost.
+    expect(sends[0]).toEqual({ chatId: 412345678, text: OWNER_CAPTURED_REPLY, entities: undefined });
+    expect(sends[1]).toEqual({
       chatId: 412345678,
       text: '✅ TeleCoder is set up. Start it with telecoder start.',
       entities: [{ type: 'code', offset: 37, length: 15 }],
@@ -273,11 +275,25 @@ describe('telecoder init: interactive', () => {
     expect(await result).toBe(0);
     expect(prompter.asked).toContain('Is this you: Eve, id 999000111?');
     expect(readEnv().ALLOWED_USER_IDS).toBe('412345678');
+    // Each private /start gets the reply; the group message and the backlog don't.
+    const replies = tg.calls.filter((c) => c.method === 'sendMessage' && (c.params as { text: string }).text === OWNER_CAPTURED_REPLY);
+    expect(replies.map((c) => (c.params as { chatId: number }).chatId)).toEqual([999000111, 412345678]);
 
     const polls = tg.calls.filter((c) => c.method === 'getUpdates').map((c) => c.params);
     expect(polls[0]).toEqual({ offset: undefined, timeout: 0 });   // the backlog
     expect(polls[1]).toMatchObject({ offset: 11 });               // past it
     expect(polls.at(-1)).toEqual({ offset: 14, timeout: 0 });      // the ack
+  });
+
+  it('carries on when the reply to the /start fails', async () => {
+    const tg = fakeTelegram();
+    tg.updates = [[privateMessage(5)]];
+    tg.sendError = new TelegramNetworkError('connect ECONNRESET');
+    const { prompter, result } = run([GOOD, WAIT, true, '', '', false, false, true], tg);
+    expect(await result).toBe(0);
+    expect(readEnv().ALLOWED_USER_IDS).toBe('412345678');
+    expect(prompter.asked).toContain('Is this you: Ada (@ada), id 412345678?');
+    expect(allOutput(prompter)).not.toContain(GOOD);
   });
 
   it('asks before removing a webhook, and removes it on yes', async () => {

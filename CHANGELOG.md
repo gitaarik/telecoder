@@ -27,7 +27,8 @@ reasoning — the commit bodies are the long form, this is the index.
 - **`telecoder init` sets a bot up in a few questions** — it runs doctor's
   checks (offering `claude auth login` when Claude Code isn't logged in),
   takes the bot token masked and checks it with Telegram, and finds your user
-  id by having you send the bot `/start`, so there is no @userinfobot step.
+  id by having you send the bot `/start`, so there is no @userinfobot step
+  (the bot answers that `/start` at once, pointing you back to the terminal).
   Then the workspace, SDK or PTY, and voice transcription and Telegraph if you
   want them. It writes a `.env` with only those settings, readable by you
   only, and the bot messages you to say it's set up. An existing `.env` can

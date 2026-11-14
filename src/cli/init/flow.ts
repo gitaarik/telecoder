@@ -87,6 +87,9 @@ class Stop extends Error {
 
 const ICON = { ok: '✓', warn: '!', fail: '✗' } as const;
 
+/** What the bot answers a /start while the wizard waits for the owner's. */
+export const OWNER_CAPTURED_REPLY = '👋 Got it. Back in your terminal, confirm it\'s you to finish setting up.';
+
 /** The hello the bot sends at the end: the start command set as code. */
 export function testMessage(startCommand: string): { text: string; entities: TgEntity[] } {
   const before = '✅ TeleCoder is set up. Start it with ';
@@ -503,6 +506,7 @@ async function captureOwner(deps: InitDeps, client: TelegramClient, bot: TgUser)
   }
 
   p.say(`Now open https://t.me/${bot.username} and send /start, from your own account.`);
+  p.say('The bot replies when it gets it, and this asks you to confirm it was you.');
   p.say(`Waiting for it, up to ${Math.round(waitMs / 60_000)} minutes. Or type your numeric id and press Enter. Ctrl+C cancels.`);
   const deadline = now() + waitMs;
   let found: number | null = null;
@@ -517,12 +521,21 @@ async function captureOwner(deps: InitDeps, client: TelegramClient, bot: TgUser)
           offset, timeout, signal: AbortSignal.any([p.signal, stopPoll.signal]),
         });
         let candidate: TgUser | undefined;
+        let chatId = 0;
         for (const u of updates) {
           offset = u.update_id + 1;
           const m = u.message;
-          if (!candidate && m?.from && !m.from.is_bot && m.chat.type === 'private') candidate = m.from;
+          if (!candidate && m?.from && !m.from.is_bot && m.chat.type === 'private') {
+            candidate = m.from;
+            chatId = m.chat.id;
+          }
         }
-        if (candidate) return { kind: 'message' as const, user: candidate };
+        if (candidate) {
+          // Otherwise Telegram stays silent and the /start looks lost. Best
+          // effort: the answer that counts is the one in the terminal.
+          await client.sendMessage(chatId, OWNER_CAPTURED_REPLY).catch(() => {});
+          return { kind: 'message' as const, user: candidate };
+        }
       }
       return { kind: 'timeout' as const };
     })();
