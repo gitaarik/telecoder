@@ -32,7 +32,7 @@ export default defineConfig({
         { tag: 'meta', attrs: { name: 'twitter:card', content: 'summary_large_image' } },
       ],
       sidebar: [
-        { label: 'Start here', items: [{ autogenerate: { directory: 'start' } }] },
+        { label: 'Start here', items: [{ autogenerate: { directory: 'start' } }, 'compare'] },
         { label: 'Guides', items: [{ autogenerate: { directory: 'guides' } }] },
         { label: 'Reference', items: [{ autogenerate: { directory: 'reference' } }] },
         { label: 'Help', items: [{ autogenerate: { directory: 'help' } }] },

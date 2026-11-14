@@ -3,11 +3,11 @@
 // this one gets room. It reads and writes Starlight's own theme setting
 // (localStorage "starlight-theme"), so a choice made here holds in the docs.
 //
-// The chat in the hero is a stand-in, built in HTML, until the real
-// screen recording replaces it (step 3 of the site plan).
+// The chats are mock-ups in HTML, worded as the bot really words them, until
+// real screenshots and the screen recording replace them (step 3 of the plan).
 const title = 'TeleCoder: Claude Code in Telegram';
 const description =
-  'The real Claude Code agent runs on your machine; you drive it from Telegram on every device, with a thread per task, forks and the full CLI.';
+  'Run Claude Code on your own machine and use it from Telegram on every device, with your Claude subscription or an API key.';
 const install = 'npm install -g telecoder';
 ---
 
@@ -57,7 +57,7 @@ const install = 'npm install -g telecoder';
       <nav aria-label="Site">
         <a href="/start/get-started/">Get started</a>
         <a href="/guides/features/">Docs</a>
-        <a href="/help/">Help</a>
+        <a href="/compare/">Compare</a>
         <a href="https://github.com/gitaarik/telecoder">GitHub</a>
         <button class="theme" type="button" aria-label="Switch between light and dark">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6" /></svg>
@@ -66,176 +66,250 @@ const install = 'npm install -g telecoder';
     </header>
 
     <main id="main">
+      <!-- Hero -->
       <section class="hero wrap">
         <div class="pitch">
-          <h1>Claude Code, in&nbsp;Telegram.</h1>
-          <p class="lede">
-            The real agent runs on your machine. You drive it from Telegram’s apps on your
-            phone, laptop and desktop, with a thread per task, forks, voice notes and the
-            full CLI.
-          </p>
+          <h1><span class="agent-text">Claude Code</span><br />in <span class="tele">Telegram</span></h1>
+          <p class="lede">Your own Claude Code, on your machine. Use it from Telegram on your phone, laptop or desktop.</p>
+          <ul class="facts">
+            <li>Works with your Claude subscription or an API key</li>
+            <li>A thread per task, with forks</li>
+            <li>No server, no open ports</li>
+          </ul>
           <div class="install">
             <code><span class="prompt" aria-hidden="true">$</span> {install}</code>
             <button type="button" class="copy" data-copy={install}>Copy</button>
           </div>
           <p class="actions">
-            <a class="button" href="/start/get-started/">Set it up in ten minutes</a>
-            <a class="quiet" href="https://github.com/gitaarik/telecoder">Read the code on GitHub</a>
+            <a class="button" href="/start/get-started/">Get started</a>
+            <a class="quiet" href="https://github.com/gitaarik/telecoder">View on GitHub</a>
           </p>
-          <p class="fine">Free and open source. Linux and macOS. Uses your own Claude login.</p>
         </div>
 
-        <figure class="phone" aria-label="A TeleCoder thread in Telegram">
-          <div class="chat-head">
+        <figure class="tg hero-chat" aria-label="Example: a TeleCoder thread in Telegram">
+          <div class="tg-head">
             <svg class="avatar" viewBox="0 0 24 24" aria-hidden="true">
               <rect width="24" height="24" rx="12" />
               <path d="M5.6 8 9.2 12l-3.6 4" class="you" />
               <path d="M11.6 8l3.6 4-3.6 4" class="agent" />
             </svg>
-            <div>
-              <strong>Flaky login tests</strong>
-              <span>TeleCoder, in api-server</span>
-            </div>
+            <div><strong>webapp · Dark mode toggle</strong><span>bot</span></div>
           </div>
-          <ol class="chat">
-            <li class="msg mine" style="--i:0">
-              The login tests have been flaky since the session refactor. Find out why and
-              fix it.
-              <time>17:52</time>
-            </li>
-            <li class="msg theirs tools" style="--i:1">
-              <code>Read src/auth/session.ts</code>
-              <code>Grep "setCookie" src/</code>
-              <code>Bash npm test -- auth <em>3 failed</em></code>
-            </li>
+          <ol class="tg-body">
+            <li class="msg mine" style="--i:0">Add a dark mode toggle to the settings page<time>14:02</time></li>
+            <li class="msg theirs status" style="--i:1">⏳ 🔧 Editing → src/settings/Theme.tsx</li>
             <li class="msg theirs" style="--i:2">
-              The cookie is set after the redirect starts, so the test sometimes reads the
-              old session. I moved it before the redirect: all 12 auth tests pass, ten runs
-              in a row.
-              <time>17:58</time>
+              Done. The toggle follows the system theme until you pick one, and remembers your
+              choice. All 48 tests pass.
+              <span class="statusline">📁 webapp · 🧠 High · 🤖 opus · 📊 21%</span>
+              <time>14:09</time>
             </li>
-            <li class="msg theirs ask" style="--i:3">
-              Claude wants to run <code>git push origin fix/session-race</code>
-              <div class="keys" role="group" aria-label="Answer">
-                <span class="key yes">Allow</span>
-                <span class="key">Deny</span>
-                <span class="key wide">Allow git push for this session</span>
-              </div>
+            <li class="msg theirs" style="--i:3">
+              <b>🔐 Permission requested</b> — git push
+              <code class="block">git push origin dark-mode</code>
+              <span class="keys"><span class="key yes">✅ Allow once</span><span class="key">❌ Deny</span></span>
             </li>
           </ol>
-          <figcaption>A placeholder for the screen recording.</figcaption>
         </figure>
       </section>
 
-      <section class="pillars wrap" aria-label="What you get">
-        <div>
-          <h2>Native apps, not a web page</h2>
-          <p>
-            Telegram already has fast apps for every device, with notifications, drafts and
-            voice notes. The bot polls Telegram, so there’s no port to open and no tunnel.
-          </p>
-        </div>
-        <div>
-          <h2>A thread per task, and forks</h2>
-          <p>
-            Every thread is its own Claude session. Run five tasks side by side, <code>/fork</code> to try another approach, and <code>/tree</code> to jump
-            between the branches.
-          </p>
-        </div>
-        <div>
-          <h2>The whole CLI</h2>
-          <p>
-            Your <code>CLAUDE.md</code>, skills, plugins and slash commands work as in the
-            terminal, and its permission questions arrive as buttons. So do <code>/model</code>, <code>/compact</code> and <code>/resume</code>.
-          </p>
-        </div>
-        <div>
-          <h2>Claude can reach you</h2>
-          <p>
-            It asks with buttons, sends you files, asks for a key without it staying in the
-            chat, and tells you when a background task finishes.
-          </p>
-        </div>
-      </section>
-
-      <section class="day wrap" aria-labelledby="day-title">
-        <h2 id="day-title">One task, four places</h2>
-        <ol class="timeline">
+      <!-- How it works -->
+      <section class="how wrap" aria-labelledby="how-title">
+        <h2 id="how-title">How it works</h2>
+        <ol class="flow">
           <li>
-            <time>09:40</time>
-            <div>
-              <h3>At your desk</h3>
-              <p>Start a refactor of the session code from Telegram on your laptop, and go to a meeting.</p>
-            </div>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5" /><path d="M10.5 18.5h3" /></svg>
+            <h3>You, in Telegram</h3>
+            <p>Message your own bot from any Telegram app.</p>
           </li>
           <li>
-            <time>12:15</time>
-            <div>
-              <h3>Over lunch</h3>
-              <p>
-                <code>/btw</code> how far along is it? You get an answer without stopping
-                the work. A voice note adds that logout needs the same fix.
-              </p>
-            </div>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg>
+            <h3>TeleCoder, on your machine</h3>
+            <p>Picks up your message. It runs on your computer or server, with nothing exposed to the internet.</p>
           </li>
           <li>
-            <time>17:40</time>
-            <div>
-              <h3>On the train</h3>
-              <p>
-                You’re not sure about the approach. <code>/fork</code> opens a copy in a
-                new thread, and Claude tries the other one there while the first carries on.
-              </p>
-            </div>
-          </li>
-          <li>
-            <time>18:05</time>
-            <div>
-              <h3>Walking home</h3>
-              <p>The second version is cleaner. Claude asks to push it, and one tap says yes.</p>
-            </div>
+            <svg class="brandmark" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.6 6.4 9.2 12l-5.6 5.6" class="you" /><path d="M11.2 6.4 16.8 12l-5.6 5.6" class="agent" /></svg>
+            <h3>Claude Code, with your login</h3>
+            <p>The official Claude Code does the work in your project. A Pro or Max plan works, and so does an API key.</p>
           </li>
         </ol>
       </section>
 
-      <section class="compare wrap" aria-labelledby="compare-title">
-        <h2 id="compare-title">Next to the alternatives</h2>
-        <dl>
-          <div>
-            <dt>Claude Code Channels</dt>
-            <dd>Sends chat messages into one terminal session you started. TeleCoder runs its own sessions: one per thread.</dd>
-          </div>
-          <div>
-            <dt>Remote Control</dt>
-            <dd>Looks in on your terminal session from the Claude app. TeleCoder works without a terminal open.</dd>
-          </div>
-          <div>
-            <dt>Web UIs</dt>
-            <dd>Give you a dashboard in the browser. TeleCoder gives you native apps, notifications and voice.</dd>
-          </div>
-        </dl>
-        <p><a href="/help/faq/#why-not-claude-code-channels">How TeleCoder compares, in more detail</a></p>
+      <!-- Setup -->
+      <section class="setup wrap" aria-labelledby="setup-title">
+        <h2 id="setup-title">Set up in three steps</h2>
+        <ol class="steps">
+          <li>
+            <h3>Make a bot</h3>
+            <p>Send <code>/newbot</code> to <a href="https://t.me/BotFather">@BotFather</a> and copy the token.</p>
+          </li>
+          <li>
+            <h3>Install and answer a few questions</h3>
+            <pre><code>{install}
+telecoder init</code></pre>
+          </li>
+          <li>
+            <h3>Keep it running</h3>
+            <pre><code>telecoder service install</code></pre>
+          </li>
+        </ol>
+        <p class="after">Then open your bot, pick a project with <code>/project</code>, and start typing. <a href="/start/get-started/">The full guide</a> takes about ten minutes.</p>
       </section>
 
-      <section class="start wrap" aria-labelledby="start-title">
-        <h2 id="start-title">Ten minutes from now</h2>
-        <p>Make a bot with BotFather, then:</p>
-        <pre><code>{install}
-telecoder init              # your bot token, your projects folder
-telecoder service install   # keep it running, start it at boot</code></pre>
+      <!-- Examples -->
+      <section class="examples wrap" aria-labelledby="examples-title">
+        <h2 id="examples-title">What you can do</h2>
+        <div class="tabs" role="tablist" aria-label="Examples">
+          <button role="tab" id="t-threads" aria-controls="p-threads" aria-selected="true">Threads</button>
+          <button role="tab" id="t-forks" aria-controls="p-forks" aria-selected="false">Forks</button>
+          <button role="tab" id="t-spinoff" aria-controls="p-spinoff" aria-selected="false">Spinoffs</button>
+          <button role="tab" id="t-projects" aria-controls="p-projects" aria-selected="false">Projects</button>
+          <button role="tab" id="t-bots" aria-controls="p-bots" aria-selected="false">More bots</button>
+          <button role="tab" id="t-output" aria-controls="p-output" aria-selected="false">Output</button>
+        </div>
+
+        <div class="panel" role="tabpanel" id="p-threads" aria-labelledby="t-threads">
+          <div class="say">
+            <h3>Every thread is its own session</h3>
+            <p>Start a new thread for a new task. Run several side by side and switch between them like chats.</p>
+            <a href="/guides/features/#threads-and-sessions">Threads and sessions</a>
+          </div>
+          <div class="tg">
+            <ul class="threads">
+              <li><b>webapp · Dark mode toggle</b><span>Done. The toggle follows the system theme…</span><time>14:09</time></li>
+              <li><b>webapp · Signup emails</b><span>⏳ 💻 Running → npm test</span><time>14:11</time></li>
+              <li><b>api · Rate limits</b><span>Which limit do you want for logged-out users?</span><time>13:40</time></li>
+              <li><b>🍴 webapp · Dark mode toggle</b><span>Trying CSS variables instead of a theme context</span><time>12:55</time></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="p-forks" aria-labelledby="t-forks">
+          <div class="say">
+            <h3>Fork to try another way</h3>
+            <p><code>/fork</code> copies the conversation into a new thread. <code>/tree</code> shows the branches and takes you to any of them.</p>
+            <a href="/guides/features/#forks">Forks</a>
+          </div>
+          <div class="tg">
+            <ol class="tg-body">
+              <li class="msg mine">/fork<time>12:51</time></li>
+              <li class="msg theirs">
+                <b>✅ Forked into a new thread</b><br />
+                <u>🍴 webapp · Dark mode toggle</u> carries on from that point in <b>webapp</b>.
+                <i>This thread carries on here unchanged.</i>
+              </li>
+              <li class="msg theirs">
+                <b>🌳 webapp</b> — 3 branches
+                <pre class="block">A dark mode toggle ·6
+├B css variables ·3 ▸
+└C theme context ·4 📍</pre>
+                <span class="keys four"><span class="key">A</span><span class="key">B</span><span class="key">C</span></span>
+              </li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="p-spinoff" aria-labelledby="t-spinoff">
+          <div class="say">
+            <h3>Split off a side task</h3>
+            <p><code>/spinoff</code> starts a task in a new thread, with the context trimmed down to what it needs. Your current thread carries on.</p>
+            <a href="/reference/commands/">Commands</a>
+          </div>
+          <div class="tg">
+            <ol class="tg-body">
+              <li class="msg mine">/spinoff write the database migration for the theme column<time>14:15</time></li>
+              <li class="msg theirs">
+                <b>🍴 Spun off into <u>🍴 webapp · Theme migration</u></b><br />
+                <i>It compacts this conversation around the task, then starts on it. This thread carries on unchanged.</i>
+                <span class="keys"><span class="key wide">Open 🍴 webapp · Theme migration</span></span>
+              </li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="p-projects" aria-labelledby="t-projects">
+          <div class="say">
+            <h3>Switch projects with a tap</h3>
+            <p><code>/project</code> opens your favourites, or browse your projects folder. <code>/newproject</code> makes a new one.</p>
+            <a href="/reference/commands/#session">Session commands</a>
+          </div>
+          <div class="tg">
+            <ol class="tg-body">
+              <li class="msg theirs">
+                <b>⭐ Project Favorites</b><br /><br />
+                <b>Current:</b> <code>~/dev/webapp</code><br /><br />
+                <i>Pick a favorite, or use the buttons below.</i>
+                <span class="keys">
+                  <span class="key wide">📁 webapp</span>
+                  <span class="key wide">📁 api</span>
+                  <span class="key wide">📁 docs-site</span>
+                  <span class="key">🗂️ Browse</span><span class="key">✍️ Enter path</span>
+                </span>
+              </li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="p-bots" aria-labelledby="t-bots">
+          <div class="say">
+            <h3>A bot per project</h3>
+            <p>Run several bots from one TeleCoder. <code>/newbot</code> makes one for a project, straight from the chat.</p>
+            <a href="/guides/multiple-bots/">Multiple bots</a>
+          </div>
+          <div class="tg">
+            <ol class="tg-body">
+              <li class="msg mine">/newbot api<time>09:12</time></li>
+              <li class="msg theirs">
+                ✅ <u>@api_telecoder_bot</u> is set up for <b>api</b> and starts in a few seconds.
+              </li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="p-output" aria-labelledby="t-output">
+          <div class="say">
+            <h3>See as much as you want</h3>
+            <p>From a quiet answer to every tool call. <code>/verbosity</code>, <code>/streaming</code> and <code>/statusline</code> set how replies look.</p>
+            <a href="/reference/commands/">Commands</a>
+          </div>
+          <div class="tg">
+            <ol class="tg-body">
+              <li class="msg theirs">
+                <b>🎚️ Verbosity</b><br /><br />
+                Current: <b>normal</b>
+                <span class="keys">
+                  <span class="key wide">🔇 Quiet</span>
+                  <span class="key wide">✓ 💬 Normal</span>
+                  <span class="key wide">🔊 Verbose</span>
+                  <span class="key wide">🐛 Debug</span>
+                </span>
+              </li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <!-- Closing -->
+      <section class="end wrap">
+        <h2>Try it on your next task</h2>
+        <div class="install">
+          <code><span class="prompt" aria-hidden="true">$</span> {install}</code>
+          <button type="button" class="copy" data-copy={install}>Copy</button>
+        </div>
         <p class="actions">
-          <a class="button" href="/start/get-started/">Follow the guide</a>
-          <a class="quiet" href="/help/faq/">Questions first? Read the FAQ</a>
+          <a class="button" href="/start/get-started/">Get started</a>
+          <a class="quiet" href="/help/faq/">Read the FAQ</a>
         </p>
       </section>
     </main>
 
     <footer class="wrap">
       <p>
-        MIT licensed. Began as a fork of <a href="https://github.com/NachoSEO/claudegram">Claudegram</a>.
+        Free and open source (MIT). Began as a fork of <a href="https://github.com/NachoSEO/claudegram">Claudegram</a>.
         Not affiliated with Anthropic or Telegram.
       </p>
       <p class="links">
+        <a href="/compare/">Compare</a>
         <a href="/changelog/">Changelog</a>
         <a href="https://github.com/gitaarik/telecoder">GitHub</a>
         <a href="https://www.npmjs.com/package/telecoder">npm</a>
@@ -250,11 +324,34 @@ telecoder service install   # keep it running, start it at boot</code></pre>
           setTimeout(() => (button.textContent = 'Copy'), 1600);
         });
       }
+
       document.querySelector('.theme')?.addEventListener('click', () => {
         const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
         document.documentElement.dataset.theme = next;
         localStorage.setItem('starlight-theme', next);
       });
+
+      // Without JavaScript every example shows, one under the other.
+      const tabs = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+      const select = (tab: HTMLButtonElement) => {
+        for (const t of tabs) {
+          const on = t === tab;
+          t.setAttribute('aria-selected', String(on));
+          t.tabIndex = on ? 0 : -1;
+          document.getElementById(t.getAttribute('aria-controls')!)!.hidden = !on;
+        }
+      };
+      tabs.forEach((tab, i) => {
+        tab.addEventListener('click', () => select(tab));
+        tab.addEventListener('keydown', (e) => {
+          const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+          if (!step) return;
+          const next = tabs[(i + step + tabs.length) % tabs.length];
+          select(next);
+          next.focus();
+        });
+      });
+      select(tabs[0]);
     </script>
   </body>
 </html>
@@ -331,6 +428,9 @@ telecoder service install   # keep it running, start it at boot</code></pre>
   .tele {
     color: var(--you);
   }
+  .agent-text {
+    color: var(--agent);
+  }
 </style>
 
 <style>
@@ -354,7 +454,8 @@ telecoder service install   # keep it running, start it at boot</code></pre>
     height: 2rem;
   }
   .brand path,
-  .avatar path {
+  .avatar path,
+  .brandmark path {
     fill: none;
     stroke-width: 2.6;
     stroke-linecap: round;
@@ -393,26 +494,22 @@ telecoder service install   # keep it running, start it at boot</code></pre>
     stroke-linecap: round;
   }
 
-  /* Hero */
-  .hero {
-    display: grid;
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
-    gap: 4rem;
-    align-items: center;
-    padding-block: 4rem 6rem;
-  }
-  h1 {
-    margin: 0 0 1.4rem;
-    font-size: clamp(2.6rem, 5.6vw, 4.6rem);
-    line-height: 1.02;
-    letter-spacing: -0.035em;
+  /* Shared pieces */
+  h2 {
+    margin: 0 0 2rem;
+    font-size: clamp(1.8rem, 3.4vw, 2.5rem);
+    line-height: 1.1;
+    letter-spacing: -0.025em;
     font-weight: 700;
   }
-  .lede {
-    margin: 0 0 2rem;
-    max-width: 34rem;
-    font-size: 1.22rem;
-    color: var(--muted);
+  h3 {
+    margin: 0 0 0.35rem;
+    font-size: 1.12rem;
+    line-height: 1.3;
+    font-weight: 600;
+  }
+  section p {
+    margin: 0;
   }
   .install {
     display: inline-flex;
@@ -447,11 +544,11 @@ telecoder service install   # keep it running, start it at boot</code></pre>
     flex-wrap: wrap;
     align-items: center;
     gap: 0.6rem 1.6rem;
-    margin: 1.6rem 0 0;
+    margin-top: 1.6rem !important;
   }
   .button {
     display: inline-block;
-    padding: 0.75rem 1.3rem;
+    padding: 0.75rem 1.4rem;
     border-radius: 10px;
     background: var(--agent);
     color: var(--on-agent);
@@ -468,68 +565,105 @@ telecoder service install   # keep it running, start it at boot</code></pre>
   .quiet:hover {
     color: var(--text);
   }
-  .fine {
-    margin: 1.6rem 0 0;
-    font-size: 0.9rem;
+
+  /* Hero */
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 4rem;
+    align-items: center;
+    padding-block: 3.5rem 5.5rem;
+  }
+  h1 {
+    margin: 0 0 1.2rem;
+    font-size: clamp(2.8rem, 6vw, 4.8rem);
+    line-height: 1;
+    letter-spacing: -0.035em;
+    font-weight: 700;
+  }
+  .lede {
+    max-width: 30rem;
+    font-size: 1.25rem;
     color: var(--muted);
   }
+  .facts {
+    list-style: none;
+    margin: 1.4rem 0 2rem;
+    padding: 0;
+    display: grid;
+    gap: 0.35rem;
+  }
+  .facts li {
+    padding-left: 1.5rem;
+    position: relative;
+  }
+  .facts li::before {
+    content: '';
+    position: absolute;
+    left: 0.2rem;
+    top: 0.55em;
+    width: 0.45rem;
+    height: 0.45rem;
+    border-right: 2px solid var(--agent);
+    border-top: 2px solid var(--agent);
+    transform: rotate(45deg);
+  }
 
-  /* The chat */
-  .phone {
+  /* Telegram mock-ups */
+  .tg {
     margin: 0;
     border: 1px solid var(--line);
-    border-radius: 22px;
+    border-radius: 20px;
     background: var(--surface);
     overflow: hidden;
+    font-size: 0.93rem;
+    line-height: 1.45;
+  }
+  .hero-chat {
     box-shadow: 0 30px 80px -40px rgb(0 0 0 / 0.6);
   }
-  .chat-head {
+  .tg-head {
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    padding: 0.9rem 1.2rem;
+    padding: 0.85rem 1.2rem;
     border-bottom: 1px solid var(--line);
     background: var(--raised);
   }
   .avatar {
-    width: 2.4rem;
-    height: 2.4rem;
+    width: 2.3rem;
+    height: 2.3rem;
     flex: none;
   }
   .avatar rect {
     fill: var(--bg);
   }
-  .chat-head strong {
+  .tg-head strong {
     display: block;
     font-weight: 600;
     line-height: 1.3;
   }
-  .chat-head span {
-    font-size: 0.82rem;
+  .tg-head span {
+    font-size: 0.8rem;
     color: var(--muted);
   }
-  .chat {
+  .tg-body {
     list-style: none;
     margin: 0;
-    padding: 1.3rem 1.1rem 1.4rem;
+    padding: 1.2rem 1.1rem 1.3rem;
     display: flex;
     flex-direction: column;
-    gap: 0.55rem;
-    font-size: 0.95rem;
-    line-height: 1.45;
+    gap: 0.5rem;
   }
   .msg {
     position: relative;
-    max-width: 86%;
-    padding: 0.6rem 0.85rem 1.25rem;
+    max-width: 88%;
+    padding: 0.55rem 0.85rem 0.7rem;
     border-radius: 14px;
-    animation: arrive 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
-    animation-delay: calc(0.35s + var(--i) * 0.9s);
   }
   .msg time {
-    position: absolute;
-    right: 0.7rem;
-    bottom: 0.3rem;
+    float: right;
+    margin: 0.45rem 0 -0.3rem 0.8rem;
     font-size: 0.7rem;
     color: var(--muted);
   }
@@ -543,54 +677,67 @@ telecoder service install   # keep it running, start it at boot</code></pre>
     background: var(--raised);
     border-bottom-left-radius: 4px;
   }
-  .tools {
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-    padding-bottom: 0.6rem;
-    border-left: 3px solid var(--agent);
+  .msg b {
+    font-weight: 600;
   }
-  .tools code {
-    font-size: 0.8rem;
+  .msg u {
+    color: var(--you);
+    text-decoration: none;
+  }
+  .msg i {
+    display: block;
+    margin-top: 0.4rem;
     color: var(--muted);
   }
-  .tools em {
-    font-style: normal;
-    color: var(--agent);
+  .status {
+    font-size: 0.86rem;
+    color: var(--muted);
   }
-  .ask {
-    padding-bottom: 0.7rem;
-  }
-  .ask > code {
+  .statusline {
     display: block;
-    margin: 0.35rem 0 0.7rem;
-    font-size: 0.82rem;
+    margin-top: 0.5rem;
+    font-size: 0.8rem;
+    font-style: italic;
+    color: var(--muted);
+  }
+  code.block,
+  pre.block {
+    display: block;
+    margin: 0.45rem 0 0.2rem;
+    padding: 0.5rem 0.65rem;
+    border-radius: 8px;
+    background: var(--surface);
+    font-size: 0.8rem;
+    white-space: pre;
+    overflow-x: auto;
   }
   .keys {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 0.35rem;
+    gap: 0.3rem;
+    margin-top: 0.6rem;
+  }
+  .keys.four {
+    grid-template-columns: repeat(4, 1fr);
   }
   .key {
-    padding: 0.45rem;
+    padding: 0.42rem 0.5rem;
     border-radius: 8px;
     background: var(--surface);
     text-align: center;
-    font-size: 0.85rem;
+    font-size: 0.84rem;
     font-weight: 500;
   }
   .key.yes {
     background: var(--agent);
     color: var(--on-agent);
-    animation: tap 0.6s ease 4.6s both;
   }
   .key.wide {
-    grid-column: span 2;
+    grid-column: 1 / -1;
   }
-  .phone figcaption {
-    padding: 0 1.2rem 0.9rem;
-    font-size: 0.75rem;
-    color: var(--muted);
+  .hero-chat .msg {
+    animation: arrive 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    animation-delay: calc(0.3s + var(--i) * 0.8s);
   }
   @keyframes arrive {
     from {
@@ -598,124 +745,190 @@ telecoder service install   # keep it running, start it at boot</code></pre>
       transform: translateY(8px);
     }
   }
-  @keyframes tap {
-    50% {
-      transform: scale(0.94);
-    }
-  }
 
-  /* Pillars */
-  .pillars {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 2.5rem;
-    padding-block: 3.5rem;
+  /* How it works */
+  .how {
+    padding-block: 4.5rem;
     border-top: 1px solid var(--line);
   }
-  .pillars h2 {
-    margin: 0 0 0.6rem;
-    font-size: 1.15rem;
-    line-height: 1.3;
-    font-weight: 600;
-  }
-  .pillars p {
-    margin: 0;
-    color: var(--muted);
-    font-size: 0.98rem;
-  }
-
-  /* Section titles */
-  .day h2,
-  .compare h2,
-  .start h2 {
-    margin: 0 0 2rem;
-    font-size: clamp(1.8rem, 3.4vw, 2.6rem);
-    line-height: 1.1;
-    letter-spacing: -0.025em;
-    font-weight: 700;
-  }
-
-  /* Timeline */
-  .day {
-    padding-block: 5rem;
-  }
-  .timeline {
+  .flow {
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 2rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 3rem;
   }
-  .timeline li {
-    padding-top: 1.2rem;
-    border-top: 2px solid var(--line);
+  .flow li {
+    position: relative;
   }
-  .timeline li:last-child {
-    border-top-color: var(--agent);
+  .flow li:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 1.35rem;
+    left: 3.6rem;
+    right: -2.2rem;
+    border-top: 2px dashed var(--line);
   }
-  .timeline time {
-    font-family: 'IBM Plex Mono', ui-monospace, monospace;
-    font-size: 0.9rem;
-    color: var(--you);
+  .flow svg {
+    width: 2.7rem;
+    height: 2.7rem;
+    margin-bottom: 0.9rem;
+    fill: none;
+    stroke: var(--muted);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
-  .timeline h3 {
-    margin: 0.3rem 0 0.5rem;
-    font-size: 1.15rem;
-    font-weight: 600;
-  }
-  .timeline p {
-    margin: 0;
+  .flow p {
     color: var(--muted);
-    font-size: 0.98rem;
+    max-width: 21rem;
   }
 
-  /* Compare */
-  .compare {
-    padding-block: 4rem;
+  /* Setup */
+  .setup {
+    padding-block: 4.5rem;
     border-top: 1px solid var(--line);
   }
-  .compare dl {
-    margin: 0 0 1.6rem;
+  .steps {
+    list-style: none;
+    margin: 0 0 1.8rem;
+    padding: 0;
     display: grid;
-    gap: 1.1rem;
-    max-width: 52rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 2rem;
+    counter-reset: step;
   }
-  .compare dl div {
-    display: grid;
-    grid-template-columns: 14rem 1fr;
-    gap: 1.5rem;
+  .steps li {
+    counter-increment: step;
+    padding-top: 1rem;
+    border-top: 2px solid var(--line);
   }
-  .compare dt {
-    font-weight: 600;
+  .steps h3::before {
+    content: counter(step) '  ';
+    color: var(--agent);
   }
-  .compare dd {
-    margin: 0;
+  .steps p {
     color: var(--muted);
   }
-  .compare a {
+  .steps pre {
+    margin: 0.6rem 0 0;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    overflow-x: auto;
+    line-height: 1.7;
+  }
+  .steps a,
+  .after a,
+  .say a {
     color: var(--agent);
     text-underline-offset: 0.25em;
   }
-
-  /* Closing */
-  .start {
-    padding-block: 4rem 5rem;
-    border-top: 1px solid var(--line);
-  }
-  .start > p {
-    margin: 0 0 0.8rem;
+  .after {
     color: var(--muted);
   }
-  .start pre {
-    margin: 0;
-    max-width: 44rem;
-    padding: 1.1rem 1.3rem;
+
+  /* Examples */
+  .examples {
+    padding-block: 4.5rem;
+    border-top: 1px solid var(--line);
+  }
+  .tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 2rem;
+  }
+  .tabs button {
+    font: inherit;
+    font-size: 0.95rem;
+    padding: 0.45rem 1rem;
     border: 1px solid var(--line);
-    border-radius: 12px;
-    background: var(--surface);
-    overflow-x: auto;
-    line-height: 1.75;
+    border-radius: 999px;
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .tabs button:hover {
+    color: var(--text);
+  }
+  .tabs button[aria-selected='true'] {
+    background: var(--text);
+    border-color: var(--text);
+    color: var(--bg);
+  }
+  .panel {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr);
+    gap: 3.5rem;
+    align-items: start;
+    margin-bottom: 2rem;
+  }
+  .panel[hidden] {
+    display: none;
+  }
+  .say {
+    padding-top: 0.6rem;
+  }
+  .say h3 {
+    font-size: 1.5rem;
+    letter-spacing: -0.015em;
+    margin-bottom: 0.7rem;
+  }
+  .say p {
+    color: var(--muted);
+    margin-bottom: 1rem;
+    max-width: 26rem;
+  }
+  .say code,
+  .steps code,
+  .after code {
+    white-space: nowrap;
+  }
+  .panel .tg {
+    min-height: 15rem;
+  }
+  .threads {
+    list-style: none;
+    margin: 0;
+    padding: 0.4rem 0;
+  }
+  .threads li {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0 1rem;
+    padding: 0.7rem 1.2rem;
+  }
+  .threads li + li {
+    border-top: 1px solid var(--line);
+  }
+  .threads b {
+    font-weight: 600;
+  }
+  .threads span {
+    grid-column: 1;
+    color: var(--muted);
+    font-size: 0.86rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .threads time {
+    grid-row: 1;
+    grid-column: 2;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  /* Closing */
+  .end {
+    padding-block: 4.5rem 5rem;
+    border-top: 1px solid var(--line);
+  }
+  .end h2 {
+    margin-bottom: 1.5rem;
   }
 
   footer {
@@ -738,14 +951,21 @@ telecoder service install   # keep it running, start it at boot</code></pre>
   }
 
   @media (max-width: 960px) {
-    .hero {
+    .hero,
+    .panel {
       grid-template-columns: 1fr;
-      gap: 3rem;
+      gap: 2.5rem;
+    }
+    .hero {
       padding-block: 2rem 4rem;
     }
-    .pillars,
-    .timeline {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+    .flow,
+    .steps {
+      grid-template-columns: 1fr;
+      gap: 2rem;
+    }
+    .flow li::after {
+      display: none;
     }
   }
   @media (max-width: 620px) {
@@ -754,14 +974,6 @@ telecoder service install   # keep it running, start it at boot</code></pre>
     }
     nav {
       gap: 1rem;
-    }
-    .pillars,
-    .timeline {
-      grid-template-columns: 1fr;
-    }
-    .compare dl div {
-      grid-template-columns: 1fr;
-      gap: 0.2rem;
     }
     .install {
       display: flex;
@@ -773,8 +985,7 @@ telecoder service install   # keep it running, start it at boot</code></pre>
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .msg,
-    .key.yes {
+    .hero-chat .msg {
       animation: none;
     }
   }

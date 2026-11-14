@@ -67,6 +67,8 @@ resume, voice and the full set of commands.
 **Remote Control** lets you look in on a terminal session from the Claude app. Use it
 when you want the session you already have, on Anthropic's own UI.
 
+There's more in [How TeleCoder compares](../compare.md).
+
 ## Can I use it from several devices?
 
 Yes. It's an ordinary Telegram chat, so it's on every device you're signed in to
