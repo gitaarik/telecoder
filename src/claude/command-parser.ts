@@ -125,6 +125,9 @@ export function getAvailableCommands(): EntityMessage {
   if (config.TRANSCRIBE_ENABLED) {
     mediaCommands.push('• `/transcribe` - Transcribe audio to text (reply to voice/audio, or ForceReply)');
   }
+  if (config.TTS_ENABLED) {
+    mediaCommands.push('• `/tts` - Toggle voice replies');
+  }
   if (mediaCommands.length > 0) {
     sections.push({ title: 'Media Commands', commands: mediaCommands });
   }
@@ -132,7 +135,6 @@ export function getAvailableCommands(): EntityMessage {
   sections.push({
     title: 'Bot Commands',
     commands: [
-      '• `/tts` - Toggle voice replies',
       '• `/context` - Show Claude context usage',
       '• `/cost` - Show usage limits and cost from Claude Code',
       '• `/compact` - Compact the context window (reports the token reduction)',

@@ -50,6 +50,8 @@ function truncateToMax(text: string, maxChars: number): string {
 }
 
 export async function maybeSendVoiceReply(ctx: Context, text: string): Promise<void> {
+  // TTS_ENABLED=false turns voice replies off for every chat, whatever /tts says.
+  if (!config.TTS_ENABLED) return;
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
   const { sessionKey } = keyInfo;

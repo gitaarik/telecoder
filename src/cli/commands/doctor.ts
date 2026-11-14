@@ -317,6 +317,15 @@ export async function runChecks(args: string[]): Promise<CheckResult[]> {
   return results;
 }
 
+export function usage(): string[] {
+  return [
+    'Usage: telecoder doctor [--live]',
+    '',
+    'Checks Node, the claude CLI and its login, node-pty and your config. Writes nothing.',
+    '  --live  also check each bot token with Telegram',
+  ];
+}
+
 export async function run(args: string[], io: CliIo): Promise<CommandResult> {
   const results = await runChecks(args);
   for (const r of results) print(io, r);

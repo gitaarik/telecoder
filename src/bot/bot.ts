@@ -355,7 +355,7 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
     { command: 'statusline', description: '📍 Toggle per-turn status line' },
     { command: 'botname', description: '✏️ Toggle dynamic bot name' },
     { command: 'topic', description: '💬 Set current work topic in bot name' },
-    { command: 'tts', description: '🔊 Toggle voice replies' },
+    ...(config.TTS_ENABLED ? [{ command: 'tts', description: '🔊 Toggle voice replies' }] : []),
     { command: 'ping', description: '🏓 Check if bot is responsive' },
     { command: 'commands', description: '📜 List all commands' },
   ];

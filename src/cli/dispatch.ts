@@ -26,6 +26,8 @@ export type CommandResult = number | void;
 
 export interface CommandModule {
   run(args: string[], io: CliIo): Promise<CommandResult>;
+  /** The full usage, with every option, for `telecoder help <command>`. */
+  usage?(): string[];
 }
 
 export interface CommandSpec {

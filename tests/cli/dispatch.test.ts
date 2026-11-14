@@ -106,6 +106,25 @@ describe('helpText', () => {
   });
 });
 
+describe('help <command>', () => {
+  it.each([
+    ['init', '--token-env VAR'],
+    ['service', '--no-linger'],
+    ['doctor', '--live'],
+    ['start', '--config <file>'],
+  ])('shows every option of %s, not just its summary', async (name, flag) => {
+    const io = captureIo();
+    expect(await dispatch(['help', name], { io })).toBe(0);
+    expect(io.lines.join('\n')).toContain(flag);
+  });
+
+  it('answers "<command> --help" the same way', async () => {
+    const io = captureIo();
+    await dispatch(['init', '--help'], { io });
+    expect(io.lines.join('\n')).toContain('--owner-id ID');
+  });
+});
+
 describe('chooseStartTarget', () => {
   it('runs one bot without an instances.json', () => {
     expect(chooseStartTarget({ args: [], instancesExists: false })).toBe('single');

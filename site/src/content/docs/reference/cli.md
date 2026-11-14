@@ -9,8 +9,8 @@ sidebar:
 telecoder <command> [options]
 ```
 
-`telecoder` with no command, `telecoder help` or `--help` lists the commands. `--help` after a
-command shows its one-line summary. `telecoder --version` (or `-v`) prints the version.
+`telecoder` with no command, `telecoder help` or `--help` lists the commands. `telecoder help <command>`,
+or `--help` after a command, shows that command with all its options. `telecoder --version` (or `-v`) prints the version.
 
 ## `telecoder init`
 

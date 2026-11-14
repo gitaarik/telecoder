@@ -5,6 +5,18 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ## Unreleased
 
+### Fixed
+
+- **`TTS_ENABLED=false` turns spoken replies off.** The setting was read
+  but never checked, so a chat with `/tts` on kept getting voice replies.
+  Now it stops them for every chat, `/tts` says they're off, and the
+  command leaves the `/` menu.
+- **`TRANSCRIBE_ENABLED=false` turns off voice notes too**, not only
+  `/transcribe`. A voice note was still downloaded and transcribed.
+- **`telecoder help <command>` lists the command's options.** It showed only
+  the one-line summary, though the install docs pointed to it for the
+  flags. `<command> --help` shows the same.
+
 ## [1.2.0] — 2026-11-14
 
 ### Install

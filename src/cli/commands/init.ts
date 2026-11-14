@@ -29,10 +29,15 @@ const USAGE = [
   '  --transport sdk|pty  how Claude Code runs (default: sdk)',
   '  --groq-key-env VAR   turn voice transcription on, with the Groq key in VAR',
   '  --telegraph          publish long replies to Telegraph (public pages)',
+  '  --no-telegraph       don\'t, without asking',
   '  --no-test-message    don\'t have the bot message you at the end',
   '  --yes                ask nothing: take defaults, replace an existing .env',
   '                       (backed up first), remove a webhook if one is set',
 ];
+
+export function usage(): string[] {
+  return USAGE;
+}
 
 export type ParsedInitArgs = { ok: true; opts: InitOptions } | { ok: false; error: string };
 

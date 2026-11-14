@@ -31,6 +31,17 @@ export function chooseStartTarget({ args, instancesExists }: StartInputs): Start
   return instancesExists ? 'multi' : 'single';
 }
 
+export function usage(): string[] {
+  return [
+    'Usage: telecoder start [--single|--multi] [--config <file>]',
+    '',
+    'Runs in the foreground until Ctrl+C. With an instances.json it runs every bot in it.',
+    '  --single         just the bot in .env, even when instances.json exists',
+    '  --multi          the multi-bot launcher',
+    '  --config <file>  the launcher, with another instances file',
+  ];
+}
+
 /** The lines to print when there is no config to start from. */
 export function missingConfigMessage(envPath: string): string[] {
   return [

@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-Every command TeleCoder registers. `/commands` lists them in Telegram, and Telegram's own `/` menu shows the ones that apply to your setup (`/provider` and `/ccr` only with `CCR_ENABLED`, `/transcribe` only with voice turned on, `/rebuildbot` only in a source checkout). *Admin-only* matters on a shared bot: see [Sharing a bot](../guides/sharing.md). With one user, you are the admin.
+Every command TeleCoder registers. `/commands` lists them in Telegram, and Telegram's own `/` menu shows the ones that apply to your setup (`/provider` and `/ccr` only with `CCR_ENABLED`, `/transcribe` only with voice turned on, `/tts` only with `TTS_ENABLED`, `/rebuildbot` only in a source checkout). *Admin-only* matters on a shared bot: see [Sharing a bot](../guides/sharing.md). With one user, you are the admin.
 
 ## Session
 | Command | Description |

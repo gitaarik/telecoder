@@ -20,6 +20,7 @@ import { downloadFileSecure, getTelegramFileUrl } from '../../utils/download.js'
 import { sanitizeError, sanitizePath } from '../../utils/sanitize.js';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
 import { requireSession } from './session-guard.js';
+import { replyFeatureDisabled } from './command/shared.js';
 import { progressCallbacks, withStreamingTurn } from '../../telegram/streaming-turn.js';
 
 export async function handleVoice(ctx: Context): Promise<void> {
@@ -41,6 +42,13 @@ export async function handleVoice(ctx: Context): Promise<void> {
     return;
   }
   markProcessed(messageId);
+
+  // TRANSCRIBE_ENABLED=false turns off voice notes as well as /transcribe:
+  // both go through the same transcription.
+  if (!config.TRANSCRIBE_ENABLED) {
+    await replyFeatureDisabled(ctx, 'Voice transcription');
+    return;
+  }
 
   // If this is a reply to the bot's "Transcribe Audio" ForceReply, route to transcribe-only flow
   const replyTo = ctx.message?.reply_to_message;

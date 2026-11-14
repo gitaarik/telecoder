@@ -56,6 +56,8 @@ import {
   restartPtyForSettingChange,
   EFFORT_LEVELS,
   PTY_RESTART_NOTE,
+  replyFeatureDisabled,
+  buildFeatureDisabledMessage,
 } from './shared.js';
 import { getSessionTopic } from './topic.js';
 import { getStreamingMode, setStreamingMode } from './streaming-mode.js';
@@ -307,6 +309,10 @@ export async function handleTerminalUICallback(ctx: Context): Promise<void> {
 }
 
 export async function handleTTS(ctx: Context): Promise<void> {
+  if (!config.TTS_ENABLED) {
+    await replyFeatureDisabled(ctx, 'Voice replies');
+    return;
+  }
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
   const { sessionKey } = keyInfo;
@@ -325,6 +331,12 @@ export async function handleTTSCallback(ctx: Context): Promise<void> {
 
   const data = ctx.callbackQuery?.data;
   if (!data || !data.startsWith('tts:')) return;
+
+  // A menu sent before TTS_ENABLED was turned off can still be tapped.
+  if (!config.TTS_ENABLED) {
+    await ctx.answerCallbackQuery({ text: buildFeatureDisabledMessage('Voice replies') });
+    return;
+  }
 
   if (data === 'tts:on') {
     const hasKey = config.TTS_PROVIDER === 'groq' ? !!config.GROQ_API_KEY : !!config.OPENAI_API_KEY;

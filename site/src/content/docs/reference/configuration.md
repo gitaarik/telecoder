@@ -84,6 +84,7 @@ How these three fit together: [Group roles](../guides/sharing.md#group-roles).
 |----------|---------|-------------|
 | `GROQ_API_KEY` | — | Groq API key, for Whisper transcription and Orpheus TTS |
 | `OPENAI_API_KEY` | — | OpenAI API key for TTS |
+| `TTS_ENABLED` | `true` | `false` turns spoken replies off for every chat, and hides `/tts` |
 | `TTS_PROVIDER` | `groq` | `groq` (Orpheus) or `openai` |
 | `TTS_VOICE` | `coral` | Default TTS voice. On Groq, a voice Groq doesn't have falls back to `troy` |
 | `TTS_MODEL` | `gpt-4o-mini-tts` | TTS model (OpenAI; Groq's is fixed) |
@@ -93,7 +94,7 @@ How these three fit together: [Group roles](../guides/sharing.md#group-roles).
 | `VOICE_SHOW_TRANSCRIPT` | `true` | Show transcript text before agent response |
 | `VOICE_LANGUAGE` | `en` | The language voice notes are transcribed in |
 | `VOICE_MAX_FILE_SIZE_MB` | `19` | Largest voice note to transcribe |
-| `TRANSCRIBE_ENABLED` | `true` | Offer `/transcribe` |
+| `TRANSCRIBE_ENABLED` | `true` | `false` turns off voice-note transcription and `/transcribe` |
 | `TRANSCRIBE_FILE_THRESHOLD_CHARS` | `4000` | `/transcribe` sends longer transcripts as a file |
 
 ## Setting up voice
