@@ -76,10 +76,9 @@ Telegram's cloud Bot API won't let a bot download a file over 20 MB. Add optiona
 for a self-hosted Telegram Bot API server: an opt-in Compose file, docs, and a safe
 migration path, since moving a bot token to a local server is hard to undo.
 
-### 7. Regular releases (1–2 h)
+### 7. Regular releases (under 1 h each)
 
-- Cut v1.2.0 from the changelog's large "Unreleased" section, and publish release notes
-  for each version from then on
+- Publish release notes for each version from 1.2.0 on, so "Unreleased" stays short
 
 ## Out of scope
 

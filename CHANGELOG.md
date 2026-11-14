@@ -5,6 +5,8 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ## Unreleased
 
+## [1.2.0] — 2026-11-14
+
 ### Install
 
 - **`npm install -g telecoder`** — TeleCoder installs as an npm package with

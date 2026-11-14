@@ -102,9 +102,10 @@ upgrades from chat. To run from a git checkout instead, see
 ## Project status
 
 In active development, and used every day for my own work, including building TeleCoder
-itself. The latest tagged release is v1.1.0, with newer work under "Unreleased" in the
-[changelog](CHANGELOG.md). The code is about 53k lines of TypeScript, plus 31k lines of tests
-(175 test files, 2,238 tests), and CI runs the type check, tests and build on every push.
+itself. The latest release is 1.2.0, on [npm](https://www.npmjs.com/package/telecoder) and
+tagged here; the [changelog](CHANGELOG.md) lists what's in each release. The code is about
+53k lines of TypeScript, plus 31k lines of tests (175 test files, 2,238 tests), and CI runs
+the type check, tests and build on every push.
 
 TeleCoder is self-hosted: it runs on your machine with your own Claude account, and there is no
 hosted version.
