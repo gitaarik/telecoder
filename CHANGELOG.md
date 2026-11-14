@@ -1046,8 +1046,6 @@ reasoning — the commit bodies are the long form, this is the index.
   out: it concatenates several turns, and the single-turn comparison would
   either no-op or duplicate the last iteration.
 
-### Reliability
-
 - **`/restartbot` no longer kills a systemd-managed bot for good** — the restart
   ran `botctl recover` as a detached child, but `detached: true` escapes the
   process group and not the cgroup. Under systemd the helper was reaped along
