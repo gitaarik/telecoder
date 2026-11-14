@@ -1,6 +1,11 @@
-# Configuration
+---
+title: Configuration
+description: Every .env setting.
+sidebar:
+  order: 2
+---
 
-All config lives in a `.env` file: `~/.telecoder/.env` for an npm install (`telecoder init` writes it, and `TELECODER_HOME` moves it), or the `.env` next to `package.json` in a source checkout. Several bots share it and add their own settings in `instances.json` ([Multiple bots](multiple-bots.md)). [`.env.example`](../.env.example) is the full annotated reference; the tables below cover the settings most people change.
+All config lives in a `.env` file: `~/.telecoder/.env` for an npm install (`telecoder init` writes it, and `TELECODER_HOME` moves it), or the `.env` next to `package.json` in a source checkout. Several bots share it and add their own settings in `instances.json` ([Multiple bots](../guides/multiple-bots.md)). [`.env.example`](https://github.com/gitaarik/telecoder/blob/main/.env.example) is the full annotated reference; the tables below cover the settings most people change.
 
 ## Required
 
@@ -28,7 +33,7 @@ and nothing below changes anything.
 | `CHARTER_FILE` | `WORKSPACE_DIR/CHARTER.md` | The charter the judge reads |
 | `CLAUDE_METHOD_DEFAULT` | `sdk` | Transport for chats that haven't run `/method`; the gate runs on both |
 
-See [Sharing a bot](sharing.md) for how the pieces fit together.
+See [Sharing a bot](../guides/sharing.md) for how the pieces fit together.
 
 ## Core
 
@@ -56,7 +61,7 @@ See [Sharing a bot](sharing.md) for how the pieces fit together.
 | `GROUP_REQUIRE_MENTION` | `true` | Only treat messages that address the bot as prompts |
 | `GROUP_REPLY_IS_MENTION` | `false` | Treat any reply to the bot as addressing it |
 
-How these three fit together: [Group roles](sharing.md#group-roles).
+How these three fit together: [Group roles](../guides/sharing.md#group-roles).
 
 ## Providers
 

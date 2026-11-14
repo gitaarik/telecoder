@@ -1,0 +1,42 @@
+/* TeleCoder's colours and fonts, kept from the single-page site. Claude
+   orange is the brand colour, Telegram blue the channel colour. */
+
+:root {
+  --tc-brand: #e08a6b;
+  --tc-channel: #5fb0f5;
+
+  --sl-font: 'Space Grotesk', system-ui, sans-serif;
+  --sl-font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --sl-color-accent-low: #3b2a23;
+  --sl-color-accent: #e08a6b;
+  --sl-color-accent-high: #f2c1ad;
+
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #e8e6e3;
+  --sl-color-gray-2: #d2d0cc;
+  --sl-color-gray-3: #939aa6;
+  --sl-color-gray-4: #5d6572;
+  --sl-color-gray-5: #2a323d;
+  --sl-color-gray-6: #161c24;
+  --sl-color-black: #0f1319;
+}
+
+:root[data-theme='light'] {
+  --tc-brand: #b4502f;
+  --tc-channel: #0b6fa4;
+
+  --sl-color-accent-low: #f3d9ce;
+  --sl-color-accent: #b4502f;
+  --sl-color-accent-high: #7d3519;
+
+  --sl-color-white: #191c22;
+  --sl-color-gray-1: #262a31;
+  --sl-color-gray-2: #383d45;
+  --sl-color-gray-3: #5c6470;
+  --sl-color-gray-4: #8b919b;
+  --sl-color-gray-5: #d3d0ca;
+  --sl-color-gray-6: #eeebe6;
+  --sl-color-gray-7: #f5f3ef;
+  --sl-color-black: #fbfaf8;
+}

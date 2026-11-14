@@ -1,4 +1,9 @@
-# Providers
+---
+title: Providers
+description: SDK or PTY mode, and Claude Code Router for when your plan throttles.
+sidebar:
+  order: 5
+---
 
 Claude Code is the backend. What varies is the model behind it: a provider router
 sits in front of every message, so when Max throttles or you want a different model,

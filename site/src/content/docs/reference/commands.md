@@ -1,6 +1,11 @@
-# Commands
+---
+title: Commands
+description: Every bot command TeleCoder registers.
+sidebar:
+  order: 1
+---
 
-Every command TeleCoder registers. `/commands` lists them in Telegram, and Telegram's own `/` menu shows the ones that apply to your setup (`/provider` and `/ccr` only with `CCR_ENABLED`, `/transcribe` only with voice turned on, `/rebuildbot` only in a source checkout). *Admin-only* matters on a shared bot: see [Sharing a bot](sharing.md). With one user, you are the admin.
+Every command TeleCoder registers. `/commands` lists them in Telegram, and Telegram's own `/` menu shows the ones that apply to your setup (`/provider` and `/ccr` only with `CCR_ENABLED`, `/transcribe` only with voice turned on, `/rebuildbot` only in a source checkout). *Admin-only* matters on a shared bot: see [Sharing a bot](../guides/sharing.md). With one user, you are the admin.
 
 ## Session
 | Command | Description |
@@ -8,7 +13,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/start` | Welcome message |
 | `/project` | Set working directory (interactive picker) — admin-only |
 | `/newproject <name>` | Create and switch to a new project — admin-only |
-| `/newbot [project]` | Create a bot for a project (this chat's if none is given) without BotFather. Needs Bot Management Mode on the bot you send it to ([details](multiple-bots.md)) — admin-only |
+| `/newbot [project]` | Create a bot for a project (this chat's if none is given) without BotFather. Needs Bot Management Mode on the bot you send it to ([details](../guides/multiple-bots.md)) — admin-only |
 | `/projectcommands` | List every slash command available here — project, built-in skills, plugins — and the ones TeleCoder shadows |
 | `/clear` | Clear conversation history (project stays selected) |
 | `/status` | Current session info |

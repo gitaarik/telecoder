@@ -1,0 +1,40 @@
+---
+// The double chevron and the split wordmark, as on the old single page.
+const href = Astro.locals.starlightRoute.siteTitleHref;
+---
+
+<a href={href} class="site-title">
+  <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M3.6 6.4 9.2 12l-5.6 5.6" stroke="var(--tc-channel)" />
+    <path d="M11.2 6.4 16.8 12l-5.6 5.6" stroke="var(--tc-brand)" />
+  </svg>
+  <span><span class="tele">Tele</span>Coder</span>
+</a>
+
+<style>
+  .site-title {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-family: var(--sl-font);
+    font-size: var(--sl-text-h4);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--sl-color-white);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .brand-mark {
+    width: 1.6em;
+    height: 1.6em;
+  }
+  .brand-mark path {
+    fill: none;
+    stroke-width: 2.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .tele {
+    color: var(--tc-channel);
+  }
+</style>

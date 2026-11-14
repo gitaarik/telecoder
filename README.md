@@ -10,7 +10,7 @@ native apps, with a thread per conversation, forks and the full CLI.
 [![Node](https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-[Website](https://telecoder.dev) · [Quick start](#quick-start) · [Features](docs/features.md) · [Commands](docs/commands.md) · [Docs](#documentation) · [Changelog](CHANGELOG.md)
+[Website](https://telecoder.dev) · [Quick start](#quick-start) · [Features](site/src/content/docs/guides/features.md) · [Commands](site/src/content/docs/reference/commands.md) · [Docs](#documentation) · [Changelog](CHANGELOG.md)
 
 </div>
 
@@ -48,7 +48,7 @@ TeleCoder puts Claude Code inside them.
 - **Shareable, carefully.** Admins, guests and approvers, a permission gate on every
   transport, a scope guard for paths, and a charter checked before a guest's message runs.
 
-The full list is in [docs/features.md](docs/features.md).
+The full list is on the [Features](site/src/content/docs/guides/features.md) page.
 
 ## How it compares
 
@@ -84,19 +84,21 @@ pick a project with `/project` and start talking.
 
 `telecoder doctor` checks your setup, `telecoder service logs` follows the output and `/update`
 upgrades from chat. To run from a git checkout instead, see
-[docs/install.md](docs/install.md#from-source).
+[Install and run](site/src/content/docs/start/install.md#from-source).
 
 ## Documentation
 
-- [Install and run](docs/install.md): prerequisites, the wizard, the background service, running from source
-- [Features](docs/features.md): everything TeleCoder does
-- [Commands](docs/commands.md): every bot command
-- [Multiple bots](docs/multiple-bots.md): `instances.json`, `/newbot` and a home project per bot
-- [Providers](docs/providers.md): SDK or PTY, and Claude Code Router for when Max throttles
-- [Sharing a bot](docs/sharing.md): admins, guests, group roles, the permission gate and a separate Unix account
-- [Configuration](docs/configuration.md): every `.env` setting
-- [Security](docs/security.md): what's protected, what's stored and where data goes
-- [Architecture and development](docs/architecture.md): how it's built, and how to work on it
+- [Get started](site/src/content/docs/start/get-started.md): a first setup, step by step, from BotFather to threads
+- [Install and run](site/src/content/docs/start/install.md): prerequisites, the wizard, the background service, running from source
+- [Features](site/src/content/docs/guides/features.md): everything TeleCoder does
+- [Commands](site/src/content/docs/reference/commands.md): every bot command
+- [Multiple bots](site/src/content/docs/guides/multiple-bots.md): `instances.json`, `/newbot` and a home project per bot
+- [Providers](site/src/content/docs/guides/providers.md): SDK or PTY, and Claude Code Router for when Max throttles
+- [Sharing a bot](site/src/content/docs/guides/sharing.md): admins, guests, group roles, the permission gate and a separate Unix account
+- [Configuration](site/src/content/docs/reference/configuration.md): every `.env` setting
+- [Security](site/src/content/docs/reference/security.md): what's protected, what's stored and where data goes
+- [Architecture and development](site/src/content/docs/reference/architecture.md): how it's built, and how to work on it
+- [Troubleshooting](site/src/content/docs/help/troubleshooting.md) and [FAQ](site/src/content/docs/help/faq.md)
 - [Roadmap](ROADMAP.md), [changelog](CHANGELOG.md) and [contributing](CONTRIBUTING.md)
 
 ## Project status

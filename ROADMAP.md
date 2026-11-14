@@ -61,7 +61,7 @@ Codex doesn't appear to make that split, so scraping a second TUI would buy noth
 - Offer Codex in `/provider` and the throttle failover. A switch forks the conversation
   with a summary, as switching to CCR does
 - Give Claude-only features such as `/tree`, background tasks and plugins a clear "not on
-  Codex" reply, and list what stays behind, as [`docs/providers.md`](docs/providers.md) does for CCR
+  Codex" reply, and list what stays behind, as [`site/src/content/docs/guides/providers.md`](site/src/content/docs/guides/providers.md) does for CCR
 
 ### 5. Settle the "interrupted by user" misattribution (2–4 h)
 

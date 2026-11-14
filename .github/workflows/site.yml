@@ -1,0 +1,53 @@
+name: Site
+
+# Builds the site on every change that could affect it; the build also fails
+# when the Commands page and src/bot/bot.ts disagree. Deploying is manual for
+# now: telecoder.dev is still served from docs/ on main until the switch-over,
+# after which Pages' source becomes "GitHub Actions" and deploy runs on push.
+on:
+  push:
+    branches: [main]
+    paths: ['site/**', 'src/bot/bot.ts', 'CHANGELOG.md', '.github/workflows/site.yml']
+  pull_request:
+    paths: ['site/**', 'src/bot/bot.ts', 'CHANGELOG.md', '.github/workflows/site.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Starlight's "last updated" dates come from git history
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+      - run: npm run build
+        env:
+          ASTRO_TELEMETRY_DISABLED: 1
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/dist
+
+  deploy:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

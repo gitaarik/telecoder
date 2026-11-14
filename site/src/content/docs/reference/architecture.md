@@ -1,4 +1,9 @@
-# Architecture and development
+---
+title: Architecture and development
+description: How TeleCoder is built, and how to work on it.
+sidebar:
+  order: 5
+---
 
 ## Built with
 
@@ -37,7 +42,8 @@ Telegram ⇄ grammY bot ⇄ provider router ─┬─ claude: Agent SDK ──�
 | `src/utils/` | Shared helpers, including download, path and error sanitizing |
 | `tests/` | Vitest suite, mirroring `src/` |
 | `scripts/` | Bot control and shared-bot account setup |
-| `docs/` | Website, [PTY design notes](design/pty-provider.md), [debugging notes](debugging/interrupted-by-user-misattribution.md), [example charter](CHARTER.example.md) |
+| `site/` | The website and these docs (Astro + Starlight); `npm run build` there checks the Commands page against `src/bot/bot.ts` |
+| `docs/` | The old single-page website, [PTY design notes](https://github.com/gitaarik/telecoder/blob/main/docs/design/pty-provider.md), [debugging notes](https://github.com/gitaarik/telecoder/blob/main/docs/debugging/interrupted-by-user-misattribution.md), [example charter](https://github.com/gitaarik/telecoder/blob/main/docs/CHARTER.example.md) |
 | `prototypes/pty/` | The prototype that came before the PTY provider |
 
 ---
@@ -54,7 +60,7 @@ npm run build          # Compile to dist/
 npm start              # Run compiled build
 ```
 
-CI runs the type check, tests and build on every push. See [CONTRIBUTING.md](../CONTRIBUTING.md).
+CI runs the type check, tests and build on every push. See [CONTRIBUTING.md](https://github.com/gitaarik/telecoder/blob/main/CONTRIBUTING.md).
 
 ### Bot control script
 

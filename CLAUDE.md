@@ -1,8 +1,24 @@
 # TeleCoder Development Guidelines
 
-## Website Maintenance (MANDATORY)
+## Website and docs (MANDATORY)
 
-**ALWAYS update `docs/index.html` when adding features, commands, or contributors.** This is a required step in every PR that changes functionality. Do not commit feature/command changes without the corresponding website update.
+**Every change to functionality updates the docs in the same commit.** The docs are the
+Markdown pages in `site/src/content/docs/`, built with Astro + Starlight into the next
+telecoder.dev (`cd site && npm run dev` to preview):
+
+- **Commands**: a row in `reference/commands.md`. `npm run build` in `site/` (and the Site
+  workflow) fails when a command registered in `src/bot/bot.ts` is missing from that page,
+  or the page lists one the bot doesn't register.
+- **Features**: `guides/features.md`, plus the guide the feature belongs to.
+- **Settings**: `reference/configuration.md`.
+- **Links** between pages are relative `.md` paths (`../guides/sharing.md#group-roles`), so
+  they work on GitHub too; `site/src/plugins/remark-md-links.mjs` turns them into routes.
+  Link files outside `site/` by their full GitHub URL.
+
+### Until the domain switch: `docs/index.html`
+
+telecoder.dev still serves the single page `docs/index.html` until the new site replaces it,
+so keep its feature cards, command rows and contributors current too, as below.
 
 ### New Features
 Add a feature card to the features grid. Use the `data-category` attribute for tab filtering (valid values: `agent`, `reliability`, `sessions`, `background`, `media` — these must match the `data-category` on the filter tabs):
@@ -38,7 +54,7 @@ When a new contributor makes significant contributions (check `git shortlog -sn`
 ```
 
 ### Pre-commit Check
-Before committing, verify that `docs/index.html` reflects ALL:
+Before committing, verify that the docs in `site/` are current, and that `docs/index.html` reflects ALL:
 - Feature cards for every user-facing feature
 - Command rows for every bot command in `src/bot/handlers/command.handler.ts`
 - Contributor cards for every contributor with 3+ commits **whose GitHub account still

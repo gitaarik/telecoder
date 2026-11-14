@@ -1,4 +1,9 @@
-# Sharing a bot
+---
+title: Sharing a bot
+description: Admins, guests, group roles, the permission gate and a separate Unix account.
+sidebar:
+  order: 6
+---
 
 TeleCoder's original access model is one flat list: everyone in
 `ALLOWED_USER_IDS` can do everything. That is right for a bot with one user, and
@@ -82,7 +87,7 @@ What that buys you:
   they join, before they've said anything.
 
 Write the house rules in `CHARTER.md` at your workspace root — see
-[`CHARTER.example.md`](CHARTER.example.md) for a starting point.
+[`CHARTER.example.md`](https://github.com/gitaarik/telecoder/blob/main/docs/CHARTER.example.md) for a starting point.
 
 ## Admitting people from chat
 

@@ -1,8 +1,13 @@
-# Security
+---
+title: Security
+description: What's protected, what's stored and where your data goes.
+sidebar:
+  order: 4
+---
 
 - **User whitelist** — only approved Telegram IDs can interact
 - **Admins & guests** — a shared bot can reserve approvals, lifecycle and
-  transport for `ADMIN_USER_IDS`; see [Sharing a bot](sharing.md)
+  transport for `ADMIN_USER_IDS`; see [Sharing a bot](../guides/sharing.md)
 - **Group confinement** — `RESTRICT_TO_GROUPS` keeps guests out of private chats
 - **Group roles** — inside a group, admins / contributors / spectators, so being
   in the chat need not mean being able to prompt the agent (`GROUP_MEMBERS_DEFAULT`)

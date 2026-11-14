@@ -1,6 +1,11 @@
-# Features
+---
+title: Features
+description: Everything TeleCoder does, from threads and forks to voice and background tasks.
+sidebar:
+  order: 1
+---
 
-Everything TeleCoder does, by area. Commands are listed in full in [Commands](commands.md).
+Everything TeleCoder does, by area. Commands are listed in full in [Commands](../reference/commands.md).
 
 ## The agent
 
@@ -120,4 +125,4 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](co
   config
 - `telecoder service install` for a systemd user service on Linux or a LaunchAgent on macOS
 - `telecoder doctor` checks Node, the `claude` CLI and its login, and the config
-- [Install and run](install.md)
+- [Install and run](../start/install.md)

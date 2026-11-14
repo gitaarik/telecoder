@@ -1,4 +1,9 @@
-# Install and run
+---
+title: Install and run
+description: Prerequisites, the setup wizard, the background service, and running from source.
+sidebar:
+  order: 2
+---
 
 ## Prerequisites
 
@@ -76,7 +81,7 @@ it shows what changes and asks before replacing the unit. `--name <name>` instal
 second one side by side, and `--dry-run` prints the file without writing anything. An
 `npx telecoder` isn't installed anywhere lasting, so install it with
 `npm install -g telecoder` first. A source checkout is run with
-[the bot control script](architecture.md#bot-control-script) or `npm start` as before;
+[the bot control script](../reference/architecture.md#bot-control-script) or `npm start` as before;
 `node dist/cli.js service install --from-checkout` installs a unit for it anyway.
 
 ## From source

@@ -1,4 +1,9 @@
-# Multiple bots
+---
+title: Multiple bots
+description: Run a bot per project from one process with instances.json, /newbot and a home project per bot.
+sidebar:
+  order: 4
+---
 
 One launcher can run several bots, each in its own worker with its own sessions and
 preferences. That lets you keep separate conversations going, and hand one from bot to bot
@@ -7,7 +12,7 @@ with `/fork`.
 List the bots in an `instances.json` next to your `.env`: `~/.telecoder/instances.json`
 for an npm install, or the checkout's root when running from source. Each bot gets its token
 and any settings that differ from the shared `.env`; the annotated
-[`instances.json.example`](../instances.json.example) (also in the npm package) shows the
+[`instances.json.example`](https://github.com/gitaarik/telecoder/blob/main/instances.json.example) (also in the npm package) shows the
 format, including a list of tokens that becomes numbered bots.
 
 ```bash
@@ -43,4 +48,4 @@ you the steps with your first message, and says so once they're on. `/newbot` re
 
 `HOME_PROJECT` ties a bot to one project, which suits a bot per project. Set it in that
 bot's entry in `instances.json` (`/newbot` does), as an absolute path or one relative to
-`WORKSPACE_DIR`. See [Configuration](configuration.md#core).
+`WORKSPACE_DIR`. See [Configuration](../reference/configuration.md#core).
