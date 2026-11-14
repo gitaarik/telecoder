@@ -137,6 +137,17 @@ class UserPreferencesManager {
     this.save();
   }
 
+  /**
+   * Drop a thread's own settings, for a thread that no longer exists. A chat's
+   * entry is never dropped this way: its threads fall back to it.
+   */
+  forgetThread(scope: SettingsScope): void {
+    const key = String(scope);
+    if (key === String(scopeChatId(scope)) || !this.data[key]) return;
+    delete this.data[key];
+    this.save();
+  }
+
   getProvider(scope: SettingsScope): 'claude' | 'ccr' | undefined {
     return this.get(scope, 'provider');
   }

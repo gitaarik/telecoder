@@ -2438,6 +2438,14 @@
             instead.</p>
           </div>
           <div class="feature-card" data-category="sessions">
+            <div class="feature-icon"><svg><use href="#i-thread"/></svg></div>
+            <h3>Delete a thread cleanly</h3>
+            <p><code>/deletethread</code> deletes a thread and ends its session, even mid-turn;
+            the conversation stays in <code>/resume</code>. A thread deleted from Telegram's own
+            menu is noticed the first time anything is sent into it, and an idle PTY session's
+            <code>claude</code> is ended after an hour, so deleted threads leave nothing running.</p>
+          </div>
+          <div class="feature-card" data-category="sessions">
             <div class="feature-icon"><svg><use href="#i-tree"/></svg></div>
             <h3>Find your way back through forks</h3>
             <p><code>/tree</code> draws every branch of a forked conversation in one message
@@ -3116,6 +3124,10 @@ CCR_AUTOSTART=true</pre>
             <div class="command-row">
               <code class="command-code">/spinoff &lt;task&gt;</code>
               <span class="command-desc">Split a task off into a new thread: the conversation is compacted there around the task, which then starts at once. Works mid-turn; this thread carries on unchanged. As a reply to one of the bot's messages, spins off from that point. Needs a bot with threads</span>
+            </div>
+            <div class="command-row">
+              <code class="command-code">/deletethread</code>
+              <span class="command-desc">Delete the thread it's sent in, with all its messages, and end its session — works mid-turn. The conversation stays in <code>/resume</code>. <code>-y</code> skips the confirmation</span>
             </div>
             <div class="command-row">
               <code class="command-code">/tree</code>

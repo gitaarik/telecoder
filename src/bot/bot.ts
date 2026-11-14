@@ -132,6 +132,9 @@ import { groupMentionMiddleware } from './middleware/group-mention.middleware.js
 import { groupRoleMiddleware } from './middleware/group-role.middleware.js';
 import { trackForceReplyPrompts } from '../telegram/force-reply-tracker.js';
 import { initThreadTitles } from '../telegram/thread-titles.js';
+import { watchForDeletedThreads } from './deleted-threads.js';
+import { startPtyIdleReaper } from '../claude/pty-idle-reaper.js';
+import { handleDeleteThread, handleDeleteThreadCallback } from './handlers/command/thread.js';
 import { initThreadsSetup } from '../telegram/threads-setup.js';
 import { resolvePendingPoll } from '../claude/poll-user.js';
 import { captureSecretMessages, handleSecretCallback } from '../claude/secret-request.js';
@@ -272,6 +275,12 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // reaches the handlers in a group that otherwise requires an @mention.
   trackForceReplyPrompts(bot);
 
+  // Telegram says nothing when a thread is deleted, but a send into one fails:
+  // take that as the news, and end the session the thread had.
+  watchForDeletedThreads(bot);
+  // And end PTY claudes left idle, a thread deleted by hand among them.
+  startPtyIdleReaper();
+
   // Auto-retry on transient network errors (ECONNRESET, socket hang up, etc.)
   // Also handles 429 rate limits by respecting Telegram's retry_after
   bot.api.config.use(autoRetry({
@@ -306,6 +315,7 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
     { command: 'sessions', description: '📚 View saved sessions' },
     { command: 'fork', description: '🍴 Fork this conversation to another bot' },
     { command: 'spinoff', description: '🍴 Split a task off into a new thread' },
+    { command: 'deletethread', description: '🗑️ Delete this thread and end its session' },
     { command: 'tree', description: '🌳 Show where this conversation branched, and jump between branches' },
     { command: 'accept', description: '📦 Accept a pending fork from another bot' },
     { command: 'decline', description: '🚫 Discard a pending fork' },
@@ -426,6 +436,10 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   cmd('users', adminOnly(handleUsers));
   cmd('btw', withRunningNote(handleBtw)); // Side question — must bypass queue to work mid-task
   cmd('spinoff', handleSpinoffCommand); // Splits a task off into a new thread — bypasses the queue so it works mid-task
+  // Deletes the thread it's sent in, stopping its turn — bypasses the queue so a
+  // busy thread can still be deleted. Admin-only: in a group it takes everyone's
+  // messages with it.
+  cmd('deletethread', adminOnly(handleDeleteThread));
   // Sets an idea aside for after the turn, so it can't wait behind that turn. And
   // with nothing running, it's the one message that doesn't start one.
   cmd('later', withRunningNote(handleLater));
@@ -507,6 +521,7 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // /shells kill buttons must also bypass sequentialize — the whole point is to
   // rescue a session whose current turn is hung waiting on a bg shell.
   bot.callbackQuery(/^shells:/, handleShellsCallback);
+  bot.callbackQuery(/^delthread:/, adminOnly(handleDeleteThreadCallback));
   // telecoder_ask_user button taps MUST bypass sequentialize: the agent
   // query is mid-flight and waiting on this exact tap to complete the tool
   // call. If the callback got queued, it'd deadlock behind the query that's

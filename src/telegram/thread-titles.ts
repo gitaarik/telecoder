@@ -174,6 +174,17 @@ export function syncThreadTitle(sessionKey: string, topic: string, project?: str
   pending.set(sessionKey, { name, timer });
 }
 
+/** Drop what's kept about a thread that no longer exists, and any rename still waiting for it. */
+export function forgetThreadTitle(sessionKey: string): void {
+  const held = pending.get(sessionKey);
+  if (held) clearTimeout(held.timer);
+  pending.delete(sessionKey);
+  lastRenameAt.delete(sessionKey);
+  if (!state()[sessionKey]) return;
+  delete state()[sessionKey];
+  writeJsonFile(STATE_FILE, { threads: state() }, 'ThreadTitles');
+}
+
 /** Start naming threads on `bot`. Call once, after auth, before the handlers. */
 export function initThreadTitles(bot: Bot): void {
   api = bot.api;

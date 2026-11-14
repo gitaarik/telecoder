@@ -106,6 +106,7 @@ export function getAvailableCommands(): EntityMessage {
         '• `/status` - Show current session info',
         '• `/fork` - Fork current conversation to another bot',
         '• `/spinoff <task>` - Split a task off into a new thread, compacted around it (as a reply: from that message)',
+        '• `/deletethread` - Delete this thread and its messages, and end its session',
         '• `/tree` - Show where this conversation branched, and jump between branches',
         '• `/accept` - Accept a pending fork from another bot',
         '• `/decline` - Discard a pending fork',

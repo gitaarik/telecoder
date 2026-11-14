@@ -88,3 +88,17 @@ Only `🍴 Fork`, `/fork` and `/spinoff` open new threads.
 - **`/teleport`** gives you the `claude --resume` line to carry on in a terminal, and
   **`/handoff`** exports the conversation as a markdown file.
 - **`/clear`** starts fresh in the same project. The old conversation stays in `/resume`.
+
+## Deleting a thread
+
+`/deletethread`, sent inside a thread, deletes it with all its messages and ends its
+session, stopping a turn that's still running. The conversation stays on disk, so
+`/resume` in any chat can still pick it up. `/deletethread -y` skips the confirmation.
+
+Deleting a thread from Telegram's own menu works too, but Telegram doesn't tell the bot.
+TeleCoder notices the first time it tries to send something into the thread, and ends the
+session then. A thread deleted while idle sends nothing, so in PTY mode its `claude`
+process is ended once it has been idle for an hour (`CLAUDE_PTY_IDLE_TIMEOUT_MS`), as is
+any other idle session's. That costs the next message there a few seconds while the
+conversation resumes, and nothing else. A session with a turn, a background task or a
+background shell still running is left alone.

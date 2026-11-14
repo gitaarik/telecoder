@@ -338,6 +338,8 @@ interface PtySession {
    */
   claudeSessionId: string;
   lastChunkAt: number;
+  /** When a turn last picked this session up; with lastChunkAt, how long it has sat idle. */
+  lastUsedAt: number;
   endOfTurnResolver: ((text: string) => void) | null;
   endOfTurnRejector: ((err: Error) => void) | null;
   idleTimer: NodeJS.Timeout | null;
@@ -510,6 +512,25 @@ export class PtyProvider implements Provider {
    */
   listSessionKeysForChat(chatId: number): string[] {
     return [...this.sessions.keys()].filter((key) => parseSessionKey(key).chatId === chatId);
+  }
+
+  /**
+   * End the claudes that have sat idle for `maxIdleMs` or longer, skipping any
+   * session `isBusy` vouches for. Nothing of the conversation is lost: the
+   * next turn in that session resumes it from the transcript in a new claude,
+   * as it does after a restart. Returns the session keys that were ended.
+   */
+  endIdleSessions(maxIdleMs: number, isBusy: (sessionKey: string, pid: number) => boolean): string[] {
+    const now = Date.now();
+    const ended: string[] = [];
+    for (const [sessionKey, session] of [...this.sessions]) {
+      if (now - Math.max(session.lastUsedAt, session.lastChunkAt) < maxIdleMs) continue;
+      if (session.endOfTurnResolver || isGenerating(this._getScreenText(session))) continue;
+      if (isBusy(sessionKey, session.term.pid)) continue;
+      this._cleanupSession(sessionKey);
+      ended.push(sessionKey);
+    }
+    return ended;
   }
 
   /**
@@ -1052,6 +1073,7 @@ export class PtyProvider implements Provider {
     if (existing) {
       if (existing.cwd === requiredCwd) {
         // Reuse the live pty so claude keeps prior turns in context.
+        existing.lastUsedAt = Date.now();
         existing.onProgress = options?.onProgress;
         existing.onTip = options?.onTip;
         return existing;
@@ -1201,6 +1223,7 @@ export class PtyProvider implements Provider {
       cwd: requiredCwd,
       claudeSessionId,
       lastChunkAt: Date.now(),
+      lastUsedAt: Date.now(),
       endOfTurnResolver: null,
       endOfTurnRejector: null,
       idleTimer: null,

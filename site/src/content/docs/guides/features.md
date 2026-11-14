@@ -44,6 +44,9 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
   and the task as its first prompt
 - `/tree` draws the conversation's fork tree; tap a point to carry on that branch or branch
   from it
+- `/deletethread` deletes a thread and ends its session. A thread deleted by hand is noticed
+  the first time something is sent into it, and an idle PTY session's `claude` is ended after
+  an hour either way
 - [Threads and forks](threads-and-forks.md)
 
 ## Working while Claude works

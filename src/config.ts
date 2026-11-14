@@ -378,6 +378,16 @@ const envSchema = z.object({
     .string()
     .default('7200000')
     .transform((val) => parseInt(val, 10)),
+  // How long an idle PTY session's `claude` process is kept (ms). Each one
+  // holds a few hundred MB between turns; past this it is ended, and the next
+  // message resumes the conversation from its transcript in a new one. A
+  // session with a turn, a background task or a background shell running is
+  // never ended. Also what cleans up after a thread deleted by hand, which
+  // Telegram doesn't tell the bot about. 0 = keep them until a restart.
+  CLAUDE_PTY_IDLE_TIMEOUT_MS: z
+    .string()
+    .default('3600000')
+    .transform((val) => parseInt(val, 10)),
   // How long a question from the agent — telecoder_ask_user buttons, a
   // telecoder_poll_user poll, a Claude Code dialog relayed to the chat —
   // waits for an answer before the turn carries on without one. The turn is
