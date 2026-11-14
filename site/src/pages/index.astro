@@ -1,0 +1,781 @@
+---
+// The homepage, outside Starlight: the docs pages get the sidebar and search,
+// this one gets room. It reads and writes Starlight's own theme setting
+// (localStorage "starlight-theme"), so a choice made here holds in the docs.
+//
+// The chat in the hero is a stand-in, built in HTML, until the real
+// screen recording replaces it (step 3 of the site plan).
+const title = 'TeleCoder: Claude Code in Telegram';
+const description =
+  'The real Claude Code agent runs on your machine; you drive it from Telegram on every device, with a thread per task, forks and the full CLI.';
+const install = 'npm install -g telecoder';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href="https://telecoder.dev/" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://telecoder.dev/" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content="https://telecoder.dev/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+    />
+    <script is:inline>
+      (() => {
+        const stored = localStorage.getItem('starlight-theme');
+        const theme = stored === 'light' || stored === 'dark'
+          ? stored
+          : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="top wrap">
+      <a href="/" class="brand" aria-label="TeleCoder home">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3.6 6.4 9.2 12l-5.6 5.6" class="you" />
+          <path d="M11.2 6.4 16.8 12l-5.6 5.6" class="agent" />
+        </svg>
+        <span><span class="tele">Tele</span>Coder</span>
+      </a>
+      <nav aria-label="Site">
+        <a href="/start/get-started/">Get started</a>
+        <a href="/guides/features/">Docs</a>
+        <a href="/help/">Help</a>
+        <a href="https://github.com/gitaarik/telecoder">GitHub</a>
+        <button class="theme" type="button" aria-label="Switch between light and dark">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6" /></svg>
+        </button>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="hero wrap">
+        <div class="pitch">
+          <h1>Claude Code, in&nbsp;Telegram.</h1>
+          <p class="lede">
+            The real agent runs on your machine. You drive it from Telegram’s apps on your
+            phone, laptop and desktop, with a thread per task, forks, voice notes and the
+            full CLI.
+          </p>
+          <div class="install">
+            <code><span class="prompt" aria-hidden="true">$</span> {install}</code>
+            <button type="button" class="copy" data-copy={install}>Copy</button>
+          </div>
+          <p class="actions">
+            <a class="button" href="/start/get-started/">Set it up in ten minutes</a>
+            <a class="quiet" href="https://github.com/gitaarik/telecoder">Read the code on GitHub</a>
+          </p>
+          <p class="fine">Free and open source. Linux and macOS. Uses your own Claude login.</p>
+        </div>
+
+        <figure class="phone" aria-label="A TeleCoder thread in Telegram">
+          <div class="chat-head">
+            <svg class="avatar" viewBox="0 0 24 24" aria-hidden="true">
+              <rect width="24" height="24" rx="12" />
+              <path d="M5.6 8 9.2 12l-3.6 4" class="you" />
+              <path d="M11.6 8l3.6 4-3.6 4" class="agent" />
+            </svg>
+            <div>
+              <strong>Flaky login tests</strong>
+              <span>TeleCoder, in api-server</span>
+            </div>
+          </div>
+          <ol class="chat">
+            <li class="msg mine" style="--i:0">
+              The login tests have been flaky since the session refactor. Find out why and
+              fix it.
+              <time>17:52</time>
+            </li>
+            <li class="msg theirs tools" style="--i:1">
+              <code>Read src/auth/session.ts</code>
+              <code>Grep "setCookie" src/</code>
+              <code>Bash npm test -- auth <em>3 failed</em></code>
+            </li>
+            <li class="msg theirs" style="--i:2">
+              The cookie is set after the redirect starts, so the test sometimes reads the
+              old session. I moved it before the redirect: all 12 auth tests pass, ten runs
+              in a row.
+              <time>17:58</time>
+            </li>
+            <li class="msg theirs ask" style="--i:3">
+              Claude wants to run <code>git push origin fix/session-race</code>
+              <div class="keys" role="group" aria-label="Answer">
+                <span class="key yes">Allow</span>
+                <span class="key">Deny</span>
+                <span class="key wide">Allow git push for this session</span>
+              </div>
+            </li>
+          </ol>
+          <figcaption>A placeholder for the screen recording.</figcaption>
+        </figure>
+      </section>
+
+      <section class="pillars wrap" aria-label="What you get">
+        <div>
+          <h2>Native apps, not a web page</h2>
+          <p>
+            Telegram already has fast apps for every device, with notifications, drafts and
+            voice notes. The bot polls Telegram, so there’s no port to open and no tunnel.
+          </p>
+        </div>
+        <div>
+          <h2>A thread per task, and forks</h2>
+          <p>
+            Every thread is its own Claude session. Run five tasks side by side, <code>/fork</code> to try another approach, and <code>/tree</code> to jump
+            between the branches.
+          </p>
+        </div>
+        <div>
+          <h2>The whole CLI</h2>
+          <p>
+            Your <code>CLAUDE.md</code>, skills, plugins and slash commands work as in the
+            terminal, and its permission questions arrive as buttons. So do <code>/model</code>, <code>/compact</code> and <code>/resume</code>.
+          </p>
+        </div>
+        <div>
+          <h2>Claude can reach you</h2>
+          <p>
+            It asks with buttons, sends you files, asks for a key without it staying in the
+            chat, and tells you when a background task finishes.
+          </p>
+        </div>
+      </section>
+
+      <section class="day wrap" aria-labelledby="day-title">
+        <h2 id="day-title">One task, four places</h2>
+        <ol class="timeline">
+          <li>
+            <time>09:40</time>
+            <div>
+              <h3>At your desk</h3>
+              <p>Start a refactor of the session code from Telegram on your laptop, and go to a meeting.</p>
+            </div>
+          </li>
+          <li>
+            <time>12:15</time>
+            <div>
+              <h3>Over lunch</h3>
+              <p>
+                <code>/btw</code> how far along is it? You get an answer without stopping
+                the work. A voice note adds that logout needs the same fix.
+              </p>
+            </div>
+          </li>
+          <li>
+            <time>17:40</time>
+            <div>
+              <h3>On the train</h3>
+              <p>
+                You’re not sure about the approach. <code>/fork</code> opens a copy in a
+                new thread, and Claude tries the other one there while the first carries on.
+              </p>
+            </div>
+          </li>
+          <li>
+            <time>18:05</time>
+            <div>
+              <h3>Walking home</h3>
+              <p>The second version is cleaner. Claude asks to push it, and one tap says yes.</p>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <section class="compare wrap" aria-labelledby="compare-title">
+        <h2 id="compare-title">Next to the alternatives</h2>
+        <dl>
+          <div>
+            <dt>Claude Code Channels</dt>
+            <dd>Sends chat messages into one terminal session you started. TeleCoder runs its own sessions: one per thread.</dd>
+          </div>
+          <div>
+            <dt>Remote Control</dt>
+            <dd>Looks in on your terminal session from the Claude app. TeleCoder works without a terminal open.</dd>
+          </div>
+          <div>
+            <dt>Web UIs</dt>
+            <dd>Give you a dashboard in the browser. TeleCoder gives you native apps, notifications and voice.</dd>
+          </div>
+        </dl>
+        <p><a href="/help/faq/#why-not-claude-code-channels">How TeleCoder compares, in more detail</a></p>
+      </section>
+
+      <section class="start wrap" aria-labelledby="start-title">
+        <h2 id="start-title">Ten minutes from now</h2>
+        <p>Make a bot with BotFather, then:</p>
+        <pre><code>{install}
+telecoder init              # your bot token, your projects folder
+telecoder service install   # keep it running, start it at boot</code></pre>
+        <p class="actions">
+          <a class="button" href="/start/get-started/">Follow the guide</a>
+          <a class="quiet" href="/help/faq/">Questions first? Read the FAQ</a>
+        </p>
+      </section>
+    </main>
+
+    <footer class="wrap">
+      <p>
+        MIT licensed. Began as a fork of <a href="https://github.com/NachoSEO/claudegram">Claudegram</a>.
+        Not affiliated with Anthropic or Telegram.
+      </p>
+      <p class="links">
+        <a href="/changelog/">Changelog</a>
+        <a href="https://github.com/gitaarik/telecoder">GitHub</a>
+        <a href="https://www.npmjs.com/package/telecoder">npm</a>
+      </p>
+    </footer>
+
+    <script>
+      for (const button of document.querySelectorAll<HTMLButtonElement>('[data-copy]')) {
+        button.addEventListener('click', async () => {
+          await navigator.clipboard.writeText(button.dataset.copy ?? '');
+          button.textContent = 'Copied';
+          setTimeout(() => (button.textContent = 'Copy'), 1600);
+        });
+      }
+      document.querySelector('.theme')?.addEventListener('click', () => {
+        const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+        document.documentElement.dataset.theme = next;
+        localStorage.setItem('starlight-theme', next);
+      });
+    </script>
+  </body>
+</html>
+
+<style is:global>
+  :root {
+    --bg: #0f1319;
+    --surface: #161c24;
+    --raised: #1d2530;
+    --line: #262f3b;
+    --text: #e8e6e3;
+    --muted: #939aa6;
+    --agent: #e08a6b;
+    --you: #5fb0f5;
+    --you-bubble: #1e3a52;
+    --on-agent: #1a0f0a;
+    color-scheme: dark;
+  }
+  :root[data-theme='light'] {
+    --bg: #fbfaf8;
+    --surface: #f2efea;
+    --raised: #ffffff;
+    --line: #e2ded7;
+    --text: #191c22;
+    --muted: #5c6470;
+    --agent: #b4502f;
+    --you: #0b6fa4;
+    --you-bubble: #d9ecf7;
+    --on-agent: #ffffff;
+    color-scheme: light;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 400 1.0625rem/1.6 'Space Grotesk', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  code,
+  pre {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 0.86em;
+  }
+  a {
+    color: inherit;
+  }
+  :focus-visible {
+    outline: 2px solid var(--you);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+  .wrap {
+    width: min(1120px, 100% - 3rem);
+    margin-inline: auto;
+  }
+  .skip {
+    position: absolute;
+    left: -999px;
+  }
+  .skip:focus {
+    left: 1rem;
+    top: 1rem;
+  }
+  .you {
+    stroke: var(--you);
+  }
+  .agent {
+    stroke: var(--agent);
+  }
+  .tele {
+    color: var(--you);
+  }
+</style>
+
+<style>
+  /* Header */
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-block: 1.4rem;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 700;
+    font-size: 1.25rem;
+    text-decoration: none;
+  }
+  .brand svg {
+    width: 2rem;
+    height: 2rem;
+  }
+  .brand path,
+  .avatar path {
+    fill: none;
+    stroke-width: 2.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  nav {
+    display: flex;
+    align-items: center;
+    gap: 1.6rem;
+    font-size: 0.95rem;
+  }
+  nav a {
+    white-space: nowrap;
+    text-decoration: none;
+    color: var(--muted);
+  }
+  nav a:hover {
+    color: var(--text);
+  }
+  .theme {
+    display: grid;
+    place-items: center;
+    width: 2.2rem;
+    height: 2.2rem;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .theme svg {
+    width: 1.1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+  }
+
+  /* Hero */
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    gap: 4rem;
+    align-items: center;
+    padding-block: 4rem 6rem;
+  }
+  h1 {
+    margin: 0 0 1.4rem;
+    font-size: clamp(2.6rem, 5.6vw, 4.6rem);
+    line-height: 1.02;
+    letter-spacing: -0.035em;
+    font-weight: 700;
+  }
+  .lede {
+    margin: 0 0 2rem;
+    max-width: 34rem;
+    font-size: 1.22rem;
+    color: var(--muted);
+  }
+  .install {
+    display: inline-flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.55rem 0.55rem 0.55rem 1.1rem;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  .install code {
+    font-size: 1rem;
+    white-space: nowrap;
+  }
+  .prompt {
+    color: var(--muted);
+    margin-right: 0.3rem;
+  }
+  .copy {
+    font: inherit;
+    font-size: 0.85rem;
+    padding: 0.3rem 0.8rem;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    min-width: 5rem;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem 1.6rem;
+    margin: 1.6rem 0 0;
+  }
+  .button {
+    display: inline-block;
+    padding: 0.75rem 1.3rem;
+    border-radius: 10px;
+    background: var(--agent);
+    color: var(--on-agent);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .button:hover {
+    filter: brightness(1.08);
+  }
+  .quiet {
+    color: var(--muted);
+    text-underline-offset: 0.25em;
+  }
+  .quiet:hover {
+    color: var(--text);
+  }
+  .fine {
+    margin: 1.6rem 0 0;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+
+  /* The chat */
+  .phone {
+    margin: 0;
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    background: var(--surface);
+    overflow: hidden;
+    box-shadow: 0 30px 80px -40px rgb(0 0 0 / 0.6);
+  }
+  .chat-head {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.9rem 1.2rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--raised);
+  }
+  .avatar {
+    width: 2.4rem;
+    height: 2.4rem;
+    flex: none;
+  }
+  .avatar rect {
+    fill: var(--bg);
+  }
+  .chat-head strong {
+    display: block;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .chat-head span {
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+  .chat {
+    list-style: none;
+    margin: 0;
+    padding: 1.3rem 1.1rem 1.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+    font-size: 0.95rem;
+    line-height: 1.45;
+  }
+  .msg {
+    position: relative;
+    max-width: 86%;
+    padding: 0.6rem 0.85rem 1.25rem;
+    border-radius: 14px;
+    animation: arrive 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    animation-delay: calc(0.35s + var(--i) * 0.9s);
+  }
+  .msg time {
+    position: absolute;
+    right: 0.7rem;
+    bottom: 0.3rem;
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+  .mine {
+    align-self: flex-end;
+    background: var(--you-bubble);
+    border-bottom-right-radius: 4px;
+  }
+  .theirs {
+    align-self: flex-start;
+    background: var(--raised);
+    border-bottom-left-radius: 4px;
+  }
+  .tools {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding-bottom: 0.6rem;
+    border-left: 3px solid var(--agent);
+  }
+  .tools code {
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .tools em {
+    font-style: normal;
+    color: var(--agent);
+  }
+  .ask {
+    padding-bottom: 0.7rem;
+  }
+  .ask > code {
+    display: block;
+    margin: 0.35rem 0 0.7rem;
+    font-size: 0.82rem;
+  }
+  .keys {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.35rem;
+  }
+  .key {
+    padding: 0.45rem;
+    border-radius: 8px;
+    background: var(--surface);
+    text-align: center;
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+  .key.yes {
+    background: var(--agent);
+    color: var(--on-agent);
+    animation: tap 0.6s ease 4.6s both;
+  }
+  .key.wide {
+    grid-column: span 2;
+  }
+  .phone figcaption {
+    padding: 0 1.2rem 0.9rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  @keyframes arrive {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+  @keyframes tap {
+    50% {
+      transform: scale(0.94);
+    }
+  }
+
+  /* Pillars */
+  .pillars {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 2.5rem;
+    padding-block: 3.5rem;
+    border-top: 1px solid var(--line);
+  }
+  .pillars h2 {
+    margin: 0 0 0.6rem;
+    font-size: 1.15rem;
+    line-height: 1.3;
+    font-weight: 600;
+  }
+  .pillars p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.98rem;
+  }
+
+  /* Section titles */
+  .day h2,
+  .compare h2,
+  .start h2 {
+    margin: 0 0 2rem;
+    font-size: clamp(1.8rem, 3.4vw, 2.6rem);
+    line-height: 1.1;
+    letter-spacing: -0.025em;
+    font-weight: 700;
+  }
+
+  /* Timeline */
+  .day {
+    padding-block: 5rem;
+  }
+  .timeline {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 2rem;
+  }
+  .timeline li {
+    padding-top: 1.2rem;
+    border-top: 2px solid var(--line);
+  }
+  .timeline li:last-child {
+    border-top-color: var(--agent);
+  }
+  .timeline time {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-size: 0.9rem;
+    color: var(--you);
+  }
+  .timeline h3 {
+    margin: 0.3rem 0 0.5rem;
+    font-size: 1.15rem;
+    font-weight: 600;
+  }
+  .timeline p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.98rem;
+  }
+
+  /* Compare */
+  .compare {
+    padding-block: 4rem;
+    border-top: 1px solid var(--line);
+  }
+  .compare dl {
+    margin: 0 0 1.6rem;
+    display: grid;
+    gap: 1.1rem;
+    max-width: 52rem;
+  }
+  .compare dl div {
+    display: grid;
+    grid-template-columns: 14rem 1fr;
+    gap: 1.5rem;
+  }
+  .compare dt {
+    font-weight: 600;
+  }
+  .compare dd {
+    margin: 0;
+    color: var(--muted);
+  }
+  .compare a {
+    color: var(--agent);
+    text-underline-offset: 0.25em;
+  }
+
+  /* Closing */
+  .start {
+    padding-block: 4rem 5rem;
+    border-top: 1px solid var(--line);
+  }
+  .start > p {
+    margin: 0 0 0.8rem;
+    color: var(--muted);
+  }
+  .start pre {
+    margin: 0;
+    max-width: 44rem;
+    padding: 1.1rem 1.3rem;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+    overflow-x: auto;
+    line-height: 1.75;
+  }
+
+  footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-block: 2rem 3rem;
+    border-top: 1px solid var(--line);
+    font-size: 0.88rem;
+    color: var(--muted);
+  }
+  footer p {
+    margin: 0;
+  }
+  footer .links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.2rem;
+  }
+
+  @media (max-width: 960px) {
+    .hero {
+      grid-template-columns: 1fr;
+      gap: 3rem;
+      padding-block: 2rem 4rem;
+    }
+    .pillars,
+    .timeline {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 620px) {
+    nav a:not(:first-child) {
+      display: none;
+    }
+    nav {
+      gap: 1rem;
+    }
+    .pillars,
+    .timeline {
+      grid-template-columns: 1fr;
+    }
+    .compare dl div {
+      grid-template-columns: 1fr;
+      gap: 0.2rem;
+    }
+    .install {
+      display: flex;
+      justify-content: space-between;
+      padding-left: 0.9rem;
+    }
+    .install code {
+      font-size: 0.9rem;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .msg,
+    .key.yes {
+      animation: none;
+    }
+  }
+</style>
