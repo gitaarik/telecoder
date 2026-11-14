@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TeleCoder — Claude Code from Telegram</title>
-  <meta name="description" content="Drive the real Claude Code from Telegram, on your own machine. Sessions, plan mode and tool output as native chat, plus background jobs, files, images and voice.">
+  <title>TeleCoder — Claude Code in Telegram</title>
+  <meta name="description" content="The real Claude Code on your own machine, driven from Telegram's native apps: a thread per conversation, forks, the full CLI, and voice. Self-hosted and open source.">
   <link rel="canonical" href="https://telecoder.dev/">
   <!--
     The page is shared as a link far more often than it is found by search, and
@@ -16,15 +16,15 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="TeleCoder">
   <meta property="og:url" content="https://telecoder.dev/">
-  <meta property="og:title" content="TeleCoder — Claude Code from Telegram">
-  <meta property="og:description" content="Drive the real Claude Code from Telegram, on your own machine. Sessions, plan mode and tool output as native chat, plus background jobs, files, images and voice.">
+  <meta property="og:title" content="TeleCoder — Claude Code in Telegram">
+  <meta property="og:description" content="The real Claude Code on your own machine, driven from Telegram's native apps: a thread per conversation, forks, the full CLI, and voice. Self-hosted and open source.">
   <meta property="og:image" content="https://telecoder.dev/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="TeleCoder — Claude Code from Telegram">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="TeleCoder — Claude Code from Telegram">
-  <meta name="twitter:description" content="Drive the real Claude Code from Telegram, on your own machine. Sessions, plan mode and tool output as native chat, plus background jobs, files, images and voice.">
+  <meta name="twitter:title" content="TeleCoder — Claude Code in Telegram">
+  <meta name="twitter:description" content="The real Claude Code on your own machine, driven from Telegram's native apps: a thread per conversation, forks, the full CLI, and voice. Self-hosted and open source.">
   <meta name="twitter:image" content="https://telecoder.dev/og.png">
   <!-- Both grounds are declared, so mobile browser chrome follows the theme the
        page is actually painting rather than defaulting to the light one. -->
@@ -577,6 +577,8 @@
       .hero-copy { align-items: center; text-align: center; }
       .hero-subtitle { margin-left: auto; margin-right: auto; }
       .hero-buttons { justify-content: center; }
+      /* .hero beats the small-screen .code-block { margin: 0 } further down */
+      .hero .hero-install { margin: 1.5rem auto 0; }
       .hero-demo { margin-top: 2.5rem; }
     }
 
@@ -892,7 +894,7 @@
 
     @media (prefers-reduced-motion: reduce) {
       .telegram-phone, .feature-card, .command-row, .step-item, .contributor-card,
-      .hero-badge, .hero-title, .hero-subtitle, .hero-buttons, nav {
+      .hero-badge, .hero-title, .hero-subtitle, .hero-buttons, .hero-install, nav {
         opacity: 1 !important;
         transform: none !important;
         transition: none !important;
@@ -937,8 +939,52 @@
       keeps auto-fit — it has 47 cards and no orphan to worry about.
     */
     @media (min-width: 720px) {
-      #why .features-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      #why .features-grid,
+      .compare-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
+
+    /* Six cards: three across once there's room, so none is orphaned. */
+    @media (min-width: 1000px) {
+      #why .features-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+
+    .compare-card { display: flex; flex-direction: column; }
+    .compare-card h3 a { color: inherit; text-decoration: none; border-bottom: 1px solid rgba(var(--channel-rgb), 0.4); }
+    .compare-card h3 a:hover { color: var(--channel); }
+    .compare-kind {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.75rem !important;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--brand) !important;
+      margin-bottom: 0.5rem;
+    }
+    .compare-card .compare-us {
+      margin-top: auto;
+      padding-top: 1rem;
+      border-top: 1px solid var(--glass-border);
+    }
+    .compare-card p + .compare-us { margin-top: auto; }
+    .compare-card p:not(.compare-kind):not(.compare-us) { margin-bottom: 1rem; }
+    .compare-us strong { color: var(--channel); font-weight: 600; }
+
+    .hero-install {
+      display: inline-flex;
+      align-items: center;
+      gap: 1rem;
+      margin-top: 1.5rem;
+      padding: 0.5rem 0.5rem 0.5rem 1rem;
+      opacity: 0;
+      animation: fadeInUp 0.8s ease 1.05s forwards;
+    }
+    .hero-install pre {
+      margin: 0;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+    }
+    .hero-install pre::before { content: '$ '; color: var(--text-muted); }
+    .hero-badge a { color: inherit; }
 
     .feature-card {
       background: var(--glass-bg);
@@ -1829,11 +1875,12 @@
           <span><span class="tele">Tele</span>Coder</span>
         </a>
         <div class="nav-links">
+          <a href="#why">Why</a>
+          <a href="#compare">Compare</a>
           <a href="#features">Features</a>
-          <a href="#getting-started">Getting Started</a>
-          <a href="#how-it-works">How It Works</a>
+          <a href="#getting-started">Get started</a>
           <a href="#commands">Commands</a>
-          <a href="#contributors">Contributors</a>
+          <a href="https://github.com/gitaarik/telecoder/tree/main/docs">Docs</a>
           <a href="https://github.com/gitaarik/telecoder">GitHub</a>
         </div>
         <div class="theme-switch" role="group" aria-label="Colour theme">
@@ -1853,16 +1900,16 @@
       </div>
       <h1 class="hero-title">
         <span class="highlight">Claude Code</span><br>
-        from <span class="tele">Telegram</span>
+        in <span class="tele">Telegram</span>
       </h1>
       <p class="hero-subtitle">
-        The real Claude Code on your own machine, driven from Telegram. Sessions, plan
-        mode, the task list and tool output arrive as native chat — plus background jobs that
-        ping you when done, file delivery, images and voice.
+        The real Claude Code on your own machine, driven from Telegram's native apps on
+        your phone and desktop. A thread per conversation, forks you can find your way back
+        through, the full CLI, and voice.
       </p>
       <div class="hero-badge">
         <span class="badge-dot"></span>
-        Open source · MIT · self-hosted
+        Open source · MIT · self-hosted · <a href="https://www.npmjs.com/package/telecoder">on npm</a>
       </div>
       <div class="hero-buttons">
         <a href="https://github.com/gitaarik/telecoder" class="btn btn-primary">
@@ -1872,6 +1919,10 @@
         <a href="#getting-started" class="btn btn-secondary">
           Quick Start →
         </a>
+      </div>
+      <div class="code-block hero-install">
+        <pre>npm install -g telecoder</pre>
+        <button type="button" class="copy-btn" onclick="copyCode(this)">Copy</button>
       </div>
       </div>
       <div class="hero-demo">
@@ -1909,37 +1960,98 @@
       <div class="container">
         <div class="section-header">
           <p class="section-tag">Why TeleCoder</p>
-          <h2 class="section-title">Built to keep going</h2>
+          <h2 class="section-title">The best client is already on your phone</h2>
+          <p class="section-subtitle">Telegram has fast, polished native apps for Android, iOS,
+          macOS, Windows and Linux, with keyboard shortcuts, notifications, drafts and voice
+          notes. TeleCoder puts Claude Code inside them, instead of in a browser tab.</p>
         </div>
         <div class="features-grid">
           <div class="feature-card">
-            <div class="feature-icon"><svg><use href="#i-instances"/></svg></div>
-            <h3>A bot per project</h3>
-            <p>Run several bots side by side, each with its own project, model and
-            reasoning effort. A watchdog spots a hung query instead of leaving you
-            staring at a silent chat.</p>
+            <div class="feature-icon"><svg><use href="#i-mobile"/></svg></div>
+            <h3>Native apps, not a web page</h3>
+            <p>Every device you own already runs a fast Telegram client, and it keeps up on a
+            flaky mobile connection. The bot polls Telegram, so there's no port to open, no
+            tunnel and no web server to secure.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon"><svg><use href="#i-thread"/></svg></div>
+            <h3>A thread per conversation</h3>
+            <p>Each thread is its own Claude session, in groups and in private chats. Start a
+            thread and you have a new session; run five tasks side by side and switch between
+            them like chats.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon"><svg><use href="#i-fork"/></svg></div>
+            <h3>Forks, and a way back</h3>
+            <p><code>/fork</code> copies the conversation into a new thread,
+            <code>/spinoff</code> splits a task off with the context compacted around it, and
+            <code>/tree</code> draws the branches so you can jump between them.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon"><svg><use href="#i-pty"/></svg></div>
+            <h3>The full CLI, not a subset</h3>
+            <p>In PTY mode TeleCoder drives the real <code>claude</code> TUI: a project's
+            <code>CLAUDE.md</code>, settings, skills and slash commands work as in your
+            terminal, and its permission dialogs arrive as buttons. The Agent SDK mode is the
+            lighter default.</p>
           </div>
           <div class="feature-card">
             <div class="feature-icon"><svg><use href="#i-page"/></svg></div>
             <h3>It tells you when it's done</h3>
-            <p>Long jobs run in the background and ping you the moment they finish.
-            Short ones edit their own message in place, so progress shows as it
-            happens rather than all at the end.</p>
-          </div>
-          <div class="feature-card">
-            <div class="feature-icon"><svg><use href="#i-transports"/></svg></div>
-            <h3>Two ways to run it</h3>
-            <p>Point it at the Claude Agent SDK, or drive the real <code>claude</code>
-            CLI in a terminal with <code>/method</code>. Sessions, forks and
-            <code>/compact</code> work the same either way, and each mode reports the
-            commands its own CLI build actually has.</p>
+            <p>Long jobs run in the background and ping you the moment they finish. Correct a
+            turn mid-flight with <code>/steer</code>, ask a side question with
+            <code>/btw</code>, or set an idea aside with <code>/later</code>.</p>
           </div>
           <div class="feature-card">
             <div class="feature-icon"><svg><use href="#i-failover"/></svg></div>
             <h3>It keeps going past your limit</h3>
-            <p>When Claude Max throttles mid-turn, one tap switches to a fallback
-            provider and replays the message you just sent. Swap back whenever you
-            like with <code>/provider</code>.</p>
+            <p>When Claude Max throttles mid-turn, one tap switches to a fallback provider and
+            replays the message you just sent. Swap back whenever you like with
+            <code>/provider</code>.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="compare" class="features-section compare-section">
+      <div class="container">
+        <div class="section-header">
+          <p class="section-tag">How it compares</p>
+          <h2 class="section-title">Where TeleCoder fits</h2>
+          <p class="section-subtitle">There are other good ways to reach Claude Code away from
+          your desk. Here's when each one fits, including when TeleCoder doesn't.</p>
+        </div>
+        <div class="features-grid compare-grid">
+          <div class="feature-card compare-card">
+            <p class="compare-kind">Official plugin</p>
+            <h3>Claude Code Channels</h3>
+            <p>Pushes Telegram or Discord messages into a Claude Code session you started in
+            a terminal. A good fit for nudging one running session.</p>
+            <p class="compare-us"><strong>TeleCoder</strong> starts and keeps its own sessions,
+            so you get as many as you have threads, plus forks, resume and voice.</p>
+          </div>
+          <div class="feature-card compare-card">
+            <p class="compare-kind">Official</p>
+            <h3>Remote Control</h3>
+            <p>Look in on a terminal session from the Claude app. Use it when you want the
+            session you already have, on Anthropic's own UI.</p>
+            <p class="compare-us"><strong>TeleCoder</strong> is for working from the chat
+            itself: many sessions, forks, background jobs and a bot per project.</p>
+          </div>
+          <div class="feature-card compare-card">
+            <p class="compare-kind">Community bot</p>
+            <h3><a href="https://github.com/RichardAtCT/claude-code-telegram">claude-code-telegram</a></h3>
+            <p>The most popular community bot: Python, built on the SDK, with cost caps and
+            webhooks.</p>
+            <p class="compare-us"><strong>TeleCoder</strong> adds the PTY mode with full CLI
+            parity, threads, forks and multiple bots.</p>
+          </div>
+          <div class="feature-card compare-card">
+            <p class="compare-kind">Web UI</p>
+            <h3><a href="https://github.com/siteboon/claudecodeui">CloudCLI</a> and others</h3>
+            <p>A browser dashboard with file trees and diffs, best on a big screen.</p>
+            <p class="compare-us"><strong>TeleCoder</strong> gives up the dashboard for native
+            apps, notifications, keyboard shortcuts and voice.</p>
           </div>
         </div>
       </div>
@@ -2539,6 +2651,8 @@
             <p><code>telecoder service install</code> runs the bot in the background as a systemd user
             unit (Linux) or a LaunchAgent (macOS), starts it at boot, and lets <code>/restartbot</code>
             restart it from chat. <code>telecoder service logs</code> shows what it is doing.</p>
+          <p>Every option, the service in detail and running from source are in
+          <a href="https://github.com/gitaarik/telecoder/blob/main/docs/install.md">the install guide</a>.</p>
             <div class="code-block">
               <div class="code-header">
                 <span>From source</span>
@@ -3345,7 +3459,9 @@ CCR_AUTOSTART=true</pre>
       Forked from <a href="https://github.com/NachoSEO/claudegram">Claudegram</a> by Nacho Mascort</p>
       <div class="footer-links">
         <a href="https://github.com/gitaarik/telecoder">GitHub</a>
-        <a href="#getting-started">Documentation</a>
+        <a href="https://github.com/gitaarik/telecoder/tree/main/docs">Documentation</a>
+        <a href="https://www.npmjs.com/package/telecoder">npm</a>
+        <a href="https://github.com/gitaarik/telecoder/blob/main/CHANGELOG.md">Changelog</a>
         <a href="#contributors">Contributors</a>
         <a href="https://github.com/gitaarik/telecoder/issues">Issues</a>
         <a href="https://github.com/gitaarik/telecoder/blob/main/ROADMAP.md">Roadmap</a>
@@ -3493,8 +3609,8 @@ CCR_AUTOSTART=true</pre>
       { type: 'incoming', text: '✓ Created useTheme.ts', subtext: '📄 New hook for theme management' },
       { type: 'typing', duration: 400 },
       { type: 'incoming', text: 'Done! The header now has a dark mode toggle. Click the 🌙 icon to switch themes.' },
-      { type: 'outgoing', text: '/teleport', isCode: true },
-      { type: 'incoming', text: '🚀 Teleport to Terminal', subtext: 'cd ~/my-app && claude --resume abc123' },
+      { type: 'outgoing', text: '/fork', isCode: true },
+      { type: 'incoming', text: '🍴 Forked into a new thread', subtext: 'Both branches carry on from here; /tree shows them' },
     ];
 
     let chatStarted = false;
