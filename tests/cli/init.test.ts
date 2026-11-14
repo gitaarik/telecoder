@@ -360,6 +360,53 @@ describe('telecoder init: interactive', () => {
   });
 });
 
+describe('telecoder init: a Claude login in the environment', () => {
+  const OAUTH = 'sk-ant-oat01-secretsecretsecret';
+  const envLoginPreflight = async (): Promise<Preflight> => ({ ...okPreflight, envLogin: ['CLAUDE_CODE_OAUTH_TOKEN'] });
+
+  it('offers to save it in the .env, hidden in the summary', async () => {
+    const { prompter, result } = run([true, GOOD, '412345678', '', '', false, false, true], fakeTelegram(), {}, {
+      preflight: envLoginPreflight, env: { CLAUDE_CODE_OAUTH_TOKEN: OAUTH },
+    });
+    expect(await result).toBe(0);
+    expect(prompter.said.join('\n')).toContain("A background service doesn't see your shell's environment");
+    expect(prompter.asked[0]).toBe('Save CLAUDE_CODE_OAUTH_TOKEN in the .env too (readable by you only)?');
+    expect(prompter.said).toContain('  Claude login     CLAUDE_CODE_OAUTH_TOKEN=<hidden>');
+    expect(readEnv().CLAUDE_CODE_OAUTH_TOKEN).toBe(OAUTH);
+    expect(fs.statSync(envPath).mode & 0o777).toBe(0o600);
+    expect(allOutput(prompter)).not.toContain('secretsecret');
+  });
+
+  it('leaves it out on no', async () => {
+    const { prompter, result } = run([false, GOOD, '412345678', '', '', false, false, true], fakeTelegram(), {}, {
+      preflight: envLoginPreflight, env: { CLAUDE_CODE_OAUTH_TOKEN: OAUTH },
+    });
+    expect(await result).toBe(0);
+    expect(readEnv().CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    expect(prompter.said.join('\n')).not.toContain('Claude login');
+  });
+
+  it('saves it without asking under --yes, and says so', async () => {
+    const { prompter, result } = run([], fakeTelegram(), { tokenEnv: 'TOKEN', ownerId: '412345678', yes: true }, {
+      preflight: envLoginPreflight, env: { TOKEN: GOOD, CLAUDE_CODE_OAUTH_TOKEN: OAUTH },
+    });
+    expect(await result).toBe(0);
+    expect(prompter.asked).toEqual([]);
+    expect(prompter.said.join('\n')).toContain('CLAUDE_CODE_OAUTH_TOKEN will go in the .env too');
+    expect(readEnv().CLAUDE_CODE_OAUTH_TOKEN).toBe(OAUTH);
+    expect(allOutput(prompter)).not.toContain('secretsecret');
+  });
+
+  it('does nothing for stored credentials', async () => {
+    const { prompter, result } = run([GOOD, '412345678', '', '', false, false, true], fakeTelegram(), {}, {
+      preflight: async () => ({ ...okPreflight, envLogin: [] }), env: { CLAUDE_CODE_OAUTH_TOKEN: OAUTH },
+    });
+    expect(await result).toBe(0);
+    expect(readEnv().CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    expect(allOutput(prompter)).not.toContain('shell\'s environment');
+  });
+});
+
 describe('telecoder init: an existing .env', () => {
   const original = '# my notes\nTELEGRAM_BOT_TOKEN=' + GOOD + '\nALLOWED_USER_IDS=111,222\nSTREAMING_MODE=wait\nGROQ_API_KEY=gsk_old\n';
   beforeEach(() => {

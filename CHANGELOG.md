@@ -38,7 +38,12 @@ reasoning — the commit bodies are the long form, this is the index.
   only, and the bot messages you to say it's set up. An existing `.env` can
   be kept, edited with its values as defaults, or started over (backed up
   first). `--token-env VAR`, `--owner-id`, `--workspace`, `--transport` and
-  `--yes` run it from a script.
+  `--yes` run it from a script. When the Claude login is a variable in the
+  shell's environment (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`,
+  `ANTHROPIC_AUTH_TOKEN`) rather than stored credentials, it offers to save
+  it in the `.env` too (`--yes` does), since a background service never sees
+  that environment and would start logged out; `telecoder doctor` warns
+  about such a login as well.
 - **Config lives in `~/.telecoder`** for an npm install (`TELECODER_HOME`
   moves it): `.env`, `instances.json` and the Telegraph account file sit next
   to the existing state files. A source checkout with a `.env` or

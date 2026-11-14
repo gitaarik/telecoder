@@ -12,7 +12,7 @@ import type { CliIo, CommandResult } from '../dispatch.js';
 import { getConfigHomeInfo, configFile } from '../../utils/config-home.js';
 import { isCheckout, detectPackageRunner } from '../../utils/install-mode.js';
 import { legacyEnv } from '../../utils/legacy-env.js';
-import { checkClaude, checkNodePty, checkNodeVersion } from './doctor.js';
+import { checkClaude, checkNodePty, checkNodeVersion, envOnlyLogin } from './doctor.js';
 import { runInit, type InitOptions } from '../init/flow.js';
 import { runServiceInstall } from './service.js';
 import { createTerminalPrompter } from '../init/prompter.js';
@@ -88,11 +88,15 @@ export async function run(args: string[], io: CliIo): Promise<CommandResult> {
     code = await runInit(parsed.opts, {
       prompter,
       makeClient: (token) => createTelegramClient(token, { apiRoot }),
-      preflight: async () => ({
-        node: checkNodeVersion(),
-        claude: await checkClaude(claudeBin),
-        nodePty: await checkNodePty(),
-      }),
+      preflight: async () => {
+        const claude = await checkClaude(claudeBin);
+        return {
+          node: checkNodeVersion(),
+          claude,
+          envLogin: claude[1]?.status === 'ok' ? await envOnlyLogin(claudeBin) : [],
+          nodePty: await checkNodePty(),
+        };
+      },
       envPath,
       // Tighten only ~/.telecoder itself: a checkout's root or a TELECODER_HOME
       // may be a directory other things live in (a new one is made 0700 anyway).

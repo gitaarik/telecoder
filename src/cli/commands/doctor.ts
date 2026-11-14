@@ -23,6 +23,7 @@ import { resolveInstances, InstancesConfigError } from '../../utils/instance-con
 import { resolveBin } from '../../utils/resolve-bin.js';
 import { redactSecrets } from '../../utils/sanitize.js';
 import { MIN_NODE_MAJOR } from '../../node-version-check.js';
+import { SERVICE_MANAGER_ENV } from '../../utils/exit-codes.js';
 
 export { MIN_NODE_MAJOR };
 
@@ -86,6 +87,24 @@ export function parseAuthStatus(stdout: string): { loggedIn: boolean; method?: s
   }
 }
 
+const SERVICE_LOGIN_NOTE = (envPath: string) =>
+  `This runs under the service, which doesn't see your shell's environment: a login kept in ${CLAUDE_CREDENTIAL_VARS.join(', ')} has to be in ${envPath}.`;
+
+/**
+ * A login that lives only in the shell's environment works from a terminal,
+ * but a service starts without that environment. `envOnly` is what
+ * envOnlyLogin found; a variable kept in the .env is fine, the bot loads it.
+ */
+export function checkLoginSurvivesService(
+  envOnly: string[], fileEnv: Record<string, string>, envPath: string,
+): CheckResult | null {
+  if (!envOnly.length || envOnly.some((key) => fileEnv[key]?.trim())) return null;
+  const vars = envOnly.join(' / ');
+  return warn(`Claude Code's login comes from ${vars} in this shell's environment, not stored credentials`,
+    `A background service (telecoder service install) won't see it, so the bot would start logged out there.`,
+    `Add ${vars} to ${envPath} (readable by you only), or log in with "claude auth login".`);
+}
+
 // ── Checks that look at the machine ────────────────────────────
 
 function exec(
@@ -123,6 +142,41 @@ export function claudeAuthEnv(
     if (v) env[key] = v;
   }
   return env;
+}
+
+/** The variables that are a Claude login by themselves, as opposed to stored credentials. */
+export const CLAUDE_CREDENTIAL_VARS = ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'] as const;
+
+/** The credential variables set (non-empty) in `env`. */
+export function credentialVarsIn(env: NodeJS.ProcessEnv): string[] {
+  return CLAUDE_CREDENTIAL_VARS.filter((key) => env[key]?.trim());
+}
+
+/**
+ * Whether claude is logged in once the credential variables are taken away:
+ * true means stored credentials (~/.claude/.credentials.json, or the macOS
+ * keychain), which a service finds too. null when it can't tell (an older CLI
+ * without `auth status`), in which case the credentials file is the best sign.
+ */
+export async function hasStoredLogin(executable: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean | null> {
+  const bin = path.isAbsolute(executable) || executable.includes('/') ? executable : resolveBin(executable);
+  const bare = { ...env };
+  for (const key of CLAUDE_CREDENTIAL_VARS) delete bare[key];
+  const status = parseAuthStatus((await exec(bin, ['auth', 'status', '--json'], 20_000, bare)).stdout);
+  if (status) return status.loggedIn;
+  const configDir = env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+  return fs.existsSync(path.join(configDir, '.credentials.json')) ? true : null;
+}
+
+/**
+ * The credential variables a working login depends on: set in `env`, and
+ * claude logged out without them. Empty when the login is stored, or there
+ * is none to speak of.
+ */
+export async function envOnlyLogin(executable: string, env: NodeJS.ProcessEnv = process.env): Promise<string[]> {
+  const vars = credentialVarsIn(env);
+  if (!vars.length) return [];
+  return (await hasStoredLogin(executable, env)) ? [] : vars;
 }
 
 export async function checkClaude(executable: string, env: NodeJS.ProcessEnv = process.env): Promise<CheckResult[]> {
@@ -246,7 +300,15 @@ export async function runChecks(args: string[]): Promise<CheckResult[]> {
     results.push(checkAllowedUsers(value('ALLOWED_USER_IDS')));
   }
 
-  results.push(...await checkClaude(value('CLAUDE_EXECUTABLE_PATH') || 'claude', claudeAuthEnv(value)));
+  const claudeBin = value('CLAUDE_EXECUTABLE_PATH') || 'claude';
+  const claude = await checkClaude(claudeBin, claudeAuthEnv(value));
+  results.push(...claude);
+  if (claude[1]?.status === 'ok') {
+    const loginWarning = checkLoginSurvivesService(await envOnlyLogin(claudeBin, claudeAuthEnv(value)), fileEnv, envPath);
+    if (loginWarning) results.push(loginWarning);
+  } else if (claude[1]?.status === 'fail' && process.env[SERVICE_MANAGER_ENV]) {
+    claude[1].detail = [...claude[1].detail ?? [], SERVICE_LOGIN_NOTE(envPath)];
+  }
   results.push(...await checkNodePty());
 
   if (live) {

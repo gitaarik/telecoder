@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { parseArgs, dispatch, COMMANDS, type CommandSpec, type CliIo } from '../../src/cli/dispatch.js';
 import { helpText } from '../../src/cli/commands/help.js';
 import { chooseStartTarget } from '../../src/cli/commands/start.js';
@@ -8,6 +11,9 @@ import {
   checkAllowedUsers,
   parseAuthStatus,
   claudeAuthEnv,
+  checkLoginSurvivesService,
+  credentialVarsIn,
+  envOnlyLogin,
 } from '../../src/cli/commands/doctor.js';
 
 function captureIo(): CliIo & { lines: string[]; errors: string[] } {
@@ -147,5 +153,34 @@ describe('doctor checks', () => {
     const env = claudeAuthEnv((key) => file[key], { PATH: '/bin' });
     expect(env).toEqual({ PATH: '/bin', CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-x' });
   });
-});
 
+  it('finds the credential variables a login can come from', () => {
+    expect(credentialVarsIn({ CLAUDE_CODE_OAUTH_TOKEN: 'x', ANTHROPIC_API_KEY: ' ', ANTHROPIC_BASE_URL: 'u' })).toEqual(['CLAUDE_CODE_OAUTH_TOKEN']);
+    expect(credentialVarsIn({})).toEqual([]);
+  });
+
+  it('tells a login kept in the environment from stored credentials, asking claude without the variables', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'telecoder-doctor-'));
+    try {
+      // A fake claude: logged in when a token is set, or when FAKE_STORED says credentials are stored.
+      const bin = path.join(dir, 'claude');
+      fs.writeFileSync(bin, '#!/bin/sh\nif [ -n "$CLAUDE_CODE_OAUTH_TOKEN$FAKE_STORED" ]; then echo \'{"loggedIn":true}\'; ' +
+        'else echo \'{"loggedIn":false}\'; fi\n', { mode: 0o755 });
+      const base = { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: dir };
+      expect(await envOnlyLogin(bin, { ...base, CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-x' })).toEqual(['CLAUDE_CODE_OAUTH_TOKEN']);
+      expect(await envOnlyLogin(bin, { ...base, CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-x', FAKE_STORED: '1' })).toEqual([]);
+      expect(await envOnlyLogin(bin, base)).toEqual([]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('warns that a login only in the shell environment leaves a service logged out', () => {
+    const w = checkLoginSurvivesService(['CLAUDE_CODE_OAUTH_TOKEN'], {}, '/h/.telecoder/.env');
+    expect(w?.status).toBe('warn');
+    expect(w?.label).toContain('CLAUDE_CODE_OAUTH_TOKEN in this shell');
+    expect(w?.detail?.join('\n')).toContain('start logged out');
+    expect(checkLoginSurvivesService(['CLAUDE_CODE_OAUTH_TOKEN'], { CLAUDE_CODE_OAUTH_TOKEN: 'x' }, '/e')).toBeNull();
+    expect(checkLoginSurvivesService([], {}, '/e')).toBeNull();
+  });
+});

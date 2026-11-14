@@ -50,6 +50,11 @@ export interface Preflight {
   node: CheckResult;
   /** doctor's checkClaude: [not found] or [version, login]. */
   claude: CheckResult[];
+  /**
+   * doctor's envOnlyLogin: the credential variables (CLAUDE_CODE_OAUTH_TOKEN…)
+   * the login comes from, when it isn't stored credentials.
+   */
+  envLogin?: string[];
   nodePty: CheckResult[];
 }
 
@@ -166,6 +171,7 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
     throw new Stop('\nTeleCoder drives Claude Code, so it has to be installed first. Then run "telecoder init" again.');
   }
   if (pre.claude[1]?.status === 'fail') await offerLogin(deps, interactive);
+  const claudeLogin = await stepEnvLogin(deps, interactive, pre.envLogin ?? []);
   for (const r of pre.nodePty) show(r);
   const ptyWorks = pre.nodePty.every((r) => r.status === 'ok');
   if (!ptyWorks) p.say('    Only the PTY transport needs it; the default SDK transport works without.');
@@ -244,6 +250,7 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
     WORKSPACE_DIR: workspace,
     CLAUDE_METHOD_DEFAULT: transport,
   };
+  Object.assign(values, claudeLogin);
   if (groqKey) values.GROQ_API_KEY = groqKey;
   if (telegraph) values.TELEGRAPH_ENABLED = 'true';
 
@@ -252,6 +259,7 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
   p.say(`  Allowed users    ${owner.idList}`);
   p.say(`  Workspace        ${workspace}`);
   p.say(`  Transport        ${transport.toUpperCase()}`);
+  for (const key of Object.keys(claudeLogin)) p.say(`  Claude login     ${key}=<hidden>`);
   p.say(`  Voice            ${groqKey ? 'on (Groq key hidden)' : 'off'}`);
   p.say(`  Telegraph        ${telegraph ? 'on' : 'off'}`);
   if (interactive && !await p.confirm('Write it?', true)) throw new Stop('Nothing was written.', 1);
@@ -318,6 +326,30 @@ async function offerLogin(deps: InitDeps, interactive: boolean): Promise<void> {
   } else {
     p.say('    Carrying on without it.');
   }
+}
+
+/**
+ * A login in the shell's environment works for the wizard and for
+ * `telecoder start` from this shell, but a service starts without it. Offer
+ * to keep the variables in the .env, which the bot loads. The values are
+ * never printed.
+ */
+async function stepEnvLogin(deps: InitDeps, interactive: boolean, vars: string[]): Promise<Record<string, string>> {
+  const p = deps.prompter;
+  const found = vars.filter((key) => deps.env[key]?.trim());
+  if (!found.length) return {};
+  const names = found.join(' and ');
+  p.say(`! Claude Code is logged in through ${names} in this shell's environment, not stored credentials.`);
+  p.say('    A background service doesn\'t see your shell\'s environment, so the bot would start logged out there.');
+  const save = interactive
+    ? await p.confirm(`Save ${names} in the .env too (readable by you only)?`, true)
+    : true;
+  if (!save) {
+    p.say(`    Not saving it: the bot only logs in where ${names} is set.`);
+    return {};
+  }
+  if (!interactive) p.say(`    ${names} will go in the .env too (readable by you only), so a service can log in.`);
+  return Object.fromEntries(found.map((key) => [key, (deps.env[key] as string).trim()]));
 }
 
 /** Pasted tokens come with stray whitespace or quotes more often than not. */
