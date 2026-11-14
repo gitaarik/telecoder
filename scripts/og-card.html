@@ -1,0 +1,24 @@
+<!-- Source of docs/og.png, the link-preview card. Render at 1200x630, e.g.:
+     firefox --headless --window-size=1200,630 --screenshot docs/og.png file://$PWD/scripts/og-card.html -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;width:1200px;height:630px;overflow:hidden}
+body{background:radial-gradient(900px 500px at 85% 0%,#1b2d40 0%,transparent 60%),radial-gradient(600px 400px at 0% 100%,#2a1d19 0%,transparent 60%),#0f1319;font-family:'Space Grotesk',sans-serif;color:#e8e6e3;position:relative}
+.w{position:absolute;left:85px;top:98px;right:85px}
+.lock{display:flex;align-items:center;gap:18px;font-size:32px;font-weight:500}
+.mark{width:60px;height:60px;border-radius:12px;background:#161c24;border:1px solid rgba(232,230,227,.1);display:flex;align-items:center;justify-content:center}
+.tele{color:#5fb0f5}
+h1{margin:34px 0 0;font-size:84px;line-height:1.02;font-weight:700;letter-spacing:-1px}
+h1 .c{color:#e08a6b}
+p{margin:30px 0 0;font-size:25px;line-height:1.5;color:#939aa6;max-width:800px}
+.b{display:flex;gap:12px;margin-top:30px}
+.b span{font-family:'IBM Plex Mono',monospace;font-size:17px;padding:10px 20px;border-radius:100px;background:#161c24;border:1px solid rgba(232,230,227,.12)}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#5cb85c;margin-right:10px;vertical-align:middle}
+.url{position:absolute;right:85px;bottom:55px;font-family:'IBM Plex Mono',monospace;font-size:20px;color:#5fb0f5}
+</style></head><body><div class="w">
+<div class="lock"><div class="mark"><svg width="38" height="38" viewBox="0 0 64 64"><path d="M15 18 29 32 15 46" fill="none" stroke="#5fb0f5" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><path d="M34 18 48 32 34 46" fill="none" stroke="#e08a6b" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></div><span><span class="tele">Tele</span>Coder</span></div>
+<h1><span class="c">Claude Code</span><br>in <span class="tele">Telegram</span></h1>
+<p>The real Claude Code on your own machine, in Telegram's native apps. A thread per conversation, forks and the full CLI.</p>
+<div class="b"><span><i class="dot"></i>Open source</span><span>MIT</span><span>Self-hosted</span><span>npm install -g telecoder</span></div>
+</div><div class="url">telecoder.dev</div></body></html>
