@@ -40,6 +40,7 @@ export default defineConfig({
           label: 'Project',
           items: [
             { label: 'Changelog', link: '/changelog/' },
+            'about',
             { label: 'Roadmap', link: 'https://github.com/gitaarik/telecoder/blob/main/ROADMAP.md' },
             { label: 'Contributing', link: 'https://github.com/gitaarik/telecoder/blob/main/CONTRIBUTING.md' },
           ],

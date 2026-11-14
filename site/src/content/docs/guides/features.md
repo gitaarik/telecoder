@@ -34,6 +34,7 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 - `/teleport` continues a session in your terminal; `/handoff` exports it as markdown
 - Chats carry on by themselves after a restart
 - Project-based working directories, picked with `/project`
+- [Threads and forks](threads-and-forks.md)
 
 ## Forks
 
@@ -43,6 +44,7 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
   and the task as its first prompt
 - `/tree` draws the conversation's fork tree; tap a point to carry on that branch or branch
   from it
+- [Threads and forks](threads-and-forks.md)
 
 ## Working while Claude works
 
@@ -53,16 +55,18 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 - Messages that have to wait say so, and can be taken back or set aside
 - Rapid split pastes are combined into one prompt
 - Predicted next-prompt buttons under each reply (`/suggestions`)
+- [Working while Claude works](working-while-claude-works.md)
 
 ## Background and scheduled work
 
 - Background tasks and Monitor events relayed to Telegram as they happen
 - `/tasks` and `/shells` to inspect and stop what's running
 - `/schedule` for recurring prompts (`every 5m`, `daily 9am`, or cron)
+- [Background and scheduled work](background-and-scheduled-work.md)
 
 ## Claude can reach you
 
-- MCP tools let Claude ask with buttons or polls, send files and schedule prompts
+- MCP tools let Claude ask with buttons or polls, send files, and (in PTY mode) schedule prompts
 - Secrets stay out of the chat: you send a key, the bot deletes it and hands it to the
   command Claude named, and a Claude token can be made on the spot with `claude setup-token`
 - Talk naturally: Claude picks the right tool without explicit commands
@@ -98,6 +102,7 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 - Send a voice note: it's transcribed with Groq Whisper and fed to Claude
 - `/transcribe` for transcription on its own
 - `/tts` speaks replies back as Telegram voice notes, through Groq Orpheus or OpenAI
+- [Voice](voice.md)
 
 ## Rich output
 
@@ -125,4 +130,4 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
   config
 - `telecoder service install` for a systemd user service on Linux or a LaunchAgent on macOS
 - `telecoder doctor` checks Node, the `claude` CLI and its login, and the config
-- [Install and run](../start/install.md)
+- [Install and run](../start/install.md) and [the CLI reference](../reference/cli.md)

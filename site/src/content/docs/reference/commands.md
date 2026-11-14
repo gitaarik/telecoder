@@ -25,14 +25,14 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/sync` | Resend the latest assistant reply from the session log if Telegram missed any of it |
 | `/handoff` | Dump the conversation to markdown as a downloadable file, plus a Telegraph link when Telegraph is on |
 | `/fork` | Fork the conversation — into a new thread on a bot with threads, otherwise a new branch on this bot or a hand-off to a sibling bot |
-| `/spinoff <task>` | Split a task off into a new thread, with the context compacted around it and the task as its first prompt. As a reply, it forks from that message |
-| `/tree` | Draw the conversation's fork tree; tap a point to carry on that branch or branch from it |
+| `/spinoff <task>` | Split a task off into a new thread, with the context compacted around it and the task as its first prompt. As a reply, it forks from that message. Needs threads |
+| `/tree` | Draw the conversation's fork tree; tap a point to carry on that branch or branch from it, in this chat. A branch from another chat or bot carries on as a copy |
 | `/accept` | Accept a pending fork from another bot |
 | `/decline` | Discard a pending fork without loading it |
-| `/schedule <when> <prompt>` | Schedule a recurring prompt (`every 5m`, `daily 9am`, or raw cron) |
-| `/schedules` | List active scheduled tasks for this chat |
+| `/schedule <when> <prompt>` | Schedule a recurring prompt in this thread: `every 5m`, `daily 9am`, `weekdays 9:30am`, `mon,fri 17:00` or raw cron, with `--max-runs N` (default 50) and `--label "..."`. At least a minute apart, 10 per thread |
+| `/schedules` | List the scheduled prompts for this thread, including disabled ones |
 | `/unschedule <id>` | Remove a scheduled task by id |
-| `/teleport` | Move session to terminal (forked) — admin-only |
+| `/teleport` | The `claude --resume` command to carry on this session in a terminal — admin-only |
 
 ## Agent modes
 | Command | Description |
@@ -42,11 +42,11 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/loop <task>` | Run iteratively until the task is complete |
 | `/model` | Switch Sonnet / Opus / Haiku — this bot, or add `all` for every instance |
 | `/effort` | Set reasoning effort (low / medium / high / xhigh / max / auto); `all` works here too |
-| `/btw` | Ask a side question without interrupting the running task |
+| `/btw` | Ask a side question without interrupting the running task. It answers only, without changing files. In SDK mode it needs a running turn |
 | `/steer <text>` | Stop the running turn and send the text in its place, as a correction; `⚡ Interrupt & send` on a queued message does the same |
 | `/later [text]` | Set an idea aside without sending it; once Claude is done, the bot asks whether to send it, with Send and Drop. Alone, lists what's set aside |
 | `/mode` | How much Claude asks before acting (manual / accept edits / plan / auto / bypass) — admin-only |
-| `/autoapprove <duration>` | Answer the permission gate's prompts in advance in this chat for a while (`30m`), posting each command it lets through; `off` ends it, `status` reads it back. The most destructive commands still ask — admins and approvers |
+| `/autoapprove [duration]` | Answer the permission gate's prompts in advance in this chat for a while (default `30m`, at most `4h`; a restart ends it), posting each command it lets through; `off` ends it, `status` reads it back. The most destructive commands still ask — admins and approvers |
 | `/streaming` | Toggle streaming / wait replies |
 | `/method` | Switch Claude transport (SDK / PTY) — admin-only |
 | `/provider` | Switch backend — Claude / CCR (shown when `CCR_ENABLED`) — admin-only |
@@ -60,7 +60,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/file <path>` | Download a file. Guests get files from the chat's project only; admins from anywhere in `WORKSPACE_DIR`. Credential and bot-state paths (`.env`, `~/.ssh`, `~/.claude`, cloud CLI configs and the like) are refused for everyone |
 | `/telegraph` | Toggle Instant View for long responses in this chat (needs `TELEGRAPH_ENABLED=true`) |
 | `/telegraph <path>` | Publish a project file as a public Telegraph page. **Admin-only**, needs `TELEGRAPH_ENABLED=true`, same path rules as `/file` |
-| `/suggestions` | Toggle predicted next-prompt buttons under each response |
+| `/suggestions` | Turn predicted next-prompt buttons under each reply on or off, from the next session (PTY mode) |
 
 ## Voice and TTS
 | Command | Description |
@@ -79,7 +79,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/statusline` | Toggle the status line that closes every reply (project, effort, model, context %, cost) |
 | `/botname` | Toggle dynamic bot name (shows the active project) |
 | `/topic` | Set or clear the conversation topic |
-| `/tasks` | List active background tasks |
+| `/tasks` | List active background tasks, with details per task |
 | `/shells` | List and kill OS-level background shells from the PTY session |
 | `/permissions` | Show the permission-gate state, your role, and the patterns it enforces — admin-only |
 | `/users` | Who can use this bot — admins, guests, and people seen but not let in — admin-only |
@@ -90,7 +90,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/restartbot` | Restart the bot — admin-only |
 | `/rebuildbot` | Rebuild code and restart — this instance, all, or all once each is idle (`/rebuildbot idle`) — admin-only, source checkouts only |
 | `/update` | Update the Claude Code CLI, or TeleCoder itself on an npm install — admin-only |
-| `/cancel` | Stop the running turn and drop every message waiting behind it (alias: `/stop`) |
+| `/cancel` | Stop the running turn and drop the messages and scheduled prompts waiting behind it; set-aside messages stay (alias: `/stop`) |
 | `/commands` | Show all commands |
 
 ## Group access

@@ -49,6 +49,9 @@ See [Sharing a bot](../guides/sharing.md) for how the pieces fit together.
 | `TELEGRAPH_ENABLED` | `false` | Opt-in. Also publish long replies, `/handoff` notes and the full action log to telegra.ph as Instant View pages. **Pages are public** to anyone with the link and can't be deleted. Off, long replies arrive as chunked messages and `/handoff` as a file |
 | `DANGEROUS_MODE` | `false` | Auto-approve all tool permissions |
 | `CANCEL_ON_NEW_MESSAGE` | `false` | Auto-cancel running query on new message |
+| `MESSAGE_BATCH_TIMEOUT_MS` | `1500` | How long to wait for the next part of a long paste that Telegram split (2000+ characters) before sending the parts as one prompt; `0` turns it off |
+| `AUTO_TOPIC_HAIKU` | `true` | Name each conversation's topic with a quick Haiku call, for thread names, the bot name and the status line |
+| `PROMPT_SUGGESTIONS_DEFAULT` | `false` | Predicted next-prompt buttons for chats that haven't used `/suggestions` (PTY mode) |
 | `QUESTION_TIMEOUT_MINUTES` | `10` | How long a question from Claude (buttons, polls, relayed dialogs) waits before the turn carries on without an answer and the question closes |
 | `CLAUDE_SDK_LOG_LEVEL` | `basic` | SDK log level: off, basic, verbose, trace |
 
@@ -78,12 +81,19 @@ How these three fit together: [Group roles](../guides/sharing.md#group-roles).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GROQ_API_KEY` | — | Groq API key for Whisper |
+| `GROQ_API_KEY` | — | Groq API key, for Whisper transcription and Orpheus TTS |
 | `OPENAI_API_KEY` | — | OpenAI API key for TTS |
 | `TTS_PROVIDER` | `groq` | `groq` (Orpheus) or `openai` |
-| `TTS_VOICE` | `troy` (Groq), `coral` (OpenAI) | Default TTS voice |
-| `TTS_MODEL` | `gpt-4o-mini-tts` | TTS model |
+| `TTS_VOICE` | `coral` | Default TTS voice. On Groq, a voice Groq doesn't have falls back to `troy` |
+| `TTS_MODEL` | `gpt-4o-mini-tts` | TTS model (OpenAI; Groq's is fixed) |
+| `TTS_SPEED` | `1.0` | Speaking speed, 0.25 to 4.0 (OpenAI) |
+| `TTS_INSTRUCTIONS` | — | How to speak, for `gpt-4o-mini-tts` models (OpenAI) |
+| `TTS_MAX_CHARS` | `4096` | Longer replies are cut at a sentence end before they're spoken |
 | `VOICE_SHOW_TRANSCRIPT` | `true` | Show transcript text before agent response |
+| `VOICE_LANGUAGE` | `en` | The language voice notes are transcribed in |
+| `VOICE_MAX_FILE_SIZE_MB` | `19` | Largest voice note to transcribe |
+| `TRANSCRIBE_ENABLED` | `true` | Offer `/transcribe` |
+| `TRANSCRIBE_FILE_THRESHOLD_CHARS` | `4000` | `/transcribe` sends longer transcripts as a file |
 
 ## Setting up voice
 

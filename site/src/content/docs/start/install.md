@@ -33,7 +33,7 @@ transcription or Telegraph, and writes `~/.telecoder/.env` (set
 by you only. Every other setting stays at its default; `.env.example` lists
 them all. Run it again to change an answer. For scripts, the flags
 `--token-env VAR`, `--owner-id`, `--workspace`, `--transport` and `--yes`
-skip the questions (`telecoder help init`).
+skip the questions; [the CLI reference](../reference/cli.md#telecoder-init) lists them all.
 
 ```bash
 telecoder start    # runs every bot in ~/.telecoder/instances.json instead, if there is one
