@@ -196,8 +196,11 @@ telecoder service uninstall   # stop it and remove the unit
   `systemctl --user stop telecoder` stops it for good. It asks before turning on
   *lingering* (`loginctl enable-linger`), which keeps user services running after you
   log out and starts them at boot; `--yes` answers yes to everything, `--no-linger`
-  skips it. Without a usable `systemd --user` (a container, WSL without systemd, a
-  shell under `sudo`) it prints the unit and other ways to run it instead.
+  skips it. Under `sudo -u` it finds the user's systemd manager by itself when one is
+  running; when none is (no login and no lingering, as for a service account) it says
+  to run `sudo loginctl enable-linger <user>` first. Without a usable `systemd --user`
+  at all (a container, WSL without systemd) it prints the unit and other ways to run
+  it instead.
 - **macOS** writes `~/Library/LaunchAgents/dev.telecoder.telecoder.plist` and loads it;
   output goes to `~/Library/Logs/telecoder/telecoder.log`. A LaunchAgent runs while you
   are logged in. launchd can't exempt one exit code from `KeepAlive`, so under launchd a

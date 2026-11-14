@@ -21,7 +21,11 @@ reasoning — the commit bodies are the long form, this is the index.
   instead of crash-looping (exit 78, `RestartPreventExitStatus=`; exit 0
   under launchd, which can't single out one code). A changed unit is shown
   as a diff before it is replaced; `status`, `logs`, `restart` and
-  `uninstall` go with it, and `--name` allows several installs. Without
+  `uninstall` go with it, and `--name` allows several installs. Under
+  `sudo -u` (no `XDG_RUNTIME_DIR`) it points `systemctl --user` at the
+  user's running manager itself, found by its bus socket in
+  `/run/user/<uid>`; when no manager runs (no login, no lingering) it leads
+  with the fix, `sudo loginctl enable-linger <user>`. Without
   `systemd --user` it prints the unit and a manual fallback; npx installs
   are pointed at `npm install -g` first.
 - **`telecoder init` sets a bot up in a few questions** — it runs doctor's

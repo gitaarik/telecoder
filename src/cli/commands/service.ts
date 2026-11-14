@@ -71,10 +71,10 @@ export interface ServiceDeps {
   packageRunner: PackageRunner;
   configHome: ConfigHome;
   fs: ServiceFs;
-  /** Run a command and capture its output. Never through a shell. */
-  run(cmd: string, args: string[]): Promise<RunResult>;
+  /** Run a command and capture its output. Never through a shell. env: the whole environment, else ours. */
+  run(cmd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<RunResult>;
   /** Run a command attached to this terminal (status, logs); resolves with its exit code. */
-  runInherit(cmd: string, args: string[]): Promise<number>;
+  runInherit(cmd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<number>;
   /** A yes/no question; null when there is no one to ask (not a terminal). */
   ask(question: string, defaultYes: boolean): Promise<boolean | null>;
 }
@@ -113,16 +113,16 @@ export function realDeps(): ServiceDeps {
         }
       },
     },
-    run: (cmd, args) =>
+    run: (cmd, args, env) =>
       new Promise((resolve) => {
-        execFile(cmd, args, { timeout: 60_000 }, (error, stdout, stderr) => {
+        execFile(cmd, args, { timeout: 60_000, env }, (error, stdout, stderr) => {
           const code = error ? (typeof error.code === 'number' ? error.code : 127) : 0;
           resolve({ code, stdout: String(stdout), stderr: String(stderr) || (error && !stderr ? error.message : '') });
         });
       }),
-    runInherit: (cmd, args) =>
+    runInherit: (cmd, args, env) =>
       new Promise((resolve) => {
-        const child = spawn(cmd, args, { stdio: 'inherit' });
+        const child = spawn(cmd, args, { stdio: 'inherit', env });
         child.on('error', () => resolve(127));
         child.on('exit', (code, signal) => resolve(code ?? (signal === 'SIGINT' ? 0 : 1)));
       }),
@@ -340,28 +340,100 @@ export function systemdUnitPath(deps: ServiceDeps, name: string): string {
   return path.join(configHome, 'systemd', 'user', systemdUnitName(name));
 }
 
+const userRuntimeDir = (uid: number) => `/run/user/${uid}`;
+
+/**
+ * Under `sudo -u` or `su` there is no XDG_RUNTIME_DIR, so systemctl --user
+ * can't find the user's manager even when it is running (a login elsewhere,
+ * or lingering). When its bus socket is there, point systemctl at it: the
+ * returned deps run every command with XDG_RUNTIME_DIR and
+ * DBUS_SESSION_BUS_ADDRESS set. `adopted` is the directory, when it did.
+ */
+export function withUserBus(deps: ServiceDeps): { deps: ServiceDeps; adopted: string | null } {
+  if (deps.platform !== 'linux' || deps.env.XDG_RUNTIME_DIR || deps.uid < 0) return { deps, adopted: null };
+  const runtimeDir = userRuntimeDir(deps.uid);
+  const bus = `${runtimeDir}/bus`;
+  if (!deps.fs.exists(bus)) return { deps, adopted: null };
+  // A DBUS_SESSION_BUS_ADDRESS that came through sudo is the other user's.
+  const env = { ...deps.env, XDG_RUNTIME_DIR: runtimeDir, DBUS_SESSION_BUS_ADDRESS: `unix:path=${bus}` };
+  return {
+    adopted: runtimeDir,
+    deps: {
+      ...deps,
+      env,
+      run: (cmd, args, e) => deps.run(cmd, args, e ?? env),
+      runInherit: (cmd, args, e) => deps.runInherit(cmd, args, e ?? env),
+    },
+  };
+}
+
+export interface SystemdUnavailable {
+  reason: string;
+  /** The user's systemd manager isn't running or reachable: lingering is the usual fix. */
+  userManager: boolean;
+}
+
 /** Why `systemctl --user` can't be used here, or null when it can. */
-export async function systemdUnavailableReason(deps: ServiceDeps): Promise<string | null> {
-  if (!which(deps, 'systemctl')) return 'systemctl is not installed';
+export async function systemdUnavailableReason(deps: ServiceDeps): Promise<SystemdUnavailable | null> {
+  if (!which(deps, 'systemctl')) return { reason: 'systemctl is not installed', userManager: false };
   if (!deps.fs.exists('/run/systemd/system')) {
-    return 'this system was not booted with systemd (a container, or WSL without systemd enabled)';
+    return { reason: 'this system was not booted with systemd (a container, or WSL without systemd enabled)', userManager: false };
   }
   if (!deps.env.XDG_RUNTIME_DIR) {
-    return 'there is no user session here (XDG_RUNTIME_DIR is unset — under sudo or su, say). Run this as the user the bot should run as, logged in directly or over ssh';
+    return {
+      reason: `there is no user session here (XDG_RUNTIME_DIR is unset, and no systemd user manager is running for ${deps.username})`,
+      userManager: true,
+    };
   }
   const probe = await deps.run('systemctl', ['--user', 'show-environment']);
   if (probe.code !== 0) {
-    return `the systemd user manager isn't reachable (${firstLine(probe.stderr) || `systemctl exited ${probe.code}`})`;
+    return {
+      reason: `the systemd user manager isn't reachable (${firstLine(probe.stderr) || `systemctl exited ${probe.code}`})`,
+      userManager: true,
+    };
   }
   return null;
 }
 
 const firstLine = (text: string) => text.trim().split('\n')[0] ?? '';
 
-function systemdFallback(io: CliIo, reason: string, unitPath: string, unit: string, spec: ServiceSpec): void {
-  io.err(`Can't install a systemd user service: ${reason}.`);
+/** How to get the user's systemd manager running without a login, first in the fallback. */
+async function userManagerFix(deps: ServiceDeps, name: string): Promise<string[]> {
+  const user = deps.username;
+  const runtimeDir = userRuntimeDir(deps.uid);
+  const viaSudo = !deps.env.XDG_RUNTIME_DIR || Boolean(deps.env.SUDO_USER);
+  const sudoLines = viaSudo
+    ? [
+      `Under sudo -u, "telecoder service" finds that manager at ${runtimeDir} by itself; other`,
+      `systemctl --user commands need XDG_RUNTIME_DIR=${runtimeDir} in front, e.g.`,
+      `  sudo -u ${user} XDG_RUNTIME_DIR=${runtimeDir} systemctl --user status ${systemdUnitName(name)}`,
+    ]
+    : [];
+  if (await lingerEnabled(deps)) {
+    return [
+      `Lingering is already on for ${user}, so its systemd user manager should be running.`,
+      `Check it with "systemctl status user@${deps.uid}.service", then run "telecoder service install" again.`,
+      ...sudoLines,
+    ];
+  }
+  return [
+    `To fix it, turn on lingering: it keeps ${user}'s systemd running without a login (and starts it at boot).`,
+    `  sudo loginctl enable-linger ${user}`,
+    'then run "telecoder service install" again.',
+    ...sudoLines,
+  ];
+}
+
+async function systemdFallback(
+  deps: ServiceDeps, io: CliIo, unavailable: SystemdUnavailable, unitPath: string, unit: string, spec: ServiceSpec,
+): Promise<void> {
+  io.err(`Can't install a systemd user service: ${unavailable.reason}.`);
   io.err('');
-  io.err('Other ways to keep it running:');
+  if (unavailable.userManager) {
+    for (const line of await userManagerFix(deps, spec.name)) io.err(line);
+    io.err('');
+  }
+  io.err('Or other ways to keep it running:');
   io.err(`  - pm2:   pm2 start ${spec.cliPath} --name ${spec.name} --interpreter ${spec.nodePath} -- start`);
   io.err('           then "pm2 save" and "pm2 startup" to bring it back after a reboot');
   io.err('  - tmux or screen: run "telecoder start" in a detached session (no restart from chat)');
@@ -431,7 +503,7 @@ async function installSystemd(deps: ServiceDeps, io: CliIo, spec: ServiceSpec, o
 
   const unavailable = await systemdUnavailableReason(deps);
   if (unavailable) {
-    systemdFallback(io, unavailable, unitPath, unit, spec);
+    await systemdFallback(deps, io, unavailable, unitPath, unit, spec);
     return 1;
   }
 
@@ -578,8 +650,9 @@ async function installLaunchd(deps: ServiceDeps, io: CliIo, spec: ServiceSpec, o
  * Install (or update) the service. Exported for `telecoder init`, which can
  * offer it at the end of a setup.
  */
-export async function runServiceInstall(opts: ServiceInstallOptions, deps: ServiceDeps = realDeps()): Promise<number> {
+export async function runServiceInstall(opts: ServiceInstallOptions, givenDeps: ServiceDeps = realDeps()): Promise<number> {
   const { io } = opts;
+  const { deps, adopted } = withUserBus(givenDeps);
   const options: ServiceOptions = {
     name: DEFAULT_SERVICE_NAME,
     yes: false,
@@ -601,6 +674,9 @@ export async function runServiceInstall(opts: ServiceInstallOptions, deps: Servi
   }
   for (const warning of resolved.warnings) io.err(`Warning: ${warning}`);
   for (const note of resolved.notes) io.out(note);
+  if (adopted && !options.dryRun) {
+    io.out(`XDG_RUNTIME_DIR isn't set (sudo -u, say), but ${deps.username}'s systemd user manager is running: using ${adopted}.`);
+  }
 
   return deps.platform === 'darwin'
     ? installLaunchd(deps, io, resolved.spec, options)
@@ -628,7 +704,7 @@ export async function runServiceUninstall(options: ServiceOptions, io: CliIo, de
   }
   const unavailable = await systemdUnavailableReason(deps);
   if (unavailable) {
-    io.err(`Can't reach systemd --user: ${unavailable}.`);
+    io.err(`Can't reach systemd --user: ${unavailable.reason}.`);
     io.err(`Removing ${unitPath} anyway; it was not stopped.`);
   } else {
     // Failure here is fine: the unit may never have been loaded.
@@ -653,7 +729,8 @@ function notInstalled(io: CliIo, deps: ServiceDeps, name: string): boolean {
   return true;
 }
 
-export async function runServiceCommand(args: string[], io: CliIo, deps: ServiceDeps): Promise<number> {
+export async function runServiceCommand(args: string[], io: CliIo, givenDeps: ServiceDeps): Promise<number> {
+  const deps = withUserBus(givenDeps).deps;
   const parsed = parseServiceArgs(args);
   if ('error' in parsed) {
     io.err(parsed.error);
@@ -665,7 +742,7 @@ export async function runServiceCommand(args: string[], io: CliIo, deps: Service
     for (const line of usage()) io.out(line);
     return 0;
   }
-  if (sub === 'install') return runServiceInstall({ ...options, io }, deps);
+  if (sub === 'install') return runServiceInstall({ ...options, io }, givenDeps);
   if (deps.platform !== 'linux' && deps.platform !== 'darwin') {
     io.err(`telecoder service supports Linux (systemd) and macOS (launchd), not ${deps.platform}.`);
     return 1;

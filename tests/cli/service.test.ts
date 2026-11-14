@@ -17,6 +17,8 @@ interface Fake {
   deps: ServiceDeps;
   files: Map<string, string>;
   calls: string[];
+  /** The env each run/runInherit call was given (undefined: ours). */
+  envs: Array<NodeJS.ProcessEnv | undefined>;
   inherited: string[];
   questions: string[];
   writes: string[];
@@ -39,6 +41,7 @@ function fake({ over = {}, files = {}, dirs = [], execs, answers = [], results =
   const dirSet = new Set(['/run/systemd/system', '/usr/bin', '/usr/local/bin', '/bin', '/home/u/.local/bin', ...dirs]);
   const execSet = new Set(execs ?? ['/usr/bin/node', '/usr/bin/systemctl', '/usr/bin/git', '/home/u/.local/bin/claude', '/usr/bin/launchctl']);
   const calls: string[] = [];
+  const envs: Array<NodeJS.ProcessEnv | undefined> = [];
   const inherited: string[] = [];
   const questions: string[] = [];
   const writes: string[] = [];
@@ -76,13 +79,15 @@ function fake({ over = {}, files = {}, dirs = [], execs, answers = [], results =
       realpath: (p) => realpaths[p] ?? p,
       isExecutable: (p) => execSet.has(p),
     },
-    run: async (cmd, args) => {
+    run: async (cmd, args, env) => {
       const key = [cmd, ...args].join(' ');
       calls.push(key);
+      envs.push(env);
       const scripted = results[key] ?? (key.startsWith('loginctl show-user') ? { stdout: 'no\n' } : {});
       return { code: 0, stdout: '', stderr: '', ...scripted };
     },
-    runInherit: async (cmd, args) => {
+    runInherit: async (cmd, args, env) => {
+      envs.push(env);
       inherited.push([cmd, ...args].join(' '));
       return 0;
     },
@@ -97,7 +102,7 @@ function fake({ over = {}, files = {}, dirs = [], execs, answers = [], results =
     err: (l: string) => lines.push(l),
     text: () => lines.join('\n'),
   };
-  return { deps, files: fileMap, calls, inherited, questions, writes, io };
+  return { deps, files: fileMap, calls, envs, inherited, questions, writes, io };
 }
 
 const mutating = (calls: string[]) =>
@@ -218,15 +223,67 @@ describe('service install on Linux', () => {
     expect(f.io.text()).toContain('RestartPreventExitStatus=78');
   });
 
-  it('explains a missing user session (sudo) and an unreachable user manager', async () => {
-    const sudo = fake({ over: { env: { PATH: '/usr/bin' } } });
+  it('explains a missing user session (sudo) and an unreachable user manager, with the linger fix first', async () => {
+    const sudo = fake({ over: { env: { PATH: '/usr/bin', SUDO_USER: 'admin' } } });
     expect(await runServiceInstall({ io: sudo.io }, sudo.deps)).toBe(1);
-    expect(sudo.io.text()).toContain('XDG_RUNTIME_DIR is unset');
+    const sudoText = sudo.io.text();
+    expect(sudoText).toContain('XDG_RUNTIME_DIR is unset, and no systemd user manager is running for u');
+    expect(sudoText).toContain('  sudo loginctl enable-linger u');
+    expect(sudoText).toContain('sudo -u u XDG_RUNTIME_DIR=/run/user/1000 systemctl --user status telecoder.service');
+    expect(sudoText.indexOf('enable-linger u')).toBeLessThan(sudoText.indexOf('pm2 start'));
+    expect(sudo.writes).toEqual([]);
 
     const noBus = fake({ results: { 'systemctl --user show-environment': { code: 1, stderr: 'Failed to connect to bus: No medium found' } } });
     expect(await runServiceInstall({ io: noBus.io }, noBus.deps)).toBe(1);
-    expect(noBus.io.text()).toContain('Failed to connect to bus');
+    const text = noBus.io.text();
+    expect(text).toContain('Failed to connect to bus');
+    expect(text).toContain("To fix it, turn on lingering: it keeps u's systemd running without a login");
+    expect(text).toContain('  sudo loginctl enable-linger u');
+    expect(text).toContain('then run "telecoder service install" again.');
+    // A real session: no XDG_RUNTIME_DIR advice.
+    expect(text).not.toContain('sudo -u');
+    expect(text.indexOf('enable-linger u')).toBeLessThan(text.indexOf('pm2 start'));
     expect(noBus.writes).toEqual([]);
+  });
+
+  it("doesn't suggest lingering when it is already on", async () => {
+    const f = fake({
+      results: {
+        'systemctl --user show-environment': { code: 1, stderr: 'Failed to connect to bus: No such file or directory' },
+        'loginctl show-user u --property=Linger --value': { stdout: 'yes\n' },
+      },
+    });
+    expect(await runServiceInstall({ io: f.io }, f.deps)).toBe(1);
+    expect(f.io.text()).toContain('Lingering is already on for u');
+    expect(f.io.text()).toContain('systemctl status user@1000.service');
+    expect(f.io.text()).not.toContain('sudo loginctl enable-linger');
+  });
+
+  it('finds the user manager under sudo -u (no XDG_RUNTIME_DIR) when its bus socket exists', async () => {
+    const f = fake({
+      over: { env: { PATH: '/home/u/.local/bin:/usr/bin', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1001/bus' } },
+      files: { '/run/user/1000/bus': '' },
+      answers: [true],
+    });
+    expect(await runServiceInstall({ io: f.io }, f.deps)).toBe(0);
+    expect(f.io.text()).toContain("XDG_RUNTIME_DIR isn't set (sudo -u, say), but u's systemd user manager is running: using /run/user/1000.");
+    expect(f.calls).toContain('systemctl --user enable --now telecoder.service');
+    expect(f.envs.length).toBeGreaterThan(0);
+    for (const env of f.envs) {
+      expect(env).toMatchObject({ XDG_RUNTIME_DIR: '/run/user/1000', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus' });
+    }
+
+    const status = fake({ over: { env: { PATH: '/usr/bin' } }, files: { '/run/user/1000/bus': '', [UNIT]: 'x' } });
+    await runServiceCommand(['status'], status.io, status.deps);
+    expect(status.inherited).toEqual(['systemctl --user status telecoder.service --no-pager']);
+    expect(status.envs[0]).toMatchObject({ XDG_RUNTIME_DIR: '/run/user/1000' });
+  });
+
+  it('leaves the environment alone when XDG_RUNTIME_DIR is set', async () => {
+    const f = fake({ files: { '/run/user/1000/bus': '' }, answers: [true] });
+    expect(await runServiceInstall({ io: f.io }, f.deps)).toBe(0);
+    expect(f.envs.every((e) => e === undefined)).toBe(true);
+    expect(f.io.text()).not.toContain("XDG_RUNTIME_DIR isn't set");
   });
 
   it('carries TELECODER_HOME when the config home was moved', async () => {
