@@ -150,9 +150,9 @@ server.tool(
 // ── telecoder_ask_user (IPC: long-poll on Telegram button tap) ──────
 server.tool(
   'telecoder_ask_user',
-  'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or the question times out. Keep the question short and the options crisp — a label of ≤ 25 chars stays on its button; anything longer makes the whole keyboard fall back to lettered buttons (A/B/C) with the full labels listed in the message body. Prefer this over the built-in AskUserQuestion when interacting through TeleCoder. IMPORTANT: `context` is required and carries everything the user needs to decide (the comparison, trade-offs, findings, rationale) — it renders in the SAME message as the buttons. Do NOT write that explanation as prose before calling this tool: text you emit before an ask_user call is not delivered to the user until after they answer, so they would be choosing blind.',
+  'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or the question times out. Keep the question short and the options crisp — a label of ≤ 25 chars stays on its button; anything longer makes the whole keyboard fall back to lettered buttons (A/B/C) with the full labels listed in the message body. Prefer this over the built-in AskUserQuestion when interacting through TeleCoder. Several questions at once: pass `questions` (2-4) instead of `question`/`options` — they arrive as ONE form the user steps through, can revise, and submits; nothing reaches you before Submit. Never fire separate calls in a row for questions that belong together. IMPORTANT: `context` is required and carries everything the user needs to decide (the comparison, trade-offs, findings, rationale) — it renders in the SAME message as the buttons. Do NOT write that explanation as prose before calling this tool: text you emit before an ask_user call is not delivered to the user until after they answer, so they would be choosing blind.',
   {
-    question: z.string().describe('The question to display to the user. Keep concise (1-2 sentences).'),
+    question: z.string().optional().describe('The question to display to the user. Keep concise (1-2 sentences). Required unless `questions` is given.'),
     context: z
       .string()
       .min(1)
@@ -166,11 +166,31 @@ server.tool(
       )
       .min(2)
       .max(8)
-      .describe('Between 2 and 8 options for the user to choose from.'),
+      .optional()
+      .describe('Between 2 and 8 options for the user to choose from. Required unless `questions` is given.'),
+    questions: z
+      .array(
+        z.object({
+          question: z.string().min(1).describe('One question, 1-2 sentences.'),
+          options: z
+            .array(
+              z.object({
+                label: z.string().describe('Button label; ≤ 25 chars keeps it on its button.'),
+                description: z.string().optional().describe('Optional one-line note shown in the body.'),
+              })
+            )
+            .min(2)
+            .max(8),
+        })
+      )
+      .min(1)
+      .max(4)
+      .optional()
+      .describe('Several related questions as one form, in place of `question`/`options`. The user answers each with buttons, can go back and change any answer, and nothing is sent until they tap Submit — like AskUserQuestion with several questions. 2-4 questions, 2-8 options each; `context` is shown once at the top.'),
   },
-  async ({ question, context, options }) => {
+  async ({ question, context, options, questions }) => {
     try {
-      const result = await ipc<IpcReply>('/mcp/ask_user', { question, context, options });
+      const result = await ipc<IpcReply>('/mcp/ask_user', { question, context, options, questions });
       return toolResult(result);
     } catch (error) {
       return {

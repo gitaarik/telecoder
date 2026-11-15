@@ -117,7 +117,8 @@ Do NOT use it for:
 - Open-ended questions where the answer needs to be free-text.
 - Trivial confirmations where reasonable defaults exist (just proceed and note the assumption).
 - Yes/no questions that the conversation context already implies the answer to.
-Keep button labels ≤ 25 chars where you can — a longer one still reaches the user in full (the message body lists every option, keyed A/B/C), but the whole keyboard then shrinks to bare letters. Prefer 2–4 options. Add an optional one-line description per option only when the label alone is unclear.`;
+Keep button labels ≤ 25 chars where you can — a longer one still reaches the user in full (the message body lists every option, keyed A/B/C), but the whole keyboard then shrinks to bare letters. Prefer 2–4 options. Add an optional one-line description per option only when the label alone is unclear.
+Several questions at once: pass \`questions\` (2–4, each with its own options) in ONE call. The user gets a single form they step through, can go back in to change an answer, and submit when done — as in Claude Code's own multi-question dialog. Separate ask_user calls in a row take that away: each answer is final the moment it is tapped.`;
 
 const REQUEST_SECRET_TOOL_PROMPT = `
 

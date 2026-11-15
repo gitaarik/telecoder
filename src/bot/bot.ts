@@ -128,6 +128,7 @@ import {
   buildAnswerConfirmation,
 } from '../claude/ask-user.js';
 import { describeResponderRefusal } from '../telegram/admin-mention.js';
+import { handleAskUserFormCallback } from '../claude/ask-user-form.js';
 import { groupMentionMiddleware } from './middleware/group-mention.middleware.js';
 import { groupRoleMiddleware } from './middleware/group-role.middleware.js';
 import { trackForceReplyPrompts } from '../telegram/force-reply-tracker.js';
@@ -527,6 +528,8 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // call. If the callback got queued, it'd deadlock behind the query that's
   // waiting for it.
   bot.callbackQuery(/^q:/, handleAskUserCallback);
+  // A multi-question form's option, jump and Submit buttons, for the same reason.
+  bot.callbackQuery(/^qf:/, handleAskUserFormCallback);
   // The Cancel button under a secret request, for the same reason.
   bot.callbackQuery(/^secret:/, handleSecretCallback);
   // /fork callbacks bypass sequentialize too: the user often taps Fork on a

@@ -31,6 +31,7 @@ import {
   closeExpiredQuestion,
   questionTimeoutMinutes,
 } from './ask-user.js';
+import { resolveAskUserArgs, runAskUserForm } from './ask-user-form.js';
 import { createPendingPoll } from './poll-user.js';
 import { scheduler } from './scheduler.js';
 import { readLastAssistantTurnText } from './session-jsonl.js';
@@ -116,29 +117,39 @@ async function flushTurnProse(
 // return the chosen label to claude. Times out after QUESTION_TIMEOUT_MINUTES via
 // createPendingQuestion's default.
 registerIpcHandler('/mcp/ask_user', async (turn, body) => {
-  const question = String(body.question ?? '').trim();
   const context = typeof body.context === 'string' ? body.context : undefined;
-  const rawOptions = Array.isArray(body.options) ? body.options : [];
-  const options = rawOptions
-    .map((o): { label: string; description?: string } | null => {
-      if (!o || typeof o !== 'object') return null;
-      const oo = o as Record<string, unknown>;
-      if (typeof oo.label !== 'string' || !oo.label) return null;
-      return {
-        label: oo.label,
-        description: typeof oo.description === 'string' ? oo.description : undefined,
-      };
-    })
-    .filter((o): o is { label: string; description?: string } => o !== null);
-
-  if (!question || options.length < 2) {
-    return { success: false, message: 'Error: ask_user requires a non-empty question and ≥ 2 options.' };
-  }
+  const asked = resolveAskUserArgs(body);
+  if (typeof asked === 'string') return { success: false, message: asked };
 
   const ctx = getTelegramCtx(turn.options as unknown);
   if (!ctx?.chat?.id) {
     return { success: false, message: 'Error: no Telegram context available to ask the user.' };
   }
+
+  // From the session key, not `ctx.message` — a turn started by a tapped
+  // button carries a callback-query context with no `message`, which would
+  // silently drop the thread and post the question into General.
+  const threadId = parseSessionKey(turn.sessionKey).threadId;
+
+  if (asked.form) {
+    // Same prose flush as the single question below: what the model wrote
+    // to set up the form is still undelivered, and belongs above it.
+    const { messageSender } = await import('../telegram/message-sender.js');
+    await beforePosting(turn);
+    if (!turn.selfStarted) await flushTurnProse(turn.sessionKey, ctx, messageSender);
+    const message = await runAskUserForm({
+      api: ctx.api,
+      chatId: ctx.chat.id,
+      threadId,
+      sessionKey: turn.sessionKey,
+      questions: asked.form,
+      context,
+      onPosted: () => messageSender.noteQuestionPosted(ctx, turn.sessionKey),
+      onSettled: () => messageSender.noteQuestionAnswered(ctx, turn.sessionKey),
+    });
+    return { success: true, message };
+  }
+  const { question, options } = asked;
 
   const optionLabels = options.map((o) => o.label);
   const { id, promise } = createPendingQuestion(optionLabels, undefined, turn.sessionKey);
@@ -166,10 +177,6 @@ registerIpcHandler('/mcp/ask_user', async (turn, body) => {
   // Telegram returns 400, grammy throws, the IPC server returns 500, and the
   // model just sees the tool fail. The bold on labels was a nice-to-have; the
   // body lists every option in full, keyed by the letter on its button.
-  // From the session key, not `ctx.message` — a turn started by a tapped
-  // button carries a callback-query context with no `message`, which would
-  // silently drop the thread and post the question into General.
-  const threadId = parseSessionKey(turn.sessionKey).threadId;
   const sent = await ctx.api.sendMessage(ctx.chat.id, messageText, {
     reply_markup: { inline_keyboard: keyboard },
     ...(threadId !== undefined ? { message_thread_id: threadId } : {}),

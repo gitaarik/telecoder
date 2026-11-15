@@ -27,6 +27,7 @@ import {
 } from './ask-user.js';
 import { parseSessionKey } from '../utils/session-key.js';
 import { parseSecretRequest, requestSecret } from './secret-request.js';
+import { resolveAskUserArgs, runAskUserForm } from './ask-user-form.js';
 
 // Lazy imports to avoid circular deps and unnecessary module loading
 async function importTelegraph() {
@@ -336,9 +337,9 @@ function publishTelegraphTool(_toolsCtx: McpToolsContext) {
 function askUserTool(toolsCtx: McpToolsContext) {
   return tool(
     'telecoder_ask_user',
-    'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or the question times out. Keep the question short and the options crisp — a label of ≤ 25 chars stays on its button; anything longer makes the whole keyboard fall back to lettered buttons (A/B/C) with the full labels listed in the message body. IMPORTANT: `context` is required and carries everything the user needs to decide (the comparison, trade-offs, findings, rationale) — it renders in the SAME message as the buttons. Do NOT write that explanation as prose before calling this tool: text you emit before an ask_user call is not delivered to the user until after they answer, so they would be choosing blind.',
+    'Ask the user a multiple-choice question via a Telegram inline keyboard. Use when you need a clear decision from the user (e.g. picking between approaches, confirming a destructive action, choosing among options) instead of free-text. Pauses the agent loop until the user taps a button or the question times out. Keep the question short and the options crisp — a label of ≤ 25 chars stays on its button; anything longer makes the whole keyboard fall back to lettered buttons (A/B/C) with the full labels listed in the message body. Several questions at once: pass `questions` (2-4) instead of `question`/`options` — they arrive as ONE form the user steps through, can revise, and submits; nothing reaches you before Submit. Never fire separate calls in a row for questions that belong together. IMPORTANT: `context` is required and carries everything the user needs to decide (the comparison, trade-offs, findings, rationale) — it renders in the SAME message as the buttons. Do NOT write that explanation as prose before calling this tool: text you emit before an ask_user call is not delivered to the user until after they answer, so they would be choosing blind.',
     {
-      question: z.string().describe('The question to display to the user. Keep concise (1-2 sentences).'),
+      question: z.string().optional().describe('The question to display to the user. Keep concise (1-2 sentences). Required unless `questions` is given.'),
       context: z
         .string()
         .min(1)
@@ -352,9 +353,29 @@ function askUserTool(toolsCtx: McpToolsContext) {
         )
         .min(2)
         .max(8)
-        .describe('Between 2 and 8 options for the user to choose from.'),
+        .optional()
+        .describe('Between 2 and 8 options for the user to choose from. Required unless `questions` is given.'),
+      questions: z
+        .array(
+          z.object({
+            question: z.string().min(1).describe('One question, 1-2 sentences.'),
+            options: z
+              .array(
+                z.object({
+                  label: z.string().describe('Button label; ≤ 25 chars keeps it on its button.'),
+                  description: z.string().optional().describe('Optional one-line note shown in the body.'),
+                })
+              )
+              .min(2)
+              .max(8),
+          })
+        )
+        .min(1)
+        .max(4)
+        .optional()
+        .describe('Several related questions as one form, in place of `question`/`options`. The user answers each with buttons, can go back and change any answer, and nothing is sent until they tap Submit — like AskUserQuestion with several questions. 2-4 questions, 2-8 options each; `context` is shown once at the top.'),
     },
-    async ({ question, context, options }) => {
+    async ({ question: rawQuestion, context, options: rawOptions, questions }) => {
       try {
         const ctx = toolsCtx.telegramCtx;
         if (!ctx?.chat?.id) {
@@ -363,6 +384,26 @@ function askUserTool(toolsCtx: McpToolsContext) {
             isError: true,
           };
         }
+
+        const threadId = parseSessionKey(toolsCtx.sessionKey).threadId;
+        const asked = resolveAskUserArgs({ question: rawQuestion, options: rawOptions, questions });
+        if (typeof asked === 'string') {
+          return { content: [{ type: 'text' as const, text: asked }], isError: true };
+        }
+        if (asked.form) {
+          const text = await runAskUserForm({
+            api: ctx.api,
+            chatId: ctx.chat.id,
+            threadId,
+            sessionKey: toolsCtx.sessionKey,
+            questions: asked.form,
+            context,
+            onPosted: () => messageSender.noteQuestionPosted(ctx, toolsCtx.sessionKey),
+            onSettled: () => messageSender.noteQuestionAnswered(ctx, toolsCtx.sessionKey),
+          });
+          return { content: [{ type: 'text' as const, text }] };
+        }
+        const { question, options } = asked;
 
         const optionLabels = options.map((o) => o.label);
         const { id, promise } = createPendingQuestion(optionLabels, undefined, toolsCtx.sessionKey);
@@ -380,7 +421,6 @@ function askUserTool(toolsCtx: McpToolsContext) {
         // From the session key, not `ctx.message` — a turn started by a tapped
         // button carries a callback-query context with no `message`, which
         // would silently drop the thread and post into General.
-        const threadId = parseSessionKey(toolsCtx.sessionKey).threadId;
         const sent = await ctx.api.sendMessage(ctx.chat.id, messageText, {
           reply_markup: { inline_keyboard: keyboard },
           ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
