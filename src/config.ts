@@ -231,6 +231,14 @@ const envSchema = z.object({
     .string()
     .default('false')
     .transform((val) => val.toLowerCase() === 'true'),
+  // The status line that closes every reply (project, effort, model, context,
+  // cost), for chats that haven't used /statusline. On: in Telegram it's the
+  // only place those show, and a new user doesn't know the command. The topic
+  // line comes with it; the last prompts and the resume command stay opt-in.
+  STATUS_LINE_DEFAULT: z
+    .string()
+    .default('true')
+    .transform((val) => val.toLowerCase() === 'true'),
   BOT_MODE: z.enum(['dev', 'prod']).default('dev'),
   // Transport a chat uses until someone picks one with /method. The permission
   // gate runs on both (a PreToolUse hook either way). Per-chat /method wins.

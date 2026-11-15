@@ -563,8 +563,9 @@ export async function handleEffortCallback(ctx: Context): Promise<void> {
 
 // ── /statusline ─────────────────────────────────────────────────
 // A small italic message sent after each turn so the user can always see
-// the current effort (and, in future, more stats) right above the compose
-// box without scrolling. Off by default; opt-in via /statusline.
+// the current state right above the compose box without scrolling. On by
+// default (STATUS_LINE_DEFAULT); /statusline turns it off per chat. It
+// follows the reply, which already rang the phone, so it's sent silently.
 
 function shortenModelName(model: string): string {
   // Strip "vendor/" prefix (OpenRouter / CCR style: "anthropic/claude-4-sonnet-...")
@@ -757,11 +758,13 @@ export async function sendStatusLine(
 ): Promise<void> {
   try {
     if (userPreferences.getShowStatusLine(chatId)) {
-      await replyFormatted(ctx, buildStatusLine(chatId, sessionKey, usage, lastPrompt, brief));
+      await replyFormatted(ctx, buildStatusLine(chatId, sessionKey, usage, lastPrompt, brief), {
+        disable_notification: true,
+      });
       return;
     }
     const footer = usageFooter(chatId, usage);
-    if (footer) await ctx.reply(footer);
+    if (footer) await ctx.reply(footer, { disable_notification: true });
   } catch (err) {
     console.debug('[StatusLine] Failed to send:', err instanceof Error ? err.message : err);
   }

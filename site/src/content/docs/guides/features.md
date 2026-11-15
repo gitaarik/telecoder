@@ -113,8 +113,9 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 
 - Formatting sent as Telegram entities: nothing to escape, and a long reply splits anywhere
   without breaking its bold, links or code blocks
-- A status line closing every reply: project, effort, model, context use and cost
-  (`/statusline`)
+- A status line closing every reply: topic, project, effort, model, context use and cost,
+  on by default and sent silently; `/statusline` turns it off or adds your last prompts
+  and a `claude --resume` command
 - Terminal-style tool status (`/terminalui`) and four verbosity tiers (`/verbosity`)
 - Claude Code's task list as a live card
 - The bot's display name can show the current topic (`/botname`, `/topic`)

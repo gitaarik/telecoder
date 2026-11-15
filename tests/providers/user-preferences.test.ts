@@ -114,6 +114,38 @@ describe('userPreferences storage', () => {
   });
 });
 
+describe('userPreferences status line defaults', () => {
+  beforeEach(() => {
+    stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'telecoder-prefs-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(stateDir, { recursive: true, force: true });
+  });
+
+  it('shows the status line and its topic until a chat turns them off', async () => {
+    const store = await loadStore();
+    expect(store.getShowStatusLine(42)).toBe(true);
+    expect(store.getShowTopicInStatusLine(42)).toBe(true);
+    store.setShowStatusLine(42, false);
+    store.setShowTopicInStatusLine(42, false);
+    expect(store.getShowStatusLine(42)).toBe(false);
+    expect(store.getShowTopicInStatusLine(42)).toBe(false);
+    // A chat that switched it off before the default changed stays off.
+    expect(readPrefs(prefsPath())['42']).toMatchObject({ showStatusLine: false, showTopicInStatusLine: false });
+  });
+
+  it('keeps the prompts and the resume command off until a chat turns them on', async () => {
+    const store = await loadStore();
+    expect(store.getShowPromptInStatusLine(42)).toBe(false);
+    expect(store.getShowSessionInStatusLine(42)).toBe(false);
+    store.setShowPromptInStatusLine(42, true);
+    store.setShowSessionInStatusLine(42, true);
+    expect(store.getShowPromptInStatusLine(42)).toBe(true);
+    expect(store.getShowSessionInStatusLine(42)).toBe(true);
+  });
+});
+
 describe('userPreferences per thread', () => {
   beforeEach(() => {
     stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'telecoder-prefs-'));

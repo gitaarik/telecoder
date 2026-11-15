@@ -56,11 +56,11 @@ async function closingMessages(
   statusLine: boolean,
   verbosity: VerbosityLevel,
   usage: AgentUsage | null = USAGE,
-): Promise<[string, { parse_mode?: string; entities?: MessageEntity[] } | undefined][]> {
+): Promise<[string, { parse_mode?: string; entities?: MessageEntity[]; disable_notification?: boolean } | undefined][]> {
   const chat = nextChat++;
   userPreferences.setShowStatusLine(chat, statusLine);
   userPreferences.setVerbosity(chat, verbosity);
-  const reply = vi.fn(async (_text: string, _opts?: { parse_mode?: string; entities?: MessageEntity[] }) => ({}));
+  const reply = vi.fn(async (_text: string, _opts?: { parse_mode?: string; entities?: MessageEntity[]; disable_notification?: boolean }) => ({}));
   await sendStatusLine({ reply } as unknown as Context, chat, String(chat), usage ?? undefined, 'a prompt');
   return reply.mock.calls;
 }
@@ -103,6 +103,13 @@ describe('the message that closes a turn', () => {
 
   it('with both off, is nothing', async () => {
     expect(await closingMessages(false, 'normal')).toHaveLength(0);
+  });
+
+  it('is sent silently either way: the reply above it already rang the phone', async () => {
+    const [[, withLine]] = await closingMessages(true, 'normal');
+    expect(withLine?.disable_notification).toBe(true);
+    const [[, footerAlone]] = await closingMessages(false, 'verbose');
+    expect(footerAlone?.disable_notification).toBe(true);
   });
 
   it('with no figure yet, has no footer to show', async () => {

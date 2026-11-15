@@ -5,6 +5,14 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ## Unreleased
 
+### Changed
+
+- **The status line is on by default**, with its topic line. Project, effort,
+  model, context and cost show nowhere else in Telegram, and a new user
+  doesn't know `/statusline`. It's sent silently now: the reply above it
+  already rang the phone. `STATUS_LINE_DEFAULT=false` restores the old
+  default; the last-prompts and `claude --resume` lines stay opt-in.
+
 ### Fixed
 
 - **`TTS_ENABLED=false` turns spoken replies off.** The setting was read

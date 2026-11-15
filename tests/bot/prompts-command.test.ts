@@ -52,6 +52,7 @@ fs.mkdirSync(PROJECT);
 const { handlePromptsCommand, handlePromptsCallback } = await import('../../src/bot/handlers/prompts.handler.js');
 const { handleRecap } = await import('../../src/bot/handlers/command/session.js');
 const { sessionManager } = await import('../../src/claude/session-manager.js');
+const { userPreferences } = await import('../../src/providers/user-preferences.js');
 const { messageOffsets } = await import('../../src/claude/message-offsets.js');
 const { sessionJsonlPath } = await import('../../src/claude/session-jsonl.js');
 
@@ -291,6 +292,8 @@ describe('branching from a prompt', () => {
     const opened = await press(chat, button(await send(chat), 'B'));
     await press(chat, button(opened, '🌱 New branch from here'));
 
+    // The recap closes with the status line, on by default; this is about the recap.
+    userPreferences.setShowStatusLine(chat, false);
     const reply = vi.fn(async (_text: string, _opts?: SentOptions) => ({}));
     await handleRecap({ chat: { id: chat }, message: { text: '/recap' }, reply } as unknown as Context);
     const sent = reply.mock.calls.map(([text, opts]) => marked(text, opts?.entities).trim());

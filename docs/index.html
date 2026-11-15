@@ -2176,7 +2176,7 @@
             <div class="feature-icon"><svg><use href="#i-levels"/></svg></div>
             <h3>How much you see</h3>
             <p>One setting per chat, quiet through debug, controls how much each turn shows. An
-            optional status line closes every reply with topic, your last five prompts, project, model, context and cost — the context stat turning 🟡 then 🔴 once it grows big enough to be worth a /clear.</p>
+            status line closes every reply with topic, project, model, context and cost — the context stat turning 🟡 then 🔴 once it grows big enough to be worth a /clear — and can add your last five prompts.</p>
           </div>
           <div class="feature-card" data-category="agent">
             <div class="feature-icon"><svg><use href="#i-gauge"/></svg></div>
@@ -3190,7 +3190,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/effort &lt;level&gt; [all]</code>
-              <span class="command-desc">Set reasoning effort (low/medium/high/xhigh/max/auto). Per bot, with the same <code>all</code> argument and one-tap fan-out as /model. Works in both SDK and PTY mode; in PTY mode Claude Code restarts on your next message to pick it up, keeping the conversation. Enable /statusline to see the current level's icon (🐇/⚖️/🧠/🔬/🚀) after each turn.</span>
+              <span class="command-desc">Set reasoning effort (low/medium/high/xhigh/max/auto). Per bot, with the same <code>all</code> argument and one-tap fan-out as /model. Works in both SDK and PTY mode; in PTY mode Claude Code restarts on your next message to pick it up, keeping the conversation. The status line shows the current level's icon (🐇/⚖️/🧠/🔬/🚀) after each turn.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/verbosity &lt;tier&gt;</code>
@@ -3230,7 +3230,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/statusline</code>
-              <span class="command-desc">Toggle the status line that closes every reply (project, effort, model, context %, cost), with sub-toggles for topic, your last five prompts (a long one by its start and its end), and a copy-pasteable claude --resume command. It follows a typed message, a voice note, an upload, a command and the reply Claude writes on its own when a background task reports back; a scheduled fire gets the stats and the context bar alone</span>
+              <span class="command-desc">Toggle the status line that closes every reply (project, effort, model, context %, cost). On by default (<code>STATUS_LINE_DEFAULT</code>) and sent silently, with sub-toggles for topic, your last five prompts (a long one by its start and its end), and a copy-pasteable claude --resume command. It follows a typed message, a voice note, an upload, a command and the reply Claude writes on its own when a background task reports back; a scheduled fire gets the stats and the context bar alone</span>
             </div>
             <div class="command-row">
               <code class="command-code">/botname</code>
@@ -3242,7 +3242,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/topic &lt;text&gt;</code>
-              <span class="command-desc">Set or clear the conversation topic (shown in the status line when enabled)</span>
+              <span class="command-desc">Set or clear the conversation topic (shown in the status line)</span>
             </div>
             <div class="command-row">
               <code class="command-code">/plan</code>

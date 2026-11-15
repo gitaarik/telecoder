@@ -77,7 +77,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/context` | Show Claude context / token usage |
 | `/cost` | Show usage limits and cost as Claude Code reports them — session/weekly limits on a subscription, dollar totals on API billing — plus TeleCoder's own running tally for the conversation, which the CLI cannot keep (SDK mode only) |
 | `/compact` | Compact the context window (SDK and PTY), reporting the token reduction |
-| `/statusline` | Toggle the status line that closes every reply (project, effort, model, context %, cost) |
+| `/statusline` | Toggle the status line that closes every reply (project, effort, model, context %, cost). On by default (`STATUS_LINE_DEFAULT`), with the topic; your last prompts and a `claude --resume` command are sub-toggles |
 | `/botname` | Toggle dynamic bot name (shows the active project) |
 | `/topic` | Set or clear the conversation topic |
 | `/tasks` | List active background tasks, with details per task |

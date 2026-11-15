@@ -16,7 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
 import { ensureStateDir, getStateDir, readJsonFile, writeJsonFile } from '../utils/json-store.js';
-import { BOT_ID } from '../config.js';
+import { BOT_ID, config } from '../config.js';
 import { scopeChatId, type SettingsScope } from '../utils/session-key.js';
 
 // Zod schema for user preferences
@@ -212,8 +212,10 @@ class UserPreferencesManager {
     this.unset(scope, 'verbosity');
   }
 
+  // The status line and its topic line are on until a chat turns them off;
+  // the prompts and the resume command are off until it turns them on.
   getShowStatusLine(scope: SettingsScope): boolean {
-    return this.get(scope, 'showStatusLine') === true;
+    return this.get(scope, 'showStatusLine') ?? config.STATUS_LINE_DEFAULT;
   }
 
   setShowStatusLine(scope: SettingsScope, enabled: boolean): void {
@@ -221,7 +223,7 @@ class UserPreferencesManager {
   }
 
   getShowTopicInStatusLine(scope: SettingsScope): boolean {
-    return this.get(scope, 'showTopicInStatusLine') === true;
+    return this.get(scope, 'showTopicInStatusLine') ?? true;
   }
 
   setShowTopicInStatusLine(scope: SettingsScope, enabled: boolean): void {
