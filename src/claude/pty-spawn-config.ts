@@ -162,9 +162,7 @@ export function buildMcpToolsSystemPromptNote(): string {
   if (config.TELEGRAPH_ENABLED) {
     tools.push('- mcp__telecoder-tools__telecoder_publish_telegraph — publish a markdown document as a Telegraph (telegra.ph) Instant View page; returns the URL.');
   }
-  if (config.DYNAMIC_BOT_NAME) {
-    tools.push('- mcp__telecoder-tools__telecoder_set_topic — update the conversation topic shown in the bot display name. Call proactively when the topic of work shifts. Empty string clears it. Keep topics 1-4 words.');
-  }
+  tools.push('- mcp__telecoder-tools__telecoder_set_topic — update the conversation topic shown in the status line and as the thread\'s name. Call proactively when the topic of work shifts. Empty string clears it. Keep topics 1-4 words.');
   return [
     'You have access to TeleCoder-specific MCP tools listed below. They are loaded lazily — call them directly when relevant; do not try to reproduce their behavior with WebFetch/Bash.',
     ...tools,
@@ -226,9 +224,8 @@ export function buildMcpEnv(required: Record<string, string>): Record<string, st
     NODE_ENV: process.env.NODE_ENV || '',
     // Translate the bot's parsed config flags into the TELECODER_*_ENABLED
     // form the MCP subprocess gates on. The bot's own env vars are unprefixed
-    // (TELEGRAPH_ENABLED, DYNAMIC_BOT_NAME) so we can't just pass through.
+    // (TELEGRAPH_ENABLED) so we can't just pass through.
     TELECODER_TELEGRAPH_ENABLED: config.TELEGRAPH_ENABLED ? 'true' : 'false',
-    TELECODER_DYNAMIC_BOT_NAME: config.DYNAMIC_BOT_NAME ? 'true' : 'false',
     ...required,
   };
   // Any extra TELECODER_*-prefixed vars the bot's env carries (e.g. user

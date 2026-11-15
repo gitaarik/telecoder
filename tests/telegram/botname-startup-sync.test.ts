@@ -6,11 +6,17 @@ import * as path from 'path';
 // botname-settings persists cooldowns / last-sent names under ~/.telecoder.
 // Redirect HOME before the module is ever imported so the suite can't read or
 // clobber the developer's real state.
+let tmpHome: string;
 beforeAll(() => {
-  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'telecoder-botname-'));
+  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'telecoder-botname-'));
   vi.stubEnv('HOME', tmpHome);
   vi.stubEnv('BOT_NAME', 'TeleCoder');
 });
+
+/** The file /botname writes, for the test bot's id. */
+function botNameFile(): string {
+  return path.join(tmpHome, '.telecoder', 'botname-123456789.json');
+}
 
 // The sync is once-per-process by design, so every case needs a fresh module.
 async function freshModule() {
@@ -53,26 +59,48 @@ describe('syncBotNameOnStartup', () => {
     expect(api.sent).toEqual([]);
   });
 
-  it('preserves the dynamic " — project" suffix', async () => {
+  it('renames a bot still carrying the project suffix of the old dynamic name', async () => {
     const { syncBotNameOnStartup } = await freshModule();
     const api = fakeApi('TeleCoder — telecoder');
 
     const result = await syncBotNameOnStartup(api);
 
-    expect(result.status).toBe('no_change');
-    expect(api.sent).toEqual([]);
+    expect(result.status).toBe('sent');
+    expect(api.sent).toEqual(['TeleCoder']);
   });
 
-  it('defers to a name another path already pushed this process', async () => {
-    const { syncBotNameOnStartup, rateLimitedSetMyName } = await freshModule();
-    const api = fakeApi('Claudegram 1');
+  it('prefers the name set with /botname over BOT_NAME', async () => {
+    fs.mkdirSync(path.dirname(botNameFile()), { recursive: true });
+    fs.writeFileSync(botNameFile(), JSON.stringify({ name: 'Rik\u2019s Coder' }));
+    try {
+      const { syncBotNameOnStartup } = await freshModule();
+      const api = fakeApi('TeleCoder');
 
-    // e.g. auto-resume restoring a session and pushing "BOT_NAME — project".
-    await rateLimitedSetMyName(api, (n) => api.setMyName(n), 'TeleCoder — telecoder');
-    const result = await syncBotNameOnStartup(api);
+      const result = await syncBotNameOnStartup(api);
 
-    expect(result.status).toBe('no_change');
-    expect(api.sent).toEqual(['TeleCoder — telecoder']);
+      expect(result.status).toBe('sent');
+      expect(api.sent).toEqual(['Rik\u2019s Coder']);
+    } finally {
+      fs.rmSync(botNameFile(), { force: true });
+    }
+  });
+
+  it('renames to the /botname name even when BOT_NAME is not set', async () => {
+    vi.stubEnv('BOT_NAME', '');
+    fs.mkdirSync(path.dirname(botNameFile()), { recursive: true });
+    fs.writeFileSync(botNameFile(), JSON.stringify({ name: 'Named in chat' }));
+    try {
+      const { syncBotNameOnStartup } = await freshModule();
+      const api = fakeApi('My Own Bot');
+
+      const result = await syncBotNameOnStartup(api);
+
+      expect(result.status).toBe('sent');
+      expect(api.sent).toEqual(['Named in chat']);
+    } finally {
+      fs.rmSync(botNameFile(), { force: true });
+      vi.stubEnv('BOT_NAME', 'TeleCoder');
+    }
   });
 
   it('does not throw when getMyName fails', async () => {
@@ -91,7 +119,6 @@ describe('syncBotNameOnStartup', () => {
 
   it('keeps the BotFather name when BOT_NAME is not set', async () => {
     vi.stubEnv('BOT_NAME', '');
-    vi.stubEnv('DYNAMIC_BOT_NAME', 'false');
     try {
       const { syncBotNameOnStartup } = await freshModule();
       const api = fakeApi('My Own Bot');

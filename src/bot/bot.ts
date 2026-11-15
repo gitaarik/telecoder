@@ -80,7 +80,6 @@ import {
   handleTranscribeAudio,
   handleTranscribeDocument,
   handleBotName,
-  handleBotNameCallback,
   handleTopic,
   handleRebuild,
   handleRebuildCallback,
@@ -354,8 +353,8 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
     { command: 'streaming', description: '⚙️ Toggle streaming / wait replies' },
     { command: 'terminalui', description: '🖥️ Toggle terminal-style display' },
     { command: 'statusline', description: '📍 Toggle per-turn status line' },
-    { command: 'botname', description: '✏️ Toggle dynamic bot name' },
-    { command: 'topic', description: '💬 Set current work topic in bot name' },
+    { command: 'botname', description: '✏️ Rename the bot (admins)' },
+    { command: 'topic', description: '💬 Set the conversation topic' },
     ...(config.TTS_ENABLED ? [{ command: 'tts', description: '🔊 Toggle voice replies' }] : []),
     { command: 'ping', description: '🏓 Check if bot is responsive' },
     { command: 'commands', description: '📜 List all commands' },
@@ -492,10 +491,9 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // an alias for exactly as long as nothing better wanted it. Permission mode
   // is what people were always going to mean by it.
   cmd('mode', adminOnly(handlePermissionMode));
-  cmd('botname', handleBotName);
+  cmd('botname', adminOnly(handleBotName));
   cmd('topic', handleTopic);
   bot.callbackQuery(/^permmode:/, adminOnly(handlePermissionModeCallback));
-  bot.callbackQuery(/^botname:/, handleBotNameCallback);
   // An auto-approve window matters most mid-turn: that's when the prompts it
   // answers are turning up, and closing one can't wait for the turn either.
   // Admins *and* approvers: opening a window is a decision about prompts, not

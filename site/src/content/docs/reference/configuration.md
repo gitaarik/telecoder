@@ -44,13 +44,13 @@ See [Sharing a bot](../guides/sharing.md) for how the pieces fit together.
 | `HOME_PROJECT` | — | The project this bot is for: new conversations start there, and its threads are named without it. Usually set per bot in `instances.json`, which `/newbot` does. Absolute, or relative to `WORKSPACE_DIR` |
 | `CLAUDE_PLUGINS` | — | Marketplace plugins to bring into the agent, as `plugin@marketplace` ids, comma-separated. Neither transport reads `~/.claude/settings.json`, so a plugin enabled in your terminal is missing in Telegram until it's named here |
 | `CLAUDE_EXECUTABLE_PATH` | `claude` | Path to Claude Code CLI |
-| `BOT_NAME` | `TeleCoder` | Bot name in system prompt |
+| `BOT_NAME` | `TeleCoder` | The bot's name: what it's called in the system prompt and its messages, and the display name it sets in Telegram at startup when the setting is given. Unset, the BotFather name is kept. A name given with `/botname` wins over this |
 | `STREAMING_MODE` | `streaming` | `streaming` or `wait` |
 | `TELEGRAPH_ENABLED` | `false` | Opt-in. Also publish long replies, `/handoff` notes and the full action log to telegra.ph as Instant View pages. **Pages are public** to anyone with the link and can't be deleted. Off, long replies arrive as chunked messages and `/handoff` as a file |
 | `DANGEROUS_MODE` | `false` | Auto-approve all tool permissions |
 | `CANCEL_ON_NEW_MESSAGE` | `false` | Auto-cancel running query on new message |
 | `MESSAGE_BATCH_TIMEOUT_MS` | `1500` | How long to wait for the next part of a long paste that Telegram split (2000+ characters) before sending the parts as one prompt; `0` turns it off |
-| `AUTO_TOPIC_HAIKU` | `true` | Name each conversation's topic with a quick Haiku call, for thread names, the bot name and the status line |
+| `AUTO_TOPIC_HAIKU` | `true` | Name each conversation's topic with a quick Haiku call, for thread names and the status line. Off, the agent is asked to keep the topic itself with `telecoder_set_topic` |
 | `CLAUDE_PTY_IDLE_TIMEOUT_MS` | `3600000` | How long an idle PTY session keeps its `claude` process (a few hundred MB) before it's ended; the next message resumes the conversation in a new one. Never while a turn, background task or background shell is running. `0` keeps them until a restart |
 | `MEMORY_GUARD_MIN_AVAILABLE_MB` | `1024` | Before a message starts a new `claude` for a PTY chat, the machine's available memory is checked. Under this many MB, claudes idle longer than `MEMORY_GUARD_REAP_IDLE_MS` are ended first; if that still leaves too little, the chat is asked whether to start anyway, end the longest-idle claude first, or drop the message. `0` turns the guard off |
 | `MEMORY_GUARD_REAP_IDLE_MS` | `300000` | The shorter idle window the memory guard reaps with when memory is tight (5 min). A chat reaped this way resumes from its transcript on its next message |

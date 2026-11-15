@@ -287,33 +287,31 @@ server.tool(
   },
 );
 
-// ── telecoder_set_topic (IPC: needs bot for Telegram setMyName) ─────
-if (process.env.TELECODER_DYNAMIC_BOT_NAME === 'true') {
-  server.tool(
-    'telecoder_set_topic',
-    'Update the conversation topic shown in the bot display name. Call this proactively when the work topic changes. Pass an empty string to clear. Keep topics very short (1-4 words, e.g. "auth refactor", "CI fix", "dark mode").',
-    {
-      topic: z.string().describe('Short topic label (1-4 words). Empty string to clear.'),
-    },
-    async ({ topic }) => {
-      try {
-        const result = await ipc<{ success: boolean; message?: string; displayName?: string }>('/mcp/set_topic', { topic });
-        return {
-          content: [{
-            type: 'text' as const,
-            text: result.message || (result.success ? `Topic set to "${topic}".` : 'Topic update failed.'),
-          }],
-          isError: !result.success,
-        };
-      } catch (error) {
-        return {
-          content: [{ type: 'text' as const, text: `set_topic error: ${error instanceof Error ? error.message : String(error)}` }],
-          isError: true,
-        };
-      }
-    },
-  );
-}
+// ── telecoder_set_topic (IPC: the topic lives in the bot's state) ────
+server.tool(
+  'telecoder_set_topic',
+  'Update the conversation topic shown in the status line and as the thread\'s name. Call this proactively when the work topic changes. Pass an empty string to clear. Keep topics very short (1-4 words, e.g. "auth refactor", "CI fix", "dark mode").',
+  {
+    topic: z.string().describe('Short topic label (1-4 words). Empty string to clear.'),
+  },
+  async ({ topic }) => {
+    try {
+      const result = await ipc<{ success: boolean; message?: string; displayName?: string }>('/mcp/set_topic', { topic });
+      return {
+        content: [{
+          type: 'text' as const,
+          text: result.message || (result.success ? `Topic set to "${topic}".` : 'Topic update failed.'),
+        }],
+        isError: !result.success,
+      };
+    } catch (error) {
+      return {
+        content: [{ type: 'text' as const, text: `set_topic error: ${error instanceof Error ? error.message : String(error)}` }],
+        isError: true,
+      };
+    }
+  },
+);
 
 // ── telecoder_publish_telegraph ─────────────────────────────────────
 if (process.env.TELECODER_TELEGRAPH_ENABLED === 'true') {

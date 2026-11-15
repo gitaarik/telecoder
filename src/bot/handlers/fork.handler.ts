@@ -64,7 +64,7 @@ import { isAllowedUser } from '../../utils/user-roster.js';
 import { EntityText, joinMessages, plain, type EntityMessage } from '../../telegram/entities.js';
 import { editCallbackMessage, replyFormatted, sendFormatted } from '../../telegram/send.js';
 import { cutLabel, promptLabel } from '../../telegram/prompt-label.js';
-import { restoreTopicAndRefreshBotName } from './command.handler.js';
+import { restoreTopic } from './command.handler.js';
 import { getSessionTopic } from './command.handler.js';
 import { sessionDisplayName } from './command/shared.js';
 import { adoptThread, threadName } from '../../telegram/thread-titles.js';
@@ -75,7 +75,6 @@ import { replayIntoThread } from '../middleware/queued-messages.js';
 import { sanitizeError } from '../../utils/sanitize.js';
 import { summarizeTopicWithHaiku } from '../../claude/auto-topic-haiku.js';
 
-const BOT_NAME = config.BOT_NAME;
 
 /**
  * Stands in for a bot id in `fork:to:` and `fork:confirm:` when the target is
@@ -126,7 +125,7 @@ export function buildTargetPicker(anchorMsgId: number): {
     // parenthesising it on the label costs the whole keyboard its labels.
     {
       label: '🌱 New branch here',
-      description: BOT_NAME,
+      description: config.BOT_NAME,
       callbackData: `fork:to:${BOT_ID}:${anchorMsgId}`,
     },
     ...listSiblingBots(BOT_ID).map((b) => ({
@@ -405,7 +404,7 @@ function cutFork(
 
   return {
     fork: {
-      fromBotName: BOT_NAME,
+      fromBotName: config.BOT_NAME,
       fromBotId: BOT_ID,
       fromChatId: ctx.chat?.id,
       projectPath: offset.projectPath,
@@ -568,7 +567,7 @@ function forkOfLatest(ctx: Context, sessionKey: string): { fork: PendingFork; no
   return {
     noted,
     fork: {
-      fromBotName: BOT_NAME,
+      fromBotName: config.BOT_NAME,
       fromBotId: BOT_ID,
       fromChatId: ctx.chat?.id,
       projectPath: session.workingDirectory,
@@ -960,17 +959,14 @@ export async function loadFork(
   // in-memory provider state are dropped.
   clearConversation(sessionKey);
 
-  // Restore the source topic AND refresh the bot's Telegram display name, so
-  // a change of project shows in the bot name on the next message.
-  // restoreTopicAndRefreshBotName handles both the topic write and the
-  // rate-limited setMyName call internally.
+  // Restore the source topic, for the status line and the thread name.
   //
   // Even with no topic to restore: the one in memory is the conversation this
   // chat just left, and a fork that arrives without a topic — from a chat
   // that had none, or from /tree, where no history may name the point — would
   // otherwise carry it on. Restoring none falls back to the title Claude Code
   // gave the transcript.
-  await restoreTopicAndRefreshBotName(ctx, sessionKey, fork.topic);
+  restoreTopic(sessionKey, fork.topic);
 
   await postMarker(ctx, sessionKey, buildForkMarker(fork, marker), {
     claudeSessionId: newSessionId,

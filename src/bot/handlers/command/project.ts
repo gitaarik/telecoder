@@ -23,7 +23,7 @@ import {
   resumeCommandMessage,
   withBackToPrevious,
 } from './shared.js';
-import { clearTopicAndRefreshBotName } from './topic.js';
+import { clearTopic } from './topic.js';
 
 const PROJECT_BROWSER_PAGE_SIZE = 8;
 
@@ -56,7 +56,7 @@ projectBrowserCleanup.unref();
 async function selectProjectFromCallback(ctx: Context, sessionKey: string, projectPath: string): Promise<void> {
   sessionManager.setWorkingDirectory(sessionKey, projectPath);
   clearConversation(sessionKey);
-  await clearTopicAndRefreshBotName(ctx, sessionKey);
+  clearTopic(sessionKey);
 
   const state = getProjectState(sessionKey);
   state.current = projectPath;
@@ -524,7 +524,7 @@ export async function handleProject(ctx: Context): Promise<void> {
 
   sessionManager.setWorkingDirectory(sessionKey, projectPath);
   clearConversation(sessionKey);
-  await clearTopicAndRefreshBotName(ctx, sessionKey);
+  clearTopic(sessionKey);
 
   const newConv = sessionManager.getSession(sessionKey)?.conversationId;
   const back = withBackToPrevious(projectOpenedMessage('✅ Project: ', args, sessionKey), sessionKey, newConv);
@@ -571,7 +571,7 @@ export async function handleNewProject(ctx: Context): Promise<void> {
   fs.mkdirSync(projectPath, { recursive: true, mode: 0o700 });
   sessionManager.setWorkingDirectory(sessionKey, projectPath);
   clearConversation(sessionKey);
-  await clearTopicAndRefreshBotName(ctx, sessionKey);
+  clearTopic(sessionKey);
 
   const newConv = sessionManager.getSession(sessionKey)?.conversationId;
   const back = withBackToPrevious(projectOpenedMessage('✅ Created and opened: ', args, sessionKey), sessionKey, newConv);

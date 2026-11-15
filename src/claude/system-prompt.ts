@@ -130,7 +130,7 @@ For a long-lived Claude token (CLAUDE_CODE_OAUTH_TOKEN), set source to "claude-s
 const SET_TOPIC_TOOL_PROMPT = `
 
 Auto-Topic Tool (IMPORTANT — call this often):
-You MUST use the telecoder_set_topic MCP tool to keep the bot's display name in sync with what the user is working on. The bot name renders as "topic — project — Name" with a 64-char limit.
+You MUST use the telecoder_set_topic MCP tool to keep the conversation topic in sync with what the user is working on. The topic shows in the status line under each reply and as the thread's name.
 
 Call telecoder_set_topic in these situations:
 1. ON YOUR VERY FIRST RESPONSE of any conversation — read the user's first message and call the tool with a 1-4 word topic BEFORE writing your reply text.
@@ -168,7 +168,7 @@ const TOOL_PROMPTS = [
   SEND_FILE_TOOL_PROMPT,
   ASK_USER_TOOL_PROMPT,
   REQUEST_SECRET_TOOL_PROMPT,
-  config.DYNAMIC_BOT_NAME && !config.AUTO_TOPIC_HAIKU ? SET_TOPIC_TOOL_PROMPT : '',
+  config.AUTO_TOPIC_HAIKU ? '' : SET_TOPIC_TOOL_PROMPT,
 ].join('');
 
 const SYSTEM_PROMPT = `${BASE_SYSTEM_PROMPT}${TOOL_PROMPTS}${MONITOR_RESPONSE_INSTRUCTIONS}${config.CLAUDE_REASONING_SUMMARY ? REASONING_SUMMARY_INSTRUCTIONS : ''}`;

@@ -151,7 +151,7 @@ export function getAvailableCommands(): EntityMessage {
       '• `/streaming` - Toggle streaming / wait replies',
       '• `/verbosity` - Pick verbosity tier (quiet / normal / verbose / debug)',
       '• `/terminalui` - Toggle terminal-style display',
-      '• `/botname` - Toggle dynamic bot name',
+      '• `/botname <name>` - Rename the bot (admins)',
       '• `/topic <text>` - Set current work topic in bot name',
     ],
   });

@@ -574,7 +574,7 @@ export async function sendToAgent(
       // side-call owns topic updates, making the model-driven nudge redundant.
       const TOPIC_REMINDER_COOLDOWN_MS = 90_000;
       const autoTopicHook: Partial<Record<HookEvent, HookCallbackMatcher[]>> =
-        config.DYNAMIC_BOT_NAME && !config.AUTO_TOPIC_HAIKU
+        !config.AUTO_TOPIC_HAIKU
           ? {
             UserPromptSubmit: [{
               hooks: [async () => {

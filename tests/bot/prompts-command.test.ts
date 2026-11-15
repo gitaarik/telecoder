@@ -34,7 +34,7 @@ vi.mock('../../src/providers/provider-router.js', async (importOriginal) => ({
 }));
 vi.mock('../../src/bot/handlers/command.handler.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/bot/handlers/command.handler.js')>()),
-  restoreTopicAndRefreshBotName: vi.fn(async () => {}),
+  restoreTopic: vi.fn(async () => {}),
   getSessionTopic: vi.fn(() => undefined),
 }));
 

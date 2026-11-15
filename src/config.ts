@@ -208,14 +208,10 @@ const envSchema = z.object({
     .default('true')
     .transform((val) => val.toLowerCase() === 'true'),
   BOT_NAME: z.string().default('TeleCoder'),
-  DYNAMIC_BOT_NAME: z
-    .string()
-    .default('false')
-    .transform((val) => val.toLowerCase() === 'true'),
   // Fire a parallel Haiku side-call on every user message to derive a topic
-  // label, independent of the main agent's tool calls. Deferral-immune because
-  // it bypasses settingSources and tools entirely. Only takes effect when
-  // dynamic bot name is enabled for the chat.
+  // label for the status line and the thread name, independent of the main
+  // agent's tool calls. Deferral-immune because it bypasses settingSources and
+  // tools entirely. Skipped when nothing in the chat shows the topic.
   AUTO_TOPIC_HAIKU: z
     .string()
     .default('true')
@@ -552,12 +548,62 @@ export const explicitFlags = {
 // Derived helpers (used by index.ts, command.handler.ts, session-history.ts)
 // ---------------------------------------------------------------------------
 
-import { getStateDir } from './utils/json-store.js';
+import * as fs from 'fs';
+import { getStateDir, ensureStateDir, readJsonFile, writeJsonFile } from './utils/json-store.js';
 
 /** Numeric bot ID extracted from the Telegram token (e.g. "123456" from "123456:ABC..."). */
 export const BOT_ID = config.TELEGRAM_BOT_TOKEN.split(':')[0];
 
 const STATE_DIR = getStateDir();
+
+// ---------------------------------------------------------------------------
+// The bot's name
+// ---------------------------------------------------------------------------
+
+/** Where the bot's name comes from: `/botname`, the `BOT_NAME` setting, or the default. */
+export type BotNameSource = 'command' | 'env' | 'default';
+
+const botNameFileSchema = z.object({ name: z.string().min(1).max(64) });
+const envBotName = config.BOT_NAME;
+let botNameSource: BotNameSource = explicitFlags.BOT_NAME ? 'env' : 'default';
+
+/** The file holding the name set with `/botname`, one per bot. */
+export function getBotNameFilePath(): string {
+  return path.join(STATE_DIR, `botname-${BOT_ID}.json`);
+}
+
+// A name set with /botname wins over BOT_NAME. It's applied here, as the config
+// loads, so every module that reads config.BOT_NAME at import time sees it too.
+{
+  const stored = readJsonFile(getBotNameFilePath(), botNameFileSchema, 'BotName')?.name;
+  if (stored) {
+    config.BOT_NAME = stored;
+    botNameSource = 'command';
+  }
+}
+
+export function getBotNameSource(): BotNameSource {
+  return botNameSource;
+}
+
+/**
+ * Save the name set with `/botname`, or clear it (`undefined`) so the bot goes
+ * back to `BOT_NAME`. Updates `config.BOT_NAME` in place for the running process;
+ * the Telegram side is the caller's job. Throws when the file can't be written.
+ */
+export function setStoredBotName(name: string | undefined): void {
+  const file = getBotNameFilePath();
+  if (name) {
+    ensureStateDir(STATE_DIR, 'BotName');
+    writeJsonFile(file, { name }, 'BotName', { rethrow: true });
+    config.BOT_NAME = name;
+    botNameSource = 'command';
+    return;
+  }
+  fs.rmSync(file, { force: true });
+  config.BOT_NAME = envBotName;
+  botNameSource = explicitFlags.BOT_NAME ? 'env' : 'default';
+}
 
 /** Per-bot reload marker file path so multi-instance setups don't cross-restore. */
 export function getReloadMarkerPath(): string {

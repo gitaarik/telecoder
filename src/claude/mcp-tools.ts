@@ -15,7 +15,7 @@ import * as path from 'path';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../utils/workspace-guard.js';
-import { setSessionTopic, clearTopicAndRefreshBotName } from '../bot/handlers/command/topic-store.js';
+import { setSessionTopic, clearTopic } from '../bot/handlers/command/topic-store.js';
 import { messageSender } from '../telegram/message-sender.js';
 import {
   createPendingQuestion,
@@ -66,9 +66,7 @@ function buildToolList(toolsCtx: McpToolsContext) {
     requestSecretTool(toolsCtx),
   ];
 
-  if (config.DYNAMIC_BOT_NAME) {
-    tools.push(setTopicTool(toolsCtx));
-  }
+  tools.push(setTopicTool(toolsCtx));
 
   if (config.TELEGRAPH_ENABLED) {
     tools.push(publishTelegraphTool(toolsCtx));
@@ -133,7 +131,7 @@ function switchProjectTool(toolsCtx: McpToolsContext) {
         }
 
         sessionManager.setWorkingDirectory(toolsCtx.sessionKey, targetPath);
-        await clearTopicAndRefreshBotName(toolsCtx.telegramCtx, toolsCtx.sessionKey);
+        clearTopic(toolsCtx.sessionKey);
 
         return {
           content: [{
@@ -261,7 +259,7 @@ function sendFileTool(toolsCtx: McpToolsContext) {
 function setTopicTool(toolsCtx: McpToolsContext) {
   return tool(
     'telecoder_set_topic',
-    'Update the conversation topic shown in the status line. Call this proactively when the work topic changes. Pass an empty string to clear. Keep topics very short (1-4 words).',
+    'Update the conversation topic shown in the status line and as the thread\'s name. Call this proactively when the work topic changes. Pass an empty string to clear. Keep topics very short (1-4 words).',
     {
       topic: z.string().describe(
         'Short topic label (1-4 words, e.g. "auth refactor", "CI fix", "dark mode"). Empty string to clear.'
@@ -271,11 +269,9 @@ function setTopicTool(toolsCtx: McpToolsContext) {
       try {
         const { sessionKey } = toolsCtx;
 
-        // The topic lives in the status line, not the Telegram bot display name
-        // (which only carries BOT_NAME — project). So we update in-memory +
-        // persistent topic state and DO NOT call setMyName. Telegram rate-limits
-        // setMyName brutally — firing it on every proactive topic change is what
-        // trips multi-hour 429 flood-waits. Mirrors the /topic command handler.
+        // The topic lives in the status line and the thread name, not the
+        // Telegram bot display name, which is static: Telegram rate-limits
+        // setMyName brutally. Mirrors the /topic command handler.
         const trimmedTopic = topic.trim();
         setSessionTopic(sessionKey, trimmedTopic);
 

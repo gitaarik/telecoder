@@ -41,12 +41,11 @@ export {
   setSessionTopic,
   getSessionTopic,
   getMsSinceTopicSet,
-  clearTopicAndRefreshBotName,
-  restoreTopicAndRefreshBotName,
+  clearTopic,
+  restoreTopic,
   handleTopic,
-  handleBotName,
-  handleBotNameCallback,
 } from './command/topic.js';
+export { handleBotName } from './command/botname.js';
 export { getStreamingMode } from './command/streaming-mode.js';
 export { handleAllow, handleDeny, handleMembers } from './command/access.js';
 export {

@@ -22,7 +22,7 @@ vi.mock('../../src/providers/provider-router.js', async (importOriginal) => ({
 }));
 const restoreTopic = vi.fn();
 vi.mock('../../src/bot/handlers/command/topic.js', () => ({
-  restoreTopicAndRefreshBotName: (_ctx: unknown, key: string, topic?: string) => restoreTopic(key, topic),
+  restoreTopic,
 }));
 vi.mock('../../src/telegram/task-list.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/telegram/task-list.js')>();

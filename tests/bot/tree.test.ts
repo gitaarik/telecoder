@@ -33,7 +33,7 @@ vi.mock('../../src/providers/provider-router.js', async (importOriginal) => ({
 }));
 vi.mock('../../src/bot/handlers/command.handler.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/bot/handlers/command.handler.js')>()),
-  restoreTopicAndRefreshBotName: vi.fn(async () => {}),
+  restoreTopic: vi.fn(async () => {}),
   getSessionTopic: vi.fn(() => undefined),
 }));
 
@@ -54,7 +54,7 @@ const { sessionManager } = await import('../../src/claude/session-manager.js');
 const { sessionHistory } = await import('../../src/claude/session-history.js');
 const { messageOffsets } = await import('../../src/claude/message-offsets.js');
 const { sessionJsonlPath } = await import('../../src/claude/session-jsonl.js');
-const { restoreTopicAndRefreshBotName } = await import('../../src/bot/handlers/command.handler.js');
+const { restoreTopic } = await import('../../src/bot/handlers/command.handler.js');
 const { cutLabel } = await import('../../src/telegram/prompt-label.js');
 
 afterAll(() => {
@@ -436,7 +436,7 @@ describe('branching from a point', () => {
 
     // No history names that point, so no topic goes with it — and the one the
     // chat had, the conversation it left, doesn't either.
-    expect(restoreTopicAndRefreshBotName).toHaveBeenLastCalledWith(expect.anything(), key, undefined);
+    expect(restoreTopic).toHaveBeenLastCalledWith(key, undefined);
   });
 });
 

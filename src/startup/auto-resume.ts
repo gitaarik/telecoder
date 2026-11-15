@@ -18,7 +18,6 @@ import { parseSessionKey } from '../utils/session-key.js';
 import { describeRunningBuild } from '../utils/build-info.js';
 import { setSessionTopic } from '../bot/handlers/command/topic-store.js';
 import { getEffortLabel } from '../bot/handlers/command.handler.js';
-import { isBotNameEnabled, rateLimitedSetMyName, notifyBotNameBlockToChat } from '../telegram/botname-settings.js';
 import { sendParts } from '../telegram/send.js';
 import { taskListDisplay } from '../telegram/task-list.js';
 import { allowedChatIds, threadOpts, sendBlockWithPlainFallback } from './shared.js';
@@ -113,18 +112,8 @@ export async function autoResumeAfterReload(bot: Bot, notified: Set<string>): Pr
 
       clearConversation(sessionKey);
 
-      // Restore topic in memory and update bot name. Refresh the name even
-      // when no topic was persisted — otherwise the bot keeps whatever name
-      // was last sent (potentially for a different chat/project) after restart.
-      if (isBotNameEnabled(sessionKey)) {
-        const displayName = setSessionTopic(sessionKey, entry.topic || '');
-        try {
-          const result = await rateLimitedSetMyName(bot.api, (n) => bot.api.setMyName(n), displayName);
-          await notifyBotNameBlockToChat(bot.api, chatId, result, threadId);
-        } catch (e) {
-          console.debug('[AutoResume] Failed to update bot name:', e instanceof Error ? e.message : e);
-        }
-      }
+      // Restore the topic in memory, for the status line and the thread name.
+      setSessionTopic(sessionKey, entry.topic || '');
 
       const projectName = path.basename(session.workingDirectory);
       const opts = threadOpts(threadId);

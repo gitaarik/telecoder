@@ -66,7 +66,7 @@ import {
   optionLetter,
 } from '../../telegram/lettered-options.js';
 import { cutLabel, promptLabel } from '../../telegram/prompt-label.js';
-import { restoreTopicAndRefreshBotName, getSessionTopic } from './command.handler.js';
+import { restoreTopic, getSessionTopic } from './command.handler.js';
 import { formatTimeAgo } from './command/shared.js';
 import { NO_PROJECT_MESSAGE, whereChatIs } from './session-guard.js';
 import { refuseWhileBusy, sendView, type Keyboard, type View } from './view.js';
@@ -503,7 +503,7 @@ async function onCarryOn(
     return;
   }
   clearConversation(sessionKey);
-  await restoreTopicAndRefreshBotName(ctx, sessionKey, carry.owner.entry.topic);
+  restoreTopic(sessionKey, carry.owner.entry.topic);
 
   const file = sessionJsonlPath(tree.projectPath, carry.sessionId);
   let jsonl = '';

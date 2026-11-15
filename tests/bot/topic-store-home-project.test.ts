@@ -15,16 +15,15 @@ vi.mock('../../src/config.js', async (importOriginal) => {
   return { ...actual, config: { ...actual.config, BOT_NAME: 'TeleCoder — sjs' } };
 });
 
-const { setSessionTopic, buildBotDisplayName } = await import('../../src/bot/handlers/command/topic-store.js');
+const { setSessionTopic } = await import('../../src/bot/handlers/command/topic-store.js');
 
 describe('a bot with a home project', () => {
-  it("names its threads and itself without the project while it's home", () => {
+  it("names its threads without the project while it's home", () => {
     workingDirectory = HOME;
 
     setSessionTopic('1:2', 'Scraper · Fixing the login');
 
     expect(syncThreadTitle).toHaveBeenLastCalledWith('1:2', 'Scraper · Fixing the login', undefined);
-    expect(buildBotDisplayName('1:2')).toBe('TeleCoder — sjs');
   });
 
   it('puts the project back in front once a thread is somewhere else', () => {
@@ -33,6 +32,5 @@ describe('a bot with a home project', () => {
     setSessionTopic('1:2', 'Thread titles · Testing');
 
     expect(syncThreadTitle).toHaveBeenLastCalledWith('1:2', 'Thread titles · Testing', 'telecoder');
-    expect(buildBotDisplayName('1:2')).toBe('TeleCoder — sjs — telecoder');
   });
 });

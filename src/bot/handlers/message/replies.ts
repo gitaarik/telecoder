@@ -19,7 +19,7 @@ import { maybeSendVoiceReply } from '../../../tts/voice-reply.js';
 import {
   projectStatusSuffix,
   resumeCommandMessage,
-  clearTopicAndRefreshBotName,
+  clearTopic,
 } from '../command.handler.js';
 import { fireAutoTopic, requireSession, resolveUserFilePath, runQueuedTurn } from './shared.js';
 import { refuseFilePublish } from '../../file-access.js';
@@ -56,7 +56,7 @@ export async function handleProjectReply(ctx: Context, sessionKey: string, proje
   // Set the project
   sessionManager.setWorkingDirectory(sessionKey, resolvedPath);
   clearConversation(sessionKey);
-  await clearTopicAndRefreshBotName(ctx, sessionKey);
+  clearTopic(sessionKey);
 
   const projectName = path.basename(resolvedPath);
   await replyFormatted(ctx, new EntityText()

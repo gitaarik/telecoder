@@ -22,15 +22,13 @@ vi.mock('../../src/claude/session-manager.js', () => ({
 const setSessionTopic = vi.fn();
 vi.mock('../../src/bot/handlers/command/topic-store.js', () => ({
   setSessionTopic,
-  pushBotName: vi.fn(),
-  buildBotDisplayName: vi.fn(),
-  clearTopicAndRefreshBotName: vi.fn(),
-  restoreTopicAndRefreshBotName: vi.fn(),
+  clearTopic: vi.fn(),
+  restoreTopic: vi.fn(),
   getSessionTopic: vi.fn(),
   getMsSinceTopicSet: vi.fn(),
 }));
 
-const { handleTopic, handleBotName } = await import('../../src/bot/handlers/command/topic.js');
+const { handleTopic } = await import('../../src/bot/handlers/command/topic.js');
 const { handleClear, handleSessions, handleTeleport } = await import('../../src/bot/handlers/command/session.js');
 
 function chat(command: string) {
@@ -58,18 +56,6 @@ describe('/topic', () => {
     const [text, opts] = reply.mock.calls[0];
     expect(text).toBe('✅ Topic: fix_the (parser).');
     expect(spans(text, opts)).toEqual([['bold', 'fix_the (parser).']]);
-  });
-});
-
-describe('/botname', () => {
-  it('shows the setting with its keyboard, and BOT_NAME without an escape', async () => {
-    const { ctx, reply } = chat('/botname');
-    await handleBotName(ctx);
-    const [text, opts] = reply.mock.calls[0];
-    expect(text).toContain('Bot name');
-    expect(spans(text, opts)[0]).toEqual(['bold', 'Dynamic Bot Name']);
-    expect(text).not.toContain('\\');
-    expect(opts?.reply_markup).toBeDefined();
   });
 });
 

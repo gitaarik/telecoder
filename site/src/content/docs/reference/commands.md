@@ -78,7 +78,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/cost` | Show usage limits and cost as Claude Code reports them — session/weekly limits on a subscription, dollar totals on API billing — plus TeleCoder's own running tally for the conversation, which the CLI cannot keep (SDK mode only) |
 | `/compact` | Compact the context window (SDK and PTY), reporting the token reduction |
 | `/statusline` | Toggle the status line that closes every reply (project, effort, model, context %, cost). On by default (`STATUS_LINE_DEFAULT`), with the topic; your last prompts and a `claude --resume` command are sub-toggles |
-| `/botname` | Toggle dynamic bot name (shows the active project) |
+| `/botname [name\|reset]` | Rename the bot in Telegram. The name is kept per bot and wins over `BOT_NAME`; `reset` goes back to it. Telegram throttles renames hard, so a refused one is reported and sent again when the cooldown ends. Alone, shows the name Telegram has and any pending cooldown — admin-only |
 | `/topic` | Set or clear the conversation topic |
 | `/tasks` | List active background tasks, with details per task |
 | `/shells` | List and kill OS-level background shells from the PTY session |

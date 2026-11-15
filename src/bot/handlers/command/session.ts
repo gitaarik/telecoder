@@ -42,8 +42,8 @@ import {
 } from '../../../telegram/lettered-options.js';
 import {
   getSessionTopic,
-  clearTopicAndRefreshBotName,
-  restoreTopicAndRefreshBotName,
+  clearTopic,
+  restoreTopic,
 } from './topic.js';
 import { sendStatusLine } from './settings.js';
 import { ensureProjectDataDir } from '../../../utils/project-data-dir.js';
@@ -67,7 +67,7 @@ export async function handleClear(ctx: Context): Promise<void> {
   if (skipConfirm) {
     clearConversation(sessionKey);
     sessionManager.startNewConversation(sessionKey);
-    await clearTopicAndRefreshBotName(ctx, sessionKey);
+    clearTopic(sessionKey);
 
     const session = sessionManager.getSession(sessionKey);
     const projectName = session ? path.basename(session.workingDirectory) : null;
@@ -121,7 +121,7 @@ export async function handleClearCallback(ctx: Context): Promise<void> {
     // matching Claude Code's /clear semantics.
     clearConversation(sessionKey);
     sessionManager.startNewConversation(sessionKey);
-    await clearTopicAndRefreshBotName(ctx, sessionKey);
+    clearTopic(sessionKey);
 
     const session = sessionManager.getSession(sessionKey);
     const projectName = session ? path.basename(session.workingDirectory) : null;
@@ -150,7 +150,7 @@ export async function resumeHistoryEntry(ctx: Context, sessionKey: string, conve
 
   clearConversation(sessionKey);
   const entry = sessionHistory.getSessionByConversationId(sessionKey, conversationId);
-  await restoreTopicAndRefreshBotName(ctx, sessionKey, entry?.topic);
+  restoreTopic(sessionKey, entry?.topic);
 
   await ctx.answerCallbackQuery({ text: 'Session resumed!' });
   await editCallbackMessage(ctx, sessionRestoredMessage('✅ Resumed session for ', session.workingDirectory, sessionKey));
@@ -187,7 +187,7 @@ export async function handleContinue(ctx: Context): Promise<void> {
 
   clearConversation(sessionKey);
   const entry = sessionHistory.getLastSession(sessionKey);
-  await restoreTopicAndRefreshBotName(ctx, sessionKey, entry?.topic);
+  restoreTopic(sessionKey, entry?.topic);
 
   await replyFormatted(ctx, sessionRestoredMessage('✅ Continuing ', session.workingDirectory, sessionKey));
 

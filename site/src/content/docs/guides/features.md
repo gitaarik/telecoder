@@ -121,7 +121,7 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
   and a `claude --resume` command
 - Terminal-style tool status (`/terminalui`) and four verbosity tiers (`/verbosity`)
 - Claude Code's task list as a live card
-- The bot's display name can show the current topic (`/botname`, `/topic`)
+- `/topic` sets the conversation topic shown in the status line and as the thread's name; `/botname` renames the bot in Telegram, without a trip to BotFather
 - Optional Telegraph Instant View for long replies (opt-in with `TELEGRAPH_ENABLED=true`;
   pages are public)
 - Inline keyboards for settings

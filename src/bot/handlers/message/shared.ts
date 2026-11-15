@@ -14,7 +14,6 @@ import { sessionManager } from '../../../claude/session-manager.js';
 import { queueRequest } from '../../../claude/request-queue.js';
 import { summarizeTopicWithHaiku } from '../../../claude/auto-topic-haiku.js';
 import { readLastAiTitle } from '../../../claude/session-jsonl.js';
-import { isBotNameEnabled } from '../../../telegram/botname-settings.js';
 import { namesThread } from '../../../telegram/thread-titles.js';
 import { userPreferences } from '../../../providers/user-preferences.js';
 import { parseSessionKey } from '../../../utils/session-key.js';
@@ -32,17 +31,16 @@ export async function replyFeatureDisabled(ctx: Context, feature: string): Promi
 
 /**
  * Fire-and-forget topic update via a parallel Haiku call. Runs alongside
- * the main agent turn so the bot name reflects the new topic almost
- * immediately, without depending on the main agent calling telecoder_set_topic.
+ * the main agent turn so the status line and the thread name reflect the new
+ * topic almost immediately, without depending on the main agent calling
+ * telecoder_set_topic.
  */
 export function fireAutoTopic(ctx: Context, sessionKey: string, userMessage: string): void {
   if (!config.AUTO_TOPIC_HAIKU) return;
-  // Fire if the topic will be visible somewhere — the bot name, the status
-  // line or the thread's name. Skipping when nothing displays it avoids wasted
-  // Haiku calls.
+  // Fire if the topic will be visible somewhere — the status line or the
+  // thread's name. Skipping when nothing displays it avoids wasted Haiku calls.
   const { chatId } = parseSessionKey(sessionKey);
-  const wantsTopic = isBotNameEnabled(sessionKey)
-    || userPreferences.getShowTopicInStatusLine(chatId)
+  const wantsTopic = userPreferences.getShowTopicInStatusLine(chatId)
     || namesThread(sessionKey);
   if (!wantsTopic) return;
   void (async () => {
@@ -70,9 +68,8 @@ export function fireAutoTopic(ctx: Context, sessionKey: string, userMessage: str
         }
       }
       if (!topic) return;
-      // Topic lives in the status line, not the Telegram bot name. Updating
-      // the topic doesn't change buildBotDisplayName, so no setMyName call —
-      // we don't want to burn Telegram's bot-name rate limit on a no-op.
+      // Topic lives in the status line and the thread name, not the Telegram
+      // bot name, so no setMyName call.
       setSessionTopic(sessionKey, topic);
     } catch (err) {
       console.debug('[AutoTopic] Side-call update failed:', err instanceof Error ? err.message : err);

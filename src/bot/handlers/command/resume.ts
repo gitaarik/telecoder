@@ -41,7 +41,7 @@ import { editCallbackMessage, replyFormatted } from '../../../telegram/send.js';
 import { taskListDisplay } from '../../../telegram/task-list.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 import { formatTimeAgo, parseCallback, projectStatusSuffix, replyMd, resumeCommandMessage } from './shared.js';
-import { restoreTopicAndRefreshBotName } from './topic.js';
+import { restoreTopic } from './topic.js';
 import { sendView, type Keyboard, type View } from '../view.js';
 import { resumeHistoryEntry, sendRecapHint } from './session.js';
 
@@ -355,7 +355,7 @@ async function resumeScanned(ctx: Context, sessionKey: string, s: ScannedSession
     );
   }
 
-  await restoreTopicAndRefreshBotName(ctx, sessionKey, topic);
+  restoreTopic(sessionKey, topic);
 
   const message = new EntityText()
     .add('✅ Resumed ').bold(topic ?? sessionId)

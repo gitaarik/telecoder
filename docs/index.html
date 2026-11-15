@@ -3246,8 +3246,8 @@ CCR_AUTOSTART=true</pre>
               <span class="command-desc">Toggle the status line that closes every reply (project, effort, model, context %, cost). On by default (<code>STATUS_LINE_DEFAULT</code>) and sent silently, with sub-toggles for topic, your last five prompts (a long one by its start and its end), and a copy-pasteable claude --resume command. It follows a typed message, a voice note, an upload, a command and the reply Claude writes on its own when a background task reports back; a scheduled fire gets the stats and the context bar alone</span>
             </div>
             <div class="command-row">
-              <code class="command-code">/botname</code>
-              <span class="command-desc">Toggle dynamic bot name (shows the active project)</span>
+              <code class="command-code">/botname [name|reset]</code>
+              <span class="command-desc">Rename the bot in Telegram (admins). The name is kept per bot and wins over BOT_NAME; reset goes back to it. Telegram throttles renames hard, so a refused one is reported and sent again when the cooldown ends. Alone, shows the name Telegram has and any pending cooldown</span>
             </div>
             <div class="command-row">
               <code class="command-code">/suggestions</code>

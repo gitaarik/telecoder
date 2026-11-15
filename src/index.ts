@@ -195,10 +195,8 @@ async function main() {
     }
   }
 
-  // Reconcile the Telegram display name with BOT_NAME. Runs after the resume
-  // paths above so a session restore — which pushes its own "BOT_NAME —
-  // project" name — wins and this becomes a no-op; only a bot whose name
-  // nobody claimed this startup gets rewritten.
+  // Reconcile the Telegram display name with the configured one (/botname or
+  // BOT_NAME), in case it changed between runs or a rename was refused.
   try {
     await syncBotNameOnStartup(bot.api);
   } catch (err) {

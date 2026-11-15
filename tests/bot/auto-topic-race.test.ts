@@ -12,7 +12,6 @@ vi.mock('../../src/config.js', async (importOriginal) => {
   return { ...actual, config: { ...actual.config, AUTO_TOPIC_HAIKU: true } };
 });
 vi.mock('../../src/claude/auto-topic-haiku.js', () => ({ summarizeTopicWithHaiku: summarize }));
-vi.mock('../../src/telegram/botname-settings.js', () => ({ isBotNameEnabled: () => true }));
 vi.mock('../../src/claude/session-manager.js', () => ({
   sessionManager: { getSession: () => ({ workingDirectory: '/home/rik/dev/telecoder' }) },
 }));
