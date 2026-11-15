@@ -88,6 +88,9 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 ## Reliability
 
 - An agent watchdog that detects silent or stuck tools, with `/cancel` working during hangs
+- A memory guard: a message that would start a new `claude` on a machine short of memory
+  ends the idle claudes first, and asks before starting when that isn't enough; `/status`
+  shows the machine's available memory and the claudes running
 - `/sync` resends a reply Telegram missed
 - `/restartbot` and `/update` from chat; the background service brings the bot back
 - On an npm install, `/update` upgrades TeleCoder itself and `/version` checks for a newer

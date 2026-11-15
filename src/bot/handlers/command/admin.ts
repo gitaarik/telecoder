@@ -13,6 +13,8 @@ import { execFile, spawn } from 'child_process';
 import { isMainThread } from 'worker_threads';
 import { config, getReloadMarkerPath } from '../../../config.js';
 import { getModel } from '../../../providers/provider-router.js';
+import { getPtyProvider } from '../../../providers/claude-provider.js';
+import { readMemory } from '../../../utils/memory-pressure.js';
 import { EntityText, type EntityMessage } from '../../../telegram/entities.js';
 import { replyFormatted, replyParts } from '../../../telegram/send.js';
 import { sanitizeError } from '../../../utils/sanitize.js';
@@ -314,6 +316,14 @@ export async function handleBotStatus(ctx: Context): Promise<void> {
   field('Uptime', uptimeStr).newline();
   field('PID', String(pid)).newline();
   field('Memory', `${memMB} MB`).newline();
+  const machine = readMemory();
+  if (machine) {
+    const swap = machine.swapTotalMB > 0 ? `, swap ${machine.swapUsedMB.toLocaleString('en-US')} MB in use` : '';
+    field('Machine', `${machine.availableMB.toLocaleString('en-US')} MB available of ${machine.totalMB.toLocaleString('en-US')} MB${swap}`).newline();
+  }
+  const claudes = getPtyProvider().describeSessions();
+  const generating = claudes.filter((s) => s.generating).length;
+  field('Claude processes', claudes.length === 0 ? 'none' : `${claudes.length} (${generating} generating)`).newline();
   field('Model', model).newline();
   field('Streaming', streaming);
   if (warning) msg.newline(2).add(warning);

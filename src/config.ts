@@ -396,6 +396,23 @@ const envSchema = z.object({
     .string()
     .default('3600000')
     .transform((val) => parseInt(val, 10)),
+  // Memory guard. Before a typed message starts a new `claude` for a PTY chat
+  // — a new chat or thread, or one whose claude was ended — the machine's
+  // available memory (MemAvailable) is checked. Under this many MB, claudes
+  // idle longer than MEMORY_GUARD_REAP_IDLE_MS are ended first; if that still
+  // leaves too little, the chat is asked whether to start anyway, end the
+  // longest-idle claude first, or drop the message. 0 turns the guard off.
+  MEMORY_GUARD_MIN_AVAILABLE_MB: z
+    .string()
+    .default('1024')
+    .transform((val) => parseInt(val, 10)),
+  // The shorter idle window the guard reaps with when memory is tight, in ms.
+  // A chat whose claude was reaped this way resumes from its transcript on its
+  // next message, a few seconds slower. Default 300000 = 5 min.
+  MEMORY_GUARD_REAP_IDLE_MS: z
+    .string()
+    .default('300000')
+    .transform((val) => parseInt(val, 10)),
   // How long a question from the agent — telecoder_ask_user buttons, a
   // telecoder_poll_user poll, a Claude Code dialog relayed to the chat —
   // waits for an answer before the turn carries on without one. The turn is

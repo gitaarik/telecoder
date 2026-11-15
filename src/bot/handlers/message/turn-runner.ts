@@ -21,6 +21,7 @@ import { getStreamingMode } from '../command.handler.js';
 import { fireAutoTopic, runQueuedTurn } from './shared.js';
 import { closeTurn, relayCatchUpIfMissed } from './turn-notify.js';
 import { lastThrottledPrompt, postThrottlePrompt } from './throttle.js';
+import { guardSpawn } from '../../../claude/memory-guard.js';
 
 
 export async function handleCcrThrottleCallback(ctx: Context): Promise<void> {
@@ -84,6 +85,14 @@ export async function runTurn(
   chatId: number,
   message: string,
 ): Promise<void> {
+  // A message that would start a new claude on a machine short of memory is
+  // held until the chat says so (see memory-guard.ts). One to a running
+  // claude passes straight through.
+  const guard = await guardSpawn(ctx, sessionKey);
+  if (!guard.proceed) {
+    await ctx.reply(guard.message);
+    return;
+  }
   if (getStreamingMode() === 'streaming') {
     await handleStreamingResponse(ctx, sessionKey, message);
   } else {

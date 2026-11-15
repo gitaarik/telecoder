@@ -533,6 +533,40 @@ export class PtyProvider implements Provider {
     return ended;
   }
 
+  /** Whether this session has a claude running right now. */
+  hasLiveSession(sessionKey: string): boolean {
+    return this.sessions.has(sessionKey);
+  }
+
+  /**
+   * Every live claude, with how long it has sat idle and whether its TUI shows
+   * it generating. For the memory guard and /status.
+   */
+  describeSessions(): { sessionKey: string; pid: number; idleMs: number; generating: boolean }[] {
+    const now = Date.now();
+    return [...this.sessions].map(([sessionKey, session]) => ({
+      sessionKey,
+      pid: session.term.pid,
+      idleMs: now - Math.max(session.lastUsedAt, session.lastChunkAt),
+      generating: !!session.endOfTurnResolver || isGenerating(this._getScreenText(session)),
+    }));
+  }
+
+  /**
+   * End the one claude that has sat idle the longest, whatever its idle time,
+   * skipping any that is generating or that `isBusy` says still has work.
+   * Returns its session key, or null when every claude is busy.
+   */
+  endLongestIdleSession(isBusy: (sessionKey: string, pid: number) => boolean): string | null {
+    const candidates = this.describeSessions()
+      .filter((s) => !s.generating && !isBusy(s.sessionKey, s.pid))
+      .sort((a, b) => b.idleMs - a.idleMs);
+    const victim = candidates[0];
+    if (!victim) return null;
+    this._cleanupSession(victim.sessionKey);
+    return victim.sessionKey;
+  }
+
   /**
    * Whether claude is generating in this session right now, whoever started the
    * turn. The bot's own bookkeeping can't answer that for a turn claude started
