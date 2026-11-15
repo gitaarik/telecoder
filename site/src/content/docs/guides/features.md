@@ -84,7 +84,7 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 - Run several bots from one launcher, each with its own sessions and preferences
 - Add, remove or change a bot in `instances.json` while the others keep running
 - Create a bot for a project from Telegram with `/newbot`, no BotFather chat needed, with
-  that project as its home
+  that project as its home and the TeleCoder icon as its picture
 - Apply a setting everywhere with `/model sonnet all`
 - [Setup](multiple-bots.md)
 

@@ -36,7 +36,8 @@ BotFather chat. Turn on Bot Management Mode for one bot in [@BotFather](https://
 Mini App, then send it `/newbot <project>`, or ask Claude for a bot for a project in
 a private chat with it. It offers a button that opens Telegram's
 create-a-bot screen with a name and username filled in; once you confirm, it fetches the
-new bot's token, restricts the bot to you, and adds it to `instances.json` with
+new bot's token, restricts the bot to you, gives it the TeleCoder icon as its profile
+picture, and adds it to `instances.json` with
 `HOME_PROJECT` set, which the launcher picks up. A bot with a `HOME_PROJECT` starts
 conversations there without a `/project` first, and leaves that project out of its thread
 names and its display name. Telegram has no API to turn on threads for a bot, so for a

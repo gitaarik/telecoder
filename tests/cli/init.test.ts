@@ -81,6 +81,9 @@ interface FakeTelegram {
   backlog: TgUpdate[];
   webhook: string;
   sendError?: Error;
+  /** Whether the bot already has a profile picture. True, so most tests aren't asked about the icon. */
+  hasPhoto: boolean;
+  photoError?: Error;
   makeClient: (token: string) => TelegramClient;
 }
 
@@ -90,6 +93,7 @@ function fakeTelegram(): FakeTelegram {
     updates: [],
     backlog: [],
     webhook: '',
+    hasPhoto: true,
     makeClient: (token) => ({
       getMe: async () => {
         tg.calls.push({ method: 'getMe', token });
@@ -115,6 +119,14 @@ function fakeTelegram(): FakeTelegram {
       sendMessage: async (chatId, text, entities) => {
         tg.calls.push({ method: 'sendMessage', token, params: { chatId, text, entities } });
         if (tg.sendError) throw tg.sendError;
+      },
+      hasProfilePhoto: async (userId) => {
+        tg.calls.push({ method: 'getUserProfilePhotos', token, params: { userId } });
+        return tg.hasPhoto;
+      },
+      setProfilePhoto: async (jpeg, filename) => {
+        tg.calls.push({ method: 'setMyProfilePhoto', token, params: { bytes: jpeg.length, filename, jpeg: jpeg[0] === 0xff && jpeg[1] === 0xd8 } });
+        if (tg.photoError) throw tg.photoError;
       },
     }),
   };
@@ -459,6 +471,96 @@ describe('telecoder init: an existing .env', () => {
     expect(await result).toBe(1);
     expect(prompter.said.join('\n')).toContain('pass --yes');
     expect(fs.readFileSync(envPath, 'utf-8')).toBe(original);
+  });
+});
+
+describe('telecoder init: the bot picture', () => {
+  const ID_ANSWERS = [GOOD, '412345678', '', '', false, false];
+  const photoCalls = (tg: FakeTelegram) => tg.calls.filter((c) => c.method === 'setMyProfilePhoto');
+
+  it('offers the TeleCoder icon to a bot without a picture, and sets it after the write', async () => {
+    const tg = fakeTelegram();
+    tg.hasPhoto = false;
+    const { prompter, result } = run([...ID_ANSWERS, true /* icon */, true /* write it */], tg);
+    expect(await result).toBe(0);
+    expect(prompter.asked).toContain('Give @my_coder_bot the TeleCoder icon as its profile picture?');
+    expect(prompter.said).toContain('  Bot picture      the TeleCoder icon');
+    expect(prompter.said).toContain('✓ Gave @my_coder_bot the TeleCoder icon');
+    expect(photoCalls(tg)).toHaveLength(1);
+    expect(photoCalls(tg)[0].params).toMatchObject({ filename: 'telecoder.jpg', jpeg: true });
+    expect(tg.calls.find((c) => c.method === 'getUserProfilePhotos')?.params).toEqual({ userId: 7012345678 });
+  });
+
+  it('leaves the picture alone on no, and when nothing is written', async () => {
+    const no = fakeTelegram();
+    no.hasPhoto = false;
+    expect(await run([...ID_ANSWERS, false, true], no).result).toBe(0);
+    expect(photoCalls(no)).toHaveLength(0);
+
+    fs.rmSync(envPath);
+    const unwritten = fakeTelegram();
+    unwritten.hasPhoto = false;
+    expect(await run([...ID_ANSWERS, true, false /* write it */], unwritten).result).toBe(1);
+    expect(photoCalls(unwritten)).toHaveLength(0);
+  });
+
+  it("doesn't ask about a bot that has a picture, unless --icon", async () => {
+    const tg = fakeTelegram();
+    const { prompter, result } = run([...ID_ANSWERS, true], tg);
+    expect(await result).toBe(0);
+    expect(prompter.asked.join('\n')).not.toContain('icon');
+    expect(photoCalls(tg)).toHaveLength(0);
+
+    fs.rmSync(envPath);
+    const forced = fakeTelegram();
+    expect(await run([...ID_ANSWERS, true], forced, { icon: true }).result).toBe(0);
+    expect(photoCalls(forced)).toHaveLength(1);
+  });
+
+  it('a failed upload is a warning, not a failed setup', async () => {
+    const tg = fakeTelegram();
+    tg.hasPhoto = false;
+    tg.photoError = new TelegramApiError('setMyProfilePhoto', 400, 'Bad Request: PHOTO_INVALID');
+    const { prompter, result } = run([...ID_ANSWERS, true, true], tg);
+    expect(await result).toBe(0);
+    expect(prompter.said.join('\n')).toContain("! Couldn't set the bot's picture");
+    expect(readEnv().TELEGRAM_BOT_TOKEN).toBe(GOOD);
+  });
+
+  it('without a terminal: sets it on a bare bot, and --no-icon stops that', async () => {
+    const flags = { tokenEnv: 'TOKEN', ownerId: '412345678' };
+    const bare = fakeTelegram();
+    bare.hasPhoto = false;
+    expect(await run([], bare, flags, { env: { TOKEN: GOOD } }, false).result).toBe(0);
+    expect(photoCalls(bare)).toHaveLength(1);
+
+    fs.rmSync(envPath);
+    const declined = fakeTelegram();
+    declined.hasPhoto = false;
+    expect(await run([], declined, { ...flags, icon: false }, { env: { TOKEN: GOOD } }, false).result).toBe(0);
+    expect(photoCalls(declined)).toHaveLength(0);
+  });
+
+  it('parses --icon and --no-icon', () => {
+    expect(parseInitArgs(['--icon'])).toEqual({ ok: true, opts: { icon: true } });
+    expect(parseInitArgs(['--no-icon'])).toEqual({ ok: true, opts: { icon: false } });
+  });
+
+  it('uploads the picture as multipart, with the photo attached by name', async () => {
+    let sent: { url: string; body: unknown; headers: unknown } | undefined;
+    const client = createTelegramClient(GOOD, {
+      fetchImpl: async (url, init) => {
+        sent = { url, body: init.body, headers: init.headers };
+        return new Response(JSON.stringify({ ok: true, result: true }));
+      },
+    });
+    await client.setProfilePhoto(new Uint8Array([0xff, 0xd8, 0xff]), 'telecoder.jpg');
+    expect(sent?.url).toMatch(/\/setMyProfilePhoto$/);
+    // No content-type of ours: fetch has to write the multipart boundary.
+    expect(sent?.headers).toBeUndefined();
+    const form = sent?.body as FormData;
+    expect(JSON.parse(form.get('photo') as string)).toEqual({ type: 'static', photo: 'attach://picture' });
+    expect((form.get('picture') as File).size).toBe(3);
   });
 });
 

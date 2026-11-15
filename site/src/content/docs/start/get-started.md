@@ -54,6 +54,8 @@ telecoder init
   You can switch any time with `/method`; [Providers](../guides/providers.md) has the
   details.
 - **Voice and Telegraph**, both optional.
+- **A picture for the bot.** If your bot has no profile picture yet, the wizard offers
+  to give it the TeleCoder icon, so it's easy to spot in your chat list.
 
 It writes your answers to `~/.telecoder/.env`, readable by you only. Run it again to
 change an answer, and run `telecoder doctor` whenever something seems off.

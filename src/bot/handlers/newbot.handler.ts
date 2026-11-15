@@ -4,7 +4,7 @@
  * A bot with Bot Management Mode on (BotFather's Mini App) can offer a button
  * that opens Telegram's own create-a-bot screen. Telegram reports the new bot
  * in a `managed_bot_created` message, we fetch its token, lock it to its
- * owner, and add it to instances.json with HOME_PROJECT set. The launcher
+ * owner, give it the TeleCoder icon, and add it to instances.json with HOME_PROJECT set. The launcher
  * watches that file and starts it.
  *
  * Telegram doesn't say which button a new bot came from, so the project
@@ -15,9 +15,10 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Api, type Context } from 'grammy';
+import { Api, InputFile, type Context } from 'grammy';
 import { isAdmin } from '../../utils/admins.js';
 import { sanitizeError } from '../../utils/sanitize.js';
+import { BOT_ICON_FILENAME, botIconJpeg } from '../../utils/bot-icon.js';
 import { addInstance } from '../../utils/instances.js';
 import { InstancesConfigError } from '../../utils/instance-config.js';
 import { getWorkspaceRoot } from '../../utils/workspace-guard.js';
@@ -201,6 +202,14 @@ export async function handleManagedBotCreated(ctx: Context): Promise<void> {
     await new Api(token).getUpdates({ timeout: 0, limit: 1 });
   } catch (err) {
     console.warn('[NewBot] Priming getUpdates failed:', sanitizeError(err));
+  }
+
+  // A plain letter on a coloured disc is hard to tell from the next bot's, so
+  // the new bot starts with the TeleCoder icon. Its owner can change it later.
+  try {
+    await new Api(token).setMyProfilePhoto({ type: 'static', photo: new InputFile(botIconJpeg(), BOT_ICON_FILENAME) });
+  } catch (err) {
+    console.warn('[NewBot] setMyProfilePhoto failed:', sanitizeError(err));
   }
 
   let name: string;

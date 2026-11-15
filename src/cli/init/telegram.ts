@@ -1,7 +1,7 @@
 /**
  * The handful of Bot API calls `telecoder init` makes, over plain fetch.
  *
- * Not grammY: the wizard needs five methods, wants to own the long poll (so
+ * Not grammY: the wizard needs a handful of methods, wants to own the long poll (so
  * Ctrl+C can cancel it), and must never let the token reach a log line — every
  * error leaving this module has been through redactSecrets, and the token
  * itself is replaced too, in case Telegram ever changes its shape.
@@ -69,6 +69,10 @@ export interface TelegramClient {
   getUpdates(params: { offset?: number; timeout?: number; signal?: AbortSignal }): Promise<TgUpdate[]>;
   /** Plain text plus entities, like every message the bot sends (no parse mode). */
   sendMessage(chatId: number, text: string, entities?: TgEntity[]): Promise<void>;
+  /** Whether a user (here: the bot itself) has a profile picture. */
+  hasProfilePhoto(userId: number): Promise<boolean>;
+  /** Set the bot's own profile picture, from a JPEG. */
+  setProfilePhoto(jpeg: Uint8Array, filename: string): Promise<void>;
 }
 
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
@@ -80,14 +84,17 @@ export function createTelegramClient(
   const base = `${apiRoot.replace(/\/+$/, '')}/bot${token}`;
   const scrub = (text: string) => redactSecrets(text.replaceAll(token, '<token>'));
 
-  async function call<T>(method: string, params: Record<string, unknown> = {}, signal?: AbortSignal, timeoutMs = 15_000): Promise<T> {
+  /** `params` as JSON, or a FormData when the call uploads a file. */
+  async function call<T>(method: string, params: Record<string, unknown> | FormData = {}, signal?: AbortSignal, timeoutMs = 15_000): Promise<T> {
     const timeout = AbortSignal.timeout(timeoutMs);
     let res: Response;
     try {
       res = await fetchImpl(`${base}/${method}`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(params),
+        // fetch writes a FormData's own content-type, boundary included.
+        ...(params instanceof FormData
+          ? { body: params }
+          : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(params) }),
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       });
     } catch (error) {
@@ -116,6 +123,16 @@ export function createTelegramClient(
       call<TgUpdate[]>('getUpdates', { offset, timeout }, signal, (timeout + 15) * 1000),
     sendMessage: async (chatId, text, entities) => {
       await call('sendMessage', { chat_id: chatId, text, ...(entities ? { entities } : {}) });
+    },
+    hasProfilePhoto: async (userId) => {
+      const photos = await call<{ total_count: number }>('getUserProfilePhotos', { user_id: userId, limit: 1 });
+      return photos.total_count > 0;
+    },
+    setProfilePhoto: async (jpeg, filename) => {
+      const form = new FormData();
+      form.set('photo', JSON.stringify({ type: 'static', photo: 'attach://picture' }));
+      form.set('picture', new Blob([jpeg], { type: 'image/jpeg' }), filename);
+      await call<boolean>('setMyProfilePhoto', form, undefined, 30_000);
     },
   };
 }

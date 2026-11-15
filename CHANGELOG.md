@@ -5,6 +5,14 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ## Unreleased
 
+### Added
+
+- **A new bot gets the TeleCoder icon.** `telecoder init` offers it to a bot
+  that has no profile picture yet, and a bot made with `/newbot` starts with
+  it. A plain letter on a coloured disc is hard to tell from the next bot's.
+  `--icon` replaces a picture the bot has; `--no-icon` leaves it alone
+  without asking. A picture that's already there is never replaced unasked.
+
 ### Changed
 
 - **The status line is on by default**, with its topic line. Project, effort,

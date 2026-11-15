@@ -17,6 +17,7 @@ import * as path from 'path';
 import { parse as parseEnv } from 'dotenv';
 import type { CheckResult } from '../commands/doctor.js';
 import { isWellFormedBotToken, MALFORMED_TOKEN_MESSAGE, REJECTED_TOKEN_MESSAGE } from '../../utils/bot-token.js';
+import { BOT_ICON_FILENAME, botIconJpeg } from '../../utils/bot-icon.js';
 import { parseIdList } from '../../utils/id-list.js';
 import { redactSecrets } from '../../utils/sanitize.js';
 import { backupFile, renderEnv, updateEnvText, writeEnvFile, type EnvUpdates } from './env-file.js';
@@ -40,6 +41,11 @@ export interface InitOptions {
   /** Name of an environment variable holding a Groq API key; turns voice on. */
   groqKeyEnv?: string;
   telegraph?: boolean;
+  /**
+   * Give the bot the TeleCoder icon as its profile picture. Unset: yes when the
+   * bot has no picture yet (asked first in a terminal), and never over one it has.
+   */
+  icon?: boolean;
   /** Don't ask: take the defaults, replace an existing .env (backed up), remove a webhook. */
   yes?: boolean;
   /** Skip the hello from the bot at the end. */
@@ -241,6 +247,7 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
       wasTelegraph,
     );
   }
+  const icon = await stepIcon(opts, deps, interactive, client, bot);
   p.say('');
 
   // ── 8. Write ────────────────────────────────────────────────
@@ -262,6 +269,7 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
   for (const key of Object.keys(claudeLogin)) p.say(`  Claude login     ${key}=<hidden>`);
   p.say(`  Voice            ${groqKey ? 'on (Groq key hidden)' : 'off'}`);
   p.say(`  Telegraph        ${telegraph ? 'on' : 'off'}`);
+  if (icon) p.say('  Bot picture      the TeleCoder icon');
   if (interactive && !await p.confirm('Write it?', true)) throw new Stop('Nothing was written.', 1);
 
   let content: string;
@@ -279,6 +287,16 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
   p.say(`✓ Wrote ${deps.envPath} (readable by you only)`);
   if (owner.otherRoles) {
     p.say('! ADMIN_USER_IDS / APPROVER_USER_IDS are set in this file: check they are still in ALLOWED_USER_IDS.');
+  }
+
+  if (icon) {
+    try {
+      await client.setProfilePhoto(botIconJpeg(), BOT_ICON_FILENAME);
+      p.say(`✓ Gave @${bot.username} the TeleCoder icon`);
+    } catch (error) {
+      p.say(`! Couldn't set the bot's picture: ${describeTelegramError(error)}`);
+      p.say('    The bot works without one. @BotFather can set a picture too: Edit Bot, then Edit Botpic.');
+    }
   }
 
   // ── 9. Hello, and what next ─────────────────────────────────
@@ -669,6 +687,24 @@ function isDir(dir: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Whether to give the bot the TeleCoder icon. A picture the bot already has is
+ * only replaced when --icon asks for it.
+ */
+async function stepIcon(opts: InitOptions, deps: InitDeps, interactive: boolean, client: TelegramClient, bot: TgUser): Promise<boolean> {
+  if (opts.icon !== undefined) return opts.icon;
+  let hasPicture: boolean;
+  try {
+    hasPicture = await client.hasProfilePhoto(bot.id);
+  } catch {
+    // Can't tell, so leave the picture alone.
+    return false;
+  }
+  if (hasPicture) return false;
+  if (!interactive) return true;
+  return deps.prompter.confirm(`Give @${bot.username} the TeleCoder icon as its profile picture?`, true);
 }
 
 async function stepVoice(opts: InitOptions, deps: InitDeps, interactive: boolean, current: string | undefined): Promise<string | undefined> {

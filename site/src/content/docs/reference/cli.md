@@ -30,6 +30,8 @@ from arguments, because arguments show up in `ps`:
 - `--transport sdk|pty`
 - `--groq-key-env VAR`: a Groq key for voice
 - `--telegraph`, `--no-telegraph`
+- `--icon`, `--no-icon`: give the bot the TeleCoder icon as its profile picture, or leave its
+  picture alone. By default the bot gets the icon only when it has no picture yet.
 - `--no-test-message`: don't send the hello message
 - `--yes`, `-y`: accept the defaults, and replace an existing `.env` (after backing it up)
 

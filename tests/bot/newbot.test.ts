@@ -17,11 +17,13 @@ vi.mock('../../src/claude/session-manager.js', () => ({
 
 const primedTokens: string[] = [];
 const primeGetUpdates = vi.fn(async () => []);
+const setMyProfilePhoto = vi.fn(async (_photo: { type: string; photo: unknown }) => true);
 vi.mock('grammy', async (importOriginal) => {
   const actual = await importOriginal<typeof import('grammy')>();
   class Api {
     constructor(token: string) { primedTokens.push(token); }
     getUpdates = primeGetUpdates;
+    setMyProfilePhoto = setMyProfilePhoto;
   }
   return { ...actual, Api };
 });
@@ -108,6 +110,9 @@ describe('/newbot', () => {
     // Asks for the new bot's updates once, so Telegram keeps a /start sent before its worker is up.
     expect(primedTokens).toContain('555:secret');
     expect(primeGetUpdates).toHaveBeenCalledWith({ timeout: 0, limit: 1 });
+    // The new bot starts with the TeleCoder icon.
+    expect(setMyProfilePhoto).toHaveBeenCalledTimes(1);
+    expect(setMyProfilePhoto.mock.calls[0][0]).toMatchObject({ type: 'static' });
     expect(addInstance).toHaveBeenCalledWith({
       name: 'TeleCoder — sjs',
       token: '555:secret',

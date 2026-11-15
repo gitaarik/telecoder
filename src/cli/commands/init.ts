@@ -30,6 +30,9 @@ const USAGE = [
   '  --groq-key-env VAR   turn voice transcription on, with the Groq key in VAR',
   '  --telegraph          publish long replies to Telegraph (public pages)',
   '  --no-telegraph       don\'t, without asking',
+  '  --icon               give the bot the TeleCoder icon as its profile picture,',
+  '                       replacing one it has (default: only when it has none)',
+  '  --no-icon            leave the bot\'s picture alone, without asking',
   '  --no-test-message    don\'t have the bot message you at the end',
   '  --yes                ask nothing: take defaults, replace an existing .env',
   '                       (backed up first), remove a webhook if one is set',
@@ -58,6 +61,8 @@ export function parseInitArgs(args: string[]): ParsedInitArgs {
     if (flag === '--yes' || flag === '-y') opts.yes = true;
     else if (flag === '--telegraph') opts.telegraph = true;
     else if (flag === '--no-telegraph') opts.telegraph = false;
+    else if (flag === '--icon') opts.icon = true;
+    else if (flag === '--no-icon') opts.icon = false;
     else if (flag === '--no-test-message') opts.noTestMessage = true;
     else if (flag === '--token' || flag === '--groq-key') {
       return { ok: false, error: `${flag} isn't accepted: arguments show up in ps. Put it in an environment variable and pass ${flag}-env VAR.` };
