@@ -211,13 +211,20 @@ export function getAvailableCommands(): EntityMessage {
  * are not shadowed and must not be reported as such.
  */
 const registeredBotCommands = new Set<string>();
+const forwardedBotCommands = new Set<string>();
 
 export function registerBotCommandName(name: string, forwardsToAgent = false): void {
   if (forwardsToAgent) {
     registeredBotCommands.delete(name);
+    forwardedBotCommands.add(name);
     return;
   }
   registeredBotCommands.add(name);
+}
+
+/** Names registered only to route into the agent, `/compact` among them. */
+export function getForwardedCommandNames(): ReadonlySet<string> {
+  return forwardedBotCommands;
 }
 
 /** Names that shadow a same-named Claude Code command. */

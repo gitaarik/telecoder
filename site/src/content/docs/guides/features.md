@@ -20,6 +20,9 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 - `/mode` sets how much Claude asks before acting, from manual to bypass
 - `/compact`, `/context` and `/cost`, as in the CLI, and `/projectcommands` lists every slash
   command a project has
+- `/commands <words>` searches the bot's commands by name and description, where Telegram's
+  own `/` menu only matches the start of a name, and a mistyped command gets the likely ones
+  as buttons instead of reaching Claude
 - Marketplace plugins you name in `CLAUDE_PLUGINS` come along
 - A provider router with one-tap failover to Claude Code Router when Max throttles
   ([Providers](providers.md))

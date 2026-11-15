@@ -20,6 +20,7 @@ import { getActiveMethod } from '../../providers/claude-provider.js';
 import { contextTokens } from '../../providers/types.js';
 import { stopTurn } from '../middleware/queued-messages.js';
 import { groupAvailableCommands, type AvailableCommands } from '../../claude/available-commands.js';
+import { buildCommandSearchMessage, searchCommands } from '../command-catalog.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
 import { replyMd, getEffortLabel, withBackToPrevious } from './command/shared.js';
 import { getSessionTopic } from './command/topic.js';
@@ -238,7 +239,7 @@ export async function handleStart(ctx: Context): Promise<void> {
     .add('\n• ').code('/newproject <name>').add(' - Create a new project')
     .add('\n• ').code('/clear').add(' - Clear session and start fresh')
     .add('\n• ').code('/status').add(' - Show current session info')
-    .add('\n• ').code('/commands').add(' - Show all available commands')
+    .add('\n• ').code('/commands').add(' - Show all commands; ').code('/commands <words>').add(' searches them')
     .add(`\n\nReplies: ${config.STREAMING_MODE}\nEffort: ${effortLabel}`);
   if (isDangerousMode()) {
     welcome.add('\n\n⚠️ ').bold('DANGEROUS MODE ENABLED').add(' - All tool permissions auto-approved');
@@ -428,6 +429,13 @@ export async function handleCancel(ctx: Context): Promise<void> {
 }
 
 export async function handleCommands(ctx: Context): Promise<void> {
+  // `/commands kill` searches names and descriptions — Telegram's own `/`
+  // menu only filters on the start of a name.
+  const query = (ctx.message?.text ?? '').split(' ').slice(1).join(' ').trim();
+  if (query) {
+    await replyFormatted(ctx, buildCommandSearchMessage(query, searchCommands(query)));
+    return;
+  }
   await replyParts(ctx, getAvailableCommands());
 }
 

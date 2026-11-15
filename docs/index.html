@@ -2088,6 +2088,13 @@
             available through chat, not a cut-down subset.</p>
           </div>
           <div class="feature-card" data-category="agent">
+            <div class="feature-icon"><svg><use href="#i-dialog"/></svg></div>
+            <h3>Find the command</h3>
+            <p>Telegram's <code>/</code> menu only matches the start of a name. <code>/commands kill</code>
+            searches names and descriptions, and a mistyped command Claude Code doesn't know either
+            comes back as "did you mean" buttons that run it with the arguments you typed.</p>
+          </div>
+          <div class="feature-card" data-category="agent">
             <div class="feature-icon"><svg><use href="#i-pty"/></svg></div>
             <h3>SDK or the real CLI</h3>
             <p><code>/method</code> switches between the Agent SDK and driving the actual
@@ -3333,8 +3340,8 @@ CCR_AUTOSTART=true</pre>
               <span class="command-desc">Stop the running turn, including one Claude started itself, and drop every message waiting behind it (alias: /stop). To recall one message and leave the turn running, tap Take back on its <code>⏳ Queued</code> notice instead. A message set aside with Ask me after or /later stays set aside.</span>
             </div>
             <div class="command-row">
-              <code class="command-code">/commands</code>
-              <span class="command-desc">Show all available commands</span>
+              <code class="command-code">/commands [words]</code>
+              <span class="command-desc">Show all commands, or search them by name and description — <code>/commands kill</code> finds <code>/shells</code>, where Telegram's own <code>/</code> menu only matches the start of a name.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/ping</code>

@@ -92,7 +92,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/rebuildbot` | Rebuild code and restart — this instance, all, or all once each is idle (`/rebuildbot idle`) — admin-only, source checkouts only |
 | `/update` | Update the Claude Code CLI, or TeleCoder itself on an npm install — admin-only |
 | `/cancel` | Stop the running turn and drop the messages and scheduled prompts waiting behind it; set-aside messages stay (alias: `/stop`) |
-| `/commands` | Show all commands |
+| `/commands [words]` | Show all commands, or search them by name and description: `/commands kill` finds `/shells`. Telegram's own `/` menu only matches the start of a name. A mistyped command (`/task`, `/shel`) that Claude Code doesn't know either gets the likely commands as buttons instead of going to Claude; a tap runs it with the arguments as typed |
 
 ## Group access
 | Command | Description |

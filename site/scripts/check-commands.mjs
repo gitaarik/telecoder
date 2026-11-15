@@ -1,9 +1,11 @@
 // Fails the build when the command reference and the bot disagree: every
-// command src/bot/bot.ts registers or puts in Telegram's menu must be on the
-// Commands page, and every row on that page must be a real command.
+// command src/bot/bot.ts registers, or src/bot/command-catalog.ts puts in
+// Telegram's menu, must be on the Commands page, and every row on that page
+// must be a real command.
 import { readFileSync } from 'node:fs';
 
-const bot = readFileSync(new URL('../../src/bot/bot.ts', import.meta.url), 'utf8');
+const bot = readFileSync(new URL('../../src/bot/bot.ts', import.meta.url), 'utf8')
+  + readFileSync(new URL('../../src/bot/command-catalog.ts', import.meta.url), 'utf8');
 const page = readFileSync(new URL('../src/content/docs/reference/commands.md', import.meta.url), 'utf8');
 
 const inCode = new Set([

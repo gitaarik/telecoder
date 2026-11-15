@@ -21,6 +21,7 @@ import { isDuplicate, markProcessed } from '../../telegram/deduplication.js';
 import { isStaleMessage } from '../middleware/stale-filter.js';
 import { isClaudeCommand, stripCommandBotMention } from '../../claude/command-parser.js';
 import { offerPendingForkIfAny } from './fork.handler.js';
+import { offerCommandFix } from './command-fallback.js';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
 import { fireAutoTopic, requireSession, runQueuedTurn } from './message/shared.js';
 import { runTurn } from './message/turn-runner.js';
@@ -104,6 +105,13 @@ export async function handleMessage(ctx: Context): Promise<void> {
       await handleAgentReply(ctx, sessionKey, text, 'loop');
       return;
     }
+  }
+
+  // A slash command the bot didn't register is on its way to Claude as a
+  // prompt. If it looks like a typo of a bot command, and Claude Code doesn't
+  // know it either, offer the likely commands instead.
+  if (await offerCommandFix(ctx, sessionKey, text)) {
+    return;
   }
 
   // Skip if this is a Claude command (handled by command handler)

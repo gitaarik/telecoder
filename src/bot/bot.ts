@@ -139,6 +139,8 @@ import { initThreadsSetup } from '../telegram/threads-setup.js';
 import { resolvePendingPoll } from '../claude/poll-user.js';
 import { captureSecretMessages, handleSecretCallback } from '../claude/secret-request.js';
 import { registerBotCommandName } from '../claude/command-parser.js';
+import { buildCommandMenu, setCommandCatalog } from './command-catalog.js';
+import { handleCommandFixCallback, initCommandFallback } from './handlers/command-fallback.js';
 import { withRunningNote } from './handlers/running-note.js';
 import { isCheckout } from '../utils/install-mode.js';
 
@@ -289,76 +291,10 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
     rethrowInternalServerErrors: false, // Retry on 5xx errors
   }));
 
-  // Register command menu for autocomplete (non-blocking)
-  const commandList = [
-    { command: 'start', description: '🚀 Show help and getting started' },
-    { command: 'project', description: '📁 Set working directory' },
-    { command: 'newproject', description: '📁 Create a new project' },
-    { command: 'newbot', description: '🤖 Create a bot for a project' },
-    { command: 'status', description: '📊 Show current session status' },
-    { command: 'clear', description: '🗑️ Clear conversation history' },
-    { command: 'cancel', description: '⏹️ Stop the current request and drop anything queued' },
-    { command: 'resume', description: '▶️ Resume a session' },
-    { command: 'continue', description: '▶️ Continue last session' },
-    { command: 'botstatus', description: '🩺 Show bot process status' },
-    { command: 'version', description: '🏷️ Show the running version and whether it is the latest' },
-    { command: 'restartbot', description: '🔁 Restart the bot' },
-    // An npm install has no source to rebuild; /update replaces it instead.
-    ...(isCheckout() ? [{ command: 'rebuildbot', description: '🔄 Rebuild and restart with session restore' }] : []),
-    { command: 'context', description: '🧠 Show Claude context usage' },
-    { command: 'cost', description: '💰 Show usage limits and cost' },
-    { command: 'compact', description: '🗜️ Compact the context window' },
-    { command: 'update', description: isCheckout() ? '⬆️ Update the Claude Code CLI' : '⬆️ Update TeleCoder or the Claude Code CLI' },
-    { command: 'plan', description: '📋 Start planning mode' },
-    { command: 'explore', description: '🔍 Explore codebase' },
-    { command: 'loop', description: '🔄 Run in loop mode' },
-    { command: 'sessions', description: '📚 View saved sessions' },
-    { command: 'fork', description: '🍴 Fork this conversation to another bot' },
-    { command: 'spinoff', description: '🍴 Split a task off into a new thread' },
-    { command: 'deletethread', description: '🗑️ Delete this thread and end its session' },
-    { command: 'tree', description: '🌳 Show where this conversation branched, and jump between branches' },
-    { command: 'accept', description: '📦 Accept a pending fork from another bot' },
-    { command: 'decline', description: '🚫 Discard a pending fork' },
-    { command: 'recap', description: '📋 Recap last messages of current session' },
-    { command: 'prompts', description: '💬 List the prompts you sent, and branch from any of them' },
-    { command: 'sync', description: '📨 Resend any missed reply from the session log' },
-    { command: 'handoff', description: '📦 Export the session as a markdown handoff document' },
-    { command: 'schedule', description: '🔔 Schedule a recurring prompt (e.g. every 1h, daily 9am)' },
-    { command: 'schedules', description: '🔔 List active scheduled tasks' },
-    { command: 'unschedule', description: '🔕 Remove a scheduled task by id' },
-    { command: 'projectcommands', description: '📜 List slash commands from .claude/commands/' },
-    { command: 'permissions', description: '🔐 Show the permission-gate state and guarded patterns' },
-    { command: 'users', description: '👥 Show who can use this bot' },
-    { command: 'allow', description: '✅ Let someone in — reply to them, or /allow @user' },
-    { command: 'deny', description: '🚫 Remove someone admitted with /allow' },
-    { command: 'members', description: '👥 Show who may prompt the agent in this group' },
-    { command: 'teleport', description: '🚀 Move session to terminal' },
-    ...(config.TRANSCRIBE_ENABLED ? [{ command: 'transcribe', description: '🎤 Transcribe audio to text' }] : []),
-    { command: 'file', description: '📎 Download a file from project' },
-    { command: 'telegraph', description: '📄 View markdown with Instant View' },
-    { command: 'suggestions', description: '💡 Toggle predicted next-prompt buttons' },
-    { command: 'model', description: '🤖 Switch AI model' },
-    { command: 'effort', description: '🎯 Set reasoning effort level' },
-    { command: 'verbosity', description: '🎚️ Set verbosity tier (quiet/normal/verbose/debug)' },
-    { command: 'method', description: '🛰️ Switch Claude transport (SDK / PTY)' },
-    { command: 'btw', description: '💬 Side question without interrupting' },
-    { command: 'later', description: '🔔 Set an idea aside for after the turn' },
-    { command: 'steer', description: '⚡ Stop the turn and send this instead' },
-    { command: 'tasks', description: '🔄 List active background tasks' },
-    { command: 'shells', description: '🔍 List & kill background shells (PTY mode)' },
-    ...(config.CCR_ENABLED ? [{ command: 'provider', description: '🔌 Switch AI provider' }] : []),
-    ...(config.CCR_ENABLED ? [{ command: 'ccr', description: '🔌 Toggle CCR routing (alt providers)' }] : []),
-    { command: 'mode', description: '🔐 How much Claude asks before acting' },
-    { command: 'autoapprove', description: '⚡ Approve guarded commands for a while' },
-    { command: 'streaming', description: '⚙️ Toggle streaming / wait replies' },
-    { command: 'terminalui', description: '🖥️ Toggle terminal-style display' },
-    { command: 'statusline', description: '📍 Toggle per-turn status line' },
-    { command: 'botname', description: '✏️ Rename the bot (admins)' },
-    { command: 'topic', description: '💬 Set the conversation topic' },
-    ...(config.TTS_ENABLED ? [{ command: 'tts', description: '🔊 Toggle voice replies' }] : []),
-    { command: 'ping', description: '🏓 Check if bot is responsive' },
-    { command: 'commands', description: '📜 List all commands' },
-  ];
+  // Register command menu for autocomplete (non-blocking). The list lives in
+  // command-catalog.ts, where /commands <search> and the typo fallback read it.
+  const commandList = buildCommandMenu();
+  setCommandCatalog(commandList);
 
   bot.api.setMyCommands(commandList).then(() => {
     console.log('📋 Command menu registered');
@@ -520,6 +456,9 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // /shells kill buttons must also bypass sequentialize — the whole point is to
   // rescue a session whose current turn is hung waiting on a bg shell.
   bot.callbackQuery(/^shells:/, handleShellsCallback);
+  // "Did you mean" buttons under a mistyped command. Before sequentialize: the
+  // tap only re-sends the message, which then waits its turn like any other.
+  bot.callbackQuery(/^cmdfix:/, handleCommandFixCallback);
   bot.callbackQuery(/^delthread:/, adminOnly(handleDeleteThreadCallback));
   // telecoder_ask_user button taps MUST bypass sequentialize: the agent
   // query is mid-flight and waiting on this exact tap to complete the tool
@@ -549,6 +488,7 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // so it can't wait in line itself.
   bot.on('edited_message', handleEditedMessage);
   initParkedMessages(bot);
+  initCommandFallback(bot);
   setQueuedDiverters({ btw: askBtw, fork: forkPastRunningTurnIntoThread });
   // Menu buttons for /restartbot and /rebuildbot must bypass sequentialize
   // for the same reason their parent commands do: users tap these precisely
