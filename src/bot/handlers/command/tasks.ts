@@ -11,7 +11,13 @@ import { EntityText, type EntityMessage } from '../../../telegram/entities.js';
 import { replyFormatted, editCallbackMessage } from '../../../telegram/send.js';
 import { taskTracker, type TaskState } from '../../../telegram/task-tracker.js';
 import { getPtyProvider } from '../../../providers/claude-provider.js';
-import { scrapeTasksOverlay } from '../../../claude/tasks-overlay-scraper.js';
+import {
+  scrapeTasksOverlay,
+  parseTaskRows,
+  parseTaskDetail,
+  type TaskRow,
+  type TaskDetail,
+} from '../../../claude/tasks-overlay-scraper.js';
 import { bringCardDown, hasRunningTasks } from '../../../telegram/background-activity-card.js';
 import {
   getDirectChildren,
@@ -181,7 +187,12 @@ function renderTasksList(sessionKey: string, tasks: TaskState[]): { message: Ent
   return { message: b.build(), keyboard };
 }
 
-function renderTaskDetail(task: TaskState): { message: EntityMessage; keyboard: { text: string; callback_data: string }[][] } {
+/**
+ * `canShowOutput`: there is a live pty to ask, so the detail offers the task's
+ * output (see "📄 Output" below). Without one — SDK mode — the output only
+ * exists in the completion event, which the relay posts when it lands.
+ */
+function renderTaskDetail(task: TaskState, canShowOutput = false): { message: EntityMessage; keyboard: { text: string; callback_data: string }[][] } {
   const groupHint = (() => {
     switch (task.taskType) {
       case 'monitor_mcp': return '📡 Monitor';
@@ -223,16 +234,25 @@ function renderTaskDetail(task: TaskState): { message: EntityMessage; keyboard: 
   if (task.error) {
     b.newline(2).add(`⚠️ ${task.error}`);
   }
+  if (!canShowOutput && task.taskType !== 'monitor_mcp') {
+    b.newline(2).italic('Its output arrives with the result when it finishes.');
+  }
 
-  return {
-    message: b.build(),
-    keyboard: [
-      [
-        { text: '← Back to list', callback_data: 'tasks:back' },
-        { text: '🔄 Refresh', callback_data: `tasks:view:${task.id}` },
-      ],
+  const keyboard = [
+    [
+      { text: '← Back to list', callback_data: 'tasks:back' },
+      { text: '🔄 Refresh', callback_data: `tasks:view:${task.id}` },
     ],
-  };
+  ];
+  if (canShowOutput) {
+    keyboard.push([{ text: '📄 Output', callback_data: `tasks:out:${task.id}` }]);
+  }
+  return { message: b.build(), keyboard };
+}
+
+/** Whether this chat has a live pty whose `/tasks` overlay can be driven. */
+function hasLivePty(sessionKey: string): boolean {
+  return getPtyProvider().getSessionPid(sessionKey) !== undefined;
 }
 
 export async function handleTasks(ctx: Context): Promise<void> {
@@ -285,6 +305,41 @@ export async function handleTasksCallback(ctx: Context): Promise<void> {
     return;
   }
 
+  if (data === 'tasks:claude') {
+    await showClaudeView(ctx, sessionKey, { edit: true });
+    return;
+  }
+
+  if (data.startsWith('tasks:claude:')) {
+    const row = Number.parseInt(data.substring('tasks:claude:'.length), 10);
+    if (!Number.isFinite(row) || row < 1) {
+      await ctx.answerCallbackQuery().catch(() => {});
+      return;
+    }
+    await showClaudeView(ctx, sessionKey, {
+      edit: true,
+      pick: (rows) => (row <= rows.length ? row - 1 : undefined),
+      refresh: data,
+      back: 'tasks:claude',
+    });
+    return;
+  }
+
+  if (data.startsWith('tasks:out:')) {
+    const taskId = data.substring('tasks:out:'.length);
+    const task = taskTracker.getTask(sessionKey, taskId);
+    await showClaudeView(ctx, sessionKey, {
+      edit: true,
+      pick: (rows) => (task ? matchTaskRow(task, rows) : undefined),
+      unmatchedNote: task
+        ? "Couldn't tell which of these is that task — tap the one it is."
+        : undefined,
+      refresh: data,
+      back: task ? `tasks:view:${taskId}` : 'tasks:back',
+    });
+    return;
+  }
+
   if (data.startsWith('tasks:view:')) {
     const taskId = data.substring('tasks:view:'.length);
     const task = taskTracker.getTask(sessionKey, taskId);
@@ -298,7 +353,7 @@ export async function handleTasksCallback(ctx: Context): Promise<void> {
       } catch { /* ignore */ }
       return;
     }
-    const { message, keyboard } = renderTaskDetail(task);
+    const { message, keyboard } = renderTaskDetail(task, hasLivePty(sessionKey));
     await ctx.answerCallbackQuery().catch(() => {});
     try {
       await editCallbackMessage(ctx, message, { reply_markup: { inline_keyboard: keyboard } });
@@ -322,69 +377,257 @@ export async function handleTasksCallback(ctx: Context): Promise<void> {
 export const _isPossiblyStale = isPossiblyStale;
 export const _renderTasksList = renderTasksList;
 export const _renderTaskDetail = renderTaskDetail;
+export const _matchTaskRow = matchTaskRow;
+export const _renderClaudeList = renderClaudeList;
+export const _renderClaudeDetail = renderClaudeDetail;
 
 // ---------------------------------------------------------------------------
-// "🔎 Ask claude" — relay claude's own /tasks overlay
+// "🔎 Ask claude" and "📄 Output" — claude's own /tasks overlay, driven
 // ---------------------------------------------------------------------------
 
 /**
  * The tracker above is reconstructed from tool-arm and task-notification
- * events, so it only knows about work TeleCoder saw start. Claude's own
- * `/tasks` overlay is the live process's view: it also covers shells claude
- * backgrounded on its own initiative, and everything armed before the last bot
- * restart (relay state doesn't persist). This button asks it directly.
+ * events, so it only knows about work TeleCoder saw start, and nothing of what
+ * that work has printed. Claude's own `/tasks` overlay is the live process's
+ * view: it also covers shells claude backgrounded on its own initiative and
+ * everything armed before the last bot restart (relay state doesn't persist),
+ * and Enter on a row shows the task's output. So "Ask claude" relays the list
+ * with a button per row, and "📄 Output" on a tracked task finds its row and
+ * opens it.
  *
  * PTY-only — there is no TUI to drive in SDK mode, where the tracker is fed
  * from the event stream and is already authoritative.
  */
-async function handleAskClaude(ctx: Context, sessionKey: string): Promise<void> {
-  await ctx.answerCallbackQuery({ text: 'Asking claude…' }).catch(() => {});
 
-  // Every answer below opens with the same heading.
-  const view = () => new EntityText().add('🔎 ').bold("Claude's background view").newline(2);
+type ClaudeView =
+  | { kind: 'list'; rows: TaskRow[]; text: string }
+  | { kind: 'detail'; detail: TaskDetail }
+  | { kind: 'empty' }
+  | { kind: 'unreadable' }
+  | { kind: 'miss'; reason: 'no-session' | 'turn-active' | 'not-ready' };
 
-  const result = await getPtyProvider().runOverlayCommand(sessionKey, '/tasks');
-  if (!result.ok) {
-    const reason =
-      result.reason === 'turn-active'
-        ? 'Claude is mid-turn — the TUI keyboard is busy. Try again once it finishes.'
-        : result.reason === 'not-ready'
-          ? 'The Claude TUI is not at a prompt right now. Try again in a moment.'
-          : 'No active PTY session for this chat. In SDK mode the list above is already authoritative.';
-    await replyFormatted(ctx, view().add(reason).build());
-    return;
-  }
+const DOWN = '\x1b[B';
+const ENTER = '\r';
+
+/**
+ * Open the overlay and, if `pick` names a row of the list it opens on, press
+ * ↓ that many times and Enter. The overlay opens straight on the detail when
+ * only one task runs, in which case there is nothing to pick.
+ */
+async function readClaudeTasks(
+  sessionKey: string,
+  pick?: (rows: TaskRow[]) => number | undefined,
+): Promise<ClaudeView> {
+  const result = await getPtyProvider().runOverlayCommand(sessionKey, '/tasks', (screen) => {
+    if (!pick) return undefined;
+    const overlay = scrapeTasksOverlay(screen);
+    if (!overlay) return undefined;
+    const rows = parseTaskRows(overlay.text);
+    const index = rows.length > 0 ? pick(rows) : undefined;
+    if (index === undefined) return undefined;
+    return [...Array<string>(index).fill(DOWN), ENTER];
+  });
+  if (!result.ok) return { kind: 'miss', reason: result.reason };
 
   const overlay = scrapeTasksOverlay(result.screen);
-  if (!overlay) {
-    // The overlay's layout is a Claude Code implementation detail and can move
-    // between releases — say so plainly rather than showing a mangled guess.
-    await replyFormatted(
-      ctx,
-      view()
-        .add("Couldn't read the ")
-        .code('/tasks')
-        .add(' overlay — Claude Code may have changed its layout. The list above still works.')
-        .build(),
-    );
-    return;
-  }
+  if (!overlay) return { kind: 'unreadable' };
+  if (overlay.empty) return { kind: 'empty' };
+  const detail = parseTaskDetail(overlay.text);
+  if (detail) return { kind: 'detail', detail };
+  return { kind: 'list', rows: parseTaskRows(overlay.text), text: overlay.text };
+}
 
-  if (overlay.empty) {
-    // A code block for one line of "nothing running" is noise. Worth saying
-    // out loud though: claude reporting empty while the list above shows
-    // tasks means our tracker is holding entries claude no longer knows about.
-    const tracked = getActiveTasks(sessionKey).length;
-    const b = view().add('Nothing running.');
-    if (tracked > 0) {
-      b.newline(2).italic(`The ${tracked} task(s) listed above are unknown to claude — likely finished already.`);
+/** Collapse whitespace so a command wrapped by the TUI compares as typed. */
+function squash(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * The index of the one row in claude's list that is this task, or undefined
+ * when none or several are. A row shows the shell's command, or a description
+ * for other kinds, cut short with `…` when long; the task has both, so either
+ * may match. Two shells running the same command stay ambiguous on purpose:
+ * opening the wrong one's output would read as the right one's.
+ */
+function matchTaskRow(task: Pick<TaskState, 'description' | 'command'>, rows: TaskRow[]): number | undefined {
+  const candidates = [task.command, task.description]
+    .filter((c): c is string => typeof c === 'string' && c.trim().length > 0)
+    .map(squash);
+  const hits: number[] = [];
+  rows.forEach((row, i) => {
+    const label = squash(row.label);
+    if (!label) return;
+    const hit = candidates.some((c) => (row.truncated ? c.startsWith(label) : c === label));
+    if (hit) hits.push(i);
+  });
+  return hits.length === 1 ? hits[0] : undefined;
+}
+
+function explainOverlayMiss(reason: 'no-session' | 'turn-active' | 'not-ready'): string {
+  switch (reason) {
+    case 'turn-active':
+      return 'Claude is mid-turn — the TUI keyboard is busy. Try again once it finishes.';
+    case 'not-ready':
+      return 'The Claude TUI is not at a prompt right now. Try again in a moment.';
+    case 'no-session':
+      return 'No active PTY session for this chat. In SDK mode the list above is already authoritative.';
+  }
+}
+
+/** Every answer below opens with the same heading. */
+function claudeHeading(): EntityText {
+  return new EntityText().add('🔎 ').bold("Claude's background view").newline(2);
+}
+
+interface ClaudeNav {
+  /** Callback that re-reads this same view. */
+  refresh: string;
+  /** Callback for the ← button, if the view has somewhere to go back to. */
+  back?: string;
+}
+
+function renderClaudeList(
+  view: { rows: TaskRow[]; text: string },
+  nav: ClaudeNav,
+  note?: string,
+): { message: EntityMessage; keyboard: { text: string; callback_data: string }[][] } {
+  const b = claudeHeading();
+  if (note) b.italic(note).newline(2);
+  const body = view.text.length > 3000 ? view.text.slice(0, 2997) + '...' : view.text;
+  b.pre(body);
+
+  const keyboard: { text: string; callback_data: string }[][] = [];
+  if (view.rows.length > 0) {
+    b.newline().italic('Tap a row number to see its output.');
+    let row: { text: string; callback_data: string }[] = [];
+    view.rows.forEach((_, i) => {
+      row.push({ text: String(i + 1), callback_data: `tasks:claude:${i + 1}` });
+      if (row.length === 5 || i === view.rows.length - 1) {
+        keyboard.push(row);
+        row = [];
+      }
+    });
+  }
+  const last = [{ text: '🔄 Refresh', callback_data: nav.refresh }];
+  if (nav.back) last.unshift({ text: '← Back', callback_data: nav.back });
+  keyboard.push(last);
+  return { message: b.build(), keyboard };
+}
+
+/** The output pane is the point; keep its tail when the whole won't fit. */
+const OUTPUT_MAX_CHARS = 3000;
+
+function renderClaudeDetail(
+  detail: TaskDetail,
+  nav: ClaudeNav,
+): { message: EntityMessage; keyboard: { text: string; callback_data: string }[][] } {
+  const b = claudeHeading().bold(detail.title);
+  for (const f of detail.fields) {
+    b.newline().add('• ').bold(`${f.label}:`).add(' ');
+    if (f.label === 'Command') b.code(f.value);
+    else b.add(f.value);
+  }
+  b.newline(2).bold('Output:').newline();
+  if (detail.output === null) {
+    b.italic('No output yet.');
+  } else {
+    const out = detail.output.length > OUTPUT_MAX_CHARS
+      ? '…' + detail.output.slice(-(OUTPUT_MAX_CHARS - 1))
+      : detail.output;
+    b.pre(out);
+    if (detail.note) b.newline().italic(detail.note);
+  }
+  const last = [{ text: '🔄 Refresh', callback_data: nav.refresh }];
+  if (nav.back) last.unshift({ text: '← Back', callback_data: nav.back });
+  return { message: b.build(), keyboard: [last] };
+}
+
+interface ShowClaudeViewOptions {
+  /** Edit the message the button is on, rather than posting a new one. */
+  edit: boolean;
+  /** Which row to open, given the list; none opens nothing. */
+  pick?: (rows: TaskRow[]) => number | undefined;
+  /** Shown above the list when `pick` was given but chose no row. */
+  unmatchedNote?: string;
+  /** Callback that repeats this request; defaults to re-reading the list. */
+  refresh?: string;
+  /** Callback for the ← button. */
+  back?: string;
+}
+
+/**
+ * Read claude's overlay and show what it says — the list with row buttons, a
+ * task's detail with its output, or why it couldn't be read. One function so
+ * that every entry point (the button under the tracker list, a row number,
+ * 📄 Output on a tracked task) renders the same way.
+ */
+async function showClaudeView(ctx: Context, sessionKey: string, opts: ShowClaudeViewOptions): Promise<void> {
+  await ctx.answerCallbackQuery({ text: 'Asking claude…' }).catch(() => {});
+  const nav: ClaudeNav = { refresh: opts.refresh ?? 'tasks:claude', back: opts.back };
+
+  const view = await readClaudeTasks(sessionKey, opts.pick);
+  let rendered: { message: EntityMessage; keyboard: { text: string; callback_data: string }[][] };
+  switch (view.kind) {
+    case 'detail':
+      rendered = renderClaudeDetail(view.detail, nav);
+      break;
+    case 'list':
+      rendered = renderClaudeList(view, nav, opts.pick ? opts.unmatchedNote : undefined);
+      break;
+    case 'empty': {
+      // A code block for one line of "nothing running" is noise. Worth saying
+      // out loud though: claude reporting empty while the tracker shows tasks
+      // means it is holding entries claude no longer knows about.
+      const tracked = getActiveTasks(sessionKey).length;
+      const b = claudeHeading().add('Nothing running.');
+      if (tracked > 0) {
+        b.newline(2).italic(`The ${tracked} tracked task(s) are unknown to claude — likely finished already.`);
+      }
+      rendered = { message: b.build(), keyboard: [[{ text: '🔄 Refresh', callback_data: nav.refresh }]] };
+      break;
     }
-    await replyFormatted(ctx, b.build());
-    return;
+    case 'unreadable':
+      // The overlay's layout is a Claude Code implementation detail and can
+      // move between releases — say so plainly rather than showing a mangled
+      // guess.
+      rendered = {
+        message: claudeHeading()
+          .add("Couldn't read the ")
+          .code('/tasks')
+          .add(' overlay — Claude Code may have changed its layout. The tracked list still works.')
+          .build(),
+        keyboard: [[{ text: '🔄 Refresh', callback_data: nav.refresh }]],
+      };
+      break;
+    case 'miss':
+      rendered = {
+        message: claudeHeading().add(explainOverlayMiss(view.reason)).build(),
+        keyboard: [[{ text: '🔄 Refresh', callback_data: nav.refresh }]],
+      };
+      break;
+  }
+  if (nav.back && view.kind !== 'detail' && view.kind !== 'list') {
+    rendered.keyboard[0].unshift({ text: '← Back', callback_data: nav.back });
   }
 
-  const body = overlay.text.length > 3000 ? overlay.text.slice(0, 2997) + '...' : overlay.text;
-  await replyFormatted(ctx, view().pre(body).build());
+  const markup = { reply_markup: { inline_keyboard: rendered.keyboard } };
+  if (!opts.edit) {
+    await replyFormatted(ctx, rendered.message, markup);
+    return;
+  }
+  try {
+    await editCallbackMessage(ctx, rendered.message, markup);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message.toLowerCase() : '';
+    if (!msg.includes('message is not modified')) {
+      console.error("[Tasks] Failed to render claude's view:", err);
+    }
+  }
+}
+
+/** The button under the tracker's list: claude's view as a message of its own. */
+async function handleAskClaude(ctx: Context, sessionKey: string): Promise<void> {
+  await showClaudeView(ctx, sessionKey, { edit: false });
 }
 
 // ── /shells ─────────────────────────────────────────────────────

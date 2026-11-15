@@ -253,6 +253,12 @@ const SUBMIT_RETRY_EVERY_MS = 3_000;
 const OVERLAY_PASTE_SETTLE_MS = 300;
 const OVERLAY_IDLE_MS = 700;
 const OVERLAY_MAX_MS = 8_000;
+/**
+ * Gap between a keystroke into an open overlay and reading the screen. The
+ * overlay redraws a few hundred ms after a ↓ or Enter; a quiet-wait alone
+ * returns at once when stdout was already idle, and reads the old screen.
+ */
+const OVERLAY_KEY_SETTLE_MS = 400;
 
 /**
  * Outcome of runOverlayCommand. The failures are all "ask again later"
@@ -1834,8 +1840,16 @@ export class PtyProvider implements Provider {
    * Refuses while a turn is in flight. The keyboard belongs to the turn: our
    * keystrokes would land in its input box, and the overlay would corrupt the
    * screen extraction its response is scraped from.
+   *
+   * `steer` sees the overlay as first drawn and may answer with keystrokes to
+   * send into it — ↓ and Enter to open a row of `/tasks`. Each is given time
+   * to redraw, and the screen returned is the one after the last of them.
    */
-  async runOverlayCommand(sessionKey: string, command: string): Promise<OverlayResult> {
+  async runOverlayCommand(
+    sessionKey: string,
+    command: string,
+    steer?: (screen: string) => string[] | undefined,
+  ): Promise<OverlayResult> {
     const session = this.sessions.get(sessionKey);
     if (!session) return { ok: false, reason: 'no-session' };
     if (session.endOfTurnResolver) return { ok: false, reason: 'turn-active' };
@@ -1852,6 +1866,12 @@ export class PtyProvider implements Provider {
       const settled = await this._waitQuiet(session, OVERLAY_IDLE_MS, OVERLAY_MAX_MS);
       if (!settled) {
         console.warn(`[PtyProvider] overlay "${command}" did not settle within ${OVERLAY_MAX_MS}ms; scraping anyway`);
+      }
+      const keys = steer?.(this._getScreenText(session)) ?? [];
+      for (const key of keys) {
+        session.term.write(key);
+        await new Promise((r) => setTimeout(r, OVERLAY_KEY_SETTLE_MS));
+        await this._waitQuiet(session, OVERLAY_IDLE_MS, OVERLAY_MAX_MS);
       }
       return { ok: true, screen: this._getScreenText(session) };
     } finally {
@@ -2485,6 +2505,7 @@ function armAsyncTool(
     description,
     typeof toolUseId === 'string' && toolUseId ? toolUseId : undefined,
     startedAt,
+    typeof toolInput.command === 'string' ? toolInput.command : undefined,
   );
 }
 

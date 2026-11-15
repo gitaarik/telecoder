@@ -21,6 +21,8 @@ const MAX_TASK_UPDATES = 3;
 export interface TaskState {
   id: string;
   description: string;
+  /** A backgrounded shell's command; see TaskStartedEvent.command. */
+  command?: string;
   taskType?: string;
   workflowName?: string;
   toolUseId?: string;
@@ -84,6 +86,7 @@ class TaskTracker {
         const state: TaskState = {
           id: event.taskId,
           description: event.description,
+          ...(event.command !== undefined ? { command: event.command } : {}),
           taskType: event.taskType,
           workflowName: event.workflowName,
           toolUseId: event.toolUseId,

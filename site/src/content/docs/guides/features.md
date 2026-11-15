@@ -63,7 +63,7 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 ## Background and scheduled work
 
 - Background tasks and Monitor events relayed to Telegram as they happen
-- `/tasks` and `/shells` to inspect and stop what's running
+- `/tasks` and `/shells` to inspect and stop what's running, with a background task's output so far in PTY mode
 - `/schedule` for recurring prompts (`every 5m`, `daily 9am`, or cron)
 - [Background and scheduled work](background-and-scheduled-work.md)
 

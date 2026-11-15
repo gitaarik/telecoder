@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scrapeTasksOverlay } from '../../src/claude/tasks-overlay-scraper.js';
+import { scrapeTasksOverlay, parseTaskRows, parseTaskDetail } from '../../src/claude/tasks-overlay-scraper.js';
 
 // Fixtures are the real renders captured from claude 2.1.226 in a pty at
 // 120 cols, scrollback included, so the tests exercise the same scrollback
@@ -58,6 +58,82 @@ const EMPTY_VIEW = [
   '   No tasks currently running',
   '',
   '   ↑/↓ to select · Enter to view · Esc to close',
+].join('\n');
+
+// From claude 2.1.311, where the overlay's rule is the input box's `─` and the
+// rows carry a bullet and a status column. Captured live at 120 cols.
+const THIN_RULE = '─'.repeat(120);
+
+const LIST_VIEW_311 = [
+  SCROLLBACK,
+  '❯ /tasks',
+  '',
+  THIN_RULE,
+  '  Background',
+  '  4 active shells',
+  '',
+  '  ❯ ● Wait for background sleep 100 to finish              running',
+  '    ● sleep 100                                            running',
+  '    ● sleep 150                                            running',
+  '    ● for i in $(seq 1 40); do echo "line $i"; sleep 2;…   running',
+  '',
+  '      Earlier in this session (0)',
+  '',
+  '  ↑/↓ to select · Enter to view · x to stop · Esc to close',
+].join('\n');
+
+const DETAIL_VIEW_311 = [
+  SCROLLBACK,
+  '❯ /tasks',
+  '',
+  THIN_RULE,
+  '  Shell details',
+  '',
+  '  Status:   running',
+  '  Runtime:  22s',
+  '  Command:  for i in $(seq 1 40); do echo "line $i"; sleep 2; done',
+  '',
+  '  Output:',
+  '  ╭' + '─'.repeat(112) + '╮',
+  '  │ line 4' + ' '.repeat(105) + '│',
+  '  │ line 5' + ' '.repeat(105) + '│',
+  '  │ line 6' + ' '.repeat(105) + '│',
+  '  │' + ' '.repeat(112) + '│',
+  '  ╰' + '─'.repeat(112) + '╯',
+  '  Showing 3 lines',
+  '',
+  '  ← to go back · Esc/Enter/Space to close · x to stop',
+].join('\n');
+
+const NO_OUTPUT_DETAIL_311 = [
+  SCROLLBACK,
+  THIN_RULE,
+  '  Shell details',
+  '',
+  '  Status:   running',
+  '  Runtime:  17s',
+  '  Command:  sleep 100',
+  '',
+  '  Output:',
+  '  No output available',
+  '',
+  '  ← to go back · Esc/Enter/Space to close · x to stop',
+].join('\n');
+
+// The closed state on 2.1.311: the overlay gone, the input box back, and the
+// status lines plus an agents pane under its lower rule.
+const NO_OVERLAY_311 = [
+  SCROLLBACK,
+  '❯ /tasks ',
+  '  ⎿  Shell details dismissed',
+  '',
+  THIN_RULE,
+  '❯ ',
+  THIN_RULE,
+  '  ⏵⏵ auto mode on · 3 shells · ↓ to manage                           ◐ medium · /effort',
+  '',
+  '  ● main',
+  '  ◯ general-purpose  count to fifty slowly                              10s · ↓ 32.0k tokens',
 ].join('\n');
 
 const NO_OVERLAY = [
@@ -149,5 +225,85 @@ describe('scrapeTasksOverlay', () => {
     const result = scrapeTasksOverlay(odd);
     expect(result!.empty).toBe(false);
     expect(result!.text).toContain('surprising new layout');
+  });
+});
+
+describe('scrapeTasksOverlay on 2.1.311, whose rule is the input box glyph', () => {
+  it('reads the list under a ─ rule', () => {
+    const result = scrapeTasksOverlay(LIST_VIEW_311);
+    expect(result).not.toBeNull();
+    expect(result!.empty).toBe(false);
+    expect(result!.text).toContain('4 active shells');
+    expect(result!.text).toContain('● sleep 150');
+    expect(result!.text).not.toContain('to close');
+    expect(result!.text).not.toContain('Crunched for');
+  });
+
+  it('reads a detail view and keeps its output box', () => {
+    const result = scrapeTasksOverlay(DETAIL_VIEW_311);
+    expect(result!.text).toContain('Shell details');
+    expect(result!.text).toContain('│ line 4');
+  });
+
+  it('does not take the closed input box and its status lines for an overlay', () => {
+    expect(scrapeTasksOverlay(NO_OVERLAY_311)).toBeNull();
+  });
+});
+
+describe('parseTaskRows', () => {
+  it('lists the rows in screen order with their status', () => {
+    const rows = parseTaskRows(scrapeTasksOverlay(LIST_VIEW_311)!.text);
+    expect(rows.map((r) => r.label)).toEqual([
+      'Wait for background sleep 100 to finish',
+      'sleep 100',
+      'sleep 150',
+      'for i in $(seq 1 40); do echo "line $i"; sleep 2;',
+    ]);
+    expect(rows.every((r) => r.status === 'running')).toBe(true);
+  });
+
+  it('marks a label the column cut short', () => {
+    const rows = parseTaskRows(scrapeTasksOverlay(LIST_VIEW_311)!.text);
+    expect(rows.map((r) => r.truncated)).toEqual([false, false, false, true]);
+  });
+
+  it('skips the section heading, which has no bullet', () => {
+    const rows = parseTaskRows(scrapeTasksOverlay(LIST_VIEW_311)!.text);
+    expect(rows.some((r) => r.label.includes('Earlier in this session'))).toBe(false);
+  });
+
+  it('finds no rows in a detail view or the old bullet-less layout', () => {
+    expect(parseTaskRows(scrapeTasksOverlay(DETAIL_VIEW_311)!.text)).toEqual([]);
+    expect(parseTaskRows(scrapeTasksOverlay(LIST_VIEW)!.text)).toEqual([]);
+  });
+});
+
+describe('parseTaskDetail', () => {
+  it('returns null for the list', () => {
+    expect(parseTaskDetail(scrapeTasksOverlay(LIST_VIEW_311)!.text)).toBeNull();
+  });
+
+  it('reads the fields and the output box, chrome stripped', () => {
+    const detail = parseTaskDetail(scrapeTasksOverlay(DETAIL_VIEW_311)!.text)!;
+    expect(detail.title).toBe('Shell details');
+    expect(detail.fields).toEqual([
+      { label: 'Status', value: 'running' },
+      { label: 'Runtime', value: '22s' },
+      { label: 'Command', value: 'for i in $(seq 1 40); do echo "line $i"; sleep 2; done' },
+    ]);
+    expect(detail.output).toBe('line 4\nline 5\nline 6');
+    expect(detail.note).toBe('Showing 3 lines');
+  });
+
+  it('reports no output as null rather than as the placeholder text', () => {
+    const detail = parseTaskDetail(scrapeTasksOverlay(NO_OUTPUT_DETAIL_311)!.text)!;
+    expect(detail.output).toBeNull();
+    expect(detail.fields.find((f) => f.label === 'Command')?.value).toBe('sleep 100');
+  });
+
+  it('reads the 2.1.226 detail too', () => {
+    const detail = parseTaskDetail(scrapeTasksOverlay(DETAIL_VIEW)!.text)!;
+    expect(detail.fields.find((f) => f.label === 'Command')?.value).toBe('sleep 300');
+    expect(detail.output).toBeNull();
   });
 });

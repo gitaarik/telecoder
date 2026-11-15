@@ -275,6 +275,7 @@ export function onAsyncToolArmed(
   description: string,
   toolUseId?: string,
   startedAt = Date.now(),
+  command?: string,
 ): void {
   let state = states.get(sessionKey);
   if (!state) {
@@ -321,6 +322,7 @@ export function onAsyncToolArmed(
       taskId: toolUseId,
       toolUseId,
       description,
+      ...(command !== undefined ? { command } : {}),
       taskType: TASK_TYPE_BY_KIND[kind],
       // Everything routed through this relay is backgrounded by definition —
       // that's the property that made it need a relay in the first place.

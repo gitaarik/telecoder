@@ -32,8 +32,13 @@
  * the Session block lives, which is why this scrapes it and leaves the rest.
  */
 
-/** The overlay's top rule. Full-width in practice; 10 is a safe floor. */
-const OVERLAY_RULE_RE = /^▔{10,}$/;
+/**
+ * The overlay's top rule. Full-width in practice; 10 is a safe floor. `▔` up
+ * to claude 2.1.226; from 2.1.311 the same `─` as the input box, which is
+ * why the `Session` heading has to follow within HEADING_SEARCH_LINES — the
+ * lowest rule on a screen with no panel open is the input box's lower edge.
+ */
+const OVERLAY_RULE_RE = /^(?:▔{10,}|─{10,})$/;
 
 /** The block's heading, on its own line. */
 const SESSION_HEADING_RE = /^Session$/;

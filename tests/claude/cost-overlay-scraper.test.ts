@@ -136,3 +136,25 @@ describe('scrapeCostSession', () => {
     expect(scrapeCostSession(stale)!.rows[0].value).toBe('$2.22');
   });
 });
+
+describe('scrapeCostSession on 2.1.311, whose rule is the input box glyph', () => {
+  const THIN_RULE = '─'.repeat(120);
+
+  it('reads the Session block under a ─ rule', () => {
+    const screen = [
+      SCROLLBACK, '❯ /cost', '', THIN_RULE,
+      '  Settings  Status   Config   Usage   Stats', '', '  Session', '',
+      '  Total cost:            $0.0000',
+      '  Total duration (API):  0s',
+      '  Current week (all models)',
+    ].join('\n');
+    const session = scrapeCostSession(screen);
+    expect(session).not.toBeNull();
+    expect(session!.rows.map((r) => r.label)).toEqual(['Total cost', 'Total duration (API)']);
+  });
+
+  it('does not read the closed input box as a panel', () => {
+    const screen = [SCROLLBACK, THIN_RULE, '❯ ', THIN_RULE, '  ⏵⏵ auto mode on · /effort'].join('\n');
+    expect(scrapeCostSession(screen)).toBeNull();
+  });
+});

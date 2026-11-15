@@ -13,7 +13,11 @@ activity**, that updates in place: what's running and for how long, and what jus
 happened. It moves to the bottom of the chat, so your phone notifies you, when a monitor
 fires, something fails, or a long task finishes.
 
-- **`/tasks`** lists the background tasks, with details per task.
+- **`/tasks`** lists the background tasks, with details per task. In PTY mode, **📄 Output**
+  on a task shows what it has printed so far, the way Enter on a task in Claude Code's own
+  `/tasks` does, and **🔎 Ask claude** shows Claude Code's own list, with a button per row
+  that opens that row's output. That list also covers work the bot never saw start, such
+  as a shell Claude backgrounded on its own or anything from before the bot's last restart.
 - **`/shells`** lists the background processes and stops them (PTY mode).
 
 When a background task reports back, Claude can pick it up by itself, and its answer

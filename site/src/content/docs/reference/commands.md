@@ -80,7 +80,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/statusline` | Toggle the status line that closes every reply (project, effort, model, context %, cost). On by default (`STATUS_LINE_DEFAULT`), with the topic; your last prompts and a `claude --resume` command are sub-toggles |
 | `/botname [name\|reset]` | Rename the bot in Telegram. The name is kept per bot and wins over `BOT_NAME`; `reset` goes back to it. Telegram throttles renames hard, so a refused one is reported and sent again when the cooldown ends. Alone, shows the name Telegram has and any pending cooldown — admin-only |
 | `/topic` | Set or clear the conversation topic |
-| `/tasks` | List active background tasks, with details per task |
+| `/tasks` | List active background tasks, with details per task; in PTY mode, a task's output so far, and Claude Code's own `/tasks` view with a button per row |
 | `/shells` | List and kill OS-level background shells from the PTY session |
 | `/permissions` | Show the permission-gate state, your role, and the patterns it enforces — admin-only |
 | `/users` | Who can use this bot — admins, guests, and people seen but not let in — admin-only |

@@ -90,6 +90,12 @@ export interface TaskStartedEvent {
   type: 'started';
   taskId: string;
   description: string;
+  /**
+   * For a backgrounded shell, the command it runs. The description is what
+   * the model called it; claude's own `/tasks` list shows the command, so
+   * this is what finds the task's row there.
+   */
+  command?: string;
   toolUseId?: string;
   taskType?: string;
   workflowName?: string;
