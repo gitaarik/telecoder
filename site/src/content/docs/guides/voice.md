@@ -40,4 +40,4 @@ Two providers:
   `TTS_INSTRUCTIONS` tune it.
 
 Replies longer than `TTS_MAX_CHARS` (4096) are cut at the end of a sentence. Every voice
-setting is in [Configuration](../reference/configuration.md#voice-and-tts).
+setting is in [Configuration](../reference/configuration.md#voice-notes-and-spoken-replies).

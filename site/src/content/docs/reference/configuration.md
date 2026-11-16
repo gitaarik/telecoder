@@ -78,16 +78,16 @@ How these three fit together: [Group roles](../guides/sharing.md#group-roles).
 | `CCR_AUTOSTART` | `false` | Run `ccr start` when the proxy isn't reachable |
 | `CCR_BINARY` | `ccr` | Path or name of the `ccr` binary for autostart |
 
-## Voice and TTS
+## Voice notes and spoken replies
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GROQ_API_KEY` | — | Groq API key, for Whisper transcription and Orpheus TTS |
-| `OPENAI_API_KEY` | — | OpenAI API key for TTS |
+| `GROQ_API_KEY` | — | Groq API key, for transcription (Whisper) and spoken replies (Orpheus) |
+| `OPENAI_API_KEY` | — | OpenAI API key, for spoken replies |
 | `TTS_ENABLED` | `true` | `false` turns spoken replies off for every chat, and hides `/tts` |
 | `TTS_PROVIDER` | `groq` | `groq` (Orpheus) or `openai` |
-| `TTS_VOICE` | `coral` | Default TTS voice. On Groq, a voice Groq doesn't have falls back to `troy` |
-| `TTS_MODEL` | `gpt-4o-mini-tts` | TTS model (OpenAI; Groq's is fixed) |
+| `TTS_VOICE` | `coral` | Default voice. On Groq, a voice Groq doesn't have falls back to `troy` |
+| `TTS_MODEL` | `gpt-4o-mini-tts` | Speech model (OpenAI; Groq's is fixed) |
 | `TTS_SPEED` | `1.0` | Speaking speed, 0.25 to 4.0 (OpenAI) |
 | `TTS_INSTRUCTIONS` | — | How to speak, for `gpt-4o-mini-tts` models (OpenAI) |
 | `TTS_MAX_CHARS` | `4096` | Longer replies are cut at a sentence end before they're spoken |
@@ -100,7 +100,7 @@ How these three fit together: [Group roles](../guides/sharing.md#group-roles).
 ## Setting up voice
 
 <details>
-<summary><strong>Voice Transcription — Groq Whisper</strong></summary>
+<summary><strong>Transcription: Groq Whisper</strong></summary>
 
 ```bash
 # .env
@@ -110,7 +110,7 @@ GROQ_API_KEY=your_groq_key
 </details>
 
 <details>
-<summary><strong>Text-to-Speech — Groq Orpheus or OpenAI</strong></summary>
+<summary><strong>Spoken replies: Groq Orpheus or OpenAI</strong></summary>
 
 Groq is the default and uses `GROQ_API_KEY`. To use OpenAI instead:
 

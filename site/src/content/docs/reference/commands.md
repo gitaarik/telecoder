@@ -51,10 +51,10 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/file <path>` | Download a file. Guests get files from the chat's project only; admins from anywhere in `WORKSPACE_DIR`. Credential and bot-state paths (`.env`, `~/.ssh`, `~/.claude`, cloud CLI configs and the like) are refused for everyone |
 | `/suggestions` | Turn predicted next-prompt buttons under each reply on or off, from the next session |
 
-## Voice and TTS
+## Voice notes and spoken replies
 | Command | Description |
 |---------|-------------|
-| `/tts` | Toggle voice replies, pick voice |
+| `/tts` | Turn spoken replies on or off, pick a voice |
 | `/transcribe` | Transcribe audio to text |
 | *Send voice note* | Auto-transcribed → processed by Claude |
 

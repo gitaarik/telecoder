@@ -35,14 +35,13 @@ sidebar:
 ## What it stores and sends
 
 TeleCoder has no server of its own. Its state stays on your machine, in `~/.telecoder`
-(owner-only permissions), and includes session metadata and preferences. Before November 2026
-it was `~/.claudegram`: the launcher moves that across on its first start and leaves a link
-at the old path. On a shared bot it
-also includes the Telegram ids and names of the people it has seen or let in.
+(owner-only permissions), and includes session metadata and preferences. On a shared bot it also
+includes the Telegram ids and names of the people it has seen or let in.
 
-Your messages go to Telegram and to Claude Code, and from there to the model provider you
-use. A secret you send when Claude asks for one is the exception: it goes to Telegram like any
+Your messages go through Telegram to Claude Code, as if you had typed them in its terminal.
+A secret you send when Claude asks for one is the exception: it goes to Telegram like any
 message, until the bot deletes it, and from there only into the command Claude named. A Claude
-token made with `claude setup-token` doesn't go through Telegram at all. Claude Code keeps its own session transcripts in `~/.claude`. Voice and text-to-speech
-go to Groq or OpenAI, and only if you configure them. Nothing is published anywhere: a long
-reply arrives in the chat in full.
+token made with `claude setup-token` doesn't go through Telegram at all. Claude Code keeps its
+own session transcripts in `~/.claude`. Voice notes are transcribed by Groq, and spoken replies
+(`/tts`) are made by Groq or OpenAI, each only if you set it up. Nothing is published anywhere:
+a long reply arrives in the chat in full.
