@@ -8,7 +8,7 @@ const href = Astro.locals.starlightRoute.siteTitleHref;
     <path d="M3.6 6.4 9.2 12l-5.6 5.6" stroke="var(--tc-channel)" />
     <path d="M11.2 6.4 16.8 12l-5.6 5.6" stroke="var(--tc-brand)" />
   </svg>
-  <span><span class="tele">Tele</span>Coder</span>
+  <span><span class="tele">Tele</span><span class="coder">Coder</span></span>
 </a>
 
 <style>
@@ -36,5 +36,8 @@ const href = Astro.locals.starlightRoute.siteTitleHref;
   }
   .tele {
     color: var(--tc-channel);
+  }
+  .coder {
+    color: var(--tc-brand);
   }
 </style>
