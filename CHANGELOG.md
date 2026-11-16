@@ -7,6 +7,12 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Added
 
+- **`telecoder watch` shows the live Claude Code screen behind a chat.** Each
+  chat has a real `claude` in a pty, whose screen existed only inside the
+  bot. Now the bot serves it read-only on an owner-only socket in
+  `~/.telecoder/watch`, and `telecoder watch` shows it in your terminal as it
+  changes. `--list` lists the sessions; `PTY_WATCH=false` turns it off.
+
 - **Claude Code starts when the conversation is chosen, not on the first
   message.** The first message after `/project`, `/clear` or `/resume` used to
   wait for Claude Code to start, a few seconds and more for a long resumed
@@ -69,6 +75,11 @@ reasoning — the commit bodies are the long form, this is the index.
   Claude as a message; re-open the prompt.
 
 ### Fixed
+
+- **The wizard's typed answer stays next to its question.** After a question
+  long enough to wrap, `telecoder init` parked the cursor at the right edge of
+  the screen, and the `y` or `n` typed there sat a line's width away from its
+  `[Y/n]`. readline was never told the terminal's width.
 
 - **The 🍴 Fork button is under the reply, every time.** A turn that asked a
   question and had nothing to add after the answer put the button on the
