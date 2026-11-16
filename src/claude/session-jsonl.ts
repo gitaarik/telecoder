@@ -904,9 +904,54 @@ export function detectOwnerProvider(file: string): 'claude' | 'ccr' | undefined 
  * A transcript with every record's `sessionId` set to `newSessionId`. Claude
  * Code stamps the session's id into each record, and a resume can get
  * confused when a copy's filename and contents disagree.
+ *
+ * A plain text replace of the one id the records carry, read from the first
+ * record that has one: parsing and re-serializing every record took half a
+ * second of the event loop on a 54 MB transcript, during which no chat on the
+ * bot got a reply, where this takes a few milliseconds and leaves every other
+ * byte as it was. The id is replaced wherever that exact field text occurs, so
+ * a tool result that quoted a record of the transcript changes too, which is
+ * harmless. A transcript whose records carry more than one id — none Claude
+ * Code writes, but a hand-merged file could — takes the record-by-record path.
  */
 export function rewriteJsonlSessionId(jsonl: string, newSessionId: string): string {
   if (!jsonl.trim()) return jsonl;
+  const oldSessionId = firstSessionId(jsonl);
+  if (oldSessionId !== undefined) {
+    const rewritten = oldSessionId === newSessionId
+      ? jsonl
+      : jsonl.split(`"sessionId":"${oldSessionId}"`).join(`"sessionId":"${newSessionId}"`);
+    const leftover = new RegExp(`"sessionId"\\s*:\\s*"(?!${escapeRegExp(newSessionId)}")`);
+    if (!leftover.test(rewritten)) return rewritten;
+  }
+  return rewriteJsonlSessionIdPerRecord(jsonl, newSessionId);
+}
+
+/** The `sessionId` of the first record that has one, or undefined. */
+function firstSessionId(jsonl: string): string | undefined {
+  let start = 0;
+  while (start < jsonl.length) {
+    let end = jsonl.indexOf('\n', start);
+    if (end === -1) end = jsonl.length;
+    const line = jsonl.slice(start, end);
+    start = end + 1;
+    if (!line.includes('"sessionId"')) continue;
+    try {
+      const rec = JSON.parse(line) as Record<string, unknown>;
+      if (typeof rec.sessionId === 'string') return rec.sessionId;
+    } catch {
+      // Not a record; keep looking.
+    }
+  }
+  return undefined;
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** rewriteJsonlSessionId, one record at a time: exact, and slow on a large transcript. */
+function rewriteJsonlSessionIdPerRecord(jsonl: string, newSessionId: string): string {
   const lines = jsonl.split('\n');
   const out: string[] = [];
   for (const line of lines) {
