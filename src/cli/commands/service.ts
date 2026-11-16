@@ -3,10 +3,10 @@
  * in the background under the machine's own service manager: a systemd user
  * unit on Linux, a LaunchAgent on macOS.
  *
- * An npm install has no botctl script: /restartbot exits (RESTART_EXIT_CODE)
- * and counts on whatever started the bot to start it again. The unit written
- * here does — Restart=always, KeepAlive — and stands down on the config-error
- * code instead (see ../service/render.ts and utils/exit-codes.ts).
+ * /restartbot exits (RESTART_EXIT_CODE) and counts on whatever started the
+ * bot to start it again. The unit written here does — Restart=always,
+ * KeepAlive — and stands down on the config-error code instead (see
+ * ../service/render.ts and utils/exit-codes.ts).
  *
  * Everything that touches the machine — files, systemctl, the prompt — comes
  * in through ServiceDeps, so the flows are tested with fakes; the unit text
@@ -255,8 +255,8 @@ export function resolveServiceSpec(deps: ServiceDeps, options: Pick<ServiceOptio
       ok: false,
       lines: [
         `This is a source checkout (${deps.packageRoot}).`,
-        'A checkout is usually run with pm2 through scripts/telecoder-botctl.sh, or with',
-        '"npm start" — /restartbot and /rebuildbot already know how to work with those.',
+        'A checkout is usually run under pm2 ("pm2 start npm -- start"), which',
+        '/restartbot and /rebuildbot already know how to work with.',
         '',
         "To run it as a service instead, pointing at this checkout's dist/:",
         '  node dist/cli.js service install --from-checkout',

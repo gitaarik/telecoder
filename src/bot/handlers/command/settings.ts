@@ -1,5 +1,5 @@
 /**
- * Per-chat settings menus: /streaming, /terminalui, /tts, /suggestions, /effort, /verbosity, /method and the status line.
+ * Per-chat settings menus: /terminalui, /tts, /suggestions, /effort, /verbosity, /method and the status line.
  *
  * They share one shape — render an inline keyboard reflecting current state,
  * flip a setting on tap, re-render — and several need the same pty-restart
@@ -58,7 +58,6 @@ import {
   buildFeatureDisabledMessage,
 } from './shared.js';
 import { getSessionTopic } from './topic.js';
-import { getStreamingMode, setStreamingMode } from './streaming-mode.js';
 import { getBgProcesses } from './tasks.js';
 import {
   parseScopeArg,
@@ -165,52 +164,6 @@ function buildSuggestionsMenu(sessionKey: string) {
       ],
     ],
   };
-}
-
-export async function handleStreaming(ctx: Context): Promise<void> {
-  const keyboard = [
-    [
-      {
-        text: getStreamingMode() === 'streaming' ? '✓ Streaming' : 'Streaming',
-        callback_data: 'mode:streaming'
-      },
-      {
-        text: getStreamingMode() === 'wait' ? '✓ Wait' : 'Wait',
-        callback_data: 'mode:wait'
-      },
-    ],
-  ];
-
-  await replyFormatted(
-    ctx,
-    new EntityText()
-      .add('⚙️ ').bold('Response Mode').newline(2)
-      .add('Current: ').bold(getStreamingMode()).newline()
-      .italic(streamingModeDescription(getStreamingMode()))
-      .build(),
-    { reply_markup: { inline_keyboard: keyboard } },
-  );
-}
-
-function streamingModeDescription(mode: 'streaming' | 'wait'): string {
-  return mode === 'streaming' ? 'Updates progressively as Claude types' : 'Shows complete response when done';
-}
-
-export async function handleModeCallback(ctx: Context): Promise<void> {
-  const data = ctx.callbackQuery?.data;
-  if (!data || !data.startsWith('mode:')) return;
-
-  const newMode = data.replace('mode:', '') as 'streaming' | 'wait';
-  setStreamingMode(newMode);
-
-  await ctx.answerCallbackQuery({ text: `Mode set to ${newMode}!` });
-  await editCallbackMessage(
-    ctx,
-    new EntityText()
-      .add('✅ Mode set to ').bold(newMode).newline(2)
-      .italic(streamingModeDescription(newMode))
-      .build(),
-  );
 }
 
 export async function handleTerminalUI(ctx: Context): Promise<void> {
@@ -1001,24 +954,23 @@ export async function handleSuggestionsCallback(ctx: Context): Promise<void> {
  * `/mode` — how much claude asks before acting, per chat.
  *
  * The callback prefix is `permmode:` rather than the obvious `mode:`, which
- * still belongs to the streaming toggle this command took its name from. A
- * keyboard from that older menu can be sitting in someone's chat right now,
- * and its buttons carry `mode:streaming`.
+ * belonged to the streaming/wait toggle this command took its name from. A
+ * keyboard from that older menu can still be sitting in someone's chat, and
+ * its buttons carry `mode:streaming`.
  */
 /**
  * What "Default" actually resolves to for this chat, and why.
  *
  * The menu used to call it "what this bot has always used" — true, and no help
  * at all to someone deciding whether to leave it there. Which mode that is
- * depends on the chat's transport, and on DANGEROUS_MODE when the transport is
- * the SDK, so the row names the mode and the reason rather than making a
- * person read two files to find out what they already picked.
+ * depends on the chat's transport, so the row names the mode and the reason
+ * rather than making a person read two files to find out what they already
+ * picked.
  */
 function describeTransportDefault(scope: SettingsScope): { label: string; why: string } {
   const method = getActiveMethod(scope);
-  const label = permissionModeInfo(transportDefaultMode(method, config.DANGEROUS_MODE)).label;
-  if (method === 'pty') return { label, why: "Claude Code's own default" };
-  return { label, why: config.DANGEROUS_MODE ? 'SDK, DANGEROUS_MODE=true' : 'the SDK default' };
+  const label = permissionModeInfo(transportDefaultMode(method)).label;
+  return { label, why: method === 'pty' ? "Claude Code's own default" : 'the SDK default' };
 }
 
 function buildPermissionModeMenu(scope: SettingsScope): {

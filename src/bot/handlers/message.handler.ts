@@ -25,11 +25,7 @@ import { offerCommandFix } from './command-fallback.js';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
 import { fireAutoTopic, requireSession, runQueuedTurn } from './message/shared.js';
 import { runTurn } from './message/turn-runner.js';
-import {
-  handleProjectReply,
-  handleFileReply,
-  handleAgentReply,
-} from './message/replies.js';
+import { handleProjectReply, handleFileReply } from './message/replies.js';
 
 export { closeTurn, relayCatchUpIfMissed } from './message/turn-notify.js';
 export { runQueuedTurn } from './message/shared.js';
@@ -43,7 +39,7 @@ export async function handleMessage(ctx: Context): Promise<void> {
   const messageDate = ctx.message?.date;
 
   if (!keyInfo || !rawText || !messageId || !messageDate) return;
-  const { chatId, sessionKey } = keyInfo;
+  const { sessionKey } = keyInfo;
 
   // In group chats Telegram appends `@BotName` to slash commands
   // (`/compact@MyBot`). Strip it so command detection below — and native
@@ -80,24 +76,6 @@ export async function handleMessage(ctx: Context): Promise<void> {
       await handleFileReply(ctx, sessionKey, text);
       return;
     }
-
-    // Handle plan mode reply
-    if (replyText.includes('Plan Mode') || replyText.includes('Describe your task')) {
-      await handleAgentReply(ctx, sessionKey, text, 'plan');
-      return;
-    }
-
-    // Handle explore mode reply
-    if (replyText.includes('Explore Mode') || replyText.includes('What would you like to know')) {
-      await handleAgentReply(ctx, sessionKey, text, 'explore');
-      return;
-    }
-
-    // Handle loop mode reply
-    if (replyText.includes('Loop Mode') || replyText.includes('work iteratively')) {
-      await handleAgentReply(ctx, sessionKey, text, 'loop');
-      return;
-    }
   }
 
   // A slash command the bot didn't register is on its way to Claude as a
@@ -127,6 +105,6 @@ export async function handleMessage(ctx: Context): Promise<void> {
 
   // Queue the request - process one at a time per session
   await runQueuedTurn(ctx, sessionKey, text, 'Message', () =>
-    runTurn(ctx, sessionKey, chatId, text),
+    runTurn(ctx, sessionKey, text),
   );
 }

@@ -30,7 +30,7 @@ export async function handleSuggestionTapCallback(ctx: Context): Promise<void> {
     await ctx.answerCallbackQuery({ text: 'Session not found' });
     return;
   }
-  const { sessionKey, chatId } = keyInfo;
+  const { sessionKey } = keyInfo;
 
   const entry = consumeSuggestion(id);
   if (!entry) {
@@ -77,6 +77,6 @@ export async function handleSuggestionTapCallback(ctx: Context): Promise<void> {
   // import between this file and message.handler.ts.
   const { dispatchPromptFromCallback, runQueuedTurn } = await import('./message.handler.js');
   await runQueuedTurn(ctx, sessionKey, entry.text, 'Suggestion', () =>
-    dispatchPromptFromCallback(ctx, sessionKey, chatId, entry.text),
+    dispatchPromptFromCallback(ctx, sessionKey, entry.text),
   );
 }

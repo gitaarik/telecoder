@@ -1,15 +1,13 @@
 import { Context } from 'grammy';
 import { sessionManager } from '../../claude/session-manager.js';
-import { sendToAgent, sendLoopToAgent, getModel, isDangerousMode, getCachedUsage, getActiveProviderName } from '../../providers/provider-router.js';
+import { getModel, getCachedUsage, getActiveProviderName } from '../../providers/provider-router.js';
 import { config } from '../../config.js';
 import { messageSender } from '../../telegram/message-sender.js';
-import { closeTurn, relayCatchUpIfMissed } from './message/turn-notify.js';
 import { getUptimeFormatted } from '../middleware/stale-filter.js';
 import { getAvailableCommands } from '../../claude/command-parser.js';
-import { isProcessing, queueRequest } from '../../claude/request-queue.js';
+import { isProcessing } from '../../claude/request-queue.js';
 import { EntityText, joinMessages, trimMessage, type EntityMessage } from '../../telegram/entities.js';
 import { replyFormatted, replyParts } from '../../telegram/send.js';
-import { maybeSendVoiceReply } from '../../tts/voice-reply.js';
 import { contextHealthColor, fmtTokens, getProgressBar } from '../../utils/format.js';
 import * as path from 'path';
 import { execFile } from 'child_process';
@@ -25,7 +23,6 @@ import { replyMd, getEffortLabel, withBackToPrevious } from './command/shared.js
 import { getSessionTopic } from './command/topic.js';
 import { describeRole } from './command/access.js';
 import { requireActiveSession } from './session-guard.js';
-import { progressCallbacks, withStreamingTurn } from '../../telegram/streaming-turn.js';
 
 // Re-exported so the modules that already import from this file keep working
 // while the command handlers are split out domain by domain.
@@ -46,7 +43,6 @@ export {
   handleTopic,
 } from './command/topic.js';
 export { handleBotName } from './command/botname.js';
-export { getStreamingMode } from './command/streaming-mode.js';
 export { handleAllow, handleDeny, handleMembers } from './command/access.js';
 export {
   sendTranscriptResult,
@@ -78,18 +74,13 @@ export {
 export {
   handleClear,
   handleClearCallback,
-  handleContinue,
   handleRecap,
   handleHandoff,
   handleSync,
-  handleSessions,
   handleTeleport,
 } from './command/session.js';
 export { handleResume, handleResumeCallback } from './command/resume.js';
-import { turnErrorReply } from '../../claude/claude-auth.js';
 export {
-  handleStreaming,
-  handleModeCallback,
   handlePermissionMode,
   handlePermissionModeCallback,
   handleTerminalUI,
@@ -237,10 +228,7 @@ export async function handleStart(ctx: Context): Promise<void> {
     .add('\n• ').code('/clear').add(' - Clear session and start fresh')
     .add('\n• ').code('/status').add(' - Show current session info')
     .add('\n• ').code('/commands').add(' - Show all commands; ').code('/commands <words>').add(' searches them')
-    .add(`\n\nReplies: ${config.STREAMING_MODE}\nEffort: ${effortLabel}`);
-  if (isDangerousMode()) {
-    welcome.add('\n\n⚠️ ').bold('DANGEROUS MODE ENABLED').add(' - All tool permissions auto-approved');
-  }
+    .add(`\n\nEffort: ${effortLabel}`);
 
   const currentConv = keyInfo
     ? sessionManager.getSession(keyInfo.sessionKey)?.conversationId
@@ -270,7 +258,6 @@ export async function handleStatus(ctx: Context): Promise<void> {
 
     const currentModel = getModel(sessionKey);
     const provider = getActiveProviderName(sessionKey);
-    const dangerousMode = isDangerousMode() ? '⚠️ ENABLED' : 'Disabled';
     const effortLabel = getEffortLabel(sessionKey) ?? 'Default';
     const topic = getSessionTopic(sessionKey);
 
@@ -297,8 +284,6 @@ export async function handleStatus(ctx: Context): Promise<void> {
     field('🔌', 'Provider').add(provider);
     field('🆔', 'Session ID').code(session.claudeSessionId ?? session.conversationId);
     field('📁', 'Working Directory').code(session.workingDirectory);
-    field('📡', 'Mode').add(config.STREAMING_MODE);
-    field(isDangerousMode() ? '⚠️' : '🛡️', 'Dangerous Mode').add(dangerousMode);
     if (cached) {
       // Cache reads and writes are most of the context, and without them this
       // read about 0%. Same sum as the usage footer's.
@@ -437,9 +422,8 @@ export async function handleCommands(ctx: Context): Promise<void> {
 }
 
 /**
- * What a mode command (/plan, /explore, /loop, /file) shows when it arrives
- * without its argument: the mode, the project, what the mode does, and the
- * ask the force-reply answers.
+ * What /file shows when it arrives without its argument: the title, the
+ * project, the file list, and the ask the force-reply answers.
  */
 function modePrompt(
   emoji: string,
@@ -457,114 +441,6 @@ function modePrompt(
     else b.append(body);
   }
   return b.add('\n\n👇 ').italic(ask).build();
-}
-
-export async function handlePlan(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const session = await requireActiveSession(ctx, sessionKey);
-  if (!session) return;
-
-  const text = ctx.message?.text || '';
-  const task = text.split(' ').slice(1).join(' ').trim();
-
-  if (!task) {
-    await replyFormatted(
-      ctx,
-      modePrompt(
-        '📋',
-        'Plan Mode',
-        session.workingDirectory,
-        'Claude will analyze your task and create a detailed implementation plan before coding.',
-        'Describe your task:',
-      ),
-      {
-        reply_markup: {
-          force_reply: true,
-          input_field_placeholder: 'Add user authentication with JWT...',
-          selective: true,
-        },
-      }
-    );
-    return;
-  }
-
-  try {
-    await queueRequest(sessionKey, task, async () => {
-      await withStreamingTurn(ctx, sessionKey, task, async (abortController) => {
-        const response = await sendToAgent(sessionKey, task, {
-          ...progressCallbacks(ctx),
-          abortController,
-          telegramCtx: ctx,
-          command: 'plan',
-        });
-
-        await messageSender.finishStreaming(ctx, response.text);
-        await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
-        await maybeSendVoiceReply(ctx, response.text);
-        await closeTurn(ctx, sessionKey, response, task);
-      });
-    });
-  } catch (error) {
-    if ((error as Error).message === 'Queue cleared') return;
-    await ctx.reply(turnErrorReply(error));
-  }
-}
-
-export async function handleExplore(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const session = await requireActiveSession(ctx, sessionKey);
-  if (!session) return;
-
-  const text = ctx.message?.text || '';
-  const question = text.split(' ').slice(1).join(' ').trim();
-
-  if (!question) {
-    await replyFormatted(
-      ctx,
-      modePrompt(
-        '🔍',
-        'Explore Mode',
-        session.workingDirectory,
-        'Claude will search and analyze the codebase to answer your question.',
-        'What would you like to know?',
-      ),
-      {
-        reply_markup: {
-          force_reply: true,
-          input_field_placeholder: 'How does the auth system work?',
-          selective: true,
-        },
-      }
-    );
-    return;
-  }
-
-  try {
-    await queueRequest(sessionKey, question, async () => {
-      await withStreamingTurn(ctx, sessionKey, question, async (abortController) => {
-        const response = await sendToAgent(sessionKey, question, {
-          ...progressCallbacks(ctx),
-          abortController,
-          telegramCtx: ctx,
-          command: 'explore',
-        });
-
-        await messageSender.finishStreaming(ctx, response.text);
-        await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
-        await maybeSendVoiceReply(ctx, response.text);
-        await closeTurn(ctx, sessionKey, response, question);
-      });
-    });
-  } catch (error) {
-    if ((error as Error).message === 'Queue cleared') return;
-    await ctx.reply(turnErrorReply(error));
-  }
 }
 
 /** Show the current permission-gate state and the patterns it enforces. */
@@ -755,7 +631,7 @@ export function buildProjectCommandsMessage(input: {
     const { skills, plugins, builtIns } = groupAvailableCommands(snapshot);
     // A command TeleCoder registers never reaches Claude Code — grammY matches
     // it first — so listing it as passthrough would be a lie. Name them
-    // separately instead, so nobody wonders why /loop isn't the skill.
+    // separately instead, so nobody wonders why /schedule isn't the skill.
     const shadowed = snapshot.slashCommands.filter((n) => botCommandNames.has(n)).sort();
     const passthrough = (names: string[]): string[] => names.filter((n) => !botCommandNames.has(n));
 
@@ -812,58 +688,6 @@ function joinWithinLimit(lines: EntityMessage[], maxLength: number): EntityMessa
     size += cost;
   }
   return trimMessage(joinMessages(kept, '\n'));
-}
-
-export async function handleLoop(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const session = await requireActiveSession(ctx, sessionKey);
-  if (!session) return;
-
-  const text = ctx.message?.text || '';
-  const task = text.split(' ').slice(1).join(' ').trim();
-
-  if (!task) {
-    await replyFormatted(
-      ctx,
-      modePrompt(
-        '🔄',
-        'Loop Mode',
-        session.workingDirectory,
-        `Claude will work iteratively until done (max ${config.MAX_LOOP_ITERATIONS} iterations).`,
-        'Describe the task:',
-      ),
-      {
-        reply_markup: {
-          force_reply: true,
-          input_field_placeholder: 'Fix all TypeScript errors in src/',
-          selective: true,
-        },
-      }
-    );
-    return;
-  }
-
-  try {
-    await queueRequest(sessionKey, task, async () => {
-      await withStreamingTurn(ctx, sessionKey, task, async (abortController) => {
-        const response = await sendLoopToAgent(sessionKey, task, {
-          ...progressCallbacks(ctx),
-          abortController,
-          telegramCtx: ctx,
-        });
-
-        await messageSender.finishStreaming(ctx, response.text);
-        await maybeSendVoiceReply(ctx, response.text);
-        await closeTurn(ctx, sessionKey, response, task);
-      });
-    });
-  } catch (error) {
-    if ((error as Error).message === 'Queue cleared') return;
-    await ctx.reply(turnErrorReply(error));
-  }
 }
 
 export async function handleFile(ctx: Context): Promise<void> {

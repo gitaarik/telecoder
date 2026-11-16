@@ -1,7 +1,7 @@
 /**
  * Handlers for replies to the bot's ForceReply prompts — the flows where a
  * command posts a question and the user's *next* message is the answer
- * (/project path, /file path, /plan|/explore|/loop task).
+ * (/project path, /file path).
  *
  * `handleMessage` routes here by matching the prompt text it is replying to.
  */
@@ -9,20 +9,17 @@
 import { Context } from 'grammy';
 import * as fs from 'fs';
 import * as path from 'path';
-import { sendToAgent, sendLoopToAgent, clearConversation } from '../../../providers/provider-router.js';
+import { clearConversation } from '../../../providers/provider-router.js';
 import { sessionManager } from '../../../claude/session-manager.js';
 import { messageSender } from '../../../telegram/message-sender.js';
 import { EntityText } from '../../../telegram/entities.js';
 import { replyFormatted } from '../../../telegram/send.js';
-import { maybeSendVoiceReply } from '../../../tts/voice-reply.js';
 import {
   projectStatusSuffix,
   resumeCommandMessage,
   clearTopic,
 } from '../command.handler.js';
-import { fireAutoTopic, requireSession, resolveUserFilePath, runQueuedTurn } from './shared.js';
-import { progressCallbacks, toolCallbacks, withStreamingTurn } from '../../../telegram/streaming-turn.js';
-import { closeTurn, relayCatchUpIfMissed } from './turn-notify.js';
+import { resolveUserFilePath } from './shared.js';
 
 // Handle reply to project ForceReply prompt
 export async function handleProjectReply(ctx: Context, sessionKey: string, projectPath: string): Promise<void> {
@@ -80,54 +77,4 @@ export async function handleFileReply(ctx: Context, sessionKey: string, filePath
   if (!success) {
     await ctx.reply('❌ Failed to send file. It may be too large (>50MB) or inaccessible.');
   }
-}
-
-// Handle reply to plan/explore/loop ForceReply prompts
-export async function handleAgentReply(
-  ctx: Context,
-  sessionKey: string,
-  input: string,
-  mode: 'plan' | 'explore' | 'loop'
-): Promise<void> {
-  if (!await requireSession(ctx, sessionKey)) return;
-
-  const trimmedInput = input.trim();
-  if (!trimmedInput) {
-    await ctx.reply('❌ Please provide a description.');
-    return;
-  }
-
-  fireAutoTopic(ctx, sessionKey, trimmedInput);
-
-  await runQueuedTurn(ctx, sessionKey, trimmedInput, `AgentReply:${mode}`, async () => {
-    const startTime = Date.now();
-
-    await withStreamingTurn(ctx, sessionKey, trimmedInput, async (abortController) => {
-      let response;
-      if (mode === 'loop') {
-        response = await sendLoopToAgent(sessionKey, trimmedInput, {
-          ...progressCallbacks(ctx),
-          abortController,
-          telegramCtx: ctx,
-        });
-      } else {
-        response = await sendToAgent(sessionKey, trimmedInput, {
-          ...progressCallbacks(ctx),
-          ...toolCallbacks(ctx, sessionKey),
-          abortController,
-          command: mode,
-          telegramCtx: ctx,
-        });
-      }
-
-      await messageSender.finishStreaming(ctx, response.text, { nextPromptSuggestion: response.nextPromptSuggestion });
-      await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
-      await maybeSendVoiceReply(ctx, response.text);
-
-      // Completion notification for long tasks
-      await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
-
-      await closeTurn(ctx, sessionKey, response, trimmedInput);
-    });
-  });
 }

@@ -71,10 +71,22 @@ if (strippedClaudeVars.length > 0) {
 }
 
 // Log unhandled rejections — prevents silent failures where the process stays
-// Telegraph (Instant View pages) is gone. A .env that still turns
-// it on gets one line saying so, rather than links that silently stop coming.
-if (/^(true|1|yes)$/i.test(process.env.TELEGRAPH_ENABLED ?? '')) {
-  console.warn('[Env] TELEGRAPH_ENABLED is set, but Telegraph pages were removed: long replies arrive in full in the chat. The setting can go from .env.');
+// Settings of features that are gone. A .env that still sets one gets one
+// line saying so, rather than behaviour that silently stopped. Only a value
+// that asked for something — not the old default — earns the line.
+const isOn = (v: string) => /^(true|1|yes)$/i.test(v);
+const REMOVED_SETTINGS: Array<{ name: string; stale: (value: string) => boolean; note: string }> = [
+  { name: 'TELEGRAPH_ENABLED', stale: isOn, note: 'Telegraph pages were removed: long replies arrive in full in the chat.' },
+  { name: 'STREAMING_MODE', stale: (v) => v === 'wait', note: 'the wait mode was removed: replies always stream.' },
+  { name: 'DANGEROUS_MODE', stale: isOn, note: 'it was removed: /mode sets how much Claude asks before acting.' },
+  { name: 'MAX_LOOP_ITERATIONS', stale: (v) => v !== '5', note: '/loop was removed: Claude Code works until a task is done, and its own /loop skill reaches it now.' },
+  { name: 'BOT_MODE', stale: () => true, note: 'it was removed with the botctl script: the bot runs under pm2, systemd or launchd.' },
+];
+for (const { name, stale, note } of REMOVED_SETTINGS) {
+  const value = process.env[name];
+  if (value !== undefined && value !== '' && stale(value)) {
+    console.warn(`[Env] ${name} is set, but ${note} The setting can go from .env.`);
+  }
 }
 
 // alive but functionality is broken (e.g. fire-and-forget async calls that fail).
@@ -130,7 +142,6 @@ async function main() {
       `(members default to ${config.GROUP_MEMBERS_DEFAULT})`
     );
   }
-  console.log(`📝 Mode: ${config.STREAMING_MODE}`);
 
   // Scope session history to this bot instance so multi-bot setups don't cross-restore
   sessionHistory.initForBot(BOT_ID);

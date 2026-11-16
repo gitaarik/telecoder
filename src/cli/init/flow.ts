@@ -305,7 +305,7 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
   p.say('Now:');
   p.say(`  ${startCommand.padEnd(18)}run the bot, then message it on Telegram`);
   p.say(`  ${'telecoder doctor'.padEnd(18)}check the setup again any time`);
-  // A checkout runs under pm2 or botctl; the service is for npm installs.
+  // A checkout runs under pm2; the service is for npm installs.
   if (interactive && deps.requestService && !deps.isCheckout
     && await p.confirm('Keep it running in the background now (telecoder service install)?', true)) {
     deps.requestService();

@@ -205,7 +205,6 @@ export interface AgentOptions {
    */
   onEditDiff?: (event: EditDiffEvent) => void | Promise<void>;
   abortController?: AbortController;
-  command?: string;
   model?: string;
   /** Telegram context passed through for MCP tools (Claude provider only) */
   telegramCtx?: unknown;
@@ -227,11 +226,6 @@ export interface AgentOptions {
   providerName?: ProviderName;
 }
 
-export interface LoopOptions extends AgentOptions {
-  maxIterations?: number;
-  onIterationComplete?: (iteration: number, response: string) => void;
-}
-
 export interface ModelInfo {
   id: string;
   label: string;
@@ -241,12 +235,10 @@ export interface ModelInfo {
 export interface Provider {
   readonly name: ProviderName;
   sendToAgent(sessionKey: string, message: string, options?: AgentOptions): Promise<AgentResponse>;
-  sendLoopToAgent(sessionKey: string, message: string, options?: LoopOptions): Promise<AgentResponse>;
   clearConversation(sessionKey: string): void;
   setModel(scope: SettingsScope, model: string): void;
   getModel(scope: SettingsScope): string;
   clearModel(scope: SettingsScope): void;
   getCachedUsage(sessionKey: string): AgentUsage | undefined;
-  isDangerousMode(): boolean;
   getAvailableModels(scope: SettingsScope): Promise<ModelInfo[]>;
 }

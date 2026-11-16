@@ -2,7 +2,7 @@
  * How this copy of TeleCoder was installed, decided once for every caller.
  *
  * - `checkout`: a git clone (or any tree with its sources beside it). It builds
- *   itself — /rebuildbot, the git-based /version check, botctl restarts.
+ *   itself — /rebuildbot, the git-based /version check.
  * - `package`: an npm install (`npm install -g telecoder`, or npx). There is no
  *   source to build and no git to ask; updating goes through npm, and a restart
  *   is an exit for the service manager to answer.

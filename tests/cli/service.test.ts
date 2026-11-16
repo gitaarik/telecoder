@@ -321,13 +321,13 @@ describe('service install refusals', () => {
     expect(f.writes).toEqual([]);
   });
 
-  it('points a checkout at pm2/botctl, and installs from its dist/ with --from-checkout', async () => {
+  it('points a checkout at pm2, and installs from its dist/ with --from-checkout', async () => {
     const checkout = { installMode: 'checkout' as const, packageRoot: '/home/u/dev/telecoder', configHome: { dir: '/home/u/dev/telecoder', source: 'package-root' as const } };
     const files = { '/home/u/dev/telecoder/dist/cli.js': 'x', '/home/u/dev/telecoder/.env': 'x' };
 
     const plain = fake({ over: checkout, files });
     expect(await runServiceInstall({ io: plain.io }, plain.deps)).toBe(1);
-    expect(plain.io.text()).toContain('telecoder-botctl.sh');
+    expect(plain.io.text()).toContain('pm2');
     expect(plain.io.text()).toContain('--from-checkout');
 
     const from = fake({ over: checkout, files, answers: [false] });

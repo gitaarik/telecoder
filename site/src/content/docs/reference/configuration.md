@@ -45,8 +45,6 @@ See [Sharing a bot](../guides/sharing.md) for how the pieces fit together.
 | `CLAUDE_PLUGINS` | — | Marketplace plugins to bring into the agent, as `plugin@marketplace` ids, comma-separated. Neither transport reads `~/.claude/settings.json`, so a plugin enabled in your terminal is missing in Telegram until it's named here |
 | `CLAUDE_EXECUTABLE_PATH` | `claude` | Path to Claude Code CLI |
 | `BOT_NAME` | `TeleCoder` | The bot's name: what it's called in the system prompt and its messages, and the display name it sets in Telegram at startup when the setting is given. Unset, the BotFather name is kept. A name given with `/botname` wins over this |
-| `STREAMING_MODE` | `streaming` | `streaming` or `wait` |
-| `DANGEROUS_MODE` | `false` | Auto-approve all tool permissions |
 | `CANCEL_ON_NEW_MESSAGE` | `false` | Auto-cancel running query on new message |
 | `MESSAGE_BATCH_TIMEOUT_MS` | `1500` | How long to wait for the next part of a long paste that Telegram split (2000+ characters) before sending the parts as one prompt; `0` turns it off |
 | `AUTO_TOPIC_HAIKU` | `true` | Name each conversation's topic with a quick Haiku call, for thread names and the status line. Off, the agent is asked to keep the topic itself with `telecoder_set_topic` |

@@ -1,7 +1,7 @@
 /**
- * Session lifecycle: /clear, /continue, /recap, /handoff, /sync,
- * /sessions and /teleport. /prompts, which branches as well as lists, lives
- * beside /tree in prompts.handler.ts.
+ * Session lifecycle: /clear, /recap, /handoff, /sync and /teleport, and the
+ * ▶️ Continue button under a restart notice. /prompts, which branches as well
+ * as lists, lives beside /tree in prompts.handler.ts.
  *
  * All of these move a chat between conversations — starting a fresh one,
  * picking an older one back up, or summarising what a previous one did — so
@@ -31,7 +31,6 @@ import {
   parseCallback,
   projectStatusSuffix,
   resumeCommandMessage,
-  formatTimeAgo,
   sessionDisplayName,
   withBackToPrevious,
 } from './shared.js';
@@ -172,7 +171,12 @@ function sessionRestoredMessage(lead: string, workingDirectory: string, sessionK
     .build();
 }
 
-export async function handleContinue(ctx: Context): Promise<void> {
+/**
+ * Pick the chat's most recent session back up: what the ▶️ Continue button
+ * under a restart notice does. Startup continues a chat by itself these days
+ * (startup/auto-continue.ts); this is the manual path for one it left alone.
+ */
+export async function continueLastSession(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
   const { sessionKey } = keyInfo;
@@ -180,7 +184,7 @@ export async function handleContinue(ctx: Context): Promise<void> {
   const session = sessionManager.resumeLastSession(sessionKey);
 
   if (!session) {
-    await replyMd(ctx, 'ℹ️ No previous session to continue.\n\nUse `/project <name>` to start a new session.');
+    await replyMd(ctx, 'ℹ️ No previous session to continue.\n\nUse `/resume` to pick one, or `/project <name>` to start a new session.');
     return;
   }
 
@@ -274,7 +278,7 @@ export async function handleRecap(ctx: Context): Promise<void> {
 
   const session = sessionManager.getSession(sessionKey);
   if (!session) {
-    await replyMd(ctx, '⚠️ No active session. Use `/continue` or `/resume` first.');
+    await replyMd(ctx, '⚠️ No active session. Use `/resume` first.');
     return;
   }
   if (!session.claudeSessionId) {
@@ -310,7 +314,7 @@ export async function handleHandoff(ctx: Context): Promise<void> {
 
   const session = sessionManager.getSession(sessionKey);
   if (!session) {
-    await replyMd(ctx, '⚠️ No active session. Use `/continue` or `/resume` first.');
+    await replyMd(ctx, '⚠️ No active session. Use `/resume` first.');
     return;
   }
   if (!session.claudeSessionId) {
@@ -404,7 +408,7 @@ export async function handleSync(ctx: Context): Promise<void> {
 
   const session = sessionManager.getSession(sessionKey);
   if (!session) {
-    await replyMd(ctx, '⚠️ No active session. Use `/continue` or `/resume` first.');
+    await replyMd(ctx, '⚠️ No active session. Use `/resume` first.');
     return;
   }
   if (!session.claudeSessionId) {
@@ -437,48 +441,6 @@ export async function handleSync(ctx: Context): Promise<void> {
   await replyMd(ctx, '📨 **Sync** — from session log');
   await messageSender.sendMessage(ctx, missing);
   sessionManager.setLastRelayedAssistantText(sessionKey, jsonlText);
-}
-
-export async function handleSessions(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const history = sessionManager.getSessionHistory(sessionKey, 10);
-  const currentSession = sessionManager.getSession(sessionKey);
-
-  if (history.length === 0 && !currentSession) {
-    await replyMd(ctx, 'ℹ️ No sessions found.\n\nUse `/project <name>` to start a new session.');
-    return;
-  }
-
-  const message = new EntityText().add('📋 ').bold('Sessions').add('\n\n');
-
-  if (currentSession) {
-    message
-      .bold('Active:')
-      .add('\n• ').code(path.basename(currentSession.workingDirectory))
-      .add(` (${formatTimeAgo(currentSession.lastActivity)})\n\n`);
-  }
-
-  if (history.length > 0) {
-    message.bold('Recent:').newline();
-    for (const entry of history) {
-      const isActive = currentSession && currentSession.conversationId === entry.conversationId;
-      const marker = isActive ? '→ ' : '• ';
-      const date = new Date(entry.lastActivity);
-      message.add(marker).code(entry.projectName).add(` (${formatTimeAgo(date)})`);
-      if (entry.topic) message.add(' — ').italic(entry.topic);
-      message.newline();
-    }
-  }
-
-  message.newline().wrap('italic', (b) => b
-    .add('Use ').code('/resume')
-    .add(' to switch sessions or ').code('/continue')
-    .add(' to resume the last one.'));
-
-  await replyFormatted(ctx, message.build());
 }
 
 export async function handleTeleport(ctx: Context): Promise<void> {

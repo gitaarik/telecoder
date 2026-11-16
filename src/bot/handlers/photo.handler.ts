@@ -8,11 +8,7 @@ import { messageSender } from '../../telegram/message-sender.js';
 import { closeTurn, relayCatchUpIfMissed } from './message/turn-notify.js';
 import { isDuplicate, markProcessed } from '../../telegram/deduplication.js';
 import { isStaleMessage } from '../middleware/stale-filter.js';
-import {
-  queueRequest,
-  setAbortController,
-} from '../../claude/request-queue.js';
-import { getStreamingMode } from './command.handler.js';
+import { queueRequest } from '../../claude/request-queue.js';
 import { downloadFileSecure, getTelegramFileUrl } from '../../utils/download.js';
 import { sanitizeError } from '../../utils/sanitize.js';
 import { isValidImageFile, getFileType } from '../../utils/file-type.js';
@@ -97,36 +93,21 @@ async function handleSavedImage(
   const images = [{ data: imageBase64, mediaType, path: savedPath }];
 
   await queueRequest(sessionKey, agentPrompt, async () => {
-    if (getStreamingMode() === 'streaming') {
-      const startTime = Date.now();
+    const startTime = Date.now();
 
-      await withStreamingTurn(ctx, sessionKey, agentPrompt, async (abortController) => {
-        const response = await sendToAgent(sessionKey, agentPrompt, {
-          ...progressCallbacks(ctx),
-          abortController,
-          images,
-          telegramCtx: ctx,
-        });
-
-        await messageSender.finishStreaming(ctx, response.text);
-        await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
-        await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
-        await closeTurn(ctx, sessionKey, response, agentPrompt);
-      });
-    } else {
-      await ctx.replyWithChatAction('typing');
-      const abortController = new AbortController();
-      setAbortController(sessionKey, abortController);
-
+    await withStreamingTurn(ctx, sessionKey, agentPrompt, async (abortController) => {
       const response = await sendToAgent(sessionKey, agentPrompt, {
+        ...progressCallbacks(ctx),
         abortController,
         images,
         telegramCtx: ctx,
       });
-      await messageSender.sendMessage(ctx, response.text);
+
+      await messageSender.finishStreaming(ctx, response.text);
       await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
+      await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
       await closeTurn(ctx, sessionKey, response, agentPrompt);
-    }
+    });
   });
 }
 
@@ -269,32 +250,19 @@ export async function handleTextDocument(ctx: Context): Promise<void> {
     const agentPrompt = noteLines.join('\n');
 
     await queueRequest(sessionKey, agentPrompt, async () => {
-      if (getStreamingMode() === 'streaming') {
-        const startTime = Date.now();
+      const startTime = Date.now();
 
-        await withStreamingTurn(ctx, sessionKey, agentPrompt, async (abortController) => {
-          const response = await sendToAgent(sessionKey, agentPrompt, {
-            ...progressCallbacks(ctx),
-            abortController,
-            telegramCtx: ctx,
-          });
-          await messageSender.finishStreaming(ctx, response.text);
-          await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
-          await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
-          await closeTurn(ctx, sessionKey, response, agentPrompt);
-        });
-      } else {
-        await ctx.replyWithChatAction('typing');
-        const abortController = new AbortController();
-        setAbortController(sessionKey, abortController);
+      await withStreamingTurn(ctx, sessionKey, agentPrompt, async (abortController) => {
         const response = await sendToAgent(sessionKey, agentPrompt, {
+          ...progressCallbacks(ctx),
           abortController,
           telegramCtx: ctx,
         });
-        await messageSender.sendMessage(ctx, response.text);
+        await messageSender.finishStreaming(ctx, response.text);
         await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
+        await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);
         await closeTurn(ctx, sessionKey, response, agentPrompt);
-      }
+      });
     });
   } catch (error) {
     const errorMessage = sanitizeError(error);

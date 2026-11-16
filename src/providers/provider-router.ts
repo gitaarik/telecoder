@@ -12,10 +12,10 @@ import {
 import { userPreferences } from './user-preferences.js';
 import { isPremiumModel } from '../claude/model-catalog.js';
 import type { SettingsScope } from '../utils/session-key.js';
-import type { Provider, ProviderName, AgentOptions, LoopOptions, AgentResponse, AgentUsage, ModelInfo } from './types.js';
+import type { Provider, ProviderName, AgentOptions, AgentResponse, AgentUsage, ModelInfo } from './types.js';
 
 // Re-export types for consumers
-export type { AgentUsage, AgentResponse, AgentOptions, LoopOptions, ModelInfo, ProviderName };
+export type { AgentUsage, AgentResponse, AgentOptions, ModelInfo, ProviderName };
 
 function getProvider(scope: SettingsScope): Provider {
   const name = getActiveProviderName(scope);
@@ -55,11 +55,11 @@ export function getAvailableProviders(): ProviderName[] {
  * The screening point for guest messages.
  *
  * Every user-originated prompt funnels through the two exports below — typed
- * text, a transcribed voice note, a photo caption, a reply, /plan, /explore,
- * /btw — so this is the one place a hold can be applied without having to be
- * remembered at a dozen call sites. Loop iterations and scheduled fires call
- * their provider directly and are deliberately not re-screened: they are
- * continuations of a prompt that was already screened once.
+ * text, a transcribed voice note, a photo caption, a reply, /btw — so this is
+ * the one place a hold can be applied without having to be remembered at a
+ * dozen call sites. Scheduled fires call their provider directly and are
+ * deliberately not re-screened: they are continuations of a prompt that was
+ * already screened once.
  *
  * A blocked message returns as an ordinary response rather than an error, so
  * the streaming UI already in flight renders the explanation in place.
@@ -85,18 +85,6 @@ export async function sendToAgent(
 
   const providerName = getActiveProviderName(sessionKey);
   return getProvider(sessionKey).sendToAgent(sessionKey, message, { ...options, providerName });
-}
-
-export async function sendLoopToAgent(
-  sessionKey: string,
-  message: string,
-  options?: LoopOptions
-): Promise<AgentResponse> {
-  const blocked = await screened(sessionKey, message, options);
-  if (blocked) return blocked;
-
-  const providerName = getActiveProviderName(sessionKey);
-  return getProvider(sessionKey).sendLoopToAgent(sessionKey, message, { ...options, providerName });
 }
 
 export function clearConversation(sessionKey: string): void {
@@ -133,11 +121,6 @@ export function clearModel(scope: SettingsScope): void {
 
 export function getCachedUsage(sessionKey: string): AgentUsage | undefined {
   return getProvider(sessionKey).getCachedUsage(sessionKey);
-}
-
-export function isDangerousMode(): boolean {
-  // Dangerous mode is a Claude-specific concept; always check Claude provider
-  return claudeProvider.isDangerousMode();
 }
 
 // Effort is Claude-specific; re-export directly from agent.ts

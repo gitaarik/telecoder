@@ -4,7 +4,7 @@ import { sdkProvider } from './sdk-provider.js';
 import { PtyProvider } from '../claude/pty-provider.js';
 import type { SettingsScope } from '../utils/session-key.js';
 import { config } from '../config.js';
-import type { Provider, AgentOptions, LoopOptions, AgentResponse, AgentUsage, ModelInfo } from './types.js';
+import type { Provider, AgentOptions, AgentResponse, AgentUsage, ModelInfo } from './types.js';
 
 // Instantiate both providers. The router will decide which one to use.
 const ptyProvider = new PtyProvider();
@@ -45,10 +45,6 @@ export const claudeProvider: Provider = {
     return getInternalProvider(sessionKey).sendToAgent(sessionKey, message, options);
   },
 
-  sendLoopToAgent(sessionKey: string, message: string, options?: LoopOptions): Promise<AgentResponse> {
-    return getInternalProvider(sessionKey).sendLoopToAgent(sessionKey, message, options);
-  },
-
   clearConversation(sessionKey: string): void {
     getInternalProvider(sessionKey).clearConversation(sessionKey);
   },
@@ -67,11 +63,6 @@ export const claudeProvider: Provider = {
 
   getCachedUsage(sessionKey: string): AgentUsage | undefined {
     return getInternalProvider(sessionKey).getCachedUsage(sessionKey);
-  },
-
-  isDangerousMode(): boolean {
-    // This is consistent across both methods.
-    return sdkProvider.isDangerousMode();
   },
 
   async getAvailableModels(scope: SettingsScope): Promise<ModelInfo[]> {

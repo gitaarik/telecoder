@@ -75,7 +75,7 @@ import { isSuggestionsEnabled } from '../telegram/suggestions-settings.js';
 import { resolveBin } from '../utils/resolve-bin.js';
 import { withPendingCarryOver } from './carry-over.js';
 import type { Context } from 'grammy';
-import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type LoopOptions, type EditDiffEvent, type ToolResultEvent } from '../providers/types.js';
+import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type EditDiffEvent, type ToolResultEvent } from '../providers/types.js';
 
 const { Terminal } = headless;
 
@@ -603,8 +603,7 @@ export class PtyProvider implements Provider {
   async sendToAgent(sessionKey: string, message: string, options?: AgentOptions): Promise<AgentResponse> {
     // A provider switch or a cross-backend /resume may have queued a recap of
     // the conversation this fresh session continues.
-    const commandWrapped = wrapCommandPrompt(withPendingCarryOver(sessionKey, message), options?.command);
-    const { prompt: promptToSend, tempPaths } = stageImagesForPty(commandWrapped, options?.images);
+    const { prompt: promptToSend, tempPaths } = stageImagesForPty(withPendingCarryOver(sessionKey, message), options?.images);
 
     // Timestamp of the newest compaction already on disk before this turn.
     // Any compaction with a later timestamp afterward was produced by this turn
@@ -1707,7 +1706,7 @@ export class PtyProvider implements Provider {
    */
   private async _applyPermissionMode(session: PtySession, sessionKey: string): Promise<void> {
     const chosen = userPreferences.getPermissionMode(sessionKey);
-    const target = chosen ?? transportDefaultMode('pty', config.DANGEROUS_MODE);
+    const target = chosen ?? transportDefaultMode('pty');
 
     const pty: ModePty = {
       write: (data) => session.term.write(data),
@@ -2184,71 +2183,6 @@ export class PtyProvider implements Provider {
     }
   }
 
-  async sendLoopToAgent(sessionKey: string, message: string, options: LoopOptions = {}): Promise<AgentResponse> {
-    const {
-      onProgress,
-      abortController,
-      maxIterations = config.MAX_LOOP_ITERATIONS,
-      onIterationComplete,
-    } = options;
-
-    if (!sessionManager.getSession(sessionKey)) {
-      throw new Error('No active session. Use /project to set working directory.');
-    }
-
-    // Wrap only the first prompt with the DONE convention. Continuation turns
-    // reuse the live pty so conversation context is already in claude's memory.
-    const loopPrompt = `${message}\n\nIMPORTANT: When you have fully completed this task, respond with the word "DONE" on its own line at the end of your response. If you need to continue working, do not say "DONE".`;
-
-    let iteration = 0;
-    let combinedText = '';
-    const allToolsUsed: string[] = [];
-    let isComplete = false;
-
-    while (iteration < maxIterations && !isComplete) {
-      iteration++;
-
-      if (abortController?.signal.aborted) {
-        return { text: combinedText + '\n\n🛑 Loop cancelled.', toolsUsed: allToolsUsed };
-      }
-
-      const iterationPrefix = `\n\n--- Iteration ${iteration}/${maxIterations} ---\n\n`;
-      combinedText += iterationPrefix;
-      onProgress?.(combinedText);
-
-      const currentPrompt = iteration === 1 ? loopPrompt : 'Continue the task. Say "DONE" when complete.';
-
-      try {
-        const response = await this.sendToAgent(sessionKey, currentPrompt, {
-          ...options,
-          // `text` is this iteration's prose so far, whole, so the live message
-          // is the iterations before it plus this one as it grows.
-          onProgress: (text) => onProgress?.(combinedText + text),
-        });
-
-        combinedText += response.text;
-        allToolsUsed.push(...response.toolsUsed);
-        onIterationComplete?.(iteration, response.text);
-
-        if (response.text.includes('DONE')) {
-          isComplete = true;
-          combinedText += '\n\n✅ Loop completed.';
-        } else if (iteration >= maxIterations) {
-          combinedText += `\n\n⚠️ Max iterations (${maxIterations}) reached.`;
-        }
-
-        onProgress?.(combinedText);
-      } catch (error) {
-        if (abortController?.signal.aborted) {
-          return { text: combinedText + '\n\n🛑 Loop cancelled.', toolsUsed: allToolsUsed };
-        }
-        throw error;
-      }
-    }
-
-    return { text: combinedText, toolsUsed: allToolsUsed };
-  }
-
   clearConversation(sessionKey: string): void {
     this._cleanupSession(sessionKey);
     this.usageCache.delete(sessionKey);
@@ -2312,10 +2246,6 @@ export class PtyProvider implements Provider {
     return this._refreshUsageFromJsonl(sessionKey) ?? this.usageCache.get(sessionKey);
   }
 
-  isDangerousMode(): boolean {
-    return true;
-  }
-
   async getAvailableModels(_scope: SettingsScope): Promise<ModelInfo[]> {
     // The aliases CLAUDE_BIN accepts for --model, minus any it predates. SDK
     // mode asks the same question of its own binary, so the two lists agree
@@ -2337,17 +2267,6 @@ export class PtyProvider implements Provider {
 
 
 /**
- * Apply per-command prompt wrapping so /plan and /explore behave the same in
- * PTY mode as in SDK mode. SDK does this differently:
- *   - explore: prepends "Explore the codebase and answer: " to the prompt
- *   - plan:   sets the SDK permissionMode to 'plan' (claude code then enforces
- *             read-only tool access)
- * In PTY mode we spawn with --dangerously-skip-permissions, so we can't flip
- * permission mode mid-run. Instead, plan mode is steered by a strong prompt
- * directive — claude will follow it on subscription-side too, matching the
- * SDK-mode user experience for the common case.
- */
-/**
  * True if the xterm buffer is still showing Claude Code's first-launch welcome
  * screen. The two greeting strings only render together at startup — after any
  * prompt submits and the model produces output, they scroll out of the visible
@@ -2356,38 +2275,6 @@ export class PtyProvider implements Provider {
  */
 function looksLikeWelcomeBanner(screenText: string): boolean {
   return screenText.includes('Welcome back') && screenText.includes('Tips for getting started');
-}
-
-function wrapCommandPrompt(message: string, command: AgentOptions['command']): string {
-  if (command === 'explore') {
-    return `Explore the codebase and answer: ${message}`;
-  }
-  if (command === 'plan') {
-    return `═══ PLAN MODE — STRICT ═══
-
-You are in plan mode. Your only job this turn is to produce an implementation plan. Read the codebase, understand the task, and output a numbered plan.
-
-PROHIBITED THIS TURN (treat as if these tools are disabled):
-  • Edit, Write, NotebookEdit — no file changes of any kind
-  • Bash commands that mutate state (no rm, mv, cp, mkdir, npm install, git commit, git push, etc.)
-  • Any side-effecting MCP tool (no send_file, no create_bot)
-  • Do not run a build, do not run tests
-  • Do not "just fix one quick thing while you're there"
-
-ALLOWED:
-  • Read, Grep, Glob — read-only file inspection
-  • Bash for strictly read-only commands (ls, cat, grep, git log, git diff, git status, wc)
-  • telecoder_list_projects, telecoder_ask_user — read-only or interactive-only
-
-If you find yourself about to call a prohibited tool, STOP and put the action into the plan instead. The user will review the plan and explicitly ask you to execute in a follow-up message.
-
-Output format: numbered steps, one per change you'd make. End with an "Out of scope" list of things you're deliberately not touching.
-
-═══ TASK ═══
-
-${message}`;
-  }
-  return message;
 }
 
 function fireAndForget(label: string, fn: (() => Promise<unknown> | unknown) | undefined): void {

@@ -158,14 +158,7 @@ describe('mode names', () => {
 describe('transportDefaultMode', () => {
   it('is auto on the pty, now that its dialogs can be answered', () => {
     // It ran bypassed only for as long as a prompt there was a dead end.
-    expect(transportDefaultMode('pty', false)).toBe('auto');
-  });
-
-  it('ignores DANGEROUS_MODE on the pty, where it never applied', () => {
-    // The var predates all of this and describes an SDK-side auto-approve.
-    // Letting it re-loosen the default the transport just tightened would be
-    // exactly the silent surprise this function exists to prevent.
-    expect(transportDefaultMode('pty', true)).toBe('auto');
+    expect(transportDefaultMode('pty')).toBe('auto');
   });
 
   it('keeps bypass reachable as a choice, not a default', () => {
@@ -178,19 +171,13 @@ describe('transportDefaultMode', () => {
   });
 
   it('is accept-edits on the sdk, the mode that transport always ran in', () => {
-    expect(transportDefaultMode('sdk', false)).toBe('acceptEdits');
-  });
-
-  it('lets DANGEROUS_MODE promote the sdk default to bypass', () => {
-    expect(transportDefaultMode('sdk', true)).toBe('bypassPermissions');
+    expect(transportDefaultMode('sdk')).toBe('acceptEdits');
   });
 
   it('only ever names a mode the table knows', () => {
     // /mode prints this through permissionModeInfo, which throws on a stranger.
     for (const method of ['sdk', 'pty'] as const) {
-      for (const dangerous of [true, false]) {
-        expect(() => permissionModeInfo(transportDefaultMode(method, dangerous))).not.toThrow();
-      }
+      expect(() => permissionModeInfo(transportDefaultMode(method))).not.toThrow();
     }
   });
 });

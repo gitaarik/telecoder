@@ -22,12 +22,12 @@ function assertEntitiesInBounds(msg: EntityMessage): void {
 }
 
 const SNAPSHOT = {
-  slashCommands: ['code-review', 'security-review', 'clear', 'loop', 'ctx:doctor', 'compact'],
-  skills: ['code-review', 'loop'],
+  slashCommands: ['code-review', 'security-review', 'clear', 'schedule', 'ctx:doctor', 'compact'],
+  skills: ['code-review', 'schedule'],
   recordedAtMs: Date.now(),
 };
 
-const BOT_NAMES = new Set(['loop', 'clear', 'compact']);
+const BOT_NAMES = new Set(['schedule', 'clear', 'compact']);
 
 describe('buildProjectCommandsMessage', () => {
   it('lists passthrough commands and names the shadowed ones separately', () => {
@@ -42,8 +42,8 @@ describe('buildProjectCommandsMessage', () => {
     expect(spans(msg, 'bold')).toContain('Shadowed by TeleCoder');
     // Shadowed names appear only under the warning, never as passthrough.
     const [passthroughPart, shadowedPart] = msg.text.split('Shadowed by TeleCoder');
-    expect(passthroughPart).not.toContain('/loop');
-    expect(shadowedPart).toContain('/loop');
+    expect(passthroughPart).not.toContain('/schedule');
+    expect(shadowedPart).toContain('/schedule');
     expect(shadowedPart).toContain('/clear');
   });
 

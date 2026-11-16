@@ -2,14 +2,14 @@
  * Whether this process is a systemd service — and whether systemd will bring
  * it back if it exits.
  *
- * This matters because the botctl restart dance cannot work under systemd.
- * `spawn(..., { detached: true })` escapes the process group and session but
- * not the cgroup, so the helper that would start the replacement stays inside
- * the unit. The moment the bot exits, systemd deactivates the unit and (with
- * the default `KillMode=control-group`) reaps everything left in it — the
- * helper included, before it ever gets to the start half of its job. The bot
- * has to exit and let systemd restart it instead, which means first knowing
- * whether systemd actually will.
+ * This matters because a restart cannot be done by a helper process under
+ * systemd. `spawn(..., { detached: true })` escapes the process group and
+ * session but not the cgroup, so a helper that would start the replacement
+ * stays inside the unit. The moment the bot exits, systemd deactivates the
+ * unit and (with the default `KillMode=control-group`) reaps everything left
+ * in it — the helper included, before it ever gets to the start half of its
+ * job. The bot has to exit and let systemd restart it instead, which means
+ * first knowing whether systemd actually will.
  */
 
 import { execFile } from 'child_process';

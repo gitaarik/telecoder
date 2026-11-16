@@ -9,7 +9,7 @@ export interface ParsedCommand {
   model: string | null;
 }
 
-const CLAUDE_COMMANDS = ['plan', 'explore', 'model', 'commands', 'loop', 'resume', 'continue', 'sessions', 'provider'] as const;
+const CLAUDE_COMMANDS = ['model', 'commands', 'resume', 'provider'] as const;
 type ClaudeCommand = (typeof CLAUDE_COMMANDS)[number];
 
 export function parseClaudeCommand(message: string): ParsedCommand {
@@ -82,9 +82,6 @@ export function getAvailableCommands(): EntityMessage {
     {
       title: 'Claude Commands',
       commands: [
-        '• `/plan <task>` - Enter plan mode for complex tasks',
-        '• `/explore <question>` - Use explore agent for codebase questions',
-        '• `/loop <task>` - Run iteratively until task complete',
         '• `/model [name]` - Show or set AI model',
         "• `/later [text]` - Set an idea aside, and be asked about it after Claude's turn",
         '• `/steer <text>` - Stop the running turn and send this in its place',
@@ -99,8 +96,6 @@ export function getAvailableCommands(): EntityMessage {
         '• `/newproject <name>` - Create a new project',
         '• `/newbot [project]` - Create a bot for a project, named after it and starting in it',
         '• `/resume` - Pick from recent sessions to resume',
-        '• `/continue` - Resume most recent session',
-        '• `/sessions` - List all sessions',
         '• `/teleport` - Move session to terminal (forked)',
         '• `/clear` - Clear session and start fresh',
         '• `/status` - Show current session info',
@@ -147,7 +142,6 @@ export function getAvailableCommands(): EntityMessage {
       '• `/cancel` - Stop the current request and drop anything queued',
       '• `/mode` - How much Claude asks before acting',
       `• \`/autoapprove [30m|off|status]\` - Let the gate approve instead of asking, for a while${approverTag}`,
-      '• `/streaming` - Toggle streaming / wait replies',
       '• `/verbosity` - Pick verbosity tier (quiet / normal / verbose / debug)',
       '• `/terminalui` - Toggle terminal-style display',
       '• `/botname <name>` - Rename the bot (admins)',
@@ -162,8 +156,8 @@ export function getAvailableCommands(): EntityMessage {
       '`/security-review`, `/simplify`, `/init`, `/run` and any `.claude/commands/`',
       'command all work by typing them here.',
       '',
-      '⚠️ Where a bot command shares the name, the bot wins — `/loop` and',
-      '`/schedule` are TeleCoder\'s, not Claude Code\'s. The overlap shifts with',
+      '⚠️ Where a bot command shares the name, the bot wins — `/schedule` and',
+      '`/model` are TeleCoder\'s, not Claude Code\'s. The overlap shifts with',
       'each Claude Code release, so `/projectcommands` reports the current one.',
       '',
       '• `/projectcommands` - List everything this project offers, shadowing included',
@@ -197,10 +191,9 @@ export function getAvailableCommands(): EntityMessage {
  * recorded as they register (see the `cmd()` wrapper in `bot.ts`).
  *
  * A bot command wins over the native Claude Code command of the same name:
- * grammY matches it first and the text never reaches the agent. `/loop` and
- * `/schedule` are TeleCoder's own features rather than Claude Code's skills of
- * those names, and `/model` answers about the bot's state rather than the
- * CLI's. Keeping the list live rather than hand-maintained means
+ * grammY matches it first and the text never reaches the agent. `/schedule`
+ * is TeleCoder's own feature rather than Claude Code's skill of that name, and
+ * `/model` answers about the bot's state rather than the CLI's. Keeping the list live rather than hand-maintained means
  * `/projectcommands` names the shadowed commands accurately — the overlap
  * shifts with every Claude Code release.
  *

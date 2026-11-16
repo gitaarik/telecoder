@@ -59,7 +59,7 @@ import {
   type QueryShared,
 } from './held-query.js';
 
-import type { AgentUsage, AgentResponse, AgentOptions, LoopOptions, ImageAttachment, TaskEvent, ToolResultEvent, EditDiffEvent, ThrottleInfo } from '../providers/types.js';
+import type { AgentUsage, AgentResponse, AgentOptions, ImageAttachment, TaskEvent, ToolResultEvent, EditDiffEvent, ThrottleInfo } from '../providers/types.js';
 import { taskTracker } from '../telegram/task-tracker.js';
 export type { AgentUsage };
 
@@ -194,35 +194,16 @@ function logAt(level: LogLevel, message: string, data?: unknown): void {
 }
 
 /**
- * Which mode this turn runs in, most specific wins.
- *
- * `/plan` is a single-turn instruction and beats everything. A mode the chat
- * chose beats DANGEROUS_MODE next, because every choice other than bypass is
- * the stricter of the two and an explicit choice that a config flag could
- * silently override would not be a choice. Having chosen nothing lands on
+ * Which mode this turn runs in: the one the chat chose with /mode, else
  * `transportDefaultMode`, which is also what /mode reads to name the default
  * in the chat — one rule, so the menu cannot describe a mode this returns.
  */
-function getPermissionMode(command?: string, scope?: SettingsScope): PermissionMode {
-  if (command === 'plan') {
-    return 'plan';
-  }
-
+function getPermissionMode(scope?: SettingsScope): PermissionMode {
   const chosen = scope !== undefined ? userPreferences.getPermissionMode(scope) : undefined;
   // The SDK and the CLI spell the ask-every-time mode differently; the table
   // holds both, and this transport needs `sdk`.
-  const mode = chosen ?? transportDefaultMode('sdk', config.DANGEROUS_MODE);
+  const mode = chosen ?? transportDefaultMode('sdk');
   return permissionModeInfo(mode).sdk as PermissionMode;
-}
-
-/**
- * Log operations when DANGEROUS_MODE is enabled for security auditing.
- */
-function logDangerousModeOperation(sessionKey: string, operation: string, details?: string): void {
-  if (!config.DANGEROUS_MODE) return;
-  const timestamp = new Date().toISOString();
-  const detailStr = details ? ` — ${details}` : '';
-  console.log(`[DANGEROUS_MODE] ${timestamp} session:${sessionKey} ${operation}${detailStr}`);
 }
 
 /**
@@ -259,7 +240,7 @@ export async function sendToAgent(
   message: string,
   options: AgentOptions = {}
 ): Promise<AgentResponse> {
-  const { onProgress, onToolStart, onToolEnd, onTaskEvent, onSubTurnResponse, onToolResult, onEditDiff, abortController, command, model, images, executableOverride, providerName } = options;
+  const { onProgress, onToolStart, onToolEnd, onTaskEvent, onSubTurnResponse, onToolResult, onEditDiff, abortController, model, images, executableOverride, providerName } = options;
 
   // Native `/compact` used to be intercepted here and refused as PTY-only.
   // It isn't: the CLI runs local slash commands in headless mode too, so a
@@ -346,15 +327,9 @@ export async function sendToAgent(
   // Get or initialize conversation history
   let history = conversationHistory.get(sessionKey) || [];
 
-  // Determine the prompt based on command
-  let prompt = message;
-  if (command === 'explore') {
-    prompt = `Explore the codebase and answer: ${message}`;
-  }
-
   // Prepend any one-shot carry-over context queued by a provider switch or a
   // cross-backend /resume. Plain text, so it's safe to replay on any backend.
-  prompt = withPendingCarryOver(sessionKey, prompt);
+  const prompt = withPendingCarryOver(sessionKey, message);
 
   // Add user message to history
   history.push({
@@ -400,10 +375,7 @@ export async function sendToAgent(
   const previewFlushTimer = setInterval(flushPreview, 5_000);
 
   // Determine permission mode
-  const permissionMode = getPermissionMode(command, sessionKey);
-
-  // Log in dangerous mode for security auditing
-  logDangerousModeOperation(sessionKey, 'query', `prompt_length:${message.length} cwd:${session.workingDirectory}`);
+  const permissionMode = getPermissionMode(sessionKey);
 
   // Determine model to use (default to 'opus' to match getModel() default)
   const effectiveModel = model || getModel(sessionKey);
@@ -493,21 +465,13 @@ export async function sendToAgent(
         logAt('basic', `[Claude] Resuming session ${existingSessionId} for session ${sessionKey}`);
       }
 
-      // The curated set for non-dangerous mode. The Task* tools keep Claude Code's
+      // The tools this transport allows. The Task* tools keep Claude Code's
       // task list, which the chat mirrors (telegram/task-list.ts).
-      const explicitTools = [
+      const toolsOption = [
         'Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'Task', 'Skill',
         'TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate',
         'WebFetch', 'WebSearch', 'NotebookEdit',
       ];
-
-      const toolsOption = config.DANGEROUS_MODE
-        ? { type: 'preset' as const, preset: 'claude_code' as const }
-        : explicitTools;
-
-      const allowedToolsOption = config.DANGEROUS_MODE
-        ? undefined
-        : explicitTools;
 
       // PreCompact hook always registered (logging only — notification sent from compact_boundary message)
       const preCompactHook: Partial<Record<HookEvent, HookCallbackMatcher[]>> = {
@@ -654,7 +618,7 @@ export async function sendToAgent(
       const queryOptions: Parameters<typeof query>[0]['options'] = {
         cwd,
         tools: toolsOption,
-        ...(allowedToolsOption ? { allowedTools: allowedToolsOption } : {}),
+        allowedTools: toolsOption,
         permissionMode,
         abortController: controller,
         systemPrompt: {
@@ -1456,106 +1420,6 @@ export async function sendToAgent(
   };
 }
 
-export async function sendLoopToAgent(
-  sessionKey: string,
-  message: string,
-  options: LoopOptions = {}
-): Promise<AgentResponse> {
-  const {
-    onProgress,
-    abortController,
-    maxIterations = config.MAX_LOOP_ITERATIONS,
-    onIterationComplete,
-  } = options;
-
-  const session = sessionManager.getSession(sessionKey);
-
-  if (!session) {
-    throw new Error('No active session. Use /project to set working directory.');
-  }
-
-  // Wrap the prompt with loop instructions
-  const loopPrompt = `${message}
-
-IMPORTANT: When you have fully completed this task, respond with the word "DONE" on its own line at the end of your response. If you need to continue working, do not say "DONE".`;
-
-  let iteration = 0;
-  let combinedText = '';
-  const allToolsUsed: string[] = [];
-  let isComplete = false;
-  let throttleInfo: ThrottleInfo | undefined;
-
-  while (iteration < maxIterations && !isComplete) {
-    iteration++;
-
-    // Check for abort
-    if (abortController?.signal.aborted) {
-      return {
-        text: '🛑 Loop cancelled.',
-        toolsUsed: allToolsUsed,
-      };
-    }
-
-    const iterationPrefix = `\n\n--- Iteration ${iteration}/${maxIterations} ---\n\n`;
-    combinedText += iterationPrefix;
-    onProgress?.(combinedText);
-
-    // For subsequent iterations, prompt Claude to continue
-    const currentPrompt = iteration === 1 ? loopPrompt : 'Continue the task. Say "DONE" when complete.';
-
-    try {
-      const response = await sendToAgent(sessionKey, currentPrompt, {
-        onProgress: (text) => {
-          onProgress?.(combinedText + text);
-        },
-        onToolResult: options.onToolResult,
-        onEditDiff: options.onEditDiff,
-        abortController,
-        model: options.model,
-        telegramCtx: options.telegramCtx,
-        executableOverride: options.executableOverride,
-        providerName: options.providerName,
-      });
-
-      combinedText += response.text;
-      allToolsUsed.push(...response.toolsUsed);
-
-      onIterationComplete?.(iteration, response.text);
-
-      // Surface throttle from any iteration so the caller can prompt the
-      // user. Abort the loop — continuing would just hit the same wall.
-      if (response.throttle) {
-        throttleInfo = response.throttle;
-        break;
-      }
-
-      // Check if Claude said DONE
-      if (response.text.includes('DONE')) {
-        isComplete = true;
-        combinedText += '\n\n✅ Loop completed.';
-      } else if (iteration >= maxIterations) {
-        combinedText += `\n\n⚠️ Max iterations (${maxIterations}) reached.`;
-      }
-
-      onProgress?.(combinedText);
-    } catch (error) {
-      if (abortController?.signal.aborted) {
-        return {
-          text: combinedText + '\n\n🛑 Loop cancelled.',
-          toolsUsed: allToolsUsed,
-        };
-      }
-      throw error;
-    }
-  }
-
-  return {
-    text: stripReasoningSummary(combinedText),
-    toolsUsed: allToolsUsed,
-    throttle: throttleInfo,
-  };
-}
-
 export function clearConversation(sessionKey: string): void {
   conversationHistory.delete(sessionKey);
   chatSessionIds.delete(sessionKey);
@@ -1600,6 +1464,3 @@ export function isValidEffortLevel(level: string): level is EffortLevel {
   return VALID_EFFORT_LEVELS.includes(level as EffortLevel);
 }
 
-export function isDangerousMode(): boolean {
-  return config.DANGEROUS_MODE;
-}

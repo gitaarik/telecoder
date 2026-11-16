@@ -2340,7 +2340,7 @@
             <p>A message that lands mid-turn waits for that turn to finish and then goes in,
             rather than timing out on a Claude that was never going to answer it yet. Long turns
             run to the end instead of being answered halfway. Commands that only read, like
-            <code>/commands</code>, <code>/sessions</code> or <code>/recap</code>, answer at once;
+            <code>/commands</code>, <code>/botstatus</code> or <code>/recap</code>, answer at once;
             the ones that change the session wait their turn like a message does.</p>
           </div>
           <div class="feature-card" data-category="reliability">
@@ -2939,21 +2939,6 @@ CCR_AUTOSTART=true</pre>
                   <td class="required-optional">Optional</td>
                 </tr>
                 <tr>
-                  <td class="var-name">STREAMING_MODE</td>
-                  <td><code>streaming</code> or <code>wait</code> for responses</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
-                  <td class="var-name">BOT_MODE</td>
-                  <td><code>dev</code> or <code>prod</code></td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
-                  <td class="var-name">DANGEROUS_MODE</td>
-                  <td>Auto-approve all tool permissions (default: false)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
                   <td class="var-name">QUESTION_TIMEOUT_MINUTES</td>
                   <td>How long a question from Claude (buttons, polls, relayed dialogs) waits for an answer before the turn carries on and the question closes (default: 10)</td>
                   <td class="required-no">No</td>
@@ -3000,11 +2985,6 @@ CCR_AUTOSTART=true</pre>
                 <tr>
                   <td class="var-name">TERMINAL_UI_DEFAULT</td>
                   <td>Terminal-style display on by default (default: true)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
-                  <td class="var-name">MAX_LOOP_ITERATIONS</td>
-                  <td>Max iterations for /loop mode (default: 5)</td>
                   <td class="required-no">No</td>
                 </tr>
                 <tr>
@@ -3111,14 +3091,6 @@ CCR_AUTOSTART=true</pre>
             <div class="command-row">
               <code class="command-code">/resume [words|id]</code>
               <span class="command-desc">Pick any conversation Claude Code has for this project (or all projects), search them by title, or open one by session id</span>
-            </div>
-            <div class="command-row">
-              <code class="command-code">/continue</code>
-              <span class="command-desc">Continue last session after bot restart</span>
-            </div>
-            <div class="command-row">
-              <code class="command-code">/sessions</code>
-              <span class="command-desc">Browse and restore previous sessions</span>
             </div>
             <div class="command-row">
               <code class="command-code">/recap [N]</code>
@@ -3231,11 +3203,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/mode &lt;manual|acceptEdits|plan|auto|bypass&gt;</code>
-              <span class="command-desc">How much Claude asks before acting, per chat or thread. Same modes the desktop cycles with shift+tab; buttons if you pass no argument. Default follows the transport, and the menu spells out what that resolves to — auto on PTY, accept edits on the SDK unless <code>DANGEROUS_MODE</code> promotes it. Admin-only.</span>
-            </div>
-            <div class="command-row">
-              <code class="command-code">/streaming</code>
-              <span class="command-desc">Toggle streaming vs wait response mode</span>
+              <span class="command-desc">How much Claude asks before acting, per chat or thread. Same modes the desktop cycles with shift+tab; buttons if you pass no argument. Default follows the transport, and the menu spells out what that resolves to — auto on PTY, accept edits on the SDK. Admin-only.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/terminalui</code>
@@ -3256,18 +3224,6 @@ CCR_AUTOSTART=true</pre>
             <div class="command-row">
               <code class="command-code">/topic &lt;text&gt;</code>
               <span class="command-desc">Set or clear the conversation topic (shown in the status line)</span>
-            </div>
-            <div class="command-row">
-              <code class="command-code">/plan</code>
-              <span class="command-desc">Enter plan mode for architecture discussions</span>
-            </div>
-            <div class="command-row">
-              <code class="command-code">/explore</code>
-              <span class="command-desc">Enter explore mode for codebase analysis</span>
-            </div>
-            <div class="command-row">
-              <code class="command-code">/loop</code>
-              <span class="command-desc">Toggle loop mode for continuous tasks</span>
             </div>
           </div>
         </div>

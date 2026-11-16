@@ -18,7 +18,7 @@ import { allowedChatIds } from './shared.js';
  * Cold-start auto-continue. For every chat with a prior session belonging to
  * this instance:
  *   - idle ≤ 7d          → silently restore in memory (no chat noise)
- *   - idle > 7d          → skip (user can /continue manually)
+ *   - idle > 7d          → skip (the chat can /resume it)
  *
  * Sessions already live in memory are skipped — that covers both the ones
  * autoResumeAfterReload just restored (they got the fuller "Reloaded and

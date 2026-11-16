@@ -44,9 +44,7 @@ export function makeEditDiffHandler(ctx: Context): (event: EditDiffEvent) => Pro
 
 /**
  * Callbacks that render a turn's progress into the streaming message. Shared
- * by every streaming entry point, including /loop — which takes only these,
- * since `sendLoopToAgent` reports iteration progress rather than individual
- * tool calls.
+ * by every entry point that starts a turn.
  */
 export function progressCallbacks(ctx: Context) {
   return {

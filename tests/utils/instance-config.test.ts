@@ -161,7 +161,7 @@ describe('diffInstances', () => {
 
 describe('withInstanceAdded', () => {
   const file = JSON.stringify({
-    defaults: { STREAMING_MODE: 'streaming' },
+    defaults: { STATUS_LINE_DEFAULT: 'true' },
     instances: [
       { name: 'TeleCoder {n}', tokens: ['1:a', '2:b'] },
       { name: 'TeleCoder — sjs', token: '3:c' },
@@ -173,7 +173,7 @@ describe('withInstanceAdded', () => {
 
     expect(name).toBe('TeleCoder — web');
     const parsed = JSON.parse(text);
-    expect(parsed.defaults).toEqual({ STREAMING_MODE: 'streaming' });
+    expect(parsed.defaults).toEqual({ STATUS_LINE_DEFAULT: 'true' });
     expect(parsed.instances.at(-1)).toEqual({ name: 'TeleCoder — web', token: '4:d', overrides: { HOME_PROJECT: '/w/web' } });
     expect(resolveInstances(text).map((i) => i.name)).toEqual(['TeleCoder 1', 'TeleCoder 2', 'TeleCoder — sjs', 'TeleCoder — web']);
   });

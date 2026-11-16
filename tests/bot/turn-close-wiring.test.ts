@@ -2,9 +2,9 @@
  * Every turn ends with the status line, whichever way it started.
  *
  * Each way of starting a turn used to write its own ending, and only a typed
- * message's had the status line. A voice note, a photo, a file, a scheduled
- * fire, and /plan, /explore and /loop with the task on the same line all left
- * the chat on the tail of the reply, with nothing to say where things stood.
+ * message's had the status line. A voice note, a photo, a file and a scheduled
+ * fire all left the chat on the tail of the reply, with nothing to say where
+ * things stood.
  *
  * This runs the bot as src/bot/bot.ts assembles it, so it is each real handler
  * that has to end its turn right. Telegram, the provider, the download and the
@@ -63,12 +63,6 @@ vi.mock('../../src/providers/provider-router.js', async (importOriginal) => {
       fx.prompts.push(message);
       return { text: 'Here is the answer.', toolsUsed: [], usage: USAGE };
     },
-    // A loop's response carries no usage, in either mode. Its iterations each
-    // left one with the provider, which is where the session's last one is.
-    sendLoopToAgent: async (_key: string, message: string) => {
-      fx.prompts.push(message);
-      return { text: 'Here is the answer.', toolsUsed: [] };
-    },
     getCachedUsage: () => ({ ...USAGE, cacheReadTokens: 298_500 }),
   };
 });
@@ -101,7 +95,6 @@ const { createBot } = await import('../../src/bot/bot.js');
 const { sessionManager } = await import('../../src/claude/session-manager.js');
 const { userPreferences } = await import('../../src/providers/user-preferences.js');
 const { setSessionTopic } = await import('../../src/bot/handlers/command/topic-store.js');
-const { setStreamingMode } = await import('../../src/bot/handlers/command/streaming-mode.js');
 const { scheduler } = await import('../../src/claude/scheduler.js');
 const { startScheduledRunner } = await import('../../src/claude/scheduled-runner.js');
 
@@ -220,7 +213,6 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-  setStreamingMode('streaming');
   fs.rmSync(process.env.TELECODER_TEST_HOME!, { recursive: true, force: true });
   delete process.env.TELECODER_TEST_HOME;
   vi.restoreAllMocks();
@@ -234,9 +226,7 @@ beforeEach(() => {
   setSessionTopic(KEY, 'Checkout bug');
 });
 
-describe.each(['streaming', 'wait'] as const)('a turn, with replies in %s mode', (mode) => {
-  beforeEach(() => setStreamingMode(mode));
-
+describe('a turn', () => {
   it.each([
     ['a typed message', () => receive({ text: 'why does checkout fail?' }), 'why does checkout fail?'],
     ['a voice note', () => receive(voiceNote), 'what the voice note said'],
@@ -255,23 +245,6 @@ describe.each(['streaming', 'wait'] as const)('a turn, with replies in %s mode',
       STATS,
     ]);
     // One of them, and nothing after it.
-    expect(posted.filter((t) => t.includes('📁'))).toHaveLength(1);
-  });
-});
-
-describe('a turn started by a command with its task on the same line', () => {
-  it.each([
-    ['/plan', '/plan add a wishlist', 'add a wishlist', STATS],
-    ['/explore', '/explore how do refunds work?', 'how do refunds work?', STATS],
-    // With the model and the context the session last had, a loop's response
-    // having none of its own to give.
-    ['/loop', '/loop fix the failing tests', 'fix the failing tests', STATS.replace('📊 12%', '🔴 30%')],
-  ])('%s ends with the status line', async (_name, text, prompt, stats) => {
-    const posted = await endOfTurn(() => receive({ text }));
-
-    expect(fx.prompts).toEqual([prompt]);
-    expect(posted.at(-1)).toContain(`_▸ ${prompt}_`);
-    expect(posted.at(-1)!.split('\n').at(-1)).toBe(stats);
     expect(posted.filter((t) => t.includes('📁'))).toHaveLength(1);
   });
 });

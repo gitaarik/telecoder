@@ -173,7 +173,7 @@ class SessionManager {
 
   /** Return the in-memory session if present; otherwise transparently restore
    * the last session from disk if it's recent enough. Lets handlers recover
-   * from unplanned restarts without forcing the user to type /continue. */
+   * from unplanned restarts without forcing the user to type /resume. */
   getOrRestoreSession(
     sessionKey: string,
     maxAgeMs: number = RESTORE_MAX_IDLE_MS,

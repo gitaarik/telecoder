@@ -62,24 +62,17 @@ npm start              # Run compiled build
 
 CI runs the type check, tests and build on every push. See [CONTRIBUTING.md](https://github.com/gitaarik/telecoder/blob/main/CONTRIBUTING.md).
 
-### Bot control script
+### Running a checkout
+
+Run the compiled build under a supervisor that starts it again when it exits, and
+`/restartbot` and `/rebuildbot` work from the chat:
 
 ```bash
-./scripts/telecoder-botctl.sh dev start       # Start dev mode
-./scripts/telecoder-botctl.sh dev restart     # Restart dev
-./scripts/telecoder-botctl.sh prod start      # Start production
-./scripts/telecoder-botctl.sh dev log         # Tail logs
-./scripts/telecoder-botctl.sh dev status      # Check if running
+npm run build
+pm2 start npm --name telecoder -- start      # or: npm run start:multi for instances.json
+pm2 logs telecoder                            # Tail logs
 ```
 
-### Self-editing workflow
-
-If TeleCoder is editing its own codebase, use **prod mode** to avoid hot-reload restarts:
-
-```bash
-./scripts/telecoder-botctl.sh prod start      # No hot reload
-# ... let Claude edit files ...
-./scripts/telecoder-botctl.sh prod restart    # Apply changes
-```
-
-Then `/continue` or `/resume` in Telegram to restore your session.
+Not `npm run dev`: if TeleCoder is editing its own codebase, the hot reload restarts it
+mid-turn. A restart carries each chat's session on by itself; `/resume` is there for one
+it left alone.

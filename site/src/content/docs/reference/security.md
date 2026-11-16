@@ -20,7 +20,6 @@ sidebar:
 - **Charter judge** — guest messages are read against a charter before they run
 - **Project sandbox** — the project picker is scoped to `WORKSPACE_DIR`
 - **Permission mode** — `/mode` sets how much Claude asks before acting
-- **Dangerous mode** — opt-in auto-approve for all tool permissions
 - **Secrets** — loaded from `.env` (gitignored), never committed
 - **Secret requests** — a key Claude asks for goes from your message into the
   command it named, and the message is deleted; Claude sees only the result.

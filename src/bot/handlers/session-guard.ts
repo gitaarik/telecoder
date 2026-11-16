@@ -19,7 +19,7 @@ import { homeProject } from '../../utils/home-project.js';
 
 /** Shown when a handler needs a working directory and no session supplies one. */
 export const NO_PROJECT_MESSAGE: EntityMessage = new EntityText()
-  .add('⚠️ No project set.\n\nIf the bot restarted, use ').code('/continue').add(' or ').code('/resume')
+  .add('⚠️ No project set.\n\nIf the bot restarted, use ').code('/resume')
   .add(' to restore your last session.\nOr use ').code('/project').add(' to open a project first.')
   .build();
 
@@ -43,7 +43,7 @@ export function whereChatIs(sessionKey: string): { projectPath: string; sessionI
  *
  * For commands that inspect or act on the current session but shouldn't
  * silently revive a dead one — if the bot restarted, the user is told to
- * /continue rather than having a session rehydrated underneath them.
+ * /resume rather than having a session rehydrated underneath them.
  * Returns null after replying, so callers just early-return.
  */
 export async function requireActiveSession(ctx: Context, sessionKey: string): Promise<Session | null> {

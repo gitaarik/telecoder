@@ -4,8 +4,7 @@
  * Claude Code's modes differ in how much it asks before acting, and until now
  * this bot had no say in it: the SDK transport hard-coded `acceptEdits` and
  * the pty spawned with `--dangerously-skip-permissions`, so every chat on
- * every project ran at whatever those two happened to be. `/plan` was the one
- * escape hatch, and only for a single turn.
+ * every project ran at whatever those two happened to be.
  *
  * The five modes below are claude's own, described in its own words from the
  * shift+tab lesson text. Only the first four are offered as choices a person
@@ -108,17 +107,13 @@ export function isPermissionModeId(value: string): value is PermissionModeId {
  * never asks is a choice rather than the only thing that worked. `/mode bypass`
  * is still one tap away for a chat that wants it back.
  *
- * DANGEROUS_MODE has no say here, exactly as it never had one on the pty: it
- * predates all of this, describes itself as an SDK-side auto-approve, and a
- * config flag quietly re-loosening a default the transport just tightened is
- * the kind of surprise this whole function exists to prevent.
+ * The SDK answers `acceptEdits`, the mode that transport always ran in. The
+ * `DANGEROUS_MODE` flag that once promoted it to bypass is gone: a config flag
+ * quietly re-loosening a default is the kind of surprise this whole function
+ * exists to prevent, and `/mode` is the one place a chat chooses.
  */
-export function transportDefaultMode(
-  method: 'sdk' | 'pty',
-  dangerousMode: boolean,
-): PermissionModeId {
-  if (method === 'pty') return 'auto';
-  return dangerousMode ? 'bypassPermissions' : 'acceptEdits';
+export function transportDefaultMode(method: 'sdk' | 'pty'): PermissionModeId {
+  return method === 'pty' ? 'auto' : 'acceptEdits';
 }
 
 /**

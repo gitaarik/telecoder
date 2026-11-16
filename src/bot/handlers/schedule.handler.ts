@@ -212,7 +212,7 @@ export async function handleSchedule(ctx: Context): Promise<void> {
   const session = sessionManager.getSession(sessionKey)
     ?? sessionManager.getOrRestoreSession(sessionKey).session;
   if (!session) {
-    await replyFormatted(ctx, withCode('⚠️ No project set. Use `/project` or `/continue` first, then create the schedule.'));
+    await replyFormatted(ctx, withCode('⚠️ No project set. Use `/project` or `/resume` first, then create the schedule.'));
     return;
   }
 

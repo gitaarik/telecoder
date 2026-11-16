@@ -16,7 +16,7 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
   skills and slash commands work as in your terminal and its permission dialogs arrive as
   buttons
 - Streaming replies: the answer shows while Claude writes it, on both transports
-- Model and effort pickers (`/model`, `/effort`), and plan, explore and loop modes
+- Model and effort pickers (`/model`, `/effort`)
 - `/mode` sets how much Claude asks before acting, from manual to bypass
 - `/compact`, `/context` and `/cost`, as in the CLI, and `/projectcommands` lists every slash
   command a project has
@@ -31,8 +31,8 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 
 - Each thread is its own session: forum topics in groups, and threads in private chats on a
   bot with Threaded Mode. A new thread is a new session, named after what it's about
-- Session resume across messages, and `/resume`, `/continue` and `/recap` to get back to
-  earlier work, including sessions started in your terminal
+- Session resume across messages, and `/resume` and `/recap` to get back to earlier
+  work, including sessions started in your terminal
 - `/prompts` lists the prompts you sent, and branches from any of them
 - `/teleport` continues a session in your terminal; `/handoff` exports it as markdown
 - Chats carry on by themselves after a restart

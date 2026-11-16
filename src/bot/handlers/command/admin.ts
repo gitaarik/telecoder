@@ -2,14 +2,14 @@
  * Bot lifecycle commands: /update, /botstatus, /version, /restartbot, /rebuildbot.
  *
  * These are the handlers that act on the bot process itself rather than on a
- * conversation, so they are the only ones that touch botctl, the reload marker
- * and the build.
+ * conversation, so they are the only ones that touch the reload marker and
+ * the build.
  */
 
 import { Context } from 'grammy';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFile, spawn } from 'child_process';
+import { execFile } from 'child_process';
 import { isMainThread } from 'worker_threads';
 import { config, getReloadMarkerPath } from '../../../config.js';
 import { getModel } from '../../../providers/provider-router.js';
@@ -17,10 +17,9 @@ import { getPtyProvider } from '../../../providers/claude-provider.js';
 import { readMemory } from '../../../utils/memory-pressure.js';
 import { EntityText, type EntityMessage } from '../../../telegram/entities.js';
 import { replyFormatted, replyParts } from '../../../telegram/send.js';
-import { sanitizeError } from '../../../utils/sanitize.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
-import { botctlExists, PROJECT_ROOT, BOTCTL_PATH } from './shared.js';
-import { handleContinue, handleClear } from './session.js';
+import { PROJECT_ROOT } from './shared.js';
+import { continueLastSession, handleClear } from './session.js';
 import { handleResume } from './resume.js';
 import {
   requestRestart,
@@ -40,7 +39,6 @@ import {
   type SystemdUnit,
 } from '../../../utils/systemd.js';
 import { launcherRestartHint } from '../../../utils/stale-launcher.js';
-import { getServiceManager } from '../../../utils/exit-codes.js';
 import { describeRunningBuild, getLatestBuild, getRunningBuild } from '../../../utils/build-info.js';
 import { checkCode, checkRemote, describeCodeCheck, describeRemoteCheck } from '../../../utils/version-check.js';
 import { isCheckout, detectPackageRunner, getInstalledVersion } from '../../../utils/install-mode.js';
@@ -296,10 +294,8 @@ export async function handleBotStatus(ctx: Context): Promise<void> {
       ? `${minutes}m ${seconds}s`
       : `${seconds}s`;
 
-  const mode = config.BOT_MODE === 'prod' ? 'Production' : 'Development';
   const keyInfo = getSessionKeyFromCtx(ctx);
   const model = keyInfo ? getModel(keyInfo.sessionKey) : 'opus';
-  const streaming = config.STREAMING_MODE || 'streaming';
   const pid = process.pid;
   const memMB = (process.memoryUsage.rss() / 1024 / 1024).toFixed(1);
 
@@ -311,7 +307,6 @@ export async function handleBotStatus(ctx: Context): Promise<void> {
   const msg = new EntityText().add('🟢 ').bold(`${config.BOT_NAME} is running`).newline(2);
   /** A `Label: value` line; every one but the last ends in a newline. */
   const field = (label: string, value: string) => msg.bold(`${label}:`).add(` ${value}`);
-  field('Mode', mode).newline();
   if (build) field('Version', build).newline();
   field('Uptime', uptimeStr).newline();
   field('PID', String(pid)).newline();
@@ -324,8 +319,7 @@ export async function handleBotStatus(ctx: Context): Promise<void> {
   const claudes = getPtyProvider().describeSessions();
   const generating = claudes.filter((s) => s.generating).length;
   field('Claude processes', claudes.length === 0 ? 'none' : `${claudes.length} (${generating} generating)`).newline();
-  field('Model', model).newline();
-  field('Streaming', streaming);
+  field('Model', model);
   if (warning) msg.newline(2).add(warning);
 
   await replyFormatted(ctx, msg.build());
@@ -364,13 +358,11 @@ async function handlePackageVersion(ctx: Context): Promise<void> {
 }
 
 /**
- * How this process gets replaced when it stops: by systemd, by the botctl
- * script starting a successor (a checkout), or by whatever supervises a
- * package install bringing it back after it exits.
+ * How this process gets replaced when it stops: by systemd, or by whatever
+ * else supervises it (pm2, a launchd agent) bringing it back after it exits.
  */
 type RestartPlan =
   | { kind: 'systemd'; unit: SystemdUnit }
-  | { kind: 'botctl' }
   | { kind: 'exit' };
 
 /**
@@ -385,9 +377,8 @@ type RestartPlan =
  */
 async function planRestart(): Promise<{ plan: RestartPlan } | { error: EntityMessage }> {
   if (isSystemdService()) {
-    // botctl is not an option here: it would be reaped with us (see
-    // utils/systemd.ts). Exiting and letting systemd restart us is, but only
-    // if the unit is set up to.
+    // Exiting and letting systemd restart us works only if the unit is set up
+    // to (see utils/systemd.ts).
     const unit = getSystemdUnit();
     if (!unit) {
       return {
@@ -436,39 +427,21 @@ async function planRestart(): Promise<{ plan: RestartPlan } | { error: EntityMes
     return { plan: { kind: 'systemd', unit } };
   }
 
-  // A checkout under the launchd agent `telecoder service install
-  // --from-checkout` writes takes this path too: botctl would start a second
-  // copy beside the one launchd is about to bring back.
-  if (!isCheckout() || getServiceManager() === 'launchd') {
-    // A package install has no botctl. It expects a supervisor (a systemd or
-    // launchd unit with Restart=always, pm2, ...) that starts it again when it
-    // exits — and in a terminal there is none, so there it says so instead.
-    if (process.stdin.isTTY && process.stdout.isTTY) {
-      return {
-        error: new EntityText()
-          .add('This bot is running in a terminal, so nothing would start it again after it exits.')
-          .newline(2)
-          .add('Stop it there and run ')
-          .code('telecoder start')
-          .add(' again, or run it as a service so restarts work from chat.')
-          .build(),
-      };
-    }
-    return { plan: { kind: 'exit' } };
-  }
-
-  if (!botctlExists()) {
+  // Anything else expects a supervisor (a launchd unit with KeepAlive, pm2,
+  // ...) that starts it again when it exits — and in a terminal there is none,
+  // so there it says so instead.
+  if (process.stdin.isTTY && process.stdout.isTTY) {
     return {
       error: new EntityText()
-        .add('Bot control script not found.')
+        .add('This bot is running in a terminal, so nothing would start it again after it exits.')
         .newline(2)
-        .add('Expected at ')
-        .code('scripts/telecoder-botctl.sh')
-        .add('.')
+        .add('Stop it there and run ')
+        .code(isCheckout() ? 'npm start' : 'telecoder start')
+        .add(' again, or run it as a service so restarts work from chat.')
         .build(),
     };
   }
-  return { plan: { kind: 'botctl' } };
+  return { plan: { kind: 'exit' } };
 }
 
 /**
@@ -484,26 +457,12 @@ function executeRestart(plan: RestartPlan): void {
     process.kill(process.pid, 'SIGTERM');
     return;
   }
-  if (plan.kind === 'systemd') {
-    // The exit *is* the restart. Non-zero so both Restart=always and
-    // Restart=on-failure act on it; SIGTERM rather than process.exit so the
-    // normal graceful shutdown still runs.
-    console.log(`[Restart] Exiting for systemd to restart ${plan.unit.name}`);
-    process.exitCode = RESTART_EXIT_CODE;
-    process.kill(process.pid, 'SIGTERM');
-    return;
-  }
-
-  try {
-    const child = spawn(
-      BOTCTL_PATH,
-      ['recover'],
-      { cwd: PROJECT_ROOT, detached: true, stdio: 'ignore', env: { ...process.env, MODE: config.BOT_MODE } }
-    );
-    child.unref();
-  } catch (error) {
-    console.error('[BotCtl] Failed to restart:', sanitizeError(error));
-  }
+  // The exit *is* the restart. Non-zero so both Restart=always and
+  // Restart=on-failure act on it; SIGTERM rather than process.exit so the
+  // normal graceful shutdown still runs.
+  console.log(`[Restart] Exiting for systemd to restart ${plan.unit.name}`);
+  process.exitCode = RESTART_EXIT_CODE;
+  process.kill(process.pid, 'SIGTERM');
 }
 
 type RestartScope = 'one' | 'all';
@@ -541,7 +500,7 @@ async function performRestart(ctx: Context, scope: RestartScope): Promise<void> 
     return;
   }
 
-  // Single-instance mode — systemd restarts us, or botctl starts a successor
+  // Single-instance mode — the supervisor restarts us once we exit
   const planned = await planRestart();
   if ('error' in planned) {
     await replyFormatted(ctx, new EntityText().add('❌ Cannot restart.').newline(2).append(planned.error).build());
@@ -912,7 +871,7 @@ export async function handleRestartCallback(ctx: Context): Promise<void> {
 
   if (data === 'restart:continue') {
     await ctx.answerCallbackQuery();
-    await handleContinue(ctx);
+    await continueLastSession(ctx);
   } else if (data === 'restart:resume') {
     await ctx.answerCallbackQuery();
     await handleResume(ctx);
@@ -940,7 +899,7 @@ export async function handleStartupCallback(ctx: Context): Promise<void> {
   }
 
   if (data === 'startup:continue') {
-    await handleContinue(ctx);
+    await continueLastSession(ctx);
     return;
   }
 

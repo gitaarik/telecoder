@@ -2,22 +2,20 @@
  * Turn execution: every path that actually runs a user prompt through a
  * provider and renders the result into the chat.
  *
- * `runTurn` is the single place the streaming-vs-wait choice is made, so the
- * typed-message, suggestion-tap and throttle-retry entry points cannot drift
- * apart. `handleCcrThrottleCallback` lives here rather than in throttle.ts
- * because it re-runs a prompt — keeping it here lets throttle.ts stay a leaf.
+ * `runTurn` is the one path a prompt takes, so the typed-message,
+ * suggestion-tap and throttle-retry entry points cannot drift apart.
+ * `handleCcrThrottleCallback` lives here rather than in throttle.ts because it
+ * re-runs a prompt — keeping it here lets throttle.ts stay a leaf.
  */
 
 import { Context } from 'grammy';
 import { sendToAgent, getActiveProviderName } from '../../../providers/provider-router.js';
 import { switchProvider } from '../../../providers/provider-switch.js';
 import { config } from '../../../config.js';
-import { setAbortController } from '../../../claude/request-queue.js';
 import { messageSender } from '../../../telegram/message-sender.js';
-import { makeToolResultHandler, makeEditDiffHandler, progressCallbacks, toolCallbacks, withStreamingTurn } from '../../../telegram/streaming-turn.js';
+import { progressCallbacks, toolCallbacks, withStreamingTurn } from '../../../telegram/streaming-turn.js';
 import { maybeSendVoiceReply } from '../../../tts/voice-reply.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
-import { getStreamingMode } from '../command.handler.js';
 import { fireAutoTopic, runQueuedTurn } from './shared.js';
 import { closeTurn, relayCatchUpIfMissed } from './turn-notify.js';
 import { lastThrottledPrompt, postThrottlePrompt } from './throttle.js';
@@ -69,7 +67,7 @@ export async function handleCcrThrottleCallback(ctx: Context): Promise<void> {
 
     await ctx.reply('🔁 Retrying via CCR...');
     await runQueuedTurn(ctx, sessionKey, pending, 'CcrRetry', () =>
-      runTurn(ctx, sessionKey, chatId, pending),
+      runTurn(ctx, sessionKey, pending),
     );
   }
 }
@@ -79,12 +77,7 @@ export async function handleCcrThrottleCallback(ctx: Context): Promise<void> {
  * Every entry point that executes a user prompt funnels through here, so the
  * streaming-vs-wait decision lives in exactly one place.
  */
-export async function runTurn(
-  ctx: Context,
-  sessionKey: string,
-  chatId: number,
-  message: string,
-): Promise<void> {
+export async function runTurn(ctx: Context, sessionKey: string, message: string): Promise<void> {
   // A message that would start a new claude on a machine short of memory is
   // held until the chat says so (see memory-guard.ts). One to a running
   // claude passes straight through.
@@ -93,11 +86,7 @@ export async function runTurn(
     await ctx.reply(guard.message);
     return;
   }
-  if (getStreamingMode() === 'streaming') {
-    await handleStreamingResponse(ctx, sessionKey, message);
-  } else {
-    await handleWaitResponse(ctx, sessionKey, chatId, message);
-  }
+  await streamTurn(ctx, sessionKey, message);
 }
 
 /**
@@ -106,17 +95,12 @@ export async function runTurn(
  * would take, and fires the topic update so the bot name still tracks the
  * topic the user implicitly chose by tapping.
  */
-export async function dispatchPromptFromCallback(
-  ctx: Context,
-  sessionKey: string,
-  chatId: number,
-  message: string,
-): Promise<void> {
+export async function dispatchPromptFromCallback(ctx: Context, sessionKey: string, message: string): Promise<void> {
   fireAutoTopic(ctx, sessionKey, message);
-  await runTurn(ctx, sessionKey, chatId, message);
+  await runTurn(ctx, sessionKey, message);
 }
 
-async function handleStreamingResponse(
+async function streamTurn(
   ctx: Context,
   sessionKey: string,
   message: string
@@ -146,44 +130,4 @@ async function handleStreamingResponse(
       lastThrottledPrompt.delete(sessionKey);
     }
   });
-}
-
-async function handleWaitResponse(
-  ctx: Context,
-  sessionKey: string,
-  chatId: number,
-  message: string
-): Promise<void> {
-  // Start continuous typing indicator (every 4s)
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  const typingInterval = messageSender.startTypingIndicator(ctx.api, chatId, keyInfo?.threadId);
-
-  const abortController = new AbortController();
-  setAbortController(sessionKey, abortController);
-
-  try {
-    const response = await sendToAgent(sessionKey, message, {
-      abortController,
-      telegramCtx: ctx,
-      onToolResult: makeToolResultHandler(ctx),
-      onEditDiff: makeEditDiffHandler(ctx),
-    });
-    messageSender.stopTypingInterval(typingInterval);
-
-    const sentId = await messageSender.sendMessage(ctx, response.text);
-    await messageSender.attachForkButton(ctx, sessionKey, sentId);
-    await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
-    await maybeSendVoiceReply(ctx, response.text);
-
-    await closeTurn(ctx, sessionKey, response, message);
-
-    if (response.throttle) {
-      await postThrottlePrompt(ctx, sessionKey, message, response.throttle);
-    } else {
-      lastThrottledPrompt.delete(sessionKey);
-    }
-  } catch (error) {
-    messageSender.stopTypingInterval(typingInterval);
-    throw error;
-  }
 }

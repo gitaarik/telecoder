@@ -28,8 +28,6 @@ import {
   handleNewProject,
   handleProjectCallback,
   handleStatus,
-  handleStreaming,
-  handleModeCallback,
   handlePermissionMode,
   handlePermissionModeCallback,
   handleTTS,
@@ -56,18 +54,13 @@ import {
   handleProviderCallback,
   handleProviderSwitchCallback,
   handleCcrCommand,
-  handlePlan,
-  handleExplore,
   handleResume,
   handleResumeCallback,
-  handleContinue,
   handleRecap,
   handleSync,
   handleHandoff,
   handlePermissions,
   handleProjectCommands,
-  handleLoop,
-  handleSessions,
   handleTeleport,
   handleFile,
   handleTerminalUI,
@@ -380,12 +373,11 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // Stops the turn and sends a message in its place, so it can't wait behind that turn.
   cmd('steer', handleSteer);
   // Read-only, with nothing a running turn could be disturbed by, so they answer
-  // mid-turn rather than after it: a fixed list, a look at the session list or
-  // the bot process, a re-read of the transcript, and two that ask a probe of
-  // their own rather than the live session. Anything that changes the session
+  // mid-turn rather than after it: a fixed list, a look at the bot process, a
+  // re-read of the transcript, and two that ask a probe of their own rather
+  // than the live session. Anything that changes the session
   // or starts a turn stays behind sequentialize below.
   cmd('commands', withRunningNote(handleCommands));
-  cmd('sessions', withRunningNote(handleSessions));
   cmd('botstatus', withRunningNote(handleBotStatus));
   cmd('recap', withRunningNote(handleRecap));
   cmd('projectcommands', handleProjectCommands);
@@ -410,13 +402,11 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   cmd('statusline', handleStatusLine);
   cmd('verbosity', handleVerbosity);
   cmd('terminalui', handleTerminalUI);
-  cmd('streaming', handleStreaming);
   cmd('tts', handleTTS);
   cmd('suggestions', handleSuggestions);
   bot.callbackQuery(/^statusline:/, handleStatusLineCallback);
   bot.callbackQuery(/^verbosity:/, handleVerbosityCallback);
   bot.callbackQuery(/^terminalui:/, handleTerminalUICallback);
-  bot.callbackQuery(/^mode:/, handleModeCallback);
   bot.callbackQuery(/^tts:/, handleTTSCallback);
   bot.callbackQuery(/^sugg:/, handleSuggestionsCallback);
   // The same goes for the permission mode, which a turn applies as it starts,
@@ -537,21 +527,14 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   if (config.CCR_ENABLED) {
     cmd('ccr', adminOnly(handleCcrCommand));
   }
-  cmd('plan', handlePlan);
-  cmd('explore', handleExplore);
-
   // Session resume commands
   cmd('resume', handleResume);
-  cmd('continue', handleContinue);
 
   // Fork: /fork forks from current state; /accept and /decline are the
   // slash-command equivalents of the target-side inline buttons.
   cmd('fork', handleForkCommand);
   cmd('accept', handleAcceptCommand);
   cmd('decline', handleDeclineCommand);
-
-  // Loop mode
-  cmd('loop', handleLoop);
 
   // Teleport to terminal
   cmd('teleport', adminOnly(handleTeleport));

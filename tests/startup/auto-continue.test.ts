@@ -66,7 +66,7 @@ describe('starting up', () => {
     expect(sessionManager.getSession('2')?.claudeSessionId).toBe('days-old');
   });
 
-  it('leaves one quiet for over a week to an explicit /continue', () => {
+  it('leaves one quiet for over a week to an explicit /resume', () => {
     idleChat('3', 8 * DAY, 'weeks-old');
 
     autoContinueOnStartup();

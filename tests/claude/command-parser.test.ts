@@ -19,13 +19,13 @@ describe('parseClaudeCommand', () => {
   });
 
   it('parses a recognized command without args', () => {
-    expect(parseClaudeCommand('/plan')).toEqual({ command: 'plan', args: '', model: null });
+    expect(parseClaudeCommand('/resume')).toEqual({ command: 'resume', args: '', model: null });
   });
 
   it('parses a recognized command with args', () => {
-    expect(parseClaudeCommand('/explore how does auth work')).toEqual({
-      command: 'explore',
-      args: 'how does auth work',
+    expect(parseClaudeCommand('/resume checkout bug')).toEqual({
+      command: 'resume',
+      args: 'checkout bug',
       model: null,
     });
   });
@@ -48,7 +48,7 @@ describe('parseClaudeCommand', () => {
   });
 
   it('recognizes every command in the allow-list', () => {
-    for (const cmd of ['plan', 'explore', 'model', 'commands', 'loop', 'resume', 'continue', 'sessions', 'provider']) {
+    for (const cmd of ['model', 'commands', 'resume', 'provider']) {
       expect(parseClaudeCommand(`/${cmd}`).command).toBe(cmd);
     }
   });
@@ -56,8 +56,8 @@ describe('parseClaudeCommand', () => {
 
 describe('isClaudeCommand', () => {
   it('is true for recognized commands', () => {
-    expect(isClaudeCommand('/plan something')).toBe(true);
-    expect(isClaudeCommand('/sessions')).toBe(true);
+    expect(isClaudeCommand('/model opus')).toBe(true);
+    expect(isClaudeCommand('/resume')).toBe(true);
   });
 
   it('is false for plain text and unknown commands', () => {
@@ -104,7 +104,7 @@ describe('getAvailableCommands', () => {
   it('lists always-on sections and core commands', () => {
     const { text } = getAvailableCommands();
     expect(text).toContain('Claude Commands');
-    expect(text).toContain('/plan');
+    expect(text).toContain('/model');
     expect(text).toContain('/clear');
     expect(text).toContain('Bot Commands');
   });
@@ -124,7 +124,7 @@ describe('getAvailableCommands', () => {
     const spans = (type: string) =>
       entities.filter((e) => e.type === type).map((e) => text.slice(e.offset, e.offset + e.length));
     expect(spans('bold')).toContain('Claude Commands:');
-    expect(spans('code')).toContain('/plan <task>');
+    expect(spans('code')).toContain('/model [name]');
     // Code spans hold the command and nothing else: a stray escape there is
     // what once put a visible `\-` in the middle of `/code-review`.
     expect(spans('code')).toContain('/code-review');
@@ -134,9 +134,9 @@ describe('getAvailableCommands', () => {
 
 describe('bot command registry', () => {
   it('records the names bot.ts registers, so the shadow list cannot drift', () => {
-    registerBotCommandName('loop');
+    registerBotCommandName('steer');
     registerBotCommandName('schedule');
-    expect(getBotCommandNames().has('loop')).toBe(true);
+    expect(getBotCommandNames().has('steer')).toBe(true);
     expect(getBotCommandNames().has('schedule')).toBe(true);
   });
 
@@ -146,7 +146,7 @@ describe('bot command registry', () => {
 
   it('deduplicates repeat registrations', () => {
     const before = getBotCommandNames().size;
-    registerBotCommandName('loop');
+    registerBotCommandName('steer');
     expect(getBotCommandNames().size).toBe(before);
   });
 

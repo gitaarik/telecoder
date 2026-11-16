@@ -8,11 +8,7 @@ import { messageSender } from '../../telegram/message-sender.js';
 import { closeTurn, relayCatchUpIfMissed } from './message/turn-notify.js';
 import { isDuplicate, markProcessed } from '../../telegram/deduplication.js';
 import { isStaleMessage } from '../middleware/stale-filter.js';
-import {
-  queueRequest,
-  setAbortController,
-} from '../../claude/request-queue.js';
-import { getStreamingMode } from './command.handler.js';
+import { queueRequest } from '../../claude/request-queue.js';
 import { maybeSendVoiceReply } from '../../tts/voice-reply.js';
 import { transcribeFile } from '../../audio/transcribe.js';
 import { sendTranscriptResult } from './command.handler.js';
@@ -130,31 +126,18 @@ export async function handleVoice(ctx: Context): Promise<void> {
 
     // Feed transcript into agent
     await queueRequest(sessionKey, transcript, async () => {
-      if (getStreamingMode() === 'streaming') {
-        await withStreamingTurn(ctx, sessionKey, transcript, async (abortController) => {
-          const response = await sendToAgent(sessionKey, transcript, {
-            ...progressCallbacks(ctx),
-            abortController,
-            telegramCtx: ctx,
-          });
-
-          await messageSender.finishStreaming(ctx, response.text);
-          await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
-          await maybeSendVoiceReply(ctx, response.text);
-          await closeTurn(ctx, sessionKey, response, transcript);
+      await withStreamingTurn(ctx, sessionKey, transcript, async (abortController) => {
+        const response = await sendToAgent(sessionKey, transcript, {
+          ...progressCallbacks(ctx),
+          abortController,
+          telegramCtx: ctx,
         });
-      } else {
-        await ctx.replyWithChatAction('typing');
 
-        const abortController = new AbortController();
-        setAbortController(sessionKey, abortController);
-
-        const response = await sendToAgent(sessionKey, transcript, { abortController, telegramCtx: ctx });
-        await messageSender.sendMessage(ctx, response.text);
+        await messageSender.finishStreaming(ctx, response.text);
         await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
         await maybeSendVoiceReply(ctx, response.text);
         await closeTurn(ctx, sessionKey, response, transcript);
-      }
+      });
     });
   } catch (error) {
     if ((error as Error).message === 'Queue cleared') return;

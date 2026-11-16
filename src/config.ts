@@ -235,11 +235,9 @@ const envSchema = z.object({
     .string()
     .default('true')
     .transform((val) => val.toLowerCase() === 'true'),
-  BOT_MODE: z.enum(['dev', 'prod']).default('dev'),
   // Transport a chat uses until someone picks one with /method. The permission
   // gate runs on both (a PreToolUse hook either way). Per-chat /method wins.
   CLAUDE_METHOD_DEFAULT: z.enum(['sdk', 'pty']).default('sdk'),
-  STREAMING_MODE: z.enum(['streaming', 'wait']).default('streaming'),
   STREAMING_DEBOUNCE_MS: z
     .string()
     .default('500')
@@ -273,15 +271,6 @@ const envSchema = z.object({
   DOCUMENT_MAX_FILE_SIZE_MB: z
     .string()
     .default('19')
-    .transform((val) => parseInt(val, 10)),
-  // New config options
-  DANGEROUS_MODE: z
-    .string()
-    .default('false')
-    .transform((val) => val.toLowerCase() === 'true'),
-  MAX_LOOP_ITERATIONS: z
-    .string()
-    .default('5')
     .transform((val) => parseInt(val, 10)),
   AUTO_RESTORE_SESSION: z.string().default('false').transform(toBool),
   // Voice transcription (Groq Whisper)

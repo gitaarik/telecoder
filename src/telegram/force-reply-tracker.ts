@@ -2,7 +2,7 @@
  * Remembers which of the bot's own messages were ForceReply prompts.
  *
  * In a group the bot only answers when it is @mentioned, but the ForceReply
- * flows (`/project`, `/plan`, `/file`, …) are answered by replying to the
+ * flows (`/project`, `/file`) are answered by replying to the
  * prompt — Telegram pops the composer open with the reply already attached,
  * and there is nowhere to put a mention. Those replies have to stay
  * addressed, so the gate needs to tell "answering a prompt" apart from

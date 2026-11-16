@@ -1,17 +1,15 @@
 import {
   sendToAgent as claudeSendToAgent,
-  sendLoopToAgent as claudeSendLoopToAgent,
   clearConversation as claudeClearConversation,
   setModel as claudeSetModel,
   getModel as claudeGetModel,
   clearModel as claudeClearModel,
   getCachedUsage as claudeGetCachedUsage,
-  isDangerousMode as claudeIsDangerousMode,
 } from '../claude/agent.js';
 import { getCcrShimPath } from '../claude/ccr-shim.js';
 import type { SettingsScope } from '../utils/session-key.js';
 import { ensureCcrRunning } from './ccr-health.js';
-import type { Provider, AgentOptions, LoopOptions, AgentResponse, AgentUsage, ModelInfo } from './types.js';
+import type { Provider, AgentOptions, AgentResponse, AgentUsage, ModelInfo } from './types.js';
 
 // CCR's router config decides the actual backend model per request — the
 // SDK-level model name is largely advisory. Deliberately just the three tiers
@@ -24,7 +22,7 @@ const CCR_MODELS: ModelInfo[] = [
   { id: 'haiku', label: 'haiku', description: 'Routed via CCR' },
 ];
 
-function withShim<T extends AgentOptions | LoopOptions>(options?: T): T {
+function withShim<T extends AgentOptions>(options?: T): T {
   const shim = getCcrShimPath();
   return { ...(options ?? {}), executableOverride: shim } as T;
 }
@@ -42,12 +40,6 @@ export const ccrProvider: Provider = {
     const failure = await preflightOrFailure();
     if (failure) return failure;
     return claudeSendToAgent(sessionKey, message, withShim(options));
-  },
-
-  async sendLoopToAgent(sessionKey: string, message: string, options?: LoopOptions): Promise<AgentResponse> {
-    const failure = await preflightOrFailure();
-    if (failure) return failure;
-    return claudeSendLoopToAgent(sessionKey, message, withShim(options));
   },
 
   clearConversation(sessionKey: string): void {
@@ -68,10 +60,6 @@ export const ccrProvider: Provider = {
 
   getCachedUsage(sessionKey: string): AgentUsage | undefined {
     return claudeGetCachedUsage(sessionKey);
-  },
-
-  isDangerousMode(): boolean {
-    return claudeIsDangerousMode();
   },
 
   async getAvailableModels(): Promise<ModelInfo[]> {

@@ -151,8 +151,8 @@ export async function sendTurnNotifications(
 
 /**
  * What closes a turn, however it started: the context notices, then the status
- * line. A typed message, a voice note, an upload, /plan, /explore, /loop and a
- * scheduled fire all end here. Each used to write its own ending, and only the
+ * line. A typed message, a voice note, an upload and a scheduled fire all end
+ * here. Each used to write its own ending, and only the
  * typed message's had the status line, so a turn started any other way left
  * the chat on the tail of its reply with nothing to say where things stood.
  *
@@ -169,8 +169,7 @@ export async function closeTurn(
   await sendTurnNotifications(ctx, sessionKey, response);
   const chatId = ctx.chat?.id;
   if (chatId === undefined) return;
-  // Not every response carries a usage: a /loop's doesn't, though each of its
-  // iterations left one behind, and neither does a cancelled turn's. The line
+  // Not every response carries a usage: a cancelled turn's doesn't. The line
   // then shows what the session last had, rather than no model and no context.
   const usage = response.usage ?? getCachedUsage(sessionKey);
   await sendStatusLine(ctx, chatId, sessionKey, usage, prompt, options);

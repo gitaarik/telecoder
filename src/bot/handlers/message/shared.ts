@@ -104,7 +104,7 @@ export async function resolveUserFilePath(
  * "Queue cleared" is the normal signal that a newer message superseded this
  * one, so it exits quietly. Anything else is logged as well as reported —
  * three of the four call sites this replaces only replied to the chat, which
- * left failures in the plan/explore, suggestion-tap and throttle-retry paths
+ * left failures in the suggestion-tap and throttle-retry paths
  * invisible from the server side.
  */
 export async function runQueuedTurn(

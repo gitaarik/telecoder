@@ -29,6 +29,27 @@ reasoning — the commit bodies are the long form, this is the index.
   background" stayed under every later reply until the bot restarted, and the
 ### Removed
 
+- **Claudegram's agent modes, session list and process controls.** TeleCoder
+  is for the real Claude Code experience in Telegram, and these came over from
+  the fork it started as, each standing in for something Claude Code now does
+  itself. `/plan`, `/explore` and `/loop` wrapped the prompt — a pasted
+  "PLAN MODE — STRICT" directive, an "Explore the codebase and answer:"
+  prefix, a re-prompt until Claude said "DONE" (`MAX_LOOP_ITERATIONS`) — where
+  `/mode plan` is Claude Code's own plan mode and Claude Code works until a
+  task is done; its `/loop` skill reaches it now that the bot no longer
+  shadows the name. `/sessions` and `/continue` listed and resumed the bot's
+  own session history, which `/resume` covers with Claude Code's real list; the
+  ▶️ Continue button under a restart notice still works. `/streaming` and
+  `STREAMING_MODE=wait` held a whole reply back until the turn ended, which the
+  status line and the action log were never written for: replies stream.
+  `DANGEROUS_MODE`, Claudegram's auto-approve-all, only ever moved the SDK
+  transport's default; `/mode` and `/autoapprove` are the controls, and
+  `/status` and `/botstatus` lose the rows that reported these. `BOT_MODE` and
+  `scripts/telecoder-botctl.sh` were its dev/prod process control: a checkout
+  runs under pm2 or systemd, which restart the bot when it exits, and
+  `/restartbot` in a terminal says so instead. A `.env` that still sets one
+  of the settings gets one line at startup.
+
 - **Telegraph.** With `TELEGRAPH_ENABLED=true`, every reply over 2,500
   characters, every `/handoff` note and every closed action log was also
   published to telegra.ph as a public, undeletable Instant View page, and

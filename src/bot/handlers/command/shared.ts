@@ -8,13 +8,10 @@
  */
 
 import { Context } from 'grammy';
-import * as fs from 'fs';
-import * as path from 'path';
 import { sessionManager } from '../../../claude/session-manager.js';
 import {
   getModel,
   getEffort,
-  isDangerousMode,
   getActiveProviderName,
   type EffortLevel,
 } from '../../../providers/provider-router.js';
@@ -29,11 +26,6 @@ import { PACKAGE_ROOT } from '../../../utils/install-mode.js';
 
 /** Repo root (the package root, in an npm install). */
 export const PROJECT_ROOT = PACKAGE_ROOT;
-export const BOTCTL_PATH = path.join(PROJECT_ROOT, 'scripts', 'telecoder-botctl.sh');
-
-export function botctlExists(): boolean {
-  return fs.existsSync(BOTCTL_PATH);
-}
 
 /**
  * Reply with standard markdown, sent as entities. For static text only: a
@@ -90,7 +82,6 @@ export function projectStatusSuffix(sessionKey: string): EntityMessage {
   const { chatId } = parseSessionKey(sessionKey);
   const model = getModel(sessionKey);
   const provider = getActiveProviderName(sessionKey);
-  const dangerous = isDangerousMode() ? '⚠️ ENABLED' : 'Disabled';
   const session = sessionManager.getSession(sessionKey);
   const created = session?.createdAt
     ? new Date(session.createdAt).toLocaleString()
@@ -103,7 +94,6 @@ export function projectStatusSuffix(sessionKey: string): EntityMessage {
     .add('\n• ').bold('Model:').add(` ${model}`)
     .add('\n• ').bold('Effort:').add(` ${effortLabel}`)
     .add('\n• ').bold('Created:').add(` ${created}`)
-    .add('\n• ').bold('Dangerous Mode:').add(` ${dangerous}`)
     .add('\n• ').bold('Session ID:').add(' ');
   if (sessionId) {
     suffix.code(sessionId);

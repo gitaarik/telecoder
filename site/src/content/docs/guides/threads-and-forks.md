@@ -82,7 +82,6 @@ Only `🍴 Fork`, `/fork` and `/spinoff` open new threads.
 
 - **`/resume`** lists every Claude Code session for the project, including ones you
   started in a terminal. Add words to search, or `🌐 All projects` to look wider.
-- **`/continue`** picks up this thread's most recent session.
 - **`/recap`** re-sends the last few exchanges in full.
 - **`/prompts`** lists your prompts, and branches from any of them.
 - **`/teleport`** gives you the `claude --resume` line to carry on in a terminal, and

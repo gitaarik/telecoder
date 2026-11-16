@@ -29,7 +29,7 @@ vi.mock('../../src/bot/handlers/command/topic-store.js', () => ({
 }));
 
 const { handleTopic } = await import('../../src/bot/handlers/command/topic.js');
-const { handleClear, handleSessions, handleTeleport } = await import('../../src/bot/handlers/command/session.js');
+const { handleClear, handleTeleport } = await import('../../src/bot/handlers/command/session.js');
 
 function chat(command: string) {
   const reply = vi.fn(async (_text: string, _opts?: Record<string, unknown>) => ({}));
@@ -76,25 +76,6 @@ describe('/clear', () => {
       ['code', '/clear -y'],
     ]);
     expect(opts?.reply_markup).toBeDefined();
-  });
-});
-
-describe('/sessions', () => {
-  it('lists projects as code and topics in italics', async () => {
-    state.history = [
-      { conversationId: 'c1', projectName: 'my_app', topic: 'a *bold* idea', lastActivity: new Date().toISOString() },
-    ];
-    const { ctx, reply } = chat('/sessions');
-    await handleSessions(ctx);
-    const [text, opts] = reply.mock.calls[0];
-    expect(text).toContain('• my_app (');
-    expect(text).toContain(' — a *bold* idea');
-    expect(spans(text, opts)).toEqual(expect.arrayContaining([
-      ['bold', 'Sessions'],
-      ['code', 'my_app'],
-      ['italic', 'a *bold* idea'],
-      ['code', '/resume'],
-    ]));
   });
 });
 
