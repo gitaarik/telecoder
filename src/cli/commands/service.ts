@@ -397,6 +397,53 @@ export async function systemdUnavailableReason(deps: ServiceDeps): Promise<Syste
 
 const firstLine = (text: string) => text.trim().split('\n')[0] ?? '';
 
+/**
+ * What `telecoder service install` would do on this machine, so the wizard can
+ * say so before it offers it. The same checks the installer starts with, and
+ * nothing is changed.
+ */
+export interface ServicePlan {
+  /** The manager that would run the bot, or null where neither works. */
+  manager: 'systemd' | 'launchd' | null;
+  /** Whether an install would get past these checks. */
+  ready: boolean;
+  /** How it would be set up, or what stands in the way, for the wizard to print. */
+  lines: string[];
+}
+
+export async function planServiceInstall(givenDeps: ServiceDeps = realDeps()): Promise<ServicePlan> {
+  const { deps } = withUserBus(givenDeps);
+  if (deps.platform === 'darwin') {
+    return { manager: 'launchd', ready: true, lines: ['a LaunchAgent (launchd), loaded now and whenever you log in.'] };
+  }
+  if (deps.platform !== 'linux') {
+    return {
+      manager: null,
+      ready: false,
+      lines: [
+        `telecoder service supports Linux (systemd) and macOS (launchd), not ${deps.platform}.`,
+        'Run "telecoder start" under any supervisor that starts it again when it exits.',
+      ],
+    };
+  }
+  const unavailable = await systemdUnavailableReason(deps);
+  if (unavailable) {
+    return {
+      manager: 'systemd',
+      ready: false,
+      lines: [
+        `a systemd user service, but ${unavailable.reason}.`,
+        'Run "telecoder service install" for how to fix that, and other ways to keep the bot running.',
+      ],
+    };
+  }
+  const lines = ['a systemd user service (systemctl --user), started now and at boot.'];
+  lines.push(await lingerEnabled(deps)
+    ? 'Lingering is on, so it keeps running after you log out.'
+    : `It will ask to enable lingering for ${deps.username}, so it keeps running after you log out.`);
+  return { manager: 'systemd', ready: true, lines };
+}
+
 /** How to get the user's systemd manager running without a login, first in the fallback. */
 async function userManagerFix(deps: ServiceDeps, name: string): Promise<string[]> {
   const user = deps.username;

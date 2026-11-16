@@ -31,6 +31,14 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Changed
 
+- **The wizard says what the background service will be before asking.** The
+  question at the end of `telecoder init` used to name only the command. It now
+  says what `telecoder service install` would set up on this machine first: a
+  systemd user service, and that it will ask about lingering (or that lingering
+  is already on), or a LaunchAgent on macOS. Where it can't install one, on a
+  platform without systemd or launchd or where `systemctl --user` can't be
+  reached, it says why instead of asking a question that would end in an error.
+
 - **A voice note without a Groq key says how to turn transcription on.**
   Declining voice in `telecoder init` is the common answer. A voice note or
   `/transcribe` then got a "Transcribing..." ack followed by a raw

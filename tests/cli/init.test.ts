@@ -237,6 +237,56 @@ describe('telecoder init: interactive', () => {
     }
   });
 
+  it('says what the service would be here before asking, and asks nothing when it cannot be installed', async () => {
+    const systemd = {
+      manager: 'systemd' as const,
+      ready: true,
+      lines: ['a systemd user service (systemctl --user), started now and at boot.', 'It will ask to enable lingering for u, so it keeps running after you log out.'],
+    };
+    for (const yes of [true, false]) {
+      const tg = fakeTelegram();
+      tg.updates = [[privateMessage(5)]];
+      let requested = false;
+      const { prompter, result } = run(
+        [GOOD, WAIT, true, '', false, true, yes],
+        tg, {}, { requestService: () => { requested = true; }, planService: async () => systemd },
+      );
+      expect(await result).toBe(0);
+      expect(prompter.said).toContain('telecoder service install keeps it running in the background. Here that is a systemd user service (systemctl --user), started now and at boot.');
+      expect(prompter.said).toContain('  It will ask to enable lingering for u, so it keeps running after you log out.');
+      expect(prompter.asked).toContain('Set up the systemd service now?');
+      expect(requested).toBe(yes);
+      fs.rmSync(envPath, { force: true });
+    }
+
+    const tg = fakeTelegram();
+    tg.updates = [[privateMessage(5)]];
+    const launchd = { manager: 'launchd' as const, ready: true, lines: ['a LaunchAgent (launchd), loaded now and whenever you log in.'] };
+    const mac = run([GOOD, WAIT, true, '', false, true, true], tg, {}, { requestService: () => {}, planService: async () => launchd });
+    expect(await mac.result).toBe(0);
+    expect(mac.prompter.asked).toContain('Set up the LaunchAgent now?');
+    fs.rmSync(envPath, { force: true });
+
+    const tg2 = fakeTelegram();
+    tg2.updates = [[privateMessage(5)]];
+    let requested = false;
+    const blocked = {
+      manager: 'systemd' as const,
+      ready: false,
+      lines: ['a systemd user service, but systemctl is not installed.', 'Run "telecoder service install" for how to fix that, and other ways to keep the bot running.'],
+    };
+    const noSystemd = run(
+      [GOOD, WAIT, true, '', false, true],
+      tg2, {}, { requestService: () => { requested = true; }, planService: async () => blocked },
+    );
+    expect(await noSystemd.result).toBe(0);
+    expect(requested).toBe(false);
+    expect(noSystemd.prompter.asked.join('\n')).not.toContain('now?');
+    expect(noSystemd.prompter.said).toContain('! telecoder service install would set up a systemd user service, but systemctl is not installed.');
+    expect(noSystemd.prompter.said).toContain('    Run "telecoder service install" for how to fix that, and other ways to keep the bot running.');
+    expect(noSystemd.prompter.said.join('\n')).not.toContain('Next: run `telecoder service install`');
+  });
+
   it("doesn't offer the service in a checkout, which runs under pm2", async () => {
     const tg = fakeTelegram();
     tg.updates = [[privateMessage(5)]];

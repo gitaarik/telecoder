@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { parse as parseEnv } from 'dotenv';
 import type { CheckResult } from '../commands/doctor.js';
+import type { ServicePlan } from '../commands/service.js';
 import { isWellFormedBotToken, MALFORMED_TOKEN_MESSAGE, REJECTED_TOKEN_MESSAGE } from '../../utils/bot-token.js';
 import { BOT_ICON_FILENAME, botIconJpeg } from '../../utils/bot-icon.js';
 import { parseIdList } from '../../utils/id-list.js';
@@ -78,6 +79,12 @@ export interface InitDeps {
    * installer asks its own questions on the same terminal.
    */
   requestService?: () => void;
+  /**
+   * What that install would set up here (systemd or launchd, lingering), said
+   * before the question so the owner knows what a yes does. Without it the
+   * question only names the command.
+   */
+  planService?: () => Promise<ServicePlan>;
   now?: () => Date;
   /** How long to wait for the owner's /start. */
   ownerWaitMs?: number;
@@ -289,10 +296,26 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
   p.say(`  ${startCommand.padEnd(18)}run the bot, then message it on Telegram`);
   p.say(`  ${'telecoder doctor'.padEnd(18)}check the setup again any time`);
   // A checkout runs under pm2; the service is for npm installs.
-  if (interactive && deps.requestService && !deps.isCheckout
-    && await p.confirm('Keep it running in the background now (telecoder service install)?', true)) {
-    deps.requestService();
-    return;
+  if (interactive && deps.requestService && !deps.isCheckout) {
+    const plan = deps.planService ? await deps.planService() : undefined;
+    if (plan && !plan.ready) {
+      // Nothing to approve: say what stands in the way instead of asking.
+      p.say('');
+      p.say(plan.manager ? `! telecoder service install would set up ${plan.lines[0]}` : `! ${plan.lines[0]}`);
+      for (const line of plan.lines.slice(1)) p.say(`    ${line}`);
+      return;
+    }
+    let question = 'Keep it running in the background now (telecoder service install)?';
+    if (plan) {
+      p.say('');
+      p.say(`telecoder service install keeps it running in the background. Here that is ${plan.lines[0]}`);
+      for (const line of plan.lines.slice(1)) p.say(`  ${line}`);
+      question = `Set up the ${plan.manager === 'launchd' ? 'LaunchAgent' : 'systemd service'} now?`;
+    }
+    if (await p.confirm(question, true)) {
+      deps.requestService();
+      return;
+    }
   }
   p.say('Next: run `telecoder service install` to keep it running in the background.');
 }

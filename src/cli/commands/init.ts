@@ -14,7 +14,7 @@ import { isCheckout, detectPackageRunner } from '../../utils/install-mode.js';
 import { legacyEnv } from '../../utils/legacy-env.js';
 import { checkClaude, checkNodePty, checkNodeVersion, envOnlyLogin } from './doctor.js';
 import { runInit, type InitOptions } from '../init/flow.js';
-import { runServiceInstall } from './service.js';
+import { planServiceInstall, runServiceInstall } from './service.js';
 import { createTerminalPrompter } from '../init/prompter.js';
 import { createTelegramClient, DEFAULT_API_ROOT } from '../init/telegram.js';
 
@@ -109,6 +109,7 @@ export async function run(args: string[], io: CliIo): Promise<CommandResult> {
       // Not from npx: its cache can be cleared under the unit, and the installer
       // refuses it anyway.
       requestService: detectPackageRunner() === 'npx' ? undefined : () => { serviceRequested = true; },
+      planService: () => planServiceInstall(),
     });
   } finally {
     prompter.close();

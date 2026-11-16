@@ -17,7 +17,9 @@ or `--help` after a command, shows that command with all its options. `telecoder
 The setup wizard. It checks Node and your Claude login, then asks for the bot token (and
 checks it with Telegram), your Telegram user ID (send the bot `/start`), your projects
 folder, and voice. It writes `~/.telecoder/.env`, readable by you only,
-and offers to install the service.
+and offers to install the service, saying first what that is on your machine: a systemd
+user service that will ask about lingering, or a LaunchAgent on macOS. Where neither can
+be installed it says why instead of asking.
 
 Run it again to keep, edit or replace your setup; the old file is backed up first.
 

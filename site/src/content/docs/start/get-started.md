@@ -59,6 +59,9 @@ change an answer, and run `telecoder doctor` whenever something seems off.
 
 ## 3. Keep it running
 
+The wizard offers this at the end, after saying what it would set up on your machine.
+If you skipped it:
+
 ```bash
 telecoder service install
 ```

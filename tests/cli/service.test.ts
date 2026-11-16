@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   chooseNodePath,
   parseServiceArgs,
+  planServiceInstall,
   runServiceCommand,
   runServiceInstall,
   type RunResult,
@@ -118,6 +119,49 @@ describe('parseServiceArgs', () => {
     expect(parseServiceArgs(['install', '--bogus'])).toHaveProperty('error');
     expect(parseServiceArgs(['install', '--name', '../etc'])).toHaveProperty('error');
     expect(parseServiceArgs(['install', '--name'])).toHaveProperty('error');
+  });
+});
+
+describe('planServiceInstall', () => {
+  it('names the systemd user service and the lingering question, changing nothing', async () => {
+    const f = fake();
+    expect(await planServiceInstall(f.deps)).toEqual({
+      manager: 'systemd',
+      ready: true,
+      lines: [
+        'a systemd user service (systemctl --user), started now and at boot.',
+        'It will ask to enable lingering for u, so it keeps running after you log out.',
+      ],
+    });
+    expect(f.writes).toEqual([]);
+    expect(mutating(f.calls)).toEqual([]);
+    expect(f.questions).toEqual([]);
+  });
+
+  it('says lingering is already on when it is', async () => {
+    const f = fake({ results: { 'loginctl show-user u --property=Linger --value': { stdout: 'yes\n' } } });
+    const plan = await planServiceInstall(f.deps);
+    expect(plan.ready).toBe(true);
+    expect(plan.lines[1]).toBe('Lingering is on, so it keeps running after you log out.');
+  });
+
+  it('is not ready when systemd --user is unusable, carrying the reason', async () => {
+    const f = fake({ over: { env: { PATH: '/usr/bin', SUDO_USER: 'admin' } } });
+    const plan = await planServiceInstall(f.deps);
+    expect(plan).toMatchObject({ manager: 'systemd', ready: false });
+    expect(plan.lines[0]).toBe('a systemd user service, but there is no user session here (XDG_RUNTIME_DIR is unset, and no systemd user manager is running for u).');
+    expect(plan.lines[1]).toContain('telecoder service install');
+  });
+
+  it('names the LaunchAgent on macOS and nothing on other platforms', async () => {
+    expect(await planServiceInstall(fake({ over: { platform: 'darwin' } }).deps)).toEqual({
+      manager: 'launchd',
+      ready: true,
+      lines: ['a LaunchAgent (launchd), loaded now and whenever you log in.'],
+    });
+    const win = await planServiceInstall(fake({ over: { platform: 'win32' } }).deps);
+    expect(win).toMatchObject({ manager: null, ready: false });
+    expect(win.lines[0]).toContain('not win32');
   });
 });
 
