@@ -70,10 +70,13 @@ export async function glide(page, locator, { ms } = {}) {
   const from = where.get(page) ?? { x: size.width * 0.55, y: size.height * 0.6 };
   const to = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   const distance = Math.hypot(to.x - from.x, to.y - from.y);
-  const duration = ms ?? Math.min(1100, 350 + distance * 1.1);
-  const steps = Math.max(8, Math.round(duration / 16));
-  for (let i = 1; i <= steps; i++) {
-    const p = i / steps;
+  // A quick, deliberate hand: short hops take a quarter second, a cross-screen
+  // move about three quarters. Paced by the clock, not by step count, because each
+  // frame also pays a page.evaluate round trip.
+  const duration = ms ?? Math.min(750, 220 + distance * 0.7);
+  const started = Date.now();
+  for (;;) {
+    const p = Math.min(1, (Date.now() - started) / duration);
     const e = p < 0.5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2; // ease in-out
     // A slight arc, so the path isn't ruler-straight.
     const arc = Math.sin(Math.PI * p) * Math.min(18, distance * 0.06);
@@ -86,7 +89,8 @@ export async function glide(page, locator, { ms } = {}) {
       const el = document.getElementById('demo-cursor');
       if (el) { el.classList.add('on'); el.style.transform = `translate(${x - 4}px, ${y - 3}px)`; }
     }, [x, y]).catch(() => {});
-    await page.waitForTimeout(duration / steps);
+    if (p >= 1) break;
+    await page.waitForTimeout(16);
   }
   where.set(page, to);
 }
@@ -94,7 +98,7 @@ export async function glide(page, locator, { ms } = {}) {
 /** Glide to an element, rest a moment, and click it. */
 export async function pointAndClick(page, locator, opts) {
   await glide(page, locator, opts);
-  await page.waitForTimeout(280);
+  await page.waitForTimeout(200);
   const press = (on) => page.evaluate((on) => document.getElementById('demo-cursor')?.classList.toggle('down', on), on).catch(() => {});
   await page.mouse.down();
   await press(true);
