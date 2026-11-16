@@ -328,8 +328,9 @@ async function stepEnvLogin(deps: InitDeps, interactive: boolean, vars: string[]
   const found = vars.filter((key) => deps.env[key]?.trim());
   if (!found.length) return {};
   const names = found.join(' and ');
-  p.say(`! Claude Code is logged in through ${names} in this shell's environment, not stored credentials.`);
-  p.say('    A background service doesn\'t see your shell\'s environment, so the bot would start logged out there.');
+  p.say(`! Claude Code logs in with ${names} from your shell's environment.`);
+  p.say(`    When TeleCoder runs as a service, it starts outside your shell and doesn't have ${names}, so Claude Code would be logged out.`);
+  p.say(`    The wizard can put ${names} in TeleCoder's .env, so TeleCoder always has it.`);
   const save = interactive
     ? await p.confirm(`Save ${names} in the .env too (readable by you only)?`, true)
     : true;
@@ -527,7 +528,7 @@ async function captureOwner(deps: InitDeps, client: TelegramClient, bot: TgUser)
   }
 
   p.say(`Now open https://t.me/${bot.username} and send /start, from your own account.`);
-  p.say('The bot replies when it gets it, and this asks you to confirm it was you.');
+  p.say('The bot replies there, and this setup then asks you here to confirm it was you.');
   p.say(`Waiting for it, up to ${Math.round(waitMs / 60_000)} minutes. Or type your numeric id and press Enter. Ctrl+C cancels.`);
   const deadline = now() + waitMs;
   let found: number | null = null;

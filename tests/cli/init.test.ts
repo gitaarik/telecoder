@@ -378,7 +378,7 @@ describe('telecoder init: a Claude login in the environment', () => {
       preflight: envLoginPreflight, env: { CLAUDE_CODE_OAUTH_TOKEN: OAUTH },
     });
     expect(await result).toBe(0);
-    expect(prompter.said.join('\n')).toContain("A background service doesn't see your shell's environment");
+    expect(prompter.said.join('\n')).toContain("When TeleCoder runs as a service, it starts outside your shell and doesn't have");
     expect(prompter.asked[0]).toBe('Save CLAUDE_CODE_OAUTH_TOKEN in the .env too (readable by you only)?');
     expect(prompter.said).toContain('  Claude login     CLAUDE_CODE_OAUTH_TOKEN=<hidden>');
     expect(readEnv().CLAUDE_CODE_OAUTH_TOKEN).toBe(OAUTH);

@@ -198,7 +198,7 @@ describe('doctor checks', () => {
     const w = checkLoginSurvivesService(['CLAUDE_CODE_OAUTH_TOKEN'], {}, '/h/.telecoder/.env');
     expect(w?.status).toBe('warn');
     expect(w?.label).toContain('CLAUDE_CODE_OAUTH_TOKEN in this shell');
-    expect(w?.detail?.join('\n')).toContain('start logged out');
+    expect(w?.detail?.join('\n')).toContain('so Claude Code would be logged out');
     expect(checkLoginSurvivesService(['CLAUDE_CODE_OAUTH_TOKEN'], { CLAUDE_CODE_OAUTH_TOKEN: 'x' }, '/e')).toBeNull();
     expect(checkLoginSurvivesService([], {}, '/e')).toBeNull();
   });

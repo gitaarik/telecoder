@@ -101,7 +101,7 @@ export function checkLoginSurvivesService(
   if (!envOnly.length || envOnly.some((key) => fileEnv[key]?.trim())) return null;
   const vars = envOnly.join(' / ');
   return warn(`Claude Code's login comes from ${vars} in this shell's environment, not stored credentials`,
-    `A background service (telecoder service install) won't see it, so the bot would start logged out there.`,
+    `When TeleCoder runs as a service (telecoder service install), it starts outside your shell and doesn't have ${vars}, so Claude Code would be logged out.`,
     `Add ${vars} to ${envPath} (readable by you only), or log in with "claude auth login".`);
 }
 

@@ -56,6 +56,14 @@ export function createTerminalPrompter(
       callback();
     },
   });
+  // readline takes the terminal's width from its output stream. Without it, it
+  // assumes an endless line, and after a question that wraps it parks the cursor
+  // at the right edge of the screen, where the typed answer then lands.
+  Object.defineProperties(echo, {
+    columns: { get: () => output.columns },
+    rows: { get: () => output.rows },
+  });
+  output.on?.('resize', () => echo.emit('resize'));
 
   let rl: readline.Interface | undefined;
   const open = (): readline.Interface => {
