@@ -55,8 +55,7 @@ A message you send while Claude is busy waits for the turn to end, and the bot s
   in a new thread. ([Threads and forks](threads-and-forks.md))
 - **⚡ Interrupt & send**: stop the turn and send it now, as `/steer` does.
 
-Editing a waiting message changes what gets sent. To have every new message interrupt the
-turn instead, set `CANCEL_ON_NEW_MESSAGE=true`.
+Editing a waiting message changes what gets sent.
 
 ## Stopping
 

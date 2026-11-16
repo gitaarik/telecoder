@@ -44,7 +44,6 @@ See [Sharing a bot](../guides/sharing.md) for how the pieces fit together.
 | `CLAUDE_PLUGINS` | — | Marketplace plugins to bring into the agent, as `plugin@marketplace` ids, comma-separated. The pty doesn't read `~/.claude/settings.json`, so a plugin enabled in your terminal is missing in Telegram until it's named here |
 | `CLAUDE_EXECUTABLE_PATH` | `claude` | The `claude` the Haiku side calls run when `CLAUDE_USE_BUNDLED_EXECUTABLE=false`. Chats run `CLAUDE_BIN`, else the `claude` on PATH |
 | `BOT_NAME` | `TeleCoder` | The bot's name: what it's called in the system prompt and its messages, and the display name it sets in Telegram at startup when the setting is given. Unset, the BotFather name is kept. A name given with `/botname` wins over this |
-| `CANCEL_ON_NEW_MESSAGE` | `false` | Auto-cancel running query on new message |
 | `MESSAGE_BATCH_TIMEOUT_MS` | `1500` | How long to wait for the next part of a long paste that Telegram split (2000+ characters) before sending the parts as one prompt; `0` turns it off |
 | `AUTO_TOPIC_HAIKU` | `true` | Name each conversation's topic with a quick Haiku call, for thread names and the status line. Off, the agent is asked to keep the topic itself with `telecoder_set_topic` |
 | `CLAUDE_PTY_IDLE_TIMEOUT_MS` | `3600000` | How long an idle PTY session keeps its `claude` process (a few hundred MB) before it's ended; the next message resumes the conversation in a new one. Never while a turn, background task or background shell is running. `0` keeps them until a restart |

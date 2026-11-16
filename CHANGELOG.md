@@ -104,6 +104,12 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Removed
 
+- **`CANCEL_ON_NEW_MESSAGE`.** Claudegram's switch to have every new message
+  stop the running turn. In Claude Code a message sent mid-turn waits its
+  turn, and TeleCoder already has the per-message choice: `/steer`, or
+  ⚡ Interrupt & send on a waiting message. A `.env` that still turns it on
+  gets a line at startup.
+
 - **Settings that did nothing.** `AGENT_WATCHDOG_ENABLED`,
   `AGENT_WATCHDOG_WARN_SECONDS`, `AGENT_WATCHDOG_LOG_SECONDS`,
   `AGENT_QUERY_TIMEOUT_MS`, `AGENT_SILENCE_TIMEOUT_MS`,

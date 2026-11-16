@@ -94,6 +94,7 @@ const REMOVED_SETTINGS: Array<{ name: string; stale: (value: string) => boolean;
     .map((name) => ({ name, stale: () => true, note: 'the SDK transport\'s watchdog went with it: CLAUDE_PTY_HARD_TIMEOUT_MS caps a turn in the pty.' })),
   { name: 'CLAUDE_REASONING_SUMMARY', stale: () => true, note: 'the summary was something the SDK transport asked for in its own prompt; Claude Code in the pty writes none.' },
   // .env.example set this one uncommented, so only a changed value was asked for.
+  { name: 'CANCEL_ON_NEW_MESSAGE', stale: isOn, note: 'it was removed: a new message waits for the turn, as in Claude Code, and /steer or ⚡ Interrupt & send replaces the turn with one.' },
   { name: 'STREAMING_DEBOUNCE_MS', stale: (v) => v !== '500', note: 'nothing has read it since February: the live reply paces its own edits.' },
 ];
 for (const { name, stale, note } of REMOVED_SETTINGS) {

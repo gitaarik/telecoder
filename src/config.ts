@@ -281,11 +281,6 @@ const envSchema = z.object({
     .string()
     .default('1500')
     .transform((val) => parseInt(val, 10)),
-  // Cancel behaviour: auto-cancel running query when user sends a new message
-  CANCEL_ON_NEW_MESSAGE: z
-    .string()
-    .default('false')
-    .transform((val) => val.toLowerCase() === 'true'),
   // Absolute wall-clock cap for a single PTY turn (ms). The turn is killed
   // with a "turn exceeded" error if it runs longer. Default 2 h — long
   // enough for genuinely intensive multi-step work; raise it if you regularly

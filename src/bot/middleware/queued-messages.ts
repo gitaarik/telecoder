@@ -332,12 +332,6 @@ function noteArrival(ctx: Context): QueuedMessage | null {
   if (queued.has(key)) return null;
   const steering = steered.delete(key);
 
-  if (forClaude && config.CANCEL_ON_NEW_MESSAGE && isProcessing(keyInfo.sessionKey)) {
-    takeBackAllQueued(ctx.api, keyInfo.sessionKey);
-    clearQueue(keyInfo.sessionKey);
-    void cancelRequest(keyInfo.sessionKey);
-  }
-
   const { api } = ctx;
   // A slash command typed at Claude means something to the conversation it's
   // in, so it neither goes on the side nor somewhere new.

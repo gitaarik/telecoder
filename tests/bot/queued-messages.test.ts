@@ -270,7 +270,6 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  config.CANCEL_ON_NEW_MESSAGE = false;
   setQueuedDiverters(undefined);
   await drain();
   forgetParkedMessages();
@@ -849,13 +848,11 @@ describe('setting a message aside', () => {
     expect(remindersFor(id)).toHaveLength(1);
   });
 
-  it('stays set aside when a new message replaces the turn', async () => {
+  it('stays set aside when /steer replaces the turn', async () => {
     const id = await setAside();
 
-    config.CANCEL_ON_NEW_MESSAGE = true;
-    send('third');
+    send('/steer third');
     await advance();
-    config.CANCEL_ON_NEW_MESSAGE = false;
     expect(started).toEqual(['first', 'third']);
 
     turns.get('third')!.release();
@@ -1570,34 +1567,6 @@ describe('sending a message in place of the turn', () => {
       expect(turns.get('first')!.cancelled).toBe(false);
       expect(textsSent()).toEqual([expect.stringContaining('/steer <text>')]);
     });
-  });
-});
-
-describe('CANCEL_ON_NEW_MESSAGE', () => {
-  it('has the newest message replace the running turn and everything waiting', async () => {
-    send('first');
-    await advance();
-    send('second');
-    await advance();
-
-    config.CANCEL_ON_NEW_MESSAGE = true;
-    send('third');
-    await advance();
-
-    expect(turns.get('first')!.cancelled).toBe(true);
-    expect(started).toEqual(['first', 'third']);
-    expect(callsTo('editMessageText').map((c) => c.payload.text)).toEqual(['🛑 Cancelled before it reached Claude.']);
-  });
-
-  it('leaves the turn alone for a bot command', async () => {
-    send('first');
-    await advance();
-
-    config.CANCEL_ON_NEW_MESSAGE = true;
-    send('/clear');
-    await advance();
-
-    expect(turns.get('first')!.cancelled).toBe(false);
   });
 });
 
