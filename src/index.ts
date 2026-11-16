@@ -90,6 +90,11 @@ const REMOVED_SETTINGS: Array<{ name: string; stale: (value: string) => boolean;
     .map((name) => ({ name, stale: () => true, note: 'voice replies (/tts) were removed: Claude Code answers in text.' })),
   { name: 'TRANSCRIBE_FILE_THRESHOLD_CHARS', stale: () => true, note: '/transcribe was removed: voice notes still become prompts.' },
   { name: 'CCR_AUTO_PROMPT_ON_THROTTLE', stale: () => true, note: 'the one-tap CCR retry went with the SDK transport: /ccr switches a throttled chat over.' },
+  ...['AGENT_WATCHDOG_ENABLED', 'AGENT_WATCHDOG_WARN_SECONDS', 'AGENT_WATCHDOG_LOG_SECONDS', 'AGENT_QUERY_TIMEOUT_MS', 'AGENT_SILENCE_TIMEOUT_MS', 'AGENT_STALE_TOOL_TIMEOUT_MS']
+    .map((name) => ({ name, stale: () => true, note: 'the SDK transport\'s watchdog went with it: CLAUDE_PTY_HARD_TIMEOUT_MS caps a turn in the pty.' })),
+  { name: 'CLAUDE_REASONING_SUMMARY', stale: () => true, note: 'the summary was something the SDK transport asked for in its own prompt; Claude Code in the pty writes none.' },
+  // .env.example set this one uncommented, so only a changed value was asked for.
+  { name: 'STREAMING_DEBOUNCE_MS', stale: (v) => v !== '500', note: 'nothing has read it since February: the live reply paces its own edits.' },
 ];
 for (const { name, stale, note } of REMOVED_SETTINGS) {
   const value = process.env[name];

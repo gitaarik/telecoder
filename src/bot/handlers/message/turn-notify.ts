@@ -22,7 +22,6 @@ import { replyFormatted } from '../../../telegram/send.js';
 import { bringCardDown } from '../../../telegram/background-activity-card.js';
 import { resolveVerbosityFlags } from '../../../utils/verbosity.js';
 import { fmtTokens } from '../../../utils/format.js';
-import { stripReasoningSummary } from '../../../utils/reasoning-summary.js';
 import { sendStatusLine, type StatusLineOptions } from '../command/settings.js';
 
 /**
@@ -35,7 +34,7 @@ import { sendStatusLine, type StatusLineOptions } from '../command/settings.js';
  *
  * Best-effort: any failure logs and swallows so a catch-up bug can never
  * break the primary relay path. Skips silently when the session has no
- * claudeSessionId (e.g. SDK mode), since the JSONL doesn't exist there.
+ * claudeSessionId yet, since there is no log to compare against.
  */
 export async function relayCatchUpIfMissed(
   ctx: Context,
@@ -49,12 +48,7 @@ export async function relayCatchUpIfMissed(
       return;
     }
 
-    // The relayed text went out without its reasoning summary; the log still
-    // has it. Compared as is, the summary alone counts as missing prose, and
-    // a turn with a tool call in it gets the whole reply posted again.
-    const jsonlText = stripReasoningSummary(
-      readLastAssistantTurnText(session.workingDirectory, session.claudeSessionId) ?? '',
-    );
+    const jsonlText = readLastAssistantTurnText(session.workingDirectory, session.claudeSessionId) ?? '';
     if (!jsonlText) {
       sessionManager.setLastRelayedAssistantText(sessionKey, relayedText);
       return;

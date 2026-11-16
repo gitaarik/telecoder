@@ -104,6 +104,17 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Removed
 
+- **Settings that did nothing.** `AGENT_WATCHDOG_ENABLED`,
+  `AGENT_WATCHDOG_WARN_SECONDS`, `AGENT_WATCHDOG_LOG_SECONDS`,
+  `AGENT_QUERY_TIMEOUT_MS`, `AGENT_SILENCE_TIMEOUT_MS`,
+  `AGENT_STALE_TOOL_TIMEOUT_MS` and `CLAUDE_REASONING_SUMMARY` were read only
+  by the SDK transport, and `STREAMING_DEBOUNCE_MS` by nothing since February,
+  yet all of them were still parsed and still in `.env.example`. A startup
+  line names any that are still set. Gone with them is the step that cut a
+  trailing "Reasoning Summary" off every reply: only Claudegram's SDK prompt
+  asked for one, so all it could still do was cut a reply that really ended
+  with that heading.
+
 - **Spoken replies (`/tts`) and `/transcribe`.** Both came from Claudegram
   and stand in for nothing Claude Code does: `/tts` read each reply aloud
   through Groq Orpheus or OpenAI, and `/transcribe` turned audio into text

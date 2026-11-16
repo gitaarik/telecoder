@@ -195,10 +195,6 @@ const envSchema = z.object({
     .transform((val) =>
       val ? val.split(',').map((name) => name.trim()).filter(Boolean) : []
     ),
-  CLAUDE_REASONING_SUMMARY: z
-    .string()
-    .default('true')
-    .transform((val) => val.toLowerCase() === 'true'),
   BOT_NAME: z.string().default('TeleCoder'),
   // Fire a parallel Haiku side-call on every user message to derive a topic
   // label for the status line and the thread name, independent of the main
@@ -227,10 +223,6 @@ const envSchema = z.object({
     .string()
     .default('true')
     .transform((val) => val.toLowerCase() === 'true'),
-  STREAMING_DEBOUNCE_MS: z
-    .string()
-    .default('500')
-    .transform((val) => parseInt(val, 10)),
   MAX_MESSAGE_LENGTH: z
     .string()
     .default('4000')
@@ -294,28 +286,6 @@ const envSchema = z.object({
     .string()
     .default('false')
     .transform((val) => val.toLowerCase() === 'true'),
-  // Agent watchdog: detect stuck/unresponsive agent queries
-  AGENT_WATCHDOG_ENABLED: z.string().default('true').transform(toBool),
-  AGENT_WATCHDOG_WARN_SECONDS: z
-    .string()
-    .default('30')
-    .transform((val) => parseInt(val, 10)),
-  AGENT_WATCHDOG_LOG_SECONDS: z
-    .string()
-    .default('10')
-    .transform((val) => parseInt(val, 10)),
-  AGENT_QUERY_TIMEOUT_MS: z
-    .string()
-    .default('0')
-    .transform((val) => parseInt(val, 10)), // 0 = disabled
-  AGENT_SILENCE_TIMEOUT_MS: z
-    .string()
-    .default('180000')
-    .transform((val) => parseInt(val, 10)), // 0 = disabled, default 3 minutes
-  AGENT_STALE_TOOL_TIMEOUT_MS: z
-    .string()
-    .default('180000')
-    .transform((val) => parseInt(val, 10)), // 0 = disabled, default 3 minutes
   // Absolute wall-clock cap for a single PTY turn (ms). The turn is killed
   // with a "turn exceeded" error if it runs longer. Default 2 h — long
   // enough for genuinely intensive multi-step work; raise it if you regularly

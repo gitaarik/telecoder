@@ -2,7 +2,6 @@ import { Context, InputFile, GrammyError } from 'grammy';
 import { config } from '../config.js';
 import { formatMarkdown, markdownToEntities, splitEntityMessage, MAX_MESSAGE_LENGTH } from './markdown.js';
 import { editFormatted, replyFormatted } from './send.js';
-import { stripReasoningSummary } from '../utils/reasoning-summary.js';
 import {
   getSpinnerFrame,
   getThinkingVerb,
@@ -963,7 +962,7 @@ export class MessageSender {
    * overflow into messages of their own below it.
    */
   private liveMessages(state: StreamState, footer: EntityMessage): EntityMessage[] {
-    const prose = stripReasoningSummary(state.content).trim();
+    const prose = state.content.trim();
     if (!prose) return [footer];
     const room = MAX_MESSAGE_LENGTH - footer.text.length - 2;
     const parts = splitEntityMessage(markdownToEntities(prose), room, { markers: false });
