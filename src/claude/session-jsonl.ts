@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
+import { tablesToLists } from '../telegram/table-lists.js';
 
 export interface RecapExchange {
   user: string;
@@ -165,6 +166,8 @@ export function sessionJsonlSize(workingDirectory: string, sessionId: string): n
 const LOCAL_COMMAND_OUTPUT = /<local-command-(stdout|stderr)>([\s\S]*?)<\/local-command-\1>/g;
 /** The colour codes a command's printed output can keep. */
 const ANSI_SGR = /\x1b\[[0-9;]*m/g;
+/** A markdown copy of a command's report opens with a heading: `## Context Usage`. */
+const MARKDOWN_COPY = /^\s*#{1,6} /;
 
 /**
  * What a slash command answered with, from the records it appended to the log
@@ -177,6 +180,11 @@ const ANSI_SGR = /\x1b\[[0-9;]*m/g;
  * on a user record or a system one depending on the line. Only the turn's own
  * records are read, because the latest reply in the log is, for a command
  * like that, the reply to whatever came before it.
+ *
+ * `/context` prints a drawing: a grid of ⛁ and ⛶ beside the legend, laid out
+ * for a terminal's fixed-width columns. Claude Code also logs the same report
+ * as markdown for the model, on a meta user record, and that copy is the
+ * answer instead, its tables as lists (see tablesToLists).
  */
 export function readCommandReply(
   workingDirectory: string,
@@ -198,6 +206,7 @@ export function readCommandReply(
 export function commandReplyIn(raw: string): string | undefined {
   const prose: string[] = [];
   const printed: string[] = [];
+  const markdownCopies: string[] = [];
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
     let rec: JsonlRecord;
@@ -209,6 +218,10 @@ export function commandReplyIn(raw: string): string | undefined {
       if (text) prose.push(text);
     } else if (rec.type === 'user' || rec.type === 'system') {
       const text = typeof rec.content === 'string' ? rec.content : extractText(rec.message?.content);
+      if (rec.type === 'user' && rec.isMeta === true && MARKDOWN_COPY.test(text)) {
+        markdownCopies.push(text.trim());
+        continue;
+      }
       for (const match of text.matchAll(LOCAL_COMMAND_OUTPUT)) {
         const out = match[2].replace(ANSI_SGR, '').trim();
         if (out) printed.push(out);
@@ -216,6 +229,9 @@ export function commandReplyIn(raw: string): string | undefined {
     }
   }
   if (prose.length > 0) return prose.join('\n\n');
+  // Only beside printed output: a custom command's expanded prompt is a meta
+  // record too, and can open with a heading, but prints nothing.
+  if (printed.length > 0 && markdownCopies.length > 0) return markdownCopies.map(tablesToLists).join('\n\n');
   return printed.length > 0 ? printed.join('\n') : undefined;
 }
 

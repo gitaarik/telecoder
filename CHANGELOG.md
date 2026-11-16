@@ -31,6 +31,17 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Changed
 
+- **`/context` is Claude Code's own.** It used to be a report the bot built
+  itself, a Claudegram feature: token counts and dollars from the last reply,
+  or, with none cached, a second `claude -p /context` on a fork of the
+  session, without the chat's MCP tools or settings, whose output the bot no
+  longer parsed. Now `/context` goes to the chat's Claude Code like `/compact`
+  does, and the reply is the report it gives in a terminal: what fills the
+  context window by category (system prompt, tools, MCP, memory files,
+  skills, messages, free space), then the MCP tools and skills, each table
+  one line per row. Like any prompt it waits for a running turn; the status
+  line under every reply still shows how full the context is.
+
 - **`TERMINAL_UI_VERBOSE` is now `FULL_TOOL_INPUTS`.** The old name dates from
   `/terminalui`, which is gone; what the setting still does is show a tool's
   full input (the whole Bash command, the full path) in the live status

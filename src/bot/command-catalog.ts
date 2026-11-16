@@ -39,7 +39,7 @@ export function buildCommandMenu(): CommandMenuEntry[] {
     { command: 'restartbot', description: '🔁 Restart the bot' },
     // An npm install has no source to rebuild; /update replaces it instead.
     ...(isCheckout() ? [{ command: 'rebuildbot', description: '🔄 Rebuild and restart with session restore' }] : []),
-    { command: 'context', description: '🧠 Show Claude context usage' },
+    { command: 'context', description: '🧠 Show what fills the context window' },
     { command: 'cost', description: '💰 Show usage limits and cost' },
     { command: 'compact', description: '🗜️ Compact the context window' },
     { command: 'update', description: isCheckout() ? '⬆️ Update the Claude Code CLI' : '⬆️ Update TeleCoder or the Claude Code CLI' },

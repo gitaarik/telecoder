@@ -46,7 +46,7 @@ import { sanitizeError } from '../../../utils/sanitize.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 import { getWorkspaceRoot } from '../../../utils/workspace-guard.js';
 
-/** The probe answers in ~2s; the ceiling matches `/context`'s. */
+/** The probe answers in ~2s; 20s is ten times that. */
 const COST_TIMEOUT_MS = 20_000;
 
 /** Output cap, standing in for `execFile`'s `maxBuffer`. */

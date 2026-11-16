@@ -59,7 +59,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 ## Utility
 | Command | Description |
 |---------|-------------|
-| `/context` | Show Claude context / token usage |
+| `/context` | Claude Code's own `/context`: what fills the context window, by category, plus MCP tools and skills. It goes to the chat's Claude Code like a prompt, so it waits for a running turn |
 | `/cost` | Show usage limits and cost as Claude Code reports them — session/weekly limits on a subscription, dollar totals on API billing |
 | `/compact` | Compact the context window, reporting the token reduction |
 | `/statusline` | Toggle the status line that closes every reply (project, effort, model, context %, cost). On by default (`STATUS_LINE_DEFAULT`), with the topic; your last prompts and a `claude --resume` command are sub-toggles |

@@ -117,7 +117,7 @@ export function getAvailableCommands(): EntityMessage {
   sections.push({
     title: 'Bot Commands',
     commands: [
-      '• `/context` - Show Claude context usage',
+      '• `/context` - What fills the context window, as Claude Code reports it',
       '• `/cost` - Show usage limits and cost from Claude Code',
       '• `/compact` - Compact the context window (reports the token reduction)',
       '• `/botstatus` - Show bot process status; answers mid-turn too (alias: `/ping`)',

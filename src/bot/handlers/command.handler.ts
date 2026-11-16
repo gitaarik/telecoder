@@ -9,9 +9,8 @@ import { getAvailableCommands } from '../../claude/command-parser.js';
 import { isProcessing } from '../../claude/request-queue.js';
 import { EntityText, joinMessages, trimMessage, type EntityMessage } from '../../telegram/entities.js';
 import { replyFormatted, replyParts } from '../../telegram/send.js';
-import { contextHealthColor, fmtTokens, getProgressBar } from '../../utils/format.js';
+import { fmtTokens } from '../../utils/format.js';
 import * as path from 'path';
-import { execFile } from 'child_process';
 import { resolveShareableFile } from '../file-access.js';
 import { resolvePtyClaudeBin } from '../../utils/resolve-claude-bin.js';
 import { contextTokens } from '../../providers/types.js';
@@ -94,109 +93,6 @@ export {
   handleProviderSwitchCallback,
 } from './command/model.js';
 export { handlePrefsScopeCallback } from './command/prefs-scope.js';
-
-export function parseContextOutput(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return '⚠️ No context output received.';
-  }
-
-  const lines = trimmed
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-
-  let model = '';
-  let tokensLine = '';
-  const categories: Array<{ name: string; tokens: string; percent: string }> = [];
-  let inCategories = false;
-
-  for (const line of lines) {
-    if (/^model:/i.test(line)) {
-      model = line.replace(/^model:/i, '').trim();
-      continue;
-    }
-    if (/^tokens:/i.test(line)) {
-      tokensLine = line.replace(/^tokens:/i, '').trim();
-      continue;
-    }
-    if (/estimated usage by category/i.test(line)) {
-      inCategories = true;
-      continue;
-    }
-    if (inCategories) {
-      if (/^category/i.test(line)) continue;
-      if (/^-+$/.test(line)) continue;
-
-      const match = line.match(/^(.+?)\s{2,}([0-9.,kKmM]+)\s+([0-9.,]+%)$/);
-      if (match) {
-        categories.push({ name: match[1].trim(), tokens: match[2], percent: match[3] });
-        continue;
-      }
-
-      const parts = line.split(/\s+/);
-      if (parts.length >= 3 && parts[parts.length - 1].endsWith('%')) {
-        const percent = parts.pop() as string;
-        const tokens = parts.pop() as string;
-        const name = parts.join(' ');
-        categories.push({ name, tokens, percent });
-      }
-    }
-  }
-
-  if (!model && !tokensLine && categories.length === 0) {
-    return `## 🧠 Context Usage\n\n\`\`\`\n${trimmed}\n\`\`\``;
-  }
-
-  let output = '## 🧠 Context Usage';
-  if (model) output += `\n- **Model:** ${model}`;
-  if (tokensLine) output += `\n- **Tokens:** ${tokensLine}`;
-
-  if (categories.length > 0) {
-    output += '\n\n### Estimated usage by category';
-    for (const category of categories) {
-      output += `\n- **${category.name}:** ${category.tokens} (${category.percent})`;
-    }
-  }
-
-  output += '\n\n_If this looks stale, send a new message then run /context again._';
-  return output;
-}
-
-const SESSION_ID_RE = /^[a-zA-Z0-9_-]{8,128}$/;
-
-async function runClaudeContext(sessionId: string, cwd: string): Promise<string> {
-  if (!SESSION_ID_RE.test(sessionId)) {
-    throw new Error('Invalid session ID format');
-  }
-  return new Promise((resolve, reject) => {
-    execFile(
-      // Match the binary PTY mode spawns — CLAUDE_BIN and CLAUDE_EXECUTABLE_PATH
-      // can point at different installs, and this resumes a PTY-written session.
-      process.env.CLAUDE_BIN || config.CLAUDE_EXECUTABLE_PATH,
-      // --fork-session + --no-session-persistence are load-bearing: a bare
-      // `-p --resume <id>` CONTINUES that session and appends its own turn to
-      // the JSONL. In PTY mode <id> is the *live* session, so /context would
-      // inject a stray turn into the real conversation while the pty process
-      // is writing the same file.
-      ['-p', '--resume', sessionId, '--fork-session', '--no-session-persistence', '/context'],
-      {
-        cwd,
-        timeout: 20_000,
-        maxBuffer: 1024 * 1024,
-        env: process.env,
-      },
-      (error, stdout, stderr) => {
-        if (error) {
-          const message = (stderr || error.message).trim();
-          reject(new Error(message || 'Failed to run /context'));
-          return;
-        }
-        resolve((stdout || stderr || '').trim());
-      }
-    );
-  });
-}
 
 export async function handleStart(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
@@ -326,72 +222,6 @@ export async function handleStatus(ctx: Context): Promise<void> {
     console.error('[Status] Error:', err);
     const msg = err instanceof Error ? err.message : String(err);
     await ctx.reply(`❌ /status failed: ${msg}`).catch(() => {});
-  }
-}
-
-export async function handleContext(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { chatId, sessionKey } = keyInfo;
-
-  const session = await requireActiveSession(ctx, sessionKey);
-  if (!session) return;
-
-  // Try the cached usage first (instant, no CLI shell-out)
-  const cached = getCachedUsage(sessionKey);
-  if (cached) {
-    const used = contextTokens(cached);
-    const pct = cached.contextWindow > 0
-      ? Math.round((used / cached.contextWindow) * 100)
-      : 0;
-    const bar = getProgressBar(pct, contextHealthColor(used, cached.contextWindow));
-
-    const output = `## 🧠 Context Usage\n\n`
-      + `${bar} **${pct}%** of context window\n\n`
-      + `- **Model:** ${cached.model}\n`
-      + `- **Input tokens:** ${fmtTokens(cached.inputTokens)}\n`
-      + `- **Output tokens:** ${fmtTokens(cached.outputTokens)}\n`
-      + `- **Cache read:** ${fmtTokens(cached.cacheReadTokens)}\n`
-      + `- **Cache write:** ${fmtTokens(cached.cacheWriteTokens)}\n`
-      + `- **Context window:** ${fmtTokens(cached.contextWindow)}\n`
-      + `- **Turns this session:** ${cached.numTurns}\n`
-      + `- **Cost this query:** $${cached.totalCostUsd.toFixed(4)}\n`
-      + (cached.sessionCostTurns > 0
-        ? `- **Cost this chat:** $${cached.sessionCostUsd.toFixed(4)} across ${cached.sessionCostTurns} turns\n`
-        : '')
-      + `\n_Data from last query. Send a message then run /context for fresh data._`;
-
-    await messageSender.sendMessage(ctx, output);
-    return;
-  }
-
-  // Fallback: CLI shell-out approach (Claude only)
-  if (!session.claudeSessionId) {
-    await replyMd(
-      ctx,
-      '⚠️ No Claude session ID found.\n\nSend a message to Claude after resuming, then run `/context` again.'
-    );
-    return;
-  }
-
-  const ack = await ctx.reply('🧠 Checking context...');
-
-  try {
-    const raw = await runClaudeContext(session.claudeSessionId, session.workingDirectory);
-    const formatted = parseContextOutput(raw);
-    await messageSender.sendMessage(ctx, formatted);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    const hint = message.toLowerCase().includes('unknown') || message.toLowerCase().includes('command')
-      ? '\n\nThis CLI may not support `/context` yet.'
-      : '';
-    await messageSender.sendMessage(ctx, `❌ Failed to fetch context: ${message}${hint}`);
-  } finally {
-    try {
-      await ctx.api.deleteMessage(chatId, ack.message_id);
-    } catch {
-      // ignore cleanup errors
-    }
   }
 }
 

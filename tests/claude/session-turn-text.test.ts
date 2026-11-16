@@ -319,6 +319,31 @@ describe('readCommandReply', () => {
     expect(readCommandReply(CWD, SESSION, offset)).toBe('Reconnected to sjs-dev.');
   });
 
+  it("answers /context with Claude Code's markdown copy, its tables as lists", () => {
+    // The three records claude 2.1.325 logged for /context in a live pty: the
+    // command, the drawn report (⛁ grid and legend, ANSI-coloured), and the
+    // same report as markdown on a meta user record.
+    const fixture = fs.readFileSync(path.join(import.meta.dirname, 'fixtures', 'context-command-2.1.325.jsonl'), 'utf-8')
+      .split('\n').filter(Boolean).map((line) => JSON.parse(line));
+    const offset = logAround(earlier, fixture);
+    const reply = readCommandReply(CWD, SESSION, offset)!;
+    expect(reply).toMatch(/^## Context Usage\n/);
+    expect(reply).toContain('**Tokens:** 35.9k / 1m (4%)');
+    expect(reply).toContain('_Tokens · Percentage_\n- **System prompt:** 3.8k · 0.4%');
+    expect(reply).toContain('- **Free space:** 931.1k · 93.1%');
+    expect(reply).toContain('- **easel:** 1 · 1.2k');
+    expect(reply).not.toMatch(/[⛁⛀⛶⛝]|\|/);
+  });
+
+  it('keeps a meta record that opens with a heading out of a command that printed nothing', () => {
+    // A custom command's expanded prompt: meta, markdown, and no output of its own.
+    const offset = logAround(earlier, [
+      unflagged('u2', '<command-name>/plan-day</command-name>'),
+      { type: 'user', isMeta: true, message: { role: 'user', content: '# Plan the day\n\nList what is due.' } },
+    ]);
+    expect(readCommandReply(CWD, SESSION, offset)).toBeUndefined();
+  });
+
   it('answers a command that prompts the model with what the model said', () => {
     const offset = logAround(earlier, [
       unflagged('u2', '<command-name>/review</command-name>'),

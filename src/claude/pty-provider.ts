@@ -1904,9 +1904,9 @@ export class PtyProvider implements Provider {
   /**
    * Type an `immediate` slash command into the live TUI, scrape what it draws,
    * then dismiss it with Esc. Built for `/tasks`, whose answer exists only in
-   * the running process's memory — the `-p --resume --fork-session` shell-out
-   * that backs /context would spawn a process with no background work at all
-   * and dutifully report none.
+   * the running process's memory — a `-p --resume --fork-session` shell-out
+   * would spawn a process with no background work at all and dutifully
+   * report none.
    *
    * Refuses while a turn is in flight. The keyboard belongs to the turn: our
    * keystrokes would land in its input box, and the overlay would corrupt the
@@ -2314,7 +2314,7 @@ export class PtyProvider implements Provider {
   }
 
   /**
-   * The usage as the session log has it now, cached for /status and /context.
+   * The usage as the session log has it now, cached for /status and the status line.
    * For after a turn claude started itself: no turn of ours ran to refresh the
    * cache, which still holds the figure from before that turn grew the context.
    * Falls back on the cached figure when the log has none to give.

@@ -37,7 +37,6 @@ import {
   handleRestartBotCallback,
   handleRestartCallback,
   handleStartupCallback,
-  handleContext,
   handleCost,
   handleUpdate,
   handleUpdateCallback,
@@ -370,14 +369,13 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   cmd('steer', handleSteer);
   // Read-only, with nothing a running turn could be disturbed by, so they answer
   // mid-turn rather than after it: a fixed list, a look at the bot process, a
-  // re-read of the transcript, and two that ask a probe of their own rather
+  // re-read of the transcript, and one that asks a probe of its own rather
   // than the live session. Anything that changes the session
   // or starts a turn stays behind sequentialize below.
   cmd('commands', withRunningNote(handleCommands));
   cmd('botstatus', withRunningNote(handleBotStatus));
   cmd('recap', withRunningNote(handleRecap));
   cmd('projectcommands', handleProjectCommands);
-  cmd('context', withRunningNote(handleContext));
   cmd('tasks', handleTasks); // Read-only; must bypass queue so it works mid-stream
   cmd('cost', withRunningNote(handleCost)); // Read-only probe + a peek at the live TUI panel; bypasses the queue so it answers mid-turn
   cmd('shells', withRunningNote(handleShells)); // Lists/kills OS-level bg processes; must bypass queue to rescue hung sessions
@@ -506,6 +504,11 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // text handler) makes dispatch explicit and lets grammY match the group-chat
   // `/compact@BotName` form.
   cmd('compact', handleMessage, { forwardsToAgent: true });
+  // /context is Claude Code's own, routed the same way: the chat's claude
+  // reports what fills its context window, MCP tools and skills included,
+  // and the reply is the markdown copy of that report it logs (see
+  // commandReplyIn). Like any prompt, it waits for a running turn.
+  cmd('context', handleMessage, { forwardsToAgent: true });
   cmd('update', adminOnly(handleUpdate));
 
   cmd('model', handleModelCommand);
