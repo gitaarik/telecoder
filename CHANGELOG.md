@@ -15,6 +15,15 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Changed
 
+- **The memory guard counts the claude it just let through.** A new `claude`
+  takes its memory over its first seconds, and MemAvailable doesn't move until
+  it does, so two threads started together both read the same figure and both
+  passed. Every spawn the guard lets through now counts as a few hundred MB
+  spent for half a minute. The floor is `auto` by default, a quarter of RAM
+  with a 1 GB minimum: with 1 GB left, an 8 GB box is usually deep in swap
+  already. `MEMORY_GUARD_MAX_SWAP_USED_MB` can make heavy swap use a trigger
+  too; it's off by default because swap stays full long after the squeeze.
+
 - **CCR runs in the pty.** A chat on Claude Code Router took the Agent SDK
   path whatever its `/method`, so the PTY-only features stayed behind on it.
   The pty now spawns CCR's wrapper around the same `claude`, so everything

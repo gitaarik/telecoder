@@ -59,7 +59,7 @@ vi.mock('../../src/claude/ask-user.js', () => ({
   },
 }));
 
-const { guardSpawn, buildMemoryGuardMessage, formatIdle } = await import('../../src/claude/memory-guard.js');
+const { guardSpawn, buildMemoryGuardMessage, formatIdle, resolveMinAvailableMB, clearStartingClaudes, SPAWN_RESERVE_MB } = await import('../../src/claude/memory-guard.js');
 const { parseMeminfo } = await import('../../src/utils/memory-pressure.js');
 const { config } = await import('../../src/config.js');
 
@@ -88,8 +88,10 @@ beforeEach(() => {
   fake.answer = null;
   fake.asked = [];
   fake.sent = [];
-  (config as { MEMORY_GUARD_MIN_AVAILABLE_MB: number }).MEMORY_GUARD_MIN_AVAILABLE_MB = 1024;
+  (config as { MEMORY_GUARD_MIN_AVAILABLE_MB: number | 'auto' }).MEMORY_GUARD_MIN_AVAILABLE_MB = 1024;
+  (config as { MEMORY_GUARD_MAX_SWAP_USED_MB: number }).MEMORY_GUARD_MAX_SWAP_USED_MB = 0;
   (config as { MEMORY_GUARD_REAP_IDLE_MS: number }).MEMORY_GUARD_REAP_IDLE_MS = 300_000;
+  clearStartingClaudes();
 });
 
 describe('guardSpawn', () => {
@@ -165,6 +167,55 @@ describe('guardSpawn', () => {
     expect((await guardSpawn(undefined, KEY)).proceed).toBe(true);
     expect(fake.asked).toEqual([]);
   });
+
+  it('counts a claude it just let through, so two threads started together cannot both slip past', async () => {
+    // Room for one more, not two: the first spawn hasn't shown up in MemAvailable yet.
+    fake.availableMB = [1024 + SPAWN_RESERVE_MB - 1];
+    expect((await guardSpawn(ctx(), KEY)).proceed).toBe(true);
+    expect(fake.asked).toEqual([]);
+
+    fake.answer = null;
+    const second = await guardSpawn(ctx(), '37620077:4343');
+    expect(second.proceed).toBe(false);
+    expect(fake.asked).toHaveLength(1);
+    expect(fake.sent[0]).toContain('1 more Claude was started just now and isn\'t in that figure yet.');
+  });
+
+  it('does not count a chat\'s own spawn against it', async () => {
+    fake.availableMB = [1024 + SPAWN_RESERVE_MB - 1];
+    expect((await guardSpawn(ctx(), KEY)).proceed).toBe(true);
+    // The same chat again before its claude is live (the queue normally keeps this from happening).
+    expect((await guardSpawn(ctx(), KEY)).proceed).toBe(true);
+    expect(fake.asked).toEqual([]);
+  });
+
+  it('treats swap past MEMORY_GUARD_MAX_SWAP_USED_MB as tight, and says so', async () => {
+    (config as { MEMORY_GUARD_MAX_SWAP_USED_MB: number }).MEMORY_GUARD_MAX_SWAP_USED_MB = 2000;
+    fake.availableMB = [5000]; // the mock reports 4,880 MB of swap in use
+    fake.answer = 0;
+    expect((await guardSpawn(ctx(), KEY)).proceed).toBe(true);
+    expect(fake.asked).toHaveLength(1);
+    expect(fake.sent[0]).toContain('swap 4,880 MB in use. Swap is past the 2,000 MB limit.');
+  });
+});
+
+describe('the floor', () => {
+  it('"auto" is a quarter of RAM, never under 1 GB; a number is itself', () => {
+    (config as { MEMORY_GUARD_MIN_AVAILABLE_MB: number | 'auto' }).MEMORY_GUARD_MIN_AVAILABLE_MB = 'auto';
+    expect(resolveMinAvailableMB(7751)).toBe(1938);
+    expect(resolveMinAvailableMB(2048)).toBe(1024);
+    expect(resolveMinAvailableMB(32_000)).toBe(8000);
+    (config as { MEMORY_GUARD_MIN_AVAILABLE_MB: number | 'auto' }).MEMORY_GUARD_MIN_AVAILABLE_MB = 1500;
+    expect(resolveMinAvailableMB(7751)).toBe(1500);
+  });
+
+  it('applies the auto floor to the machine it runs on', async () => {
+    (config as { MEMORY_GUARD_MIN_AVAILABLE_MB: number | 'auto' }).MEMORY_GUARD_MIN_AVAILABLE_MB = 'auto';
+    fake.availableMB = [1800]; // under 1,938 on a 7,751 MB box
+    fake.answer = null;
+    expect((await guardSpawn(ctx(), KEY)).proceed).toBe(false);
+    expect(fake.asked).toHaveLength(1);
+  });
 });
 
 describe('the question', () => {
@@ -178,6 +229,16 @@ describe('the question', () => {
     expect(text).not.toContain('swap');
     expect(text).toContain('No other Claude is running here; something else has the memory.');
     expect(text).toContain('Times out in 10 min → dropped.');
+  });
+
+  it('counts the claudes started a moment ago', () => {
+    const { text } = buildMemoryGuardMessage({
+      mem: { totalMB: 7751, availableMB: 1200, swapTotalMB: 0, swapUsedMB: 0 },
+      others: { busy: 1, idle: [] },
+      starting: 2,
+      timeoutMin: 10,
+    });
+    expect(text).toContain('1,200 MB available of 7,751 MB. 2 more Claudes were started just now and aren\'t in that figure yet.');
   });
 
   it('formats idle times the way a person reads them', () => {

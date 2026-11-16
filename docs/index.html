@@ -2216,8 +2216,10 @@
             available. When it's short, claudes idle more than a few minutes are ended first,
             which costs their chats a few seconds of resume and nothing else. Only when that
             isn't enough does the chat get asked: start anyway, end the longest-idle one first,
-            or drop the message. A message to a running claude never asks, and <code>/status</code>
-            shows the machine's memory and the claudes running.</p>
+            or drop the message. A claude let through a moment ago counts as spent until the kernel's
+            figure shows it, so two threads started together can't both slip past. A message to a
+            running claude never asks, and <code>/status</code> shows the machine's memory and the
+            claudes running.</p>
           </div>
           <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-tools"/></svg></div>

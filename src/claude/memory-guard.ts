@@ -16,6 +16,13 @@
  *
  * A message to a chat whose claude is already running never asks: it starts
  * nothing new.
+ *
+ * A claude that was let through a moment ago hasn't taken its memory yet: it
+ * allocates over its first seconds, and MemAvailable doesn't move until it
+ * does. Two threads started together would both read the same number and both
+ * pass, which is how a box with room for one more ended up with two. So every
+ * spawn the guard lets through is counted as a few hundred MB already spent
+ * until it has had time to show up in the kernel's figure.
  */
 
 import type { Context } from 'grammy';
@@ -38,16 +45,58 @@ export interface SpawnGuardOutcome {
 
 const PROCEED: SpawnGuardOutcome = { proceed: true, message: '' };
 
+/** What a fresh claude takes within its first seconds, before any work: measured 160–470 MB, with its MCP servers. */
+export const SPAWN_RESERVE_MB = 350;
+/** How long a let-through spawn is counted before MemAvailable is trusted to include it. */
+const SPAWN_RESERVE_MS = 30_000;
+/** The spawns let through recently, by session key, with when each stops counting. */
+const startingClaudes = new Map<string, number>();
+
+/** The floor 'auto' resolves to: a quarter of RAM, at least 1 GB. Exported for tests. */
+export function resolveMinAvailableMB(totalMB: number): number {
+  const setting = config.MEMORY_GUARD_MIN_AVAILABLE_MB;
+  if (setting !== 'auto') return setting;
+  return Math.max(1024, Math.round(totalMB / 4));
+}
+
+/** How many claudes the guard let through in the last half minute, other than `exceptKey`'s. */
+function countStarting(exceptKey?: string): number {
+  const now = Date.now();
+  let n = 0;
+  for (const [key, until] of startingClaudes) {
+    if (until <= now) startingClaudes.delete(key);
+    else if (key !== exceptKey) n++;
+  }
+  return n;
+}
+
+function noteSpawn(sessionKey: string): SpawnGuardOutcome {
+  startingClaudes.set(sessionKey, Date.now() + SPAWN_RESERVE_MS);
+  return PROCEED;
+}
+
+/** Forget the spawns being counted. For tests. */
+export function clearStartingClaudes(): void {
+  startingClaudes.clear();
+}
+
 const START = '▶️ Start anyway';
 const END_IDLE = '♻️ End the longest-idle claude first';
 const DROP = '✗ Drop this message';
 
 export function isMemoryGuardEnabled(): boolean {
-  return config.MEMORY_GUARD_MIN_AVAILABLE_MB > 0;
+  return config.MEMORY_GUARD_MIN_AVAILABLE_MB !== 0;
 }
 
-function isTight(mem: MemoryReading | null): mem is MemoryReading {
-  return mem !== null && mem.availableMB < config.MEMORY_GUARD_MIN_AVAILABLE_MB;
+function swapOverLimit(mem: MemoryReading): boolean {
+  const limit = config.MEMORY_GUARD_MAX_SWAP_USED_MB;
+  return limit > 0 && mem.swapUsedMB > limit;
+}
+
+/** Tight when what's left, after the claudes still starting take theirs, is under the floor — or swap is past its limit. */
+function isTight(mem: MemoryReading | null, starting: number): mem is MemoryReading {
+  if (mem === null) return false;
+  return mem.availableMB - starting * SPAWN_RESERVE_MB < resolveMinAvailableMB(mem.totalMB) || swapOverLimit(mem);
 }
 
 const fmtMB = (mb: number) => `${mb.toLocaleString('en-US')} MB`;
@@ -72,9 +121,11 @@ export async function guardSpawn(ctx: Context | undefined, sessionKey: string): 
   if (getActiveMethod(sessionKey) !== 'pty') return PROCEED;
   const pty = getPtyProvider();
   if (pty.hasLiveSession(sessionKey)) return PROCEED;
-
+  const starting = countStarting(sessionKey); // also drops the expired entries
+  // Let through a moment ago and not yet live: that is this chat's own spawn.
+  if (startingClaudes.has(sessionKey)) return PROCEED;
   let mem = readMemory();
-  if (!isTight(mem)) return PROCEED;
+  if (!isTight(mem, starting)) return noteSpawn(sessionKey);
 
   // Idle claudes go first: the chat they belonged to resumes from its
   // transcript next time, which is all the hourly reaper does anyway.
@@ -84,11 +135,11 @@ export async function guardSpawn(ctx: Context | undefined, sessionKey: string): 
     // Freed pages take a moment to show in MemAvailable; give it a tick.
     await new Promise((r) => setTimeout(r, 300));
     mem = readMemory();
-    if (!isTight(mem)) return PROCEED;
+    if (!isTight(mem, starting)) return noteSpawn(sessionKey);
   }
 
-  if (!ctx?.api) return PROCEED; // nobody to ask; a scheduled run goes ahead
-  return askChat(ctx, sessionKey, mem);
+  if (!ctx?.api) return noteSpawn(sessionKey); // nobody to ask; a scheduled run goes ahead
+  return askChat(ctx, sessionKey, mem, starting);
 }
 
 interface OtherClaudes {
@@ -108,7 +159,7 @@ function surveyOthers(): OtherClaudes {
   return { busy, idle };
 }
 
-async function askChat(ctx: Context, sessionKey: string, mem: MemoryReading): Promise<SpawnGuardOutcome> {
+async function askChat(ctx: Context, sessionKey: string, mem: MemoryReading, starting: number): Promise<SpawnGuardOutcome> {
   const { chatId, threadId } = parseSessionKey(sessionKey);
   const others = surveyOthers();
   const timeoutMs = questionTimeoutMs();
@@ -119,7 +170,7 @@ async function askChat(ctx: Context, sessionKey: string, mem: MemoryReading): Pr
   const responders = [...new Set([ctx.from?.id, ...getAdminIds()].filter((id): id is number => typeof id === 'number'))];
   const { id, promise } = createPendingQuestion(labels, timeoutMs, sessionKey, responders);
 
-  const { text, entities } = buildMemoryGuardMessage({ mem, others, timeoutMin });
+  const { text, entities } = buildMemoryGuardMessage({ mem, others, starting, timeoutMin, swapLimitMB: config.MEMORY_GUARD_MAX_SWAP_USED_MB });
   const keyboard = labels.map((label, idx) => [{ text: label, callback_data: `q:${id}:${idx}` }]);
 
   let sent: Message.TextMessage;
@@ -131,7 +182,7 @@ async function askChat(ctx: Context, sessionKey: string, mem: MemoryReading): Pr
     });
   } catch (err) {
     console.error('[MemoryGuard] failed to post the question:', err instanceof Error ? err.message : err);
-    return PROCEED; // better one claude too many than a message silently lost
+    return noteSpawn(sessionKey); // better one claude too many than a message silently lost
   }
   console.log(`[MemoryGuard] ${fmtMB(mem.availableMB)} available, asking ${sessionKey} before starting a claude`);
 
@@ -141,16 +192,16 @@ async function askChat(ctx: Context, sessionKey: string, mem: MemoryReading): Pr
     return { proceed: false, message: `🧠 Memory was tight and nobody answered in ${timeoutMin} min, so that message was dropped. Send it again to start Claude anyway.` };
   }
   const chosen = labels[answer.index];
-  if (chosen === START) return PROCEED;
+  if (chosen === START) return noteSpawn(sessionKey);
   if (chosen === END_IDLE) {
     const ended = getPtyProvider().endLongestIdleSession(sessionHasWork);
     if (ended) {
       console.log(`[MemoryGuard] ended ${ended} on request before starting ${sessionKey}`);
-      return PROCEED;
+      return noteSpawn(sessionKey);
     }
     // Everything went busy while the question was open; the tap still meant "go".
     console.log(`[MemoryGuard] nothing idle left to end; starting ${sessionKey} anyway`);
-    return PROCEED;
+    return noteSpawn(sessionKey);
   }
   return { proceed: false, message: '🧠 Dropped. Send it again when you want Claude started anyway.' };
 }
@@ -158,7 +209,11 @@ async function askChat(ctx: Context, sessionKey: string, mem: MemoryReading): Pr
 interface GuardParts {
   mem: MemoryReading;
   others: OtherClaudes;
+  /** Claudes let through in the last half minute that MemAvailable doesn't show yet. */
+  starting?: number;
   timeoutMin: number;
+  /** MEMORY_GUARD_MAX_SWAP_USED_MB; 0 when swap isn't a trigger. */
+  swapLimitMB?: number;
 }
 
 /** Lay out the question. Exported for tests — the wording is the product. */
@@ -168,7 +223,16 @@ export function buildMemoryGuardMessage(parts: GuardParts): ReturnType<EntityTex
   b.add('🧠 ').bold('Memory is tight').newline();
   b.add(`${fmtMB(mem.availableMB)} available of ${fmtMB(mem.totalMB)}`);
   if (mem.swapTotalMB > 0) b.add(`, swap ${fmtMB(mem.swapUsedMB)} in use`);
-  b.add('.').newline().newline();
+  b.add('.');
+  const swapLimit = parts.swapLimitMB ?? 0;
+  if (swapLimit > 0 && mem.swapUsedMB > swapLimit) b.add(` Swap is past the ${fmtMB(swapLimit)} limit.`);
+  const starting = parts.starting ?? 0;
+  if (starting > 0) {
+    b.add(starting === 1
+      ? ` 1 more Claude was started just now and isn't in that figure yet.`
+      : ` ${starting} more Claudes were started just now and aren't in that figure yet.`);
+  }
+  b.newline().newline();
   b.add('This message starts a new Claude for this chat, which takes a few hundred MB more. ');
 
   const total = others.busy + others.idle.length;

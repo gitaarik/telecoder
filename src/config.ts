@@ -374,13 +374,25 @@ const envSchema = z.object({
     .transform((val) => parseInt(val, 10)),
   // Memory guard. Before a typed message starts a new `claude` for a PTY chat
   // — a new chat or thread, or one whose claude was ended — the machine's
-  // available memory (MemAvailable) is checked. Under this many MB, claudes
-  // idle longer than MEMORY_GUARD_REAP_IDLE_MS are ended first; if that still
-  // leaves too little, the chat is asked whether to start anyway, end the
-  // longest-idle claude first, or drop the message. 0 turns the guard off.
+  // available memory (MemAvailable) is checked, less a few hundred MB for
+  // every claude still starting up (one just let through hasn't taken its
+  // memory yet). Under this many MB, claudes idle longer than
+  // MEMORY_GUARD_REAP_IDLE_MS are ended first; if that still leaves too
+  // little, the chat is asked whether to start anyway, end the longest-idle
+  // claude first, or drop the message. "auto" (the default) is a quarter of
+  // the machine's RAM, at least 1024 MB: with 1 GB left on an 8 GB box the
+  // machine is usually deep in swap already. 0 turns the guard off.
   MEMORY_GUARD_MIN_AVAILABLE_MB: z
     .string()
-    .default('1024')
+    .default('auto')
+    .transform((val): number | 'auto' => (val.trim().toLowerCase() === 'auto' ? 'auto' : parseInt(val, 10))),
+  // Swap in use above this many MB also counts as tight, so the guard asks
+  // even while MemAvailable looks fine. Off by default (0): pages stay in swap
+  // long after the pressure that put them there has passed, so on a machine
+  // that swaps at all this nags on every new chat.
+  MEMORY_GUARD_MAX_SWAP_USED_MB: z
+    .string()
+    .default('0')
     .transform((val) => parseInt(val, 10)),
   // The shorter idle window the guard reaps with when memory is tight, in ms.
   // A chat whose claude was reaped this way resumes from its transcript on its
