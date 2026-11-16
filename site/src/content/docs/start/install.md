@@ -73,7 +73,9 @@ telecoder service uninstall   # stop it and remove the unit
 - **macOS** writes `~/Library/LaunchAgents/dev.telecoder.telecoder.plist` and loads it;
   output goes to `~/Library/Logs/telecoder/telecoder.log`. A LaunchAgent runs while you
   are logged in. launchd can't exempt one exit code from `KeepAlive`, so under launchd a
-  bot stopped by a configuration error exits 0 instead, which it leaves alone.
+  bot stopped by a configuration error exits 0 instead, which it leaves alone. While the
+  bot runs it keeps the Mac from idle-sleeping (`caffeinate -i`); the display can still
+  sleep, and closing a laptop's lid still sleeps it.
 
 Run `telecoder service install` again after moving `node`, `claude` or your config:
 it shows what changes and asks before replacing the unit. `--name <name>` installs a

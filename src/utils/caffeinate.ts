@@ -14,8 +14,11 @@ export function preventSleep(): void {
   }
 
   try {
-    // -d: prevent display sleep, -i: prevent idle sleep
-    caffeinateProcess = spawn('caffeinate', ['-di'], {
+    // -i keeps the Mac from idle-sleeping, which would take the bot offline.
+    // The display may still sleep: a bot needs no screen, and -d kept it lit
+    // for as long as the bot ran. -w ends caffeinate with this process, so a
+    // crash or a kill that skips allowSleep() doesn't leave the Mac awake.
+    caffeinateProcess = spawn('caffeinate', ['-i', '-w', String(process.pid)], {
       stdio: 'ignore',
       detached: true,
     });
@@ -34,7 +37,7 @@ export function preventSleep(): void {
       caffeinateProcess = null;
     });
 
-    console.log('[Caffeinate] Preventing system sleep');
+    console.log('[Caffeinate] Preventing idle sleep while the bot runs');
   } catch (error) {
     console.error('[Caffeinate] Failed to start:', error);
   }

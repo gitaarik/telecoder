@@ -31,6 +31,13 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Changed
 
+- **On macOS the screen can sleep while the bot runs.** The bot ran
+  `caffeinate -di` from its first day, a habit from running Claudegram on a
+  laptop: `-i` keeps the Mac from idle-sleeping, which the bot needs, and
+  `-d` kept the display lit as well for as long as the bot ran, which it
+  doesn't. It now runs `caffeinate -i -w <pid>`, so caffeinate also ends with
+  the bot rather than outliving a crash.
+
 - **The wizard says what the background service will be before asking.** The
   question at the end of `telecoder init` used to name only the command. It now
   says what `telecoder service install` would set up on this machine first: a

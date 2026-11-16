@@ -2670,7 +2670,7 @@
               <strong>On Linux:</strong> <code>npm install</code> compiles <code>node-pty</code>, which needs <code>python3</code>, <code>make</code> and <code>g++</code> (<code>sudo apt install python3 make g++</code>, or <code>sudo dnf install python3 make gcc-c++</code>). Windows isn&rsquo;t supported natively; WSL 2 should work as Linux does, but is untested.
             </div>
             <div class="prereq-note">
-              <strong>Note:</strong> On macOS, TeleCoder uses <code>caffeinate</code> to prevent sleep during long operations.
+              <strong>Note:</strong> On macOS, TeleCoder keeps the Mac from idle-sleeping while it runs, with <code>caffeinate</code>. The display can still sleep, and closing the lid still sleeps a laptop.
             </div>
           </div>
 
