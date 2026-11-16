@@ -94,7 +94,7 @@ beforeAll(() => {
       editMessageText: vi.fn(async () => true),
     },
   } as unknown as Bot);
-  // The reply goes through the sender, which would chunk it and try Telegraph.
+  // The reply goes through the sender, which would chunk it.
   vi.spyOn(messageSender, 'sendMessage').mockImplementation(async (_ctx, text) => {
     chat.push(text);
     return nextId++;

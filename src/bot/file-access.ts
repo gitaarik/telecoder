@@ -1,10 +1,9 @@
 /**
- * Which files may be sent out of the machine from chat — `/file` as a
- * download, `/telegraph <path>` as a public page.
+ * Which files may be sent out of the machine from chat with `/file`.
  *
- * Both used to accept any path under WORKSPACE_DIR, which defaults to $HOME.
+ * It used to accept any path under WORKSPACE_DIR, which defaults to $HOME.
  * On a shared bot that let any guest fetch `~/.claude/.credentials.json` or
- * `~/.ssh/id_rsa`, and `/telegraph` would then publish it. Two rules now:
+ * `~/.ssh/id_rsa`. Two rules now:
  *
  * - The scope guard's credential/bot-state denylist applies to everyone,
  *   admins included. An admin who wants their own SSH key has a shell; a chat
@@ -126,26 +125,4 @@ export async function resolveShareableFile(
       break;
   }
   return null;
-}
-
-/**
- * `/telegraph <path>` publishes a file as a public telegra.ph page, readable by
- * anyone with the link and impossible to take down. That is an owner's call,
- * so it is admin-only, and it needs TELEGRAPH_ENABLED like every other way of
- * publishing. Replies to the chat and returns true when the publish is refused.
- */
-export async function refuseFilePublish(ctx: Context): Promise<boolean> {
-  if (!isAdmin(ctx.from?.id)) {
-    console.log(`[file-access] DENIED /telegraph <path> for user:${ctx.from?.id ?? 'unknown'}`);
-    await ctx.reply('🔒 Publishing a file to Telegraph is admin-only — the page is public to anyone with the link. Use /file to get it as a download instead.');
-    return true;
-  }
-  if (!config.TELEGRAPH_ENABLED) {
-    await replyFormatted(ctx, new EntityText()
-      .add('📄 Telegraph is off. Set ').code('TELEGRAPH_ENABLED=true')
-      .add(' in .env to publish files as pages — they are public to anyone with the link. Use /file to get it as a download instead.')
-      .build());
-    return true;
-  }
-  return false;
 }

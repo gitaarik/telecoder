@@ -29,7 +29,6 @@ import {
   handleProjectReply,
   handleFileReply,
   handleAgentReply,
-  handleTelegraphReply,
 } from './message/replies.js';
 
 export { closeTurn, relayCatchUpIfMissed } from './message/turn-notify.js';
@@ -73,12 +72,6 @@ export async function handleMessage(ctx: Context): Promise<void> {
     // Handle project path reply
     if (replyText.includes('Set Project Directory')) {
       await handleProjectReply(ctx, sessionKey, text);
-      return;
-    }
-
-    // Handle telegraph/instant view reply (check BEFORE file - both have "file path")
-    if (replyText.includes('Instant View') || replyText.includes('Markdown files')) {
-      await handleTelegraphReply(ctx, sessionKey, text);
       return;
     }
 

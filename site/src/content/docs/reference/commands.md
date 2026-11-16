@@ -23,7 +23,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/recap [N]` | Re-read the last N exchanges of the current session (default 3), ending with the same status message as a normal turn |
 | `/prompts [N]` | List just the last N prompts you sent, without the replies (default 15, max 25) |
 | `/sync` | Resend the latest assistant reply from the session log if Telegram missed any of it |
-| `/handoff` | Dump the conversation to markdown as a downloadable file, plus a Telegraph link when Telegraph is on |
+| `/handoff` | Dump the conversation to markdown as a downloadable file |
 | `/fork` | Fork the conversation — into a new thread on a bot with threads, otherwise a new branch on this bot or a hand-off to a sibling bot |
 | `/spinoff <task>` | Split a task off into a new thread, with the context compacted around it and the task as its first prompt. As a reply, it forks from that message. Needs threads |
 | `/deletethread [-y]` | Delete the thread it's sent in, with all its messages, and end its session; works mid-turn. The conversation stays in `/resume`. In a group, the bot needs the right to delete messages — admin-only |
@@ -59,8 +59,6 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | Command | Description |
 |---------|-------------|
 | `/file <path>` | Download a file. Guests get files from the chat's project only; admins from anywhere in `WORKSPACE_DIR`. Credential and bot-state paths (`.env`, `~/.ssh`, `~/.claude`, cloud CLI configs and the like) are refused for everyone |
-| `/telegraph` | Toggle Instant View for long responses in this chat (needs `TELEGRAPH_ENABLED=true`) |
-| `/telegraph <path>` | Publish a project file as a public Telegraph page. **Admin-only**, needs `TELEGRAPH_ENABLED=true`, same path rules as `/file` |
 | `/suggestions` | Turn predicted next-prompt buttons under each reply on or off, from the next session (PTY mode) |
 
 ## Voice and TTS

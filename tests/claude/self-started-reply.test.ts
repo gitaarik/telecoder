@@ -251,7 +251,7 @@ describe('a turn claude started itself', () => {
 
   it("sends each turn's reply separately, and in order", async () => {
     armAndEndTurn();
-    // The first reply is slow to go out — a Telegraph page to publish, say.
+    // The first reply is slow to go out.
     let release!: () => void;
     fx.gate = new Promise((resolve) => { release = resolve; });
 

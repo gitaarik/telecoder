@@ -1,6 +1,5 @@
 /**
- * Per-chat settings menus: /streaming, /terminalui, /tts, /telegraph,
- * /suggestions, /effort, /verbosity, /method and the status line.
+ * Per-chat settings menus: /streaming, /terminalui, /tts, /suggestions, /effort, /verbosity, /method and the status line.
  *
  * They share one shape — render an inline keyboard reflecting current state,
  * flip a setting on tap, re-render — and several need the same pty-restart
@@ -30,7 +29,6 @@ import { taskTracker } from '../../../telegram/task-tracker.js';
 import { promptLabel, cutLabel } from '../../../telegram/prompt-label.js';
 import { getTTSSettings, setTTSEnabled, setTTSVoice, setTTSAutoplay } from '../../../tts/tts-settings.js';
 import { getTerminalUISettings, setTerminalUIEnabled } from '../../../telegram/terminal-settings.js';
-import { getTelegraphSettings, setTelegraphEnabled } from '../../../telegram/telegraph-settings.js';
 import { getSuggestionsSettings, setSuggestionsEnabled } from '../../../telegram/suggestions-settings.js';
 import {
   VERBOSITY_INFO,
@@ -164,41 +162,6 @@ function buildSuggestionsMenu(sessionKey: string) {
       [
         { text: settings.enabled ? '✓ On' : 'On', callback_data: 'sugg:on' },
         { text: !settings.enabled ? '✓ Off' : 'Off', callback_data: 'sugg:off' },
-      ],
-    ],
-  };
-}
-
-export function buildTelegraphMenu(sessionKey: string) {
-  const settings = getTelegraphSettings(sessionKey);
-  const globalEnabled = config.TELEGRAPH_ENABLED;
-  const globalStatus = globalEnabled ? 'enabled' : 'disabled';
-
-  const statusLine = settings.enabled ? 'ON' : 'OFF';
-  const header = () => new EntityText().add('📄 ').bold('Instant View (Telegraph)').newline(2);
-
-  // If global config is disabled, show warning and no toggle
-  if (!globalEnabled) {
-    return {
-      text: header()
-        .add('⚠️ ').bold('Disabled globally').newline(2)
-        .add('Telegraph is off in the bot configuration. It is opt-in because every page it publishes is public to anyone with the link.\nSet ')
-        .code('TELEGRAPH_ENABLED=true').add(' in .env to enable.')
-        .build(),
-      keyboard: [],
-    };
-  }
-
-  return {
-    text: header()
-      .add('Status: ').bold(statusLine).newline()
-      .add('Global config: ').bold(globalStatus).newline(2)
-      .italic('When enabled, replies over 2500 characters also get an Instant View link under the text. The reply itself is always sent in full either way.')
-      .build(),
-    keyboard: [
-      [
-        { text: settings.enabled ? '✓ On' : 'On', callback_data: 'telegraph:on' },
-        { text: !settings.enabled ? '✓ Off' : 'Off', callback_data: 'telegraph:off' },
       ],
     ],
   };
@@ -364,38 +327,6 @@ export async function handleTTSCallback(ctx: Context): Promise<void> {
     ? 'voices'
     : 'main';
   const menu = buildTTSMenu(sessionKey, mode);
-
-  await ctx.answerCallbackQuery();
-  try {
-    await editCallbackMessage(ctx, menu.text, {
-      reply_markup: { inline_keyboard: menu.keyboard },
-    });
-  } catch (error) {
-    // Ignore "message is not modified" — happens with duplicate callbacks
-    if (!(error instanceof Error && error.message.includes('message is not modified'))) {
-      throw error;
-    }
-  }
-}
-
-export async function handleTelegraphCallback(ctx: Context): Promise<void> {
-  const cb = parseCallback(ctx, 'telegraph:');
-  if (!cb) return;
-  const { sessionKey, data } = cb;
-
-  // Don't allow enabling if global config is disabled
-  if (data === 'telegraph:on') {
-    if (!config.TELEGRAPH_ENABLED) {
-      await ctx.answerCallbackQuery({ text: 'Telegraph disabled in config. Set TELEGRAPH_ENABLED=true in .env.' });
-      setTelegraphEnabled(sessionKey, false);
-    } else {
-      setTelegraphEnabled(sessionKey, true);
-    }
-  } else if (data === 'telegraph:off') {
-    setTelegraphEnabled(sessionKey, false);
-  }
-
-  const menu = buildTelegraphMenu(sessionKey);
 
   await ctx.answerCallbackQuery();
   try {

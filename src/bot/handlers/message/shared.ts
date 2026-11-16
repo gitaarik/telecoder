@@ -85,9 +85,7 @@ export function fireAutoTopic(ctx: Context, sessionKey: string, userMessage: str
  * that the target is an existing regular file.
  *
  * Every rejection is reported to the chat and returns null, so callers only
- * need to early-return. Shared by the /file and /telegraph reply handlers —
- * they used to carry identical copies of these three checks, which meant a
- * tightening of the containment rule could reach one and miss the other.
+ * need to early-return.
  */
 export async function resolveUserFilePath(
   ctx: Context,

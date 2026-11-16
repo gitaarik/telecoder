@@ -20,64 +20,6 @@ Guidelines:
 - If a task requires multiple steps, execute them and summarize what you did
 - When you can't do something, explain why briefly`;
 
-const TELEGRAPH_FORMATTING = `
-
-Response Formatting — Telegraph-Aware Writing:
-Write standard markdown. Telegram shows it formatted, chunked across messages when long.
-Responses over 2500 chars are ALSO published as a Telegraph (telegra.ph) Instant View page,
-linked under the reply — the same text, in a second place, so both renderings have to work.
-You MUST write with Telegraph's rendering constraints in mind at all times.
-
-Telegraph supports ONLY these elements:
-- Headings: h3 (from # and ##) and h4 (from ### and ####). No h1, h2, h5, h6.
-- Text formatting: **bold**, *italic*, ~~strikethrough~~, \`inline code\`
-- Links: [text](url)
-- Lists: unordered (- item) and ordered (1. item). Nested lists are supported (indent sub-items).
-- Code blocks: \`\`\`code\`\`\` — rendered as monospace preformatted text. No syntax highlighting.
-- Blockquotes: > text
-- Horizontal rules: ---
-
-Telegraph does NOT support:
-- TABLES — pipe-delimited markdown tables (|col|col|) will NOT render as tables. They break into ugly labeled text. NEVER use markdown tables.
-- No checkboxes, footnotes, or task lists
-- No custom colors, fonts, or inline styles
-- Only two heading levels (h3, h4)
-
-Instead of tables, use these alternatives (in order of preference):
-1. Bullet lists with bold labels — best for key-value data or comparisons:
-   - **Name**: Alice
-   - **Age**: 30
-   - **City**: NYC
-
-2. Nested lists — best for grouped/categorized data:
-   - **Frontend**
-     - React 18
-     - TypeScript
-   - **Backend**
-     - Node.js
-     - Express
-
-3. Bold headers with list items — best for feature/comparison matrices:
-   **Telegram bot** — Grammy v1.31
-   **AI agent** — Claude Code SDK v1.0
-   **TTS** — OpenAI gpt-4o-mini-tts
-
-4. Preformatted code blocks — ONLY for data where alignment matters (ASCII tables):
-   \`\`\`
-   Name      Age   City
-   Alice     30    NYC
-   Bob       25    London
-   \`\`\`
-   Note: code blocks lose all formatting (no bold, links, etc.) so only use when alignment is critical.
-
-Structure guidelines for long responses:
-- Use ## or ### headings to create clear sections (renders as h3/h4)
-- Use --- horizontal rules to separate major sections
-- Use bullet lists liberally — they render cleanly
-- Use > blockquotes for callouts, warnings, or important notes
-- Keep paragraphs concise; Telegraph renders best with short blocks of text
-- Nest sub-items under list items for tree-like structures instead of indented text`;
-
 const INLINE_FORMATTING = `
 
 Response Formatting:
@@ -96,7 +38,7 @@ Instead of tables (which don't render well in Telegram), use bullet lists with b
 - **Age**: 30
 - **City**: NYC`;
 
-const BASE_SYSTEM_PROMPT = CORE_GUIDELINES + (config.TELEGRAPH_ENABLED ? TELEGRAPH_FORMATTING : INLINE_FORMATTING);
+const BASE_SYSTEM_PROMPT = CORE_GUIDELINES + INLINE_FORMATTING;
 
 const SEND_FILE_TOOL_PROMPT = `
 

@@ -28,8 +28,6 @@ const USAGE = [
   '  --workspace DIR      the folder your projects are in (default: ~/projects or ~)',
   '  --transport sdk|pty  how Claude Code runs (default: sdk)',
   '  --groq-key-env VAR   turn voice transcription on, with the Groq key in VAR',
-  '  --telegraph          publish long replies to Telegraph (public pages)',
-  '  --no-telegraph       don\'t, without asking',
   '  --icon               give the bot the TeleCoder icon as its profile picture,',
   '                       replacing one it has (default: only when it has none)',
   '  --no-icon            leave the bot\'s picture alone, without asking',
@@ -59,8 +57,6 @@ export function parseInitArgs(args: string[]): ParsedInitArgs {
   for (let i = 0; i < args.length; i++) {
     const [flag, inline] = args[i].includes('=') ? args[i].split(/=(.*)/s, 2) : [args[i], undefined];
     if (flag === '--yes' || flag === '-y') opts.yes = true;
-    else if (flag === '--telegraph') opts.telegraph = true;
-    else if (flag === '--no-telegraph') opts.telegraph = false;
     else if (flag === '--icon') opts.icon = true;
     else if (flag === '--no-icon') opts.icon = false;
     else if (flag === '--no-test-message') opts.noTestMessage = true;

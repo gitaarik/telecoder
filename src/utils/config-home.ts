@@ -1,6 +1,6 @@
 /**
- * Where TeleCoder's configuration lives: the .env, instances.json and the
- * Telegraph account file. Every reader goes through here.
+ * Where TeleCoder's configuration lives: the .env and instances.json. Every
+ * reader goes through here.
  *
  * In order:
  *   1. TELECODER_HOME, when set — an explicit choice always wins.
@@ -12,7 +12,7 @@
  *
  * ~/.telecoder is also the state directory (utils/json-store.ts). The two share
  * it without colliding: state is per-bot `*-<botId>.json` files and the like,
- * config is `.env`, `.env.*`, `instances.json` and `.telegraph-account.json`.
+ * config is `.env`, `.env.*` and `instances.json`.
  * TELECODER_HOME moves only the config; state stays in ~/.telecoder.
  *
  * ENV_PATH and INSTANCES_CONFIG still point at a single file directly, ahead

@@ -3,7 +3,6 @@ import { config } from '../config.js';
 import { formatMarkdown, markdownToEntities, splitEntityMessage, MAX_MESSAGE_LENGTH } from './markdown.js';
 import { editFormatted, replyFormatted } from './send.js';
 import { stripReasoningSummary } from '../utils/reasoning-summary.js';
-import { shouldPublishTelegraph, createTelegraphPage, createTelegraphFromFile } from './telegraph.js';
 import { isTerminalUIEnabled } from './terminal-settings.js';
 import {
   getSpinnerFrame,
@@ -218,45 +217,6 @@ function shortDescription(description: string): string {
   return description.length > 100 ? description.substring(0, 97) + '...' : description;
 }
 
-/**
- * Publish a long reply as an Instant View page and return the footer line that
- * points at it, or null when the chat hasn't asked for pages, the reply is
- * short, or telegra.ph is unreachable.
- *
- * Every failure path returns null rather than throwing. The page is decoration
- * on an answer that is about to be delivered in full either way, so a Telegraph
- * outage must never cost the user the reply — which is exactly what the old
- * publish-or-nothing flow did when it swapped the text out for a 200-character
- * stub and the link then failed to render.
- */
-async function publishTelegraphFooter(text: string, sessionKey?: string): Promise<EntityMessage | null> {
-  if (!shouldPublishTelegraph(text, sessionKey)) return null;
-  try {
-    const pageUrl = await createTelegraphPage('Claude Response', text);
-    if (!pageUrl) return null;
-    return new EntityText().add('📄 ').link('Open in Instant View', pageUrl).build();
-  } catch (error) {
-    console.error('[Telegraph] Failed to publish page:', error instanceof Error ? error.message : error);
-    return null;
-  }
-}
-
-/**
- * Hang `footer` under the last chunk of a reply, or give it a chunk of its own
- * when appending would push that message past Telegram's limit.
- *
- * Exported for tests: the boundary is the whole point of the function, and it
- * is the one place a bug would silently cost a chunk.
- */
-export function withTelegraphFooter(parts: EntityMessage[], footer: EntityMessage | null): EntityMessage[] {
-  if (!footer) return parts;
-  const last = parts[parts.length - 1];
-  if (last !== undefined && last.text.length + 2 + footer.text.length <= config.MAX_MESSAGE_LENGTH) {
-    return [...parts.slice(0, -1), new EntityText().append(last).newline(2).append(footer).build()];
-  }
-  return [...parts, footer];
-}
-
 // `mcp__telecoder-tools__telecoder_send_file` → `telecoder_send_file`
 function stripMcpServerPrefix(toolName: string): string {
   if (!toolName.startsWith('mcp__')) return toolName;
@@ -388,12 +348,7 @@ export class MessageSender {
    * /fork button use this to know which message to anchor onto.
    */
   async sendMessage(ctx: Context, text: string): Promise<number | null> {
-    const keyInfo = getSessionKeyFromCtx(ctx);
-    const parts = withTelegraphFooter(
-      formatMarkdown(text, config.MAX_MESSAGE_LENGTH),
-      await publishTelegraphFooter(text, keyInfo?.sessionKey),
-    );
-    return this.sendParts(ctx, parts);
+    return this.sendParts(ctx, formatMarkdown(text, config.MAX_MESSAGE_LENGTH));
   }
 
   /** Post `parts` in order; the id of the last one that went out. */
@@ -522,14 +477,14 @@ export class MessageSender {
   }
 
   /**
-   * Send a markdown file with Telegraph preview option
+   * Send a markdown file: as a document, or its content inline in the chat.
    */
   async sendMarkdownFile(
     ctx: Context,
     filePath: string,
-    options: { useTelegraph?: boolean; sendAsDocument?: boolean } = {}
+    options: { sendAsDocument?: boolean } = {}
   ): Promise<boolean> {
-    const { useTelegraph = true, sendAsDocument = false } = options;
+    const { sendAsDocument = false } = options;
 
     try {
       if (!fs.existsSync(filePath)) {
@@ -537,37 +492,11 @@ export class MessageSender {
         return false;
       }
 
-      const fileName = path.basename(filePath);
-      const content = fs.readFileSync(filePath, 'utf-8');
-
-      // Option 1: Telegraph (Instant View)
-      if (useTelegraph) {
-        const pageUrl = await createTelegraphFromFile(filePath);
-
-        if (pageUrl) {
-          const message = new EntityText()
-            .add('📄 ').bold(fileName).newline(2)
-            .link('Open in Instant View', pageUrl)
-            .build();
-
-          await replyFormatted(ctx, message);
-
-          // Also send as document if requested
-          if (sendAsDocument) {
-            await this.sendDocument(ctx, filePath, 'Download file');
-          }
-
-          return true;
-        }
-      }
-
-      // Option 2: Send as document
       if (sendAsDocument) {
-        return await this.sendDocument(ctx, filePath, `📎 ${fileName}`);
+        return await this.sendDocument(ctx, filePath, `📎 ${path.basename(filePath)}`);
       }
 
-      // Option 3: Send content inline
-      await this.sendMessage(ctx, content);
+      await this.sendMessage(ctx, fs.readFileSync(filePath, 'utf-8'));
       return true;
     } catch (error) {
       console.error('[Markdown] Failed to send:', error);
@@ -1368,10 +1297,7 @@ export class MessageSender {
         }
       } else {
         // No intervening posts: the live messages become the answer, edited in place.
-        let parts = withTelegraphFooter(
-          formatMarkdown(finalContent, config.MAX_MESSAGE_LENGTH),
-          await publishTelegraphFooter(finalContent, sessionKey),
-        );
+        let parts = formatMarkdown(finalContent, config.MAX_MESSAGE_LENGTH);
         if (parts.length === 0) parts = [plain('Done.')];
         try {
           const ids = [state.messageId, ...state.overflowIds];
@@ -1400,8 +1326,8 @@ export class MessageSender {
 
     this.streamStates.delete(sessionKey);
 
-    // Collapse the live log into a Telegraph link once any remaining tool
-    // results have landed.
+    // Draw the live log one last time once any remaining tool results have
+    // landed.
     actionLogger.endTurn(sessionKey);
   }
 
@@ -1440,8 +1366,8 @@ export class MessageSender {
 
     this.streamStates.delete(sessionKey);
 
-    // Collapse the live log into a Telegraph link once any remaining tool
-    // results have landed.
+    // Draw the live log one last time once any remaining tool results have
+    // landed.
     actionLogger.endTurn(sessionKey);
   }
 

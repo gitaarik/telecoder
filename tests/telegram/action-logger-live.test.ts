@@ -29,11 +29,6 @@ import type { MessageEntity } from 'grammy/types';
 import type { ToolResultEvent } from '../../src/providers/types.js';
 import type { EntityMessage } from '../../src/telegram/entities.js';
 
-// Telegraph off: a finished turn's log stays in the chat, drawn one last time.
-vi.mock('../../src/telegram/telegraph-settings.js', () => ({
-  isTelegraphEnabled: () => false,
-}));
-
 const { ActionLogger } = await import('../../src/telegram/action-logger.js');
 
 const SESSION = '111';

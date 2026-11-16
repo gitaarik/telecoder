@@ -34,11 +34,6 @@ vi.mock('../../src/utils/verbosity.js', async (importOriginal) => ({
   }),
 }));
 
-vi.mock('../../src/telegram/telegraph-settings.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/telegram/telegraph-settings.js')>()),
-  isTelegraphEnabled: () => false,
-}));
-
 const { MessageSender } = await import('../../src/telegram/message-sender.js');
 
 const BUBBLE = 50;

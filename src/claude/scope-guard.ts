@@ -241,8 +241,8 @@ export function extractPathTokens(command: string): string[] {
 
 /**
  * Is this absolute path a credential or bot-state path? The same denylist the
- * tool-call check uses, for other ways of reaching a file — `/file` and
- * `/telegraph <path>` — so there is one list to keep current.
+ * tool-call check uses, for the other way of reaching a file — `/file` — so
+ * there is one list to keep current.
  */
 export function isSensitivePath(absolutePath: string): boolean {
   return isSensitive(path.resolve(absolutePath));

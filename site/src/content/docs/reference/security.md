@@ -45,6 +45,5 @@ Your messages go to Telegram and to Claude Code, and from there to the model pro
 use. A secret you send when Claude asks for one is the exception: it goes to Telegram like any
 message, until the bot deletes it, and from there only into the command Claude named. A Claude
 token made with `claude setup-token` doesn't go through Telegram at all. Claude Code keeps its own session transcripts in `~/.claude`. Voice and text-to-speech
-go to Groq or OpenAI, and only if you configure them. Nothing goes to Telegraph unless you set
-`TELEGRAPH_ENABLED=true`; with it on, long replies, `/handoff` notes and action logs are
-published there, and those pages are public to anyone with the link.
+go to Groq or OpenAI, and only if you configure them. Nothing is published anywhere: a long
+reply arrives in the chat in full, and `/handoff` sends its note as a file.

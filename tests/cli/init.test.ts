@@ -193,7 +193,6 @@ describe('telecoder init: interactive', () => {
       '',     // workspace: default
       '',     // transport: default
       false,  // voice
-      false,  // telegraph
       true,   // write it
     ], tg);
     expect(await result).toBe(0);
@@ -229,7 +228,7 @@ describe('telecoder init: interactive', () => {
       tg.updates = [[privateMessage(5)]];
       let requested = false;
       const { prompter, result } = run(
-        [GOOD, WAIT, true, '', '', false, false, true, yes],
+        [GOOD, WAIT, true, '', '', false, true, yes],
         tg, {}, { requestService: () => { requested = true; } },
       );
       expect(await result).toBe(0);
@@ -245,7 +244,7 @@ describe('telecoder init: interactive', () => {
     tg.updates = [[privateMessage(5)]];
     let requested = false;
     const { prompter, result } = run(
-      [GOOD, WAIT, true, '', '', false, false, true],
+      [GOOD, WAIT, true, '', '', false, true],
       tg, {}, { isCheckout: true, requestService: () => { requested = true; } },
     );
     expect(await result).toBe(0);
@@ -255,7 +254,7 @@ describe('telecoder init: interactive', () => {
 
   it('writes the file 0600 in a 0700 directory', async () => {
     const tg = fakeTelegram();
-    const { result } = run([GOOD, '412345678', '', '', false, false, true], tg, {}, {}, true);
+    const { result } = run([GOOD, '412345678', '', '', false, true], tg, {}, {}, true);
     tg.updates = [];
     // The typed id wins the race against a poll that never answers.
     expect(await result).toBe(0);
@@ -264,7 +263,7 @@ describe('telecoder init: interactive', () => {
   });
 
   it('asks again after a malformed token and a rejected one', async () => {
-    const { prompter, tg, result } = run(['not-a-token', BAD, `  "${GOOD}"  `, '412345678', '', '', false, false, true]);
+    const { prompter, tg, result } = run(['not-a-token', BAD, `  "${GOOD}"  `, '412345678', '', '', false, true]);
     expect(await result).toBe(0);
     const said = prompter.said.join('\n');
     expect(said).toContain("doesn't look like a bot token");
@@ -283,7 +282,7 @@ describe('telecoder init: interactive', () => {
       [privateMessage(12, stranger)],
       [privateMessage(13)],
     ];
-    const { prompter, result } = run([GOOD, WAIT, false, WAIT, true, '', '', false, false, true], tg);
+    const { prompter, result } = run([GOOD, WAIT, false, WAIT, true, '', '', false, true], tg);
     expect(await result).toBe(0);
     expect(prompter.asked).toContain('Is this you: Eve, id 999000111?');
     expect(readEnv().ALLOWED_USER_IDS).toBe('412345678');
@@ -301,7 +300,7 @@ describe('telecoder init: interactive', () => {
     const tg = fakeTelegram();
     tg.updates = [[privateMessage(5)]];
     tg.sendError = new TelegramNetworkError('connect ECONNRESET');
-    const { prompter, result } = run([GOOD, WAIT, true, '', '', false, false, true], tg);
+    const { prompter, result } = run([GOOD, WAIT, true, '', '', false, true], tg);
     expect(await result).toBe(0);
     expect(readEnv().ALLOWED_USER_IDS).toBe('412345678');
     expect(prompter.asked).toContain('Is this you: Ada (@ada), id 412345678?');
@@ -312,7 +311,7 @@ describe('telecoder init: interactive', () => {
     const tg = fakeTelegram();
     tg.webhook = 'https://example.com/hook';
     tg.updates = [[privateMessage(1)]];
-    const { prompter, result } = run([GOOD, true, WAIT, true, '', '', false, false, true], tg);
+    const { prompter, result } = run([GOOD, true, WAIT, true, '', '', false, true], tg);
     expect(await result).toBe(0);
     expect(prompter.asked).toContain('Remove the webhook?');
     const methods = tg.calls.map((c) => c.method);
@@ -323,7 +322,7 @@ describe('telecoder init: interactive', () => {
   it('leaves a webhook alone on no, and asks for the id instead of polling', async () => {
     const tg = fakeTelegram();
     tg.webhook = 'https://example.com/hook';
-    const { prompter, result } = run([GOOD, false, '412345678', '', '', false, false, true], tg);
+    const { prompter, result } = run([GOOD, false, '412345678', '', '', false, true], tg);
     expect(await result).toBe(0);
     expect(tg.calls.some((c) => c.method === 'deleteWebhook' || c.method === 'getUpdates')).toBe(false);
     expect(prompter.said.join('\n')).toContain("won't receive messages until it is removed");
@@ -336,20 +335,20 @@ describe('telecoder init: interactive', () => {
       ...client(token),
       getUpdates: async () => { throw new TelegramApiError('getUpdates', 409, 'Conflict: terminated by other getUpdates request'); },
     });
-    const { prompter, result } = run([GOOD, '412345678', '', '', false, false, true], tg);
+    const { prompter, result } = run([GOOD, '412345678', '', '', false, true], tg);
     expect(await result).toBe(0);
     expect(prompter.said.join('\n')).toContain('Something else is already reading');
   });
 
-  it('turns voice and Telegraph on, and PTY, without echoing the key', async () => {
-    const { prompter, result } = run([GOOD, '412345678', '~/projects', 'pty', true, 'gsk_secretsecretsecret', true, true]);
+  it('turns voice on, and PTY, without echoing the key', async () => {
+    const { prompter, result } = run([GOOD, '412345678', '~/projects', 'pty', true, 'gsk_secretsecretsecret', true]);
     expect(await result).toBe(0);
-    expect(readEnv()).toMatchObject({ CLAUDE_METHOD_DEFAULT: 'pty', GROQ_API_KEY: 'gsk_secretsecretsecret', TELEGRAPH_ENABLED: 'true' });
+    expect(readEnv()).toMatchObject({ CLAUDE_METHOD_DEFAULT: 'pty', GROQ_API_KEY: 'gsk_secretsecretsecret' });
     expect(allOutput(prompter)).not.toContain('gsk_secret');
   });
 
   it('writes nothing when the summary is declined', async () => {
-    const { result } = run([GOOD, '412345678', '', '', false, false, false]);
+    const { result } = run([GOOD, '412345678', '', '', false, false]);
     expect(await result).toBe(1);
     expect(fs.existsSync(envPath)).toBe(false);
   });
@@ -363,7 +362,7 @@ describe('telecoder init: interactive', () => {
   });
 
   it('offers to log Claude Code in, and carries on', async () => {
-    const { prompter, result } = run([true, GOOD, '412345678', '', '', false, false, true], fakeTelegram(), {}, {
+    const { prompter, result } = run([true, GOOD, '412345678', '', '', false, true], fakeTelegram(), {}, {
       preflight: async () => ({ ...okPreflight, claude: [okPreflight.claude[0], { status: 'fail', label: 'Claude Code is not logged in' }] }),
     });
     expect(await result).toBe(0);
@@ -377,7 +376,7 @@ describe('telecoder init: a Claude login in the environment', () => {
   const envLoginPreflight = async (): Promise<Preflight> => ({ ...okPreflight, envLogin: ['CLAUDE_CODE_OAUTH_TOKEN'] });
 
   it('offers to save it in the .env, hidden in the summary', async () => {
-    const { prompter, result } = run([true, GOOD, '412345678', '', '', false, false, true], fakeTelegram(), {}, {
+    const { prompter, result } = run([true, GOOD, '412345678', '', '', false, true], fakeTelegram(), {}, {
       preflight: envLoginPreflight, env: { CLAUDE_CODE_OAUTH_TOKEN: OAUTH },
     });
     expect(await result).toBe(0);
@@ -390,7 +389,7 @@ describe('telecoder init: a Claude login in the environment', () => {
   });
 
   it('leaves it out on no', async () => {
-    const { prompter, result } = run([false, GOOD, '412345678', '', '', false, false, true], fakeTelegram(), {}, {
+    const { prompter, result } = run([false, GOOD, '412345678', '', '', false, true], fakeTelegram(), {}, {
       preflight: envLoginPreflight, env: { CLAUDE_CODE_OAUTH_TOKEN: OAUTH },
     });
     expect(await result).toBe(0);
@@ -410,7 +409,7 @@ describe('telecoder init: a Claude login in the environment', () => {
   });
 
   it('does nothing for stored credentials', async () => {
-    const { prompter, result } = run([GOOD, '412345678', '', '', false, false, true], fakeTelegram(), {}, {
+    const { prompter, result } = run([GOOD, '412345678', '', '', false, true], fakeTelegram(), {}, {
       preflight: async () => ({ ...okPreflight, envLogin: [] }), env: { CLAUDE_CODE_OAUTH_TOKEN: OAUTH },
     });
     expect(await result).toBe(0);
@@ -441,7 +440,6 @@ describe('telecoder init: an existing .env', () => {
       '',            // workspace
       'pty',         // transport
       false,         // voice off → key removed
-      false,         // telegraph
       true,          // write
     ]);
     expect(await result).toBe(0);
@@ -460,7 +458,7 @@ describe('telecoder init: an existing .env', () => {
   });
 
   it('starts over: a fresh file, the old one backed up', async () => {
-    const { result } = run(['over', GOOD, '412345678', '', '', false, false, true]);
+    const { result } = run(['over', GOOD, '412345678', '', '', false, true]);
     expect(await result).toBe(0);
     expect(fs.readFileSync(envPath, 'utf-8')).not.toContain('STREAMING_MODE');
     expect(fs.existsSync(path.join(path.dirname(envPath), '.env.bak-20261113-142501'))).toBe(true);
@@ -475,7 +473,7 @@ describe('telecoder init: an existing .env', () => {
 });
 
 describe('telecoder init: the bot picture', () => {
-  const ID_ANSWERS = [GOOD, '412345678', '', '', false, false];
+  const ID_ANSWERS = [GOOD, '412345678', '', '', false];
   const photoCalls = (tg: FakeTelegram) => tg.calls.filter((c) => c.method === 'setMyProfilePhoto');
 
   it('offers the TeleCoder icon to a bot without a picture, and sets it after the write', async () => {

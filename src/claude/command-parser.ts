@@ -116,7 +116,6 @@ export function getAvailableCommands(): EntityMessage {
       title: 'File Commands',
       commands: [
         '• `/file <path>` - Download a file from project',
-        '• `/telegraph <path>` - View markdown with Instant View',
       ],
     },
   ];

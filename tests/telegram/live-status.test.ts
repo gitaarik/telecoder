@@ -37,12 +37,6 @@ vi.mock('../../src/utils/verbosity.js', async (importOriginal) => ({
   }),
 }));
 
-// Telegraph off: a finished turn's log stays in the chat.
-vi.mock('../../src/telegram/telegraph-settings.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/telegram/telegraph-settings.js')>()),
-  isTelegraphEnabled: () => false,
-}));
-
 const hasPendingQuestionForSession = vi.fn((_sessionKey: string) => false);
 vi.mock('../../src/claude/ask-user.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/claude/ask-user.js')>()),

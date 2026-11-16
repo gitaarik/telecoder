@@ -9,15 +9,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Context } from 'grammy';
 import type { ToolResultEvent } from '../../src/providers/types.js';
 
-vi.mock('../../src/telegram/telegraph-settings.js', () => ({
-  isTelegraphEnabled: () => true,
-}));
-
-vi.mock('../../src/telegram/telegraph.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/telegram/telegraph.js')>()),
-  createTelegraphPage: async () => 'https://telegra.ph/log',
-}));
-
 const { ActionLogger } = await import('../../src/telegram/action-logger.js');
 
 const SESSION = '111';
@@ -30,10 +21,11 @@ function fakeChat() {
   };
   const ctx = { chat: { id: 111 }, message: { message_id: 1 }, api } as unknown as Context;
   const sentTexts = () => api.sendMessage.mock.calls.map((call) => String(call[1]));
-  const collapsed = () => api.editMessageText.mock.calls
-    .filter((call) => String(call[2]).includes('view full log'))
+  /** The messages that were drawn closed (📋, not the live ⏳), in order. */
+  const closed = () => api.editMessageText.mock.calls
+    .filter((call) => String(call[2]).startsWith('📋 '))
     .map((call) => call[1]);
-  return { ctx, api, sentTexts, collapsed };
+  return { ctx, api, sentTexts, closed };
 }
 
 const bash = (command: string): ToolResultEvent => ({
@@ -53,16 +45,16 @@ afterEach(() => {
 });
 
 describe('ActionLogger.startNewMessage', () => {
-  it('collapses the log from before the answer and posts the next actions in a new one', async () => {
+  it('closes the log from before the answer and posts the next actions in a new one', async () => {
     const logger = new ActionLogger();
-    const { ctx, api, sentTexts, collapsed } = fakeChat();
+    const { ctx, api, sentTexts, closed } = fakeChat();
     await logger.initialize(ctx, SESSION, undefined, 'fix the build');
     await logger.addToolResult(SESSION, bash('ls'), 20, 2000);
     expect(api.sendMessage).toHaveBeenCalledTimes(1);
 
     logger.startNewMessage(SESSION);
     await vi.advanceTimersByTimeAsync(0);
-    expect(collapsed()).toEqual([100]);
+    expect(closed()).toEqual([100]);
 
     await logger.addToolResult(SESSION, bash('npm test'), 20, 2000);
     // Not straight away: the bot's "✅ You picked" goes first.
@@ -78,9 +70,9 @@ describe('ActionLogger.startNewMessage', () => {
     expect(second).toContain('fix the build');
   });
 
-  it('collapses the new log, not the closed one again, when the turn ends', async () => {
+  it('closes the new log, not the closed one again, when the turn ends', async () => {
     const logger = new ActionLogger();
-    const { ctx, collapsed } = fakeChat();
+    const { ctx, closed } = fakeChat();
     await logger.initialize(ctx, SESSION);
     await logger.addToolResult(SESSION, bash('ls'), 20, 2000);
     logger.startNewMessage(SESSION);
@@ -90,13 +82,13 @@ describe('ActionLogger.startNewMessage', () => {
     logger.endTurn(SESSION);
     await vi.advanceTimersByTimeAsync(5000);
 
-    expect(collapsed()).toEqual([100, 101]);
+    expect(closed()).toEqual([100, 101]);
     expect(logger.isActive(SESSION)).toBe(false);
   });
 
   it('leaves a log with nothing in it yet alone', async () => {
     const logger = new ActionLogger();
-    const { ctx, api, collapsed } = fakeChat();
+    const { ctx, api, closed } = fakeChat();
     await logger.initialize(ctx, SESSION);
 
     logger.startNewMessage(SESSION);
@@ -104,6 +96,6 @@ describe('ActionLogger.startNewMessage', () => {
 
     // Posted at once, as a turn's first log is.
     expect(api.sendMessage).toHaveBeenCalledTimes(1);
-    expect(collapsed()).toEqual([]);
+    expect(closed()).toEqual([]);
   });
 });

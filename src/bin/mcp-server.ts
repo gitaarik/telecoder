@@ -4,7 +4,7 @@
  * Spawned by `claude --mcp-config` when running under PtyProvider, communicates
  * over stdio. Tools that need bot-side context (Telegram send_file / ask_user /
  * set_topic, …) POST to the main bot process's loopback IPC server; tools that
- * are pure local work (list_projects, publish_telegraph, …) run inline.
+ * are pure local work (list_projects, …) run inline.
  *
  * Env vars set by PtyProvider when spawning this process. These are an internal
  * contract between the two — PtyProvider writes them and only this file reads
@@ -15,7 +15,6 @@
  *                               inherited from claude's env, never in args
  *   TELECODER_CLAUDE_SESSION_ID claude's session_id; used as the IPC routing key
  *   TELECODER_WORKSPACE_ROOT    workspace root for security checks
- *   TELECODER_TELEGRAPH_ENABLED feature flag for publish_telegraph
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -105,12 +104,6 @@ function ipc<T = unknown>(
     signal?.addEventListener('abort', () => req.destroy(new Error('cancelled')), { once: true });
     req.end(body);
   });
-}
-
-// Lazy imports — keep startup fast, and only load modules whose tool is
-// actually present in this configuration.
-async function importTelegraph() {
-  return import('../telegram/telegraph.js');
 }
 
 const server = new McpServer({
@@ -312,36 +305,6 @@ server.tool(
     }
   },
 );
-
-// ── telecoder_publish_telegraph ─────────────────────────────────────
-if (process.env.TELECODER_TELEGRAPH_ENABLED === 'true') {
-  server.tool(
-    'telecoder_publish_telegraph',
-    'Publish markdown content as a Telegraph (telegra.ph) Instant View page. Returns the URL. Useful for sharing long-form content as a readable link.',
-    {
-      title: z.string().describe('Page title'),
-      markdown: z.string().describe('Markdown content for the page'),
-    },
-    async ({ title, markdown }) => {
-      try {
-        const { createTelegraphPage } = await importTelegraph();
-        const url = await createTelegraphPage(title, markdown);
-        if (!url) {
-          return {
-            content: [{ type: 'text' as const, text: 'Failed to create Telegraph page.' }],
-            isError: true,
-          };
-        }
-        return { content: [{ type: 'text' as const, text: `Telegraph page created: ${url}` }] };
-      } catch (error) {
-        return {
-          content: [{ type: 'text' as const, text: `Telegraph error: ${error instanceof Error ? error.message : String(error)}` }],
-          isError: true,
-        };
-      }
-    },
-  );
-}
 
 // ── telecoder_poll_user (IPC: Telegram poll) ────────────────────────
 server.tool(

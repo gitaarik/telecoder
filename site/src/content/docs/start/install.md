@@ -28,7 +28,7 @@ telecoder init     # or, without installing first: npx telecoder init
 bot token from @BotFather and checks it with Telegram, then has you send the
 bot `/start` to learn your user id, so there's no @userinfobot step. It asks
 for the folder your projects are in, SDK or PTY, and whether to turn on voice
-transcription or Telegraph, and writes `~/.telecoder/.env` (set
+transcription, and writes `~/.telecoder/.env` (set
 `TELECODER_HOME` to keep it somewhere else) with just those settings, readable
 by you only. Every other setting stays at its default; `.env.example` lists
 them all. Run it again to change an answer. For scripts, the flags

@@ -34,8 +34,6 @@ import {
   handlePermissionModeCallback,
   handleTTS,
   handleTTSCallback,
-  handleTelegraph,
-  handleTelegraphCallback,
   handleSuggestions,
   handleSuggestionsCallback,
   handleBotStatus,
@@ -436,12 +434,10 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // a power over the bot, so it sits with the people who answer them.
   cmd('autoapprove', adminOrApproverOnly(handleAutoApprove));
   cmd('permissions', adminOnly(handlePermissions));
-  // Nothing here touches the session: a welcome text, a file sent from disk or
-  // published, and a new bot, which is a process of its own.
+  // Nothing here touches the session: a welcome text, a file sent from disk,
+  // and a new bot, which is a process of its own.
   cmd('start', handleStart);
   cmd('file', handleFile);
-  cmd('telegraph', handleTelegraph);
-  bot.callbackQuery(/^telegraph:/, handleTelegraphCallback);
   // Creating a bot adds a process to the launcher and a token to instances.json.
   cmd('newbot', adminOnly(handleNewBot));
   // Schedule commands bypass sequentialize so they remain responsive even

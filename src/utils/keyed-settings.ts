@@ -1,7 +1,7 @@
 /**
  * A per-session settings store backed by a JSON file in the state directory.
  *
- * The TTS, Terminal UI, Telegraph, prompt-suggestion and bot-name settings are
+ * The TTS, Terminal UI, prompt-suggestion and bot-name settings are
  * all the same thing: a `sessionKey → settings` map, persisted as
  * `{ settings: { [key]: entry } }`, where any field absent from disk falls back
  * to an env-level default. This factory is that shape, once.

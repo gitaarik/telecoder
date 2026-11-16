@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type { Context } from 'grammy';
 
-const { resolveShareablePath, shareRootFor, resolveShareableFile, refuseFilePublish } =
+const { resolveShareablePath, shareRootFor, resolveShareableFile } =
   await import('../../src/bot/file-access.js');
 const { getWorkspaceRoot } = await import('../../src/utils/workspace-guard.js');
 
@@ -132,20 +132,5 @@ describe('resolveShareableFile', () => {
     const { ctx, reply } = makeCtx(ADMIN);
     expect(await resolveShareableFile(ctx, project, '~/.ssh/id_rsa')).toBeNull();
     expect(String(reply.mock.calls[0][0])).toContain('credential');
-  });
-});
-
-describe('refuseFilePublish', () => {
-  it('refuses a guest outright', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    const { ctx, reply } = makeCtx(GUEST);
-    expect(await refuseFilePublish(ctx)).toBe(true);
-    expect(String(reply.mock.calls[0][0])).toContain('admin-only');
-  });
-
-  it('refuses an admin while Telegraph is off (the default)', async () => {
-    const { ctx, reply } = makeCtx(ADMIN);
-    expect(await refuseFilePublish(ctx)).toBe(true);
-    expect(String(reply.mock.calls[0][0])).toContain('Telegraph is off');
   });
 });

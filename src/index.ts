@@ -71,6 +71,12 @@ if (strippedClaudeVars.length > 0) {
 }
 
 // Log unhandled rejections — prevents silent failures where the process stays
+// Telegraph (Instant View pages) is gone. A .env that still turns
+// it on gets one line saying so, rather than links that silently stop coming.
+if (/^(true|1|yes)$/i.test(process.env.TELEGRAPH_ENABLED ?? '')) {
+  console.warn('[Env] TELEGRAPH_ENABLED is set, but Telegraph pages were removed: long replies arrive in full in the chat. The setting can go from .env.');
+}
+
 // alive but functionality is broken (e.g. fire-and-forget async calls that fail).
 process.on('unhandledRejection', (reason) => {
   console.error('[FATAL] Unhandled promise rejection:', reason);

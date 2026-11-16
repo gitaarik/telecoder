@@ -71,7 +71,6 @@ export function buildCommandMenu(): CommandMenuEntry[] {
     { command: 'teleport', description: '🚀 Move session to terminal' },
     ...(config.TRANSCRIBE_ENABLED ? [{ command: 'transcribe', description: '🎤 Transcribe audio to text' }] : []),
     { command: 'file', description: '📎 Download a file from project' },
-    { command: 'telegraph', description: '📄 View markdown with Instant View' },
     { command: 'suggestions', description: '💡 Toggle predicted next-prompt buttons' },
     { command: 'model', description: '🤖 Switch AI model' },
     { command: 'effort', description: '🎯 Set reasoning effort level' },

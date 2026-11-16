@@ -40,7 +40,6 @@ export interface InitOptions {
   transport?: Transport;
   /** Name of an environment variable holding a Groq API key; turns voice on. */
   groqKeyEnv?: string;
-  telegraph?: boolean;
   /**
    * Give the bot the TeleCoder icon as its profile picture. Unset: yes when the
    * bot has no picture yet (asked first in a terminal), and never over one it has.
@@ -239,14 +238,6 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
 
   // ── 7. Optional features ────────────────────────────────────
   const groqKey = await stepVoice(opts, deps, interactive, editing ? existing.GROQ_API_KEY : undefined);
-  const wasTelegraph = /^(true|1|yes)$/i.test(existing.TELEGRAPH_ENABLED ?? '');
-  let telegraph = opts.telegraph ?? wasTelegraph;
-  if (interactive && opts.telegraph === undefined) {
-    telegraph = await p.confirm(
-      'Publish long replies as Telegraph (Instant View) pages too? The pages are public to anyone with the link, and can\'t be deleted.',
-      wasTelegraph,
-    );
-  }
   const icon = await stepIcon(opts, deps, interactive, client, bot);
   p.say('');
 
@@ -259,7 +250,6 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
   };
   Object.assign(values, claudeLogin);
   if (groqKey) values.GROQ_API_KEY = groqKey;
-  if (telegraph) values.TELEGRAPH_ENABLED = 'true';
 
   p.say(`About to write ${deps.envPath}:`);
   p.say(`  Bot              @${bot.username} (token hidden)`);
@@ -268,7 +258,6 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
   p.say(`  Transport        ${transport.toUpperCase()}`);
   for (const key of Object.keys(claudeLogin)) p.say(`  Claude login     ${key}=<hidden>`);
   p.say(`  Voice            ${groqKey ? 'on (Groq key hidden)' : 'off'}`);
-  p.say(`  Telegraph        ${telegraph ? 'on' : 'off'}`);
   if (icon) p.say('  Bot picture      the TeleCoder icon');
   if (interactive && !await p.confirm('Write it?', true)) throw new Stop('Nothing was written.', 1);
 
@@ -277,7 +266,6 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
     const updates: EnvUpdates = {};
     for (const [key, value] of Object.entries(values)) if (existing[key] !== value) updates[key] = value;
     if (!groqKey && existing.GROQ_API_KEY) updates.GROQ_API_KEY = undefined;
-    if (!telegraph && wasTelegraph) updates.TELEGRAPH_ENABLED = 'false';
     content = updateEnvText(existingText, updates);
   } else {
     content = renderEnv(values);

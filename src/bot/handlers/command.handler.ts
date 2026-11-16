@@ -7,14 +7,13 @@ import { closeTurn, relayCatchUpIfMissed } from './message/turn-notify.js';
 import { getUptimeFormatted } from '../middleware/stale-filter.js';
 import { getAvailableCommands } from '../../claude/command-parser.js';
 import { isProcessing, queueRequest } from '../../claude/request-queue.js';
-import { createTelegraphFromFile } from '../../telegram/telegraph.js';
 import { EntityText, joinMessages, trimMessage, type EntityMessage } from '../../telegram/entities.js';
 import { replyFormatted, replyParts } from '../../telegram/send.js';
 import { maybeSendVoiceReply } from '../../tts/voice-reply.js';
 import { contextHealthColor, fmtTokens, getProgressBar } from '../../utils/format.js';
 import * as path from 'path';
 import { execFile } from 'child_process';
-import { refuseFilePublish, resolveShareableFile } from '../file-access.js';
+import { resolveShareableFile } from '../file-access.js';
 import { resolveClaudeExecutableForMethod } from '../../utils/resolve-claude-bin.js';
 import { getActiveMethod } from '../../providers/claude-provider.js';
 import { contextTokens } from '../../providers/types.js';
@@ -87,7 +86,6 @@ export {
   handleTeleport,
 } from './command/session.js';
 export { handleResume, handleResumeCallback } from './command/resume.js';
-import { buildTelegraphMenu } from './command/settings.js';
 import { turnErrorReply } from '../../claude/claude-auth.js';
 export {
   handleStreaming,
@@ -98,7 +96,6 @@ export {
   handleTerminalUICallback,
   handleTTS,
   handleTTSCallback,
-  handleTelegraphCallback,
   handleEffort,
   handleEffortCallback,
   handleVerbosity,
@@ -911,51 +908,6 @@ export async function handleFile(ctx: Context): Promise<void> {
 
   if (!success) {
     await ctx.reply('❌ Failed to send file. It may be too large (>50MB) or inaccessible.');
-  }
-}
-
-export async function handleTelegraph(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const text = ctx.message?.text || '';
-  const filePath = text.split(' ').slice(1).join(' ').trim();
-
-  // If no argument provided, show the settings menu
-  if (!filePath) {
-    const menu = buildTelegraphMenu(sessionKey);
-    await replyFormatted(ctx, menu.text, {
-      reply_markup: menu.keyboard.length > 0 ? { inline_keyboard: menu.keyboard } : undefined,
-    });
-    return;
-  }
-
-  if (await refuseFilePublish(ctx)) return;
-
-  const session = await requireActiveSession(ctx, sessionKey);
-  if (!session) return;
-
-  const fullPath = await resolveShareableFile(ctx, session.workingDirectory, filePath);
-  if (!fullPath) return;
-
-  const ext = path.extname(fullPath).toLowerCase();
-  if (ext !== '.md' && ext !== '.markdown') {
-    await ctx.reply('⚠️ Telegraph works best with Markdown files (.md)');
-  }
-
-  await ctx.reply('📤 Creating Telegraph page...');
-
-  const pageUrl = await createTelegraphFromFile(fullPath);
-
-  if (pageUrl) {
-    const fileName = path.basename(fullPath);
-    await replyFormatted(
-      ctx,
-      new EntityText().add('📄 ').bold(fileName).add('\n\n').link('Open in Instant View', pageUrl).build(),
-    );
-  } else {
-    await ctx.reply('❌ Failed to create Telegraph page.');
   }
 }
 

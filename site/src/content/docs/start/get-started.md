@@ -53,7 +53,7 @@ telecoder init
   so your `CLAUDE.md`, skills, plugins and slash commands all work as in a terminal.
   You can switch any time with `/method`; [Providers](../guides/providers.md) has the
   details.
-- **Voice and Telegraph**, both optional.
+- **Voice**, optional.
 - **A picture for the bot.** If your bot has no profile picture yet, the wizard offers
   to give it the TeleCoder icon, so it's easy to spot in your chat list.
 

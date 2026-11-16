@@ -1,8 +1,8 @@
 /**
  * MCP Tools — In-process MCP server factory for TeleCoder.
  *
- * Wraps existing standalone functions (project management, files, questions,
- * telegraph) as MCP tools so Claude can invoke them automatically
+ * Wraps existing standalone functions (project management, files, questions)
+ * as MCP tools so Claude can invoke them automatically
  * based on conversation context instead of requiring explicit /commands.
  */
 
@@ -28,11 +28,6 @@ import {
 import { parseSessionKey } from '../utils/session-key.js';
 import { parseSecretRequest, requestSecret } from './secret-request.js';
 import { resolveAskUserArgs, runAskUserForm } from './ask-user-form.js';
-
-// Lazy imports to avoid circular deps and unnecessary module loading
-async function importTelegraph() {
-  return import('../telegram/telegraph.js');
-}
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -67,10 +62,6 @@ function buildToolList(toolsCtx: McpToolsContext) {
   ];
 
   tools.push(setTopicTool(toolsCtx));
-
-  if (config.TELEGRAPH_ENABLED) {
-    tools.push(publishTelegraphTool(toolsCtx));
-  }
 
   return tools;
 }
@@ -295,40 +286,6 @@ function setTopicTool(toolsCtx: McpToolsContext) {
     }
   );
 }
-
-function publishTelegraphTool(_toolsCtx: McpToolsContext) {
-  return tool(
-    'telecoder_publish_telegraph',
-    'Publish markdown content as a Telegraph (telegra.ph) Instant View page. Returns the URL. Useful for sharing long-form content as a readable link.',
-    {
-      title: z.string().describe('Page title'),
-      markdown: z.string().describe('Markdown content for the page'),
-    },
-    async ({ title, markdown }) => {
-      try {
-        const { createTelegraphPage } = await importTelegraph();
-        const url = await createTelegraphPage(title, markdown);
-
-        if (!url) {
-          return {
-            content: [{ type: 'text' as const, text: 'Failed to create Telegraph page.' }],
-            isError: true,
-          };
-        }
-
-        return {
-          content: [{ type: 'text' as const, text: `Telegraph page created: ${url}` }],
-        };
-      } catch (error) {
-        return {
-          content: [{ type: 'text' as const, text: `Telegraph error: ${error instanceof Error ? error.message : String(error)}` }],
-          isError: true,
-        };
-      }
-    }
-  );
-}
-
 
 function askUserTool(toolsCtx: McpToolsContext) {
   return tool(

@@ -72,8 +72,8 @@ interface MonitorState {
    */
   reply: string[];
   /**
-   * The replies on their way to the chat, chained so one with a Telegraph
-   * page to publish first can't be overtaken by the next.
+   * The replies on their way to the chat, chained so a slow one can't be
+   * overtaken by the next.
    */
   replySent: Promise<void>;
   /**

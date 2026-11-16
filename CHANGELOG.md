@@ -27,6 +27,20 @@ reasoning — the commit bodies are the long form, this is the index.
   Claude writes no task-notification for a task it ends with TaskStop, and
   that notification was the only thing that retired a task, so "🔄 Running in
   background" stayed under every later reply until the bot restarted, and the
+### Removed
+
+- **Telegraph.** With `TELEGRAPH_ENABLED=true`, every reply over 2,500
+  characters, every `/handoff` note and every closed action log was also
+  published to telegra.ph as a public, undeletable Instant View page, and
+  Claude was told to write for Telegraph's renderer. The idea came over from
+  Claudegram; it was off by default since 1.2.0, and the reply it duplicated
+  already arrives in the chat in full. The `/telegraph` command and its
+  per-chat toggle, `/telegraph <path>`, the `telecoder_publish_telegraph`
+  agent tool, the `--telegraph` init flags and the setting are gone. `/handoff`
+  sends its file, and the action log stays in the chat, drawn one last time
+  when the turn ends. A `.env` that still sets `TELEGRAPH_ENABLED` gets one
+  line at startup saying so.
+
   idle restart waited for it. A Bash call's response now records claude's own
   id for the task, and TaskStop on that id retires it as stopped.
 - **`TTS_ENABLED=false` turns spoken replies off.** The setting was read

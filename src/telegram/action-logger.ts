@@ -21,9 +21,7 @@ import { GrammyError, type Api, type Context } from 'grammy';
 import { EntityText, type EntityMessage } from './entities.js';
 import { promptLabel, cutLabel } from './prompt-label.js';
 import { getToolIcon, extractToolDetail, elideToolOutput, stripAnsi } from './terminal-renderer.js';
-import { createTelegraphPage, fitsTelegraphPage } from './telegraph.js';
 import { editFormatted } from './send.js';
-import { isTelegraphEnabled } from './telegraph-settings.js';
 import type { ToolResultEvent, EditDiffEvent } from '../providers/types.js';
 import type { TaskState } from './task-tracker.js';
 import { getSessionKeyFromCtx } from '../utils/session-key.js';
@@ -641,11 +639,8 @@ export class ActionLogger {
   }
 
   /**
-   * Collapse the in-chat action log into a Telegraph link at the end of a turn.
-   * Renders all entries (no 10-entry cap) onto a Telegraph page, then edits
-   * the existing action-log message into a brief "📋 N actions · view full
-   * log" summary. If Telegraph is disabled or fails, the log is drawn one last
-   * time as it stands, without the live marker and status line.
+   * Close the in-chat action log at the end of a turn: draw it one last time
+   * as it stands, without the live marker and status line.
    */
   private async finalize(state: ActionLogState): Promise<void> {
     if (state.finalized) return;
@@ -654,21 +649,7 @@ export class ActionLogger {
     this.cancelDraw(state);
     if (!state.messageId || state.entries.length === 0) return;
 
-    // Telegraph creation can fail (rate limit, network); the full log then
-    // stays in the chat instead.
-    const pageUrl = isTelegraphEnabled(state.sessionKey)
-      ? await createTelegraphPage('Action log', this.renderTelegraphPage(state.entries))
-      : null;
-
     try {
-      if (pageUrl) {
-        const summary = this.renderCollapsedSummary(state.entries, pageUrl);
-        await editFormatted(state.api, state.chatId, state.messageId, summary, {
-          link_preview_options: { is_disabled: true },
-        });
-        return;
-      }
-
       const view: LogView = { live: false };
       const { text, entities } = this.renderActionLog(state.entries, this.entriesThatFit(state.entries, view), view);
       if (JSON.stringify({ text, entities }) === state.lastDrawn) return;
@@ -678,97 +659,8 @@ export class ActionLogger {
         const msg = error.message.toLowerCase();
         if (msg.includes('message is not modified')) return;
       }
-      console.error('[ActionLogger] Failed to collapse message:', error);
+      console.error('[ActionLogger] Failed to close the log:', error);
     }
-  }
-
-  /**
-   * The full action log as markdown for a Telegraph page, cut down until it
-   * fits on one.
-   *
-   * Telegraph refuses a page over 64 KB, and a long turn's log passes that
-   * easily — 40 results at the verbose tier's 2,000 characters is 80 KB — which
-   * left the live log standing uncollapsed. Output goes first: each pass
-   * halves how much of an entry's input and output the page keeps, so every
-   * action stays listed. Only once the title lines alone are too much do the
-   * oldest actions drop off.
-   */
-  private renderTelegraphPage(entries: ActionEntry[]): string {
-    const longest = entries.reduce(
-      (max, e) => Math.max(max, e.subtitle?.length ?? 0, e.content?.length ?? 0),
-      0,
-    );
-    for (let cap = longest; cap > 0; cap = Math.floor(cap / 2)) {
-      const markdown = this.renderTelegraphMarkdown(entries, cap);
-      if (fitsTelegraphPage(markdown)) return markdown;
-    }
-
-    let keep = entries.length;
-    let markdown = this.renderTelegraphMarkdown(entries, 0);
-    while (keep > 1 && !fitsTelegraphPage(markdown)) {
-      keep = Math.ceil(keep / 2);
-      markdown = this.renderTelegraphMarkdown(entries, 0, entries.length - keep);
-    }
-    return markdown;
-  }
-
-  /**
-   * Render the action log as markdown for a Telegraph page, from the entries
-   * as captured — no attempt to recover untruncated content. Each entry's
-   * input and output are cut to `bodyCap` characters, and left off at 0; the
-   * first `skip` entries are left off entirely.
-   */
-  private renderTelegraphMarkdown(entries: ActionEntry[], bodyCap: number, skip = 0): string {
-    const sections: string[] = [];
-    if (skip > 0) {
-      sections.push(`_${skip} earlier action${skip === 1 ? '' : 's'} left off to fit the page._`);
-    }
-    entries.slice(skip).forEach((entry, index) => {
-      const statusEmoji = entry.status === 'completed' ? '✅' :
-                         entry.status === 'error' ? '❌' : '⏳';
-      const time = new Date(entry.timestamp).toLocaleTimeString('en-US', {
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      });
-      const cut = (text: string | undefined) => text && bodyCap > 0
-        ? elideToolOutput(text, Infinity, bodyCap, { isError: entry.status === 'error' })
-        : undefined;
-      const subtitle = cut(entry.subtitle);
-      const content = cut(entry.content);
-
-      const headerLines: string[] = [];
-      headerLines.push(`## ${skip + index + 1}. ${entry.icon} ${statusEmoji} ${entry.title}`);
-      headerLines.push(`_${time}_`);
-      if (subtitle) {
-        headerLines.push('');
-        headerLines.push('```');
-        headerLines.push(subtitle);
-        headerLines.push('```');
-      }
-      if (content) {
-        headerLines.push('');
-        headerLines.push('```');
-        headerLines.push(content);
-        headerLines.push('```');
-      }
-      sections.push(headerLines.join('\n'));
-    });
-    return sections.join('\n\n---\n\n');
-  }
-
-  /**
-   * Render the collapsed in-chat summary line that replaces the live log.
-   */
-  private renderCollapsedSummary(entries: ActionEntry[], pageUrl: string): EntityMessage {
-    const completed = entries.filter(e => e.status === 'completed').length;
-    const errors = entries.filter(e => e.status === 'error').length;
-    const counts = [`${entries.length} action${entries.length === 1 ? '' : 's'}`];
-    if (errors > 0) counts.push(`${errors} error${errors === 1 ? '' : 's'}`);
-    else if (completed < entries.length) counts.push(`${completed} completed`);
-    const summary = counts.join(' · ');
-    return new EntityText().add('📋 ').italic(summary).add(' · ').link('view full log', pageUrl).build();
   }
 
   /**

@@ -46,7 +46,6 @@ See [Sharing a bot](../guides/sharing.md) for how the pieces fit together.
 | `CLAUDE_EXECUTABLE_PATH` | `claude` | Path to Claude Code CLI |
 | `BOT_NAME` | `TeleCoder` | The bot's name: what it's called in the system prompt and its messages, and the display name it sets in Telegram at startup when the setting is given. Unset, the BotFather name is kept. A name given with `/botname` wins over this |
 | `STREAMING_MODE` | `streaming` | `streaming` or `wait` |
-| `TELEGRAPH_ENABLED` | `false` | Opt-in. Also publish long replies, `/handoff` notes and the full action log to telegra.ph as Instant View pages. **Pages are public** to anyone with the link and can't be deleted. Off, long replies arrive as chunked messages and `/handoff` as a file |
 | `DANGEROUS_MODE` | `false` | Auto-approve all tool permissions |
 | `CANCEL_ON_NEW_MESSAGE` | `false` | Auto-cancel running query on new message |
 | `MESSAGE_BATCH_TIMEOUT_MS` | `1500` | How long to wait for the next part of a long paste that Telegram split (2000+ characters) before sending the parts as one prompt; `0` turns it off |

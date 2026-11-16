@@ -26,7 +26,6 @@ import {
   type RecapExchange,
 } from '../../../claude/session-jsonl.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../../../utils/session-key.js';
-import { isTelegraphEnabled } from '../../../telegram/telegraph-settings.js';
 import {
   replyMd,
   parseCallback,
@@ -300,7 +299,7 @@ export async function handleRecap(ctx: Context): Promise<void> {
 
 /**
  * Dump the current session's conversation to a markdown file and deliver
- * via Telegram (Telegraph link + downloadable file). Useful before switching
+ * via Telegram as a downloadable file. Useful before switching
  * projects, clearing context, or handing off to a teammate. Captures all
  * exchanges (capped at 200) plus session metadata.
  */
@@ -386,12 +385,7 @@ export async function handleHandoff(ctx: Context): Promise<void> {
       .build(),
   );
 
-  // Telegraph preview + downloadable file (mirrors /telegraph). The page is
-  // public, so only when this chat has Telegraph on — otherwise just the file.
-  await messageSender.sendMarkdownFile(ctx, filePath, {
-    useTelegraph: isTelegraphEnabled(sessionKey),
-    sendAsDocument: true,
-  });
+  await messageSender.sendMarkdownFile(ctx, filePath, { sendAsDocument: true });
 }
 
 /**

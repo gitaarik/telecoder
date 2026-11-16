@@ -159,9 +159,6 @@ export function buildMcpToolsSystemPromptNote(): string {
   tools.push('- PushNotification (built-in) — supported in TeleCoder PTY mode. The message text is relayed to Telegram as "🔔 <message>". Use the normal rules: only when the user might have walked away and there\'s something they\'d act on now.');
   tools.push('- For scheduled/recurring tasks, prefer telecoder_loop / telecoder_schedule over the built-in CronCreate / ScheduleWakeup / RemoteTrigger — those don\'t reach back into Telegram.');
   tools.push('- *Destructive-op safety:* before running anything irreversible — `rm -rf` on real paths, `sudo`, `git push --force` on shared branches, `DROP TABLE` / `TRUNCATE` against real DBs, `terraform destroy`, mass file rewrites — call `telecoder_ask_user` with a one-line summary of what you\'re about to do and "Confirm" / "Cancel" options. This bot runs unsupervised in Telegram and the user can\'t intervene mid-tool. When in doubt, ask.');
-  if (config.TELEGRAPH_ENABLED) {
-    tools.push('- mcp__telecoder-tools__telecoder_publish_telegraph — publish a markdown document as a Telegraph (telegra.ph) Instant View page; returns the URL.');
-  }
   tools.push('- mcp__telecoder-tools__telecoder_set_topic — update the conversation topic shown in the status line and as the thread\'s name. Call proactively when the topic of work shifts. Empty string clears it. Keep topics 1-4 words.');
   return [
     'You have access to TeleCoder-specific MCP tools listed below. They are loaded lazily — call them directly when relevant; do not try to reproduce their behavior with WebFetch/Bash.',
@@ -212,8 +209,7 @@ export function buildPtySystemPromptNote(): string {
  *   - required routing info (TELECODER_IPC_PORT, _CLAUDE_SESSION_ID,
  *     _WORKSPACE_ROOT)
  *   - PATH/HOME/NODE_ENV so node can find binaries and home-relative files
- *   - every TELECODER_*-prefixed var from this process's env (feature flags
- *     like TELECODER_TELEGRAPH_ENABLED gate which tools register)
+ *   - every TELECODER_*-prefixed var from this process's env
  */
 /** True if claude's status line reports that it isn't persisting the session. */
 
@@ -222,10 +218,6 @@ export function buildMcpEnv(required: Record<string, string>): Record<string, st
     PATH: process.env.PATH || '',
     HOME: process.env.HOME || '',
     NODE_ENV: process.env.NODE_ENV || '',
-    // Translate the bot's parsed config flags into the TELECODER_*_ENABLED
-    // form the MCP subprocess gates on. The bot's own env vars are unprefixed
-    // (TELEGRAPH_ENABLED) so we can't just pass through.
-    TELECODER_TELEGRAPH_ENABLED: config.TELEGRAPH_ENABLED ? 'true' : 'false',
     ...required,
   };
   // Any extra TELECODER_*-prefixed vars the bot's env carries (e.g. user

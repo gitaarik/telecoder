@@ -36,7 +36,7 @@ Telegram ⇄ grammY bot ⇄ provider router ─┬─ claude: Agent SDK ──�
 | `src/providers/` | Provider router, SDK and CCR providers, switching, per-user preferences |
 | `src/claude/` | PTY provider and TUI parsing, session state and history, watchdog, permission gate, scope guard, charter judge, scheduler, MCP tools |
 | `src/bin/` | The MCP server process |
-| `src/telegram/` | Streaming, markdown to entities, splitting, Telegraph, task cards |
+| `src/telegram/` | Streaming, markdown to entities, splitting, task cards |
 | `src/startup/` | Restoring chats after a restart |
 | `src/audio/`, `src/tts/` | Speech: voice transcription and spoken replies |
 | `src/utils/` | Shared helpers, including download, path and error sanitizing |

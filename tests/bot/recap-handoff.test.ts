@@ -32,7 +32,7 @@ const { messageSender } = await import('../../src/telegram/message-sender.js');
 const { userPreferences } = await import('../../src/providers/user-preferences.js');
 const { clearConversation } = await import('../../src/providers/provider-router.js');
 
-// No Telegraph page or upload: the handoff file on disk is what's checked.
+// No upload: the handoff file on disk is what's checked.
 vi.spyOn(messageSender, 'sendMarkdownFile').mockResolvedValue(true);
 
 afterAll(() => {

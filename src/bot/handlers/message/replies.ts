@@ -1,7 +1,7 @@
 /**
  * Handlers for replies to the bot's ForceReply prompts — the flows where a
  * command posts a question and the user's *next* message is the answer
- * (/project path, /file path, /telegraph path, /plan|/explore|/loop task).
+ * (/project path, /file path, /plan|/explore|/loop task).
  *
  * `handleMessage` routes here by matching the prompt text it is replying to.
  */
@@ -14,7 +14,6 @@ import { sessionManager } from '../../../claude/session-manager.js';
 import { messageSender } from '../../../telegram/message-sender.js';
 import { EntityText } from '../../../telegram/entities.js';
 import { replyFormatted } from '../../../telegram/send.js';
-import { createTelegraphFromFile } from '../../../telegram/telegraph.js';
 import { maybeSendVoiceReply } from '../../../tts/voice-reply.js';
 import {
   projectStatusSuffix,
@@ -22,7 +21,6 @@ import {
   clearTopic,
 } from '../command.handler.js';
 import { fireAutoTopic, requireSession, resolveUserFilePath, runQueuedTurn } from './shared.js';
-import { refuseFilePublish } from '../../file-access.js';
 import { progressCallbacks, toolCallbacks, withStreamingTurn } from '../../../telegram/streaming-turn.js';
 import { closeTurn, relayCatchUpIfMissed } from './turn-notify.js';
 
@@ -132,30 +130,4 @@ export async function handleAgentReply(
       await closeTurn(ctx, sessionKey, response, trimmedInput);
     });
   });
-}
-
-// Handle reply to telegraph ForceReply prompt
-export async function handleTelegraphReply(ctx: Context, sessionKey: string, filePath: string): Promise<void> {
-  if (await refuseFilePublish(ctx)) return;
-  const fullPath = await resolveUserFilePath(ctx, sessionKey, filePath);
-  if (!fullPath) return;
-
-  const ext = path.extname(fullPath).toLowerCase();
-  if (ext !== '.md' && ext !== '.markdown') {
-    await ctx.reply('⚠️ Telegraph works best with Markdown files (.md)');
-  }
-
-  await ctx.reply('📤 Creating Telegraph page...');
-
-  const pageUrl = await createTelegraphFromFile(fullPath);
-
-  if (pageUrl) {
-    const fileName = path.basename(fullPath);
-    await replyFormatted(ctx, new EntityText()
-      .add('📄 ').bold(fileName).newline(2)
-      .link('Open in Instant View', pageUrl)
-      .build());
-  } else {
-    await ctx.reply('❌ Failed to create Telegraph page.');
-  }
 }
