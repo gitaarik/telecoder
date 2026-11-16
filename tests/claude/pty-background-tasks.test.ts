@@ -223,6 +223,40 @@ describe('a Bash call claude moves to the background', () => {
   });
 });
 
+describe("the turn log's result for a Bash call that went to the background", () => {
+  /** Deliver the hook with a turn that records what the live log is told. */
+  async function resultShown(toolUseId: string, toolInput: Record<string, unknown>, toolResponse: unknown): Promise<string | undefined> {
+    const results: { content: string }[] = [];
+    postToolUse(toolUseId, toolInput, toolResponse, 'Bash', {
+      sessionKey: KEY,
+      options: { onToolResult: (event: { content: string }) => { results.push(event); } },
+    });
+    // The hook hands the event over on a microtask.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return results[0]?.content;
+  }
+
+  it('says the call runs in the background, not that it finished with no output', async () => {
+    armBackgroundTask('toolu_30');
+    const shown = await resultShown('toolu_30', { command: 'npm test', run_in_background: true }, {
+      stdout: '', stderr: '', interrupted: false, isImage: false, backgroundTaskId: 'b7zz2',
+    });
+    expect(shown).toBe('Running in the background (/tasks to manage)');
+  });
+
+  it('says the same for a call moved to the background at the cap, in place of its output so far', async () => {
+    const shown = await resultShown('toolu_31', SMOKE_TEST, { ...MOVED_TO_BACKGROUND, stdout: '> smoke\nstarting...' });
+    expect(shown).toBe('Running in the background (/tasks to manage)');
+  });
+
+  it('shows a foreground call its output as before', async () => {
+    const shown = await resultShown('toolu_32', SMOKE_TEST, {
+      stdout: 'all green', stderr: '', interrupted: false, isImage: false,
+    });
+    expect(shown).toBe('all green');
+  });
+});
+
 describe('a background task claude stops', () => {
   it('stops counting a call moved to the background once TaskStop names its id', () => {
     seedLog();

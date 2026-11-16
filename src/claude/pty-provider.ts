@@ -2379,6 +2379,23 @@ function joinMcpContentArray(arr: unknown[]): string | null {
   return texts.length ? texts.join('\n') : null;
 }
 
+/**
+ * What the live log shows for a Bash call that is now running in the
+ * background, instead of its output. A `run_in_background` call returns at
+ * once with no stdout, and a call moved to the background at the foreground
+ * cap returns with whatever it had printed so far, so rendering the response
+ * as output would show an empty result for the first and a finished-looking
+ * one for the second. Claude Code's own tool row says "Running in the
+ * background (↓ to manage)" for both; the manage key here is /tasks, which
+ * also has the output so far.
+ */
+export function backgroundedResultText(toolName: string, toolResponse: unknown): string | null {
+  if (toolName !== 'Bash' || !toolResponse || typeof toolResponse !== 'object') return null;
+  const { backgroundTaskId } = toolResponse as { backgroundTaskId?: unknown };
+  if (typeof backgroundTaskId !== 'string' || !backgroundTaskId) return null;
+  return 'Running in the background (/tasks to manage)';
+}
+
 function extractToolResponseContent(toolResponse: unknown): string {
   if (toolResponse == null) return '';
   if (typeof toolResponse === 'string') return toolResponse;
@@ -2581,7 +2598,7 @@ registerIpcHandler('/hook/postToolUse', (turn, body) => {
       toolUseId,
       toolName,
       input: toolInput,
-      content: extractToolResponseContent(body.tool_response),
+      content: backgroundedResultText(toolName, body.tool_response) ?? extractToolResponseContent(body.tool_response),
       isError: false,
     };
     fireAndForget('onToolResult', () => turn.options.onToolResult?.(event));

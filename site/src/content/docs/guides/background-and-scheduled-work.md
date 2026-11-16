@@ -11,7 +11,9 @@ When Claude starts something in the background (a long build, a subagent, a moni
 watches a log), you see it in the chat: one card, **📡 Background
 activity**, that updates in place: what's running and for how long, and what just
 happened. It moves to the bottom of the chat, so your phone notifies you, when a monitor
-fires, something fails, or a long task finishes.
+fires, something fails, or a long task finishes. In the turn's own log, a shell command Claude
+sends to the background shows **Running in the background** where its output would be, the
+line Claude Code's terminal shows under the call.
 
 - **`/tasks`** lists the background tasks, with details per task. **📄 Output**
   on a task shows what it has printed so far, the way Enter on a task in Claude Code's own
