@@ -37,6 +37,14 @@ function hasBashToolShell(claudePid: number): boolean {
   return getDirectChildren(claudePid).some((pid) => describeProcess(pid)?.cmd.includes(BASH_TOOL_SHELL_MARKER));
 }
 
+/**
+ * How many live claudes have a shell command running in the background. For
+ * /rebuildbot's "when idle", which should not restart over one either.
+ */
+export function sessionsWithBackgroundShell(): number {
+  return getPtyProvider().describeSessions().filter((s) => hasBashToolShell(s.pid)).length;
+}
+
 /** Whether ending this session's claude now would cut something off. */
 export function sessionHasWork(sessionKey: string, claudePid: number): boolean {
   return isProcessing(sessionKey)

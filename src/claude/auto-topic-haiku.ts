@@ -71,7 +71,30 @@ function buildInstructions(previousTopic?: string, project?: string): string {
  * meta/acknowledgment messages, and the project's folder name so GENERAL
  * isn't just that.
  */
+let callsInFlight = 0;
+
+/**
+ * Side-calls still running. For /rebuildbot's "when idle": a restart over
+ * one loses the topic it was about to set, and the thread name with it.
+ */
+export function topicCallsInFlight(): number {
+  return callsInFlight;
+}
+
 export async function summarizeTopicWithHaiku(
+  userMessage: string,
+  previousTopic?: string,
+  project?: string,
+): Promise<string | undefined> {
+  callsInFlight++;
+  try {
+    return await summarize(userMessage, previousTopic, project);
+  } finally {
+    callsInFlight--;
+  }
+}
+
+async function summarize(
   userMessage: string,
   previousTopic?: string,
   project?: string,

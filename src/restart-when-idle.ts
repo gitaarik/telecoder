@@ -10,21 +10,29 @@
  * ('drain_render') — whichever incarnation of that bot is live by then, since
  * it may well have restarted first.
  *
- * "Nothing left" is four things, because no one of them sees everything:
+ * "Nothing left" is several things, because no one of them sees everything:
  *  - updates still in the middleware chain: a voice note being transcribed,
  *    a message in the batcher, a turn that answers it — every handler awaits
  *    its turn, so the count only drops once the reply has gone out;
  *  - the request queue, for turns no update started (/schedule fires);
  *  - a turn claude started itself on a background task's result, which
  *    nothing in either of those knows about;
- *  - background tasks still running, whose results would start one of those.
+ *  - background tasks still running, whose results would start one of those;
+ *  - a shell command claude left running in the background, which dies with
+ *    its claude — the same check the PTY idle reaper makes;
+ *  - the Haiku side-call naming a turn's topic, and a thread rename held for
+ *    its cooldown or on its way to Telegram: fire-and-forget after the reply,
+ *    so nothing above counts them, and a restart over one loses the name.
  */
 
 import { isMainThread, parentPort } from 'worker_threads';
 import type { Api, MiddlewareFn } from 'grammy';
 import { busySessionCount } from './claude/request-queue.js';
 import { hasSelfStartedTurn, whenRepliesSent } from './claude/monitor-relay.js';
+import { sessionsWithBackgroundShell } from './claude/pty-idle-reaper.js';
+import { topicCallsInFlight } from './claude/auto-topic-haiku.js';
 import { taskTracker } from './telegram/task-tracker.js';
+import { renamesOutstanding } from './telegram/thread-titles.js';
 
 /** How often a draining worker looks again. */
 const CHECK_MS = 2000;
@@ -50,6 +58,12 @@ export interface WorkSnapshot {
   turns: number;
   selfStartedTurn: boolean;
   backgroundTasks: number;
+  /** Live claudes with a shell command running in the background. */
+  backgroundShells: number;
+  /** Haiku side-calls still naming a topic. */
+  topicCalls: number;
+  /** Thread renames held for the cooldown or on their way to Telegram. */
+  threadRenames: number;
 }
 
 function plural(n: number, one: string, many: string): string {
@@ -65,6 +79,9 @@ export function describeWork(work: WorkSnapshot): string | null {
   else if (work.updates > 0) parts.push(plural(work.updates, 'message being handled', 'messages being handled'));
   if (work.selfStartedTurn) parts.push('answering a background task');
   if (work.backgroundTasks > 0) parts.push(plural(work.backgroundTasks, 'background task', 'background tasks'));
+  if (work.backgroundShells > 0) parts.push(plural(work.backgroundShells, 'background shell command', 'background shell commands'));
+  if (work.topicCalls > 0) parts.push(work.topicCalls === 1 ? 'naming the topic' : `naming ${work.topicCalls} topics`);
+  if (work.threadRenames > 0) parts.push(work.threadRenames === 1 ? 'renaming a thread' : `renaming ${work.threadRenames} threads`);
   return parts.length > 0 ? parts.join(', ') : null;
 }
 
@@ -74,6 +91,9 @@ function currentWork(): WorkSnapshot {
     turns: busySessionCount(),
     selfStartedTurn: hasSelfStartedTurn(),
     backgroundTasks: taskTracker.getBackgroundedTotal(),
+    backgroundShells: sessionsWithBackgroundShell(),
+    topicCalls: topicCallsInFlight(),
+    threadRenames: renamesOutstanding(),
   };
 }
 

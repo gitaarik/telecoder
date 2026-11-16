@@ -96,6 +96,10 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
   shows the machine's available memory and the claudes running
 - `/sync` resends a reply Telegram missed
 - `/restartbot` and `/update` from chat; the background service brings the bot back
+- `/rebuildbot idle` builds once and restarts each bot as soon as it has nothing left to
+  finish: no turn running, no background task or shell command out, no reply still on its
+  way, no thread name still to update. One message keeps the tally, with buttons to
+  restart the rest now or call it off
 - On an npm install, `/update` upgrades TeleCoder itself and `/version` checks for a newer
   release
 

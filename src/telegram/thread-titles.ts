@@ -52,6 +52,8 @@ let threads: Record<string, ThreadTitle> | undefined;
 let api: Api | undefined;
 const lastRenameAt = new Map<string, number>();
 const pending = new Map<string, { name: string; timer: NodeJS.Timeout }>();
+/** editForumTopic calls not yet answered. */
+let renamesInFlight = 0;
 
 function state(): Record<string, ThreadTitle> {
   if (!threads) {
@@ -138,12 +140,23 @@ async function rename(sessionKey: string, name: string): Promise<void> {
   if (current?.name === name) return;
   const { chatId, threadId } = parseSessionKey(sessionKey);
   lastRenameAt.set(sessionKey, Date.now());
+  renamesInFlight++;
   try {
     await api.editForumTopic(chatId, threadId!, { name });
     record(sessionKey, { owner: 'bot', name, ...(current?.prefix ? { prefix: current.prefix } : {}) });
   } catch (err) {
     console.debug(`[ThreadTitles] Failed to rename ${sessionKey}:`, err instanceof Error ? err.message : err);
+  } finally {
+    renamesInFlight--;
   }
+}
+
+/**
+ * Renames still to make: held for the cooldown, or on their way to Telegram.
+ * For /rebuildbot's "when idle", which would otherwise restart over them.
+ */
+export function renamesOutstanding(): number {
+  return pending.size + renamesInFlight;
 }
 
 /**
@@ -205,4 +218,5 @@ export function resetThreadTitlesForTest(testApi?: Api): void {
   lastRenameAt.clear();
   for (const { timer } of pending.values()) clearTimeout(timer);
   pending.clear();
+  renamesInFlight = 0;
 }
