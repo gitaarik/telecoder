@@ -16,7 +16,7 @@ import { downloadFileSecure, getTelegramFileUrl } from '../../utils/download.js'
 import { sanitizeError, sanitizePath } from '../../utils/sanitize.js';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
 import { requireSession } from './session-guard.js';
-import { replyFeatureDisabled } from './command/shared.js';
+import { replyFeatureDisabled, replyVoiceNotSetUp } from './command/shared.js';
 import { repliedForceReplyFlow } from '../../telegram/force-reply-tracker.js';
 import { progressCallbacks, withStreamingTurn } from '../../telegram/streaming-turn.js';
 
@@ -44,6 +44,12 @@ export async function handleVoice(ctx: Context): Promise<void> {
   // both go through the same transcription.
   if (!config.TRANSCRIBE_ENABLED) {
     await replyFeatureDisabled(ctx, 'Voice transcription');
+    return;
+  }
+  // No Groq key, the common state after declining voice in `telecoder init`:
+  // say how to turn it on, instead of an ack and then a raw "not configured" error.
+  if (!config.GROQ_API_KEY) {
+    await replyVoiceNotSetUp(ctx);
     return;
   }
 

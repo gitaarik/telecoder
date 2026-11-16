@@ -16,7 +16,7 @@ import { isStaleMessage } from '../../middleware/stale-filter.js';
 import { replyBareAudio, exceedsDownloadLimit, replyTooLargeToFetch } from '../media-fallback.js';
 import { transcribeFile, downloadTelegramAudio } from '../../../audio/transcribe.js';
 import { sanitizeError, sanitizePath } from '../../../utils/sanitize.js';
-import { replyFeatureDisabled } from './shared.js';
+import { replyFeatureDisabled, replyVoiceNotSetUp } from './shared.js';
 
 // ── /transcribe command ────────────────────────────────────────────
 
@@ -57,6 +57,12 @@ async function transcribeAndSend(
 ): Promise<void> {
   if (!config.TRANSCRIBE_ENABLED) {
     await replyFeatureDisabled(ctx, 'Transcribe');
+    return;
+  }
+  // No key is the common state after declining voice in `telecoder init`:
+  // say how to add one, before any "Transcribing..." ack or ForceReply prompt.
+  if (!config.GROQ_API_KEY) {
+    await replyVoiceNotSetUp(ctx);
     return;
   }
 
@@ -121,6 +127,12 @@ async function transcribeAndSend(
 export async function handleTranscribe(ctx: Context): Promise<void> {
   if (!config.TRANSCRIBE_ENABLED) {
     await replyFeatureDisabled(ctx, 'Transcribe');
+    return;
+  }
+  // No key is the common state after declining voice in `telecoder init`:
+  // say how to add one, before any "Transcribing..." ack or ForceReply prompt.
+  if (!config.GROQ_API_KEY) {
+    await replyVoiceNotSetUp(ctx);
     return;
   }
 

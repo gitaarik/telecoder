@@ -240,7 +240,7 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
   p.say(`  Allowed users    ${owner.idList}`);
   p.say(`  Workspace        ${workspace}`);
   for (const key of Object.keys(claudeLogin)) p.say(`  Claude login     ${key}=<hidden>`);
-  p.say(`  Voice            ${groqKey ? 'on (Groq key hidden)' : 'off'}`);
+  p.say(`  Voice            ${groqKey ? 'on (Groq key hidden)' : 'off (run telecoder init again to add it)'}`);
   if (icon) p.say('  Bot picture      the TeleCoder icon');
   if (interactive && !await p.confirm('Write it?', true)) throw new Stop('Nothing was written.', 1);
 
@@ -688,7 +688,8 @@ async function stepVoice(opts: InitOptions, deps: InitDeps, interactive: boolean
   }
   if (!interactive) return current;
   const on = await p.confirm(
-    'Transcribe voice messages? Needs a Groq API key (https://console.groq.com/keys; it has a free tier).',
+    'Optional: transcribe voice notes with Groq Whisper? Needs a Groq API key '
+    + '(https://console.groq.com/keys; it has a free tier). You can turn this on later by running telecoder init again.',
     Boolean(current),
   );
   if (!on) return undefined;

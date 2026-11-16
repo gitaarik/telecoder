@@ -17,6 +17,8 @@ const defaultEnvPath = configFile('.env');
 // says *which* .env to load, so it can't come from inside one.
 const envPath = legacyEnv('ENV_PATH') || defaultEnvPath;
 const loadedEnv = loadEnv({ path: envPath });
+/** The .env file this process read, for messages that tell the user where to add a setting. */
+export const envFilePath = envPath;
 
 /**
  * Which values in the .env file are being ignored because the process was

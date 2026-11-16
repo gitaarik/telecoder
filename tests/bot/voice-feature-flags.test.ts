@@ -29,6 +29,7 @@ const { maybeSendVoiceReply } = await import('../../src/tts/voice-reply.js');
 const { setTTSEnabled } = await import('../../src/tts/tts-settings.js');
 const { handleTTS } = await import('../../src/bot/handlers/command/settings.js');
 const { handleVoice } = await import('../../src/bot/handlers/voice.handler.js');
+const { handleTranscribe } = await import('../../src/bot/handlers/command/media.js');
 
 const saved = {
   TTS_ENABLED: config.TTS_ENABLED,
@@ -111,5 +112,54 @@ describe('TRANSCRIBE_ENABLED', () => {
     expect(ctx.api.getFile).not.toHaveBeenCalled();
     expect(ctx.reply).toHaveBeenCalledTimes(1);
     expect(ctx.reply.mock.calls[0]![0]).toMatch(/Voice transcription feature is disabled/);
+  });
+});
+
+describe('no Groq key', () => {
+  // Declining voice in `telecoder init` is the common case. A voice note then
+  // used to get a "Transcribing..." ack and a raw "GROQ_API_KEY not configured"
+  // error; now it gets the way to turn transcription on, before any download.
+  // Each note needs its own message id: the dedup filter remembers them.
+  let nextMessageId = 100;
+  function voiceNote() {
+    return chatCtx({
+      message: {
+        message_id: nextMessageId++,
+        date: Math.floor(Date.now() / 1000),
+        voice: { file_id: 'voice-2', file_size: 1000, duration: 3 },
+      },
+    });
+  }
+
+  it('answers a voice note with how to turn transcription on', async () => {
+    config.TRANSCRIBE_ENABLED = true;
+    config.GROQ_API_KEY = undefined;
+    const ctx = voiceNote();
+    await handleVoice(ctx as unknown as Context);
+    expect(ctx.api.getFile).not.toHaveBeenCalled();
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    const text = ctx.reply.mock.calls[0]![0] as string;
+    expect(text).toMatch(/Voice transcription is off/);
+    expect(text).toContain('console.groq.com/keys');
+    expect(text).toContain('telecoder init');
+    expect(text).toContain('GROQ_API_KEY=');
+    expect(text).not.toMatch(/Transcribing/);
+  });
+
+  it('answers a bare /transcribe the same way, without asking for audio', async () => {
+    config.TRANSCRIBE_ENABLED = true;
+    config.GROQ_API_KEY = undefined;
+    const ctx = chatCtx({ message: { message_id: 9, date: Math.floor(Date.now() / 1000), text: '/transcribe' } });
+    await handleTranscribe(ctx as unknown as Context);
+    expect(ctx.reply).toHaveBeenCalledTimes(1);
+    expect(ctx.reply.mock.calls[0]![0]).toMatch(/Voice transcription is off/);
+  });
+
+  it('TRANSCRIBE_ENABLED=false still wins over a missing key', async () => {
+    config.TRANSCRIBE_ENABLED = false;
+    config.GROQ_API_KEY = undefined;
+    const ctx = voiceNote();
+    await handleVoice(ctx as unknown as Context);
+    expect(ctx.reply.mock.calls[0]![0]).toMatch(/feature is disabled/);
   });
 });

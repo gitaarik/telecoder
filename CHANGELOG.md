@@ -31,6 +31,14 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Changed
 
+- **A voice note without a Groq key says how to turn transcription on.**
+  Declining voice in `telecoder init` is the common answer. A voice note or
+  `/transcribe` then got a "Transcribing..." ack followed by a raw
+  "GROQ_API_KEY not configured" error. Now it says where to get a key and
+  how to add it: run `telecoder init` again, which keeps the other answers,
+  or put it in the .env file and `/restartbot`. The wizard's voice question
+  is worded as optional and says it can be turned on later.
+
 - **Files you send are saved under `~/.telecoder/uploads/`, not in the project.**
   A photo sent in a chat used to land in `<project>/.telecoder/uploads/`, leaving
   a folder in every project someone had sent a picture to, with a `.gitignore`

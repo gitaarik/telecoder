@@ -9,6 +9,7 @@
 
 import { Context } from 'grammy';
 import { sessionManager } from '../../../claude/session-manager.js';
+import { envFilePath } from '../../../config.js';
 import {
   getModel,
   getEffort,
@@ -59,6 +60,26 @@ export function buildFeatureDisabledMessage(feature: string): string {
 
 export async function replyFeatureDisabled(ctx: Context, feature: string): Promise<void> {
   await ctx.reply(buildFeatureDisabledMessage(feature));
+}
+
+/**
+ * What a voice note or /transcribe gets when no Groq key is set: how to turn
+ * transcription on, instead of a "Transcribing..." ack followed by a raw
+ * "GROQ_API_KEY not configured" error. Declining voice in `telecoder init` is
+ * the common case, so this is where most people learn how to add it later.
+ */
+export function buildVoiceNotSetUpMessage(): string {
+  return [
+    '🎤 Voice transcription is off: no Groq API key is set.',
+    '',
+    'To turn it on, get a key at https://console.groq.com/keys (Groq has a free tier), then either:',
+    '• run `telecoder init` again — it keeps your other answers and asks for the key, or',
+    `• add GROQ_API_KEY=gsk_... to ${envFilePath} and /restartbot.`,
+  ].join('\n');
+}
+
+export async function replyVoiceNotSetUp(ctx: Context): Promise<void> {
+  await ctx.reply(buildVoiceNotSetUpMessage());
 }
 
 export const EFFORT_LEVELS: { id: EffortLevel; label: string; description: string }[] = [

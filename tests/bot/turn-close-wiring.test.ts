@@ -91,6 +91,11 @@ vi.mock('../../src/audio/transcribe.js', async (importOriginal) => {
   return { ...actual, transcribeFile: async () => 'what the voice note said' };
 });
 
+const { config } = await import('../../src/config.js');
+// Transcription is mocked above, but the handler checks for a key before it
+// gets there; without one a voice note is answered with how to turn voice on.
+config.GROQ_API_KEY = 'gsk_test';
+
 const { createBot } = await import('../../src/bot/bot.js');
 const { sessionManager } = await import('../../src/claude/session-manager.js');
 const { userPreferences } = await import('../../src/providers/user-preferences.js');
