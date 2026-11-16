@@ -23,11 +23,11 @@ reasoning — the commit bodies are the long form, this is the index.
   before, so an early start nobody uses leaves nothing behind and is ended by
   the idle timeout. `PREWARM_CLAUDE=false` turns it off.
 
-- **A new bot gets the TeleCoder icon.** `telecoder init` offers it to a bot
-  that has no profile picture yet, and a bot made with `/newbot` starts with
-  it. A plain letter on a coloured disc is hard to tell from the next bot's.
-  `--icon` replaces a picture the bot has; `--no-icon` leaves it alone
-  without asking. A picture that's already there is never replaced unasked.
+- **A new bot gets the TeleCoder icon.** `telecoder init` gives it to a bot
+  that has no profile picture yet, without asking, and a bot made with
+  `/newbot` starts with it. A plain letter on a coloured disc is hard to tell
+  from the next bot's. `--icon` replaces a picture the bot has; `--no-icon`
+  leaves it alone. A picture that's already there is never replaced unasked.
 
 ### Changed
 

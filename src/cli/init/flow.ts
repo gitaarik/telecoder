@@ -39,7 +39,7 @@ export interface InitOptions {
   groqKeyEnv?: string;
   /**
    * Give the bot the TeleCoder icon as its profile picture. Unset: yes when the
-   * bot has no picture yet (asked first in a terminal), and never over one it has.
+   * bot has no picture yet, and never over one it has.
    */
   icon?: boolean;
   /** Don't ask: take the defaults, replace an existing .env (backed up), remove a webhook. */
@@ -223,7 +223,7 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
 
   // ── 6. Optional features ────────────────────────────────────
   const groqKey = await stepVoice(opts, deps, interactive, editing ? existing.GROQ_API_KEY : undefined);
-  const icon = await stepIcon(opts, deps, interactive, client, bot);
+  const icon = await stepIcon(opts, client, bot);
   p.say('');
 
   // ── 7. Write ────────────────────────────────────────────────
@@ -241,7 +241,7 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
   p.say(`  Workspace        ${workspace}`);
   for (const key of Object.keys(claudeLogin)) p.say(`  Claude login     ${key}=<hidden>`);
   p.say(`  Voice            ${groqKey ? 'on (Groq key hidden)' : 'off (run telecoder init again to add it)'}`);
-  if (icon) p.say('  Bot picture      the TeleCoder icon');
+  if (icon) p.say('  Bot picture      the TeleCoder icon (--no-icon to skip)');
   if (interactive && !await p.confirm('Write it?', true)) throw new Stop('Nothing was written.', 1);
 
   let content: string;
@@ -662,21 +662,19 @@ function isDir(dir: string): boolean {
 }
 
 /**
- * Whether to give the bot the TeleCoder icon. A picture the bot already has is
- * only replaced when --icon asks for it.
+ * Whether to give the bot the TeleCoder icon. A bot without a picture gets it
+ * without being asked: a picture beats a grey initial, the summary says so before
+ * anything is written, and --no-icon is there for whoever disagrees. A picture
+ * the bot already has is only replaced when --icon asks for it.
  */
-async function stepIcon(opts: InitOptions, deps: InitDeps, interactive: boolean, client: TelegramClient, bot: TgUser): Promise<boolean> {
+async function stepIcon(opts: InitOptions, client: TelegramClient, bot: TgUser): Promise<boolean> {
   if (opts.icon !== undefined) return opts.icon;
-  let hasPicture: boolean;
   try {
-    hasPicture = await client.hasProfilePhoto(bot.id);
+    return !await client.hasProfilePhoto(bot.id);
   } catch {
     // Can't tell, so leave the picture alone.
     return false;
   }
-  if (hasPicture) return false;
-  if (!interactive) return true;
-  return deps.prompter.confirm(`Give @${bot.username} the TeleCoder icon as its profile picture?`, true);
 }
 
 async function stepVoice(opts: InitOptions, deps: InitDeps, interactive: boolean, current: string | undefined): Promise<string | undefined> {

@@ -29,7 +29,7 @@ const USAGE = [
   '  --groq-key-env VAR   turn voice transcription on, with the Groq key in VAR',
   '  --icon               give the bot the TeleCoder icon as its profile picture,',
   '                       replacing one it has (default: only when it has none)',
-  '  --no-icon            leave the bot\'s picture alone, without asking',
+  '  --no-icon            leave the bot\'s picture alone',
   '  --no-test-message    don\'t have the bot message you at the end',
   '  --yes                ask nothing: take defaults, replace an existing .env',
   '                       (backed up first), remove a webhook if one is set',

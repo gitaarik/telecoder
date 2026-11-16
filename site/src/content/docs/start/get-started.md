@@ -50,8 +50,9 @@ telecoder init
 - **Your projects folder**, the folder your code lives in, such as `~/dev`.
   TeleCoder offers the folders in it as projects.
 - **Voice**, optional.
-- **A picture for the bot.** If your bot has no profile picture yet, the wizard offers
-  to give it the TeleCoder icon, so it's easy to spot in your chat list.
+- **A picture for the bot.** If your bot has no profile picture yet, the wizard gives
+  it the TeleCoder icon, so it's easy to spot in your chat list. A picture you set
+  yourself stays. `--no-icon` skips this.
 
 It writes your answers to `~/.telecoder/.env`, readable by you only. Run it again to
 change an answer, and run `telecoder doctor` whenever something seems off.

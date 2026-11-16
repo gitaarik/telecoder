@@ -19,8 +19,9 @@
    terminal, which beat 10 shows. The rest get their default: projects folder, voice.
    Every answer is typed out (`y`, `n` or the number) and stays up a moment before
    Enter, so the viewer sees what was answered.
-6. **The icon.** The wizard offers the TeleCoder icon as the bot's picture. Yes.
-   The bot then shows its new picture in the chat list and the chat's header.
+6. **The icon.** The wizard gives the bot the TeleCoder icon as its picture, since it
+   has none yet; there's no question. The bot then shows its new picture in the chat
+   list and the chat's header.
 7. **Service.** The wizard offers to keep the bot running in the background. Yes.
 8. **BotFather's Mini App.** Alex clicks BotFather in the chat list, then Open, picks
    the bot, opens Bot Settings and turns on Bot Management Mode and Threaded Mode.

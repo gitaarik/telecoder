@@ -81,7 +81,7 @@ interface FakeTelegram {
   backlog: TgUpdate[];
   webhook: string;
   sendError?: Error;
-  /** Whether the bot already has a profile picture. True, so most tests aren't asked about the icon. */
+  /** Whether the bot already has a profile picture. True, so most tests don't set the icon. */
   hasPhoto: boolean;
   photoError?: Error;
   makeClient: (token: string) => TelegramClient;
@@ -473,29 +473,29 @@ describe('telecoder init: the bot picture', () => {
   const ID_ANSWERS = [GOOD, '412345678', '', false];
   const photoCalls = (tg: FakeTelegram) => tg.calls.filter((c) => c.method === 'setMyProfilePhoto');
 
-  it('offers the TeleCoder icon to a bot without a picture, and sets it after the write', async () => {
+  it('gives the TeleCoder icon to a bot without a picture, unasked, after the write', async () => {
     const tg = fakeTelegram();
     tg.hasPhoto = false;
-    const { prompter, result } = run([...ID_ANSWERS, true /* icon */, true /* write it */], tg);
+    const { prompter, result } = run([...ID_ANSWERS, true /* write it */], tg);
     expect(await result).toBe(0);
-    expect(prompter.asked).toContain('Give @my_coder_bot the TeleCoder icon as its profile picture?');
-    expect(prompter.said).toContain('  Bot picture      the TeleCoder icon');
+    expect(prompter.asked.join('\n')).not.toContain('icon');
+    expect(prompter.said).toContain('  Bot picture      the TeleCoder icon (--no-icon to skip)');
     expect(prompter.said).toContain('✓ Gave @my_coder_bot the TeleCoder icon');
     expect(photoCalls(tg)).toHaveLength(1);
     expect(photoCalls(tg)[0].params).toMatchObject({ filename: 'telecoder.jpg', jpeg: true });
     expect(tg.calls.find((c) => c.method === 'getUserProfilePhotos')?.params).toEqual({ userId: 7012345678 });
   });
 
-  it('leaves the picture alone on no, and when nothing is written', async () => {
+  it('leaves the picture alone with --no-icon, and when nothing is written', async () => {
     const no = fakeTelegram();
     no.hasPhoto = false;
-    expect(await run([...ID_ANSWERS, false, true], no).result).toBe(0);
+    expect(await run([...ID_ANSWERS, true], no, { icon: false }).result).toBe(0);
     expect(photoCalls(no)).toHaveLength(0);
 
     fs.rmSync(envPath);
     const unwritten = fakeTelegram();
     unwritten.hasPhoto = false;
-    expect(await run([...ID_ANSWERS, true, false /* write it */], unwritten).result).toBe(1);
+    expect(await run([...ID_ANSWERS, false /* write it */], unwritten).result).toBe(1);
     expect(photoCalls(unwritten)).toHaveLength(0);
   });
 
@@ -516,7 +516,7 @@ describe('telecoder init: the bot picture', () => {
     const tg = fakeTelegram();
     tg.hasPhoto = false;
     tg.photoError = new TelegramApiError('setMyProfilePhoto', 400, 'Bad Request: PHOTO_INVALID');
-    const { prompter, result } = run([...ID_ANSWERS, true, true], tg);
+    const { prompter, result } = run([...ID_ANSWERS, true], tg);
     expect(await result).toBe(0);
     expect(prompter.said.join('\n')).toContain("! Couldn't set the bot's picture");
     expect(readEnv().TELEGRAM_BOT_TOKEN).toBe(GOOD);
