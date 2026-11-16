@@ -59,6 +59,11 @@ export const COMMANDS: Record<string, CommandSpec> = {
     usage: 'install|status|logs|restart|uninstall',
     load: () => import('./commands/service.js'),
   },
+  watch: {
+    summary: 'Show the live Claude Code screen of a chat, read-only',
+    usage: '[<project>] [--list]',
+    load: () => import('./commands/watch.js'),
+  },
   help: {
     summary: 'Show this help',
     load: () => import('./commands/help.js'),

@@ -150,4 +150,6 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
   config
 - `telecoder service install` for a systemd user service on Linux or a LaunchAgent on macOS
 - `telecoder doctor` checks Node, the `claude` CLI and its login, and the config
+- `telecoder watch` shows the live Claude Code screen behind a chat in your terminal,
+  read-only
 - [Install and run](../start/install.md) and [the CLI reference](../reference/cli.md)

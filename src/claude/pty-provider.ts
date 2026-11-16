@@ -1,5 +1,6 @@
 import { spawn, type IPty } from 'node-pty';
 import headless from '@xterm/headless';
+import { watchData, watchRegister, watchUnregister } from './pty-watch.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
@@ -1362,6 +1363,7 @@ export class PtyProvider implements Provider {
       // this term, removes us from the map, and may immediately spawn a
       // replacement at the same sessionKey. By the time *this* late onExit
       // fires, the replacement is the live session — don't wipe it out.
+      watchUnregister(sessionKey, session.xterm);
       if (this.sessions.get(sessionKey) === session) {
         this.sessions.delete(sessionKey);
         unregisterSessionChat(session.claudeSessionId);
@@ -1375,12 +1377,14 @@ export class PtyProvider implements Provider {
     });
 
     this.sessions.set(sessionKey, session);
+    watchRegister(sessionKey, requiredCwd, xterm);
     return session;
   }
 
   private _onData(session: PtySession, chunk: string) {
     session.lastChunkAt = Date.now();
     session.xterm.write(chunk);
+    watchData(session.xterm, chunk);
 
     // Mirror Claude Code's live spinner tip into the Telegram status line.
     // The tip is drawn in place at the bottom of the TUI — scrape it directly
@@ -2202,6 +2206,7 @@ export class PtyProvider implements Provider {
       this._stopStream(session);
       this.sessions.delete(sessionKey);
       unregisterSessionChat(session.claudeSessionId);
+      watchUnregister(sessionKey, session.xterm);
     }
     // Stop any monitor relay tied to this session — the JSONL it was watching
     // belongs to a now-dead claudeSessionId; the next session gets a new one.

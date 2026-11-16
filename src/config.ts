@@ -354,6 +354,13 @@ const envSchema = z.object({
     .string()
     .default('3600000')
     .transform((val) => parseInt(val, 10)),
+  // `telecoder watch`: serve each PTY chat's live Claude Code screen, read-only,
+  // on a Unix socket in ~/.telecoder/watch that only this user can open.
+  // false turns it off.
+  PTY_WATCH: z
+    .string()
+    .default('true')
+    .transform((val) => val.toLowerCase() === 'true'),
   // Start a chat's `claude` as soon as its conversation is chosen — /project,
   // /clear, /resume — instead of on the first message after, so that message
   // doesn't wait for Claude Code to start. Skipped without a word when memory

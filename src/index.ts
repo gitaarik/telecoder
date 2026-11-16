@@ -41,7 +41,8 @@ import { describeRunningBuild } from './utils/build-info.js';
 import { migrateLegacyStateDirAndLog } from './utils/state-dir-migration.js';
 import { verifyBotTokenOrExit } from './startup/verify-token.js';
 import { warnIfClaudeNotLoggedIn } from './claude/claude-auth.js';
-import { redactSecrets } from './utils/sanitize.js';
+import { redactSecrets, sanitizeError } from './utils/sanitize.js';
+import { startWatchServer, stopWatchServer } from './claude/pty-watch.js';
 
 export { requestRestart, requestSiblingRestart, requestRestartAll } from './worker-restart.js';
 
@@ -70,7 +71,6 @@ if (strippedClaudeVars.length > 0) {
   );
 }
 
-// Log unhandled rejections — prevents silent failures where the process stays
 // Settings of features that are gone. A .env that still sets one gets one
 // line saying so, rather than behaviour that silently stopped. Only a value
 // that asked for something — not the old default — earns the line.
@@ -94,6 +94,7 @@ for (const { name, stale, note } of REMOVED_SETTINGS) {
   }
 }
 
+// Log unhandled rejections — prevents silent failures where the process stays
 // alive but functionality is broken (e.g. fire-and-forget async calls that fail).
 process.on('unhandledRejection', (reason) => {
   console.error('[FATAL] Unhandled promise rejection:', reason);
@@ -168,6 +169,12 @@ async function main() {
   await bot.init();
   console.log(`✅ Bot started as @${bot.botInfo.username}`);
   resumeThreadsSetup(bot);
+  if (config.PTY_WATCH) {
+    // Never worth failing the start over: the bot works the same without it.
+    await startWatchServer(bot.botInfo.username).catch((err) => {
+      console.warn(`[Watch] "telecoder watch" is unavailable: ${sanitizeError(err)}`);
+    });
+  }
   console.log('📱 Send /start in Telegram to begin');
 
   // Start concurrent runner — updates are processed in parallel,
@@ -341,6 +348,7 @@ async function main() {
     // to notice, while the bot that replaces this one may already have resumed
     // its conversation in another.
     await Promise.all([runner.stop(), getPtyProvider().closeAll()]);
+    stopWatchServer();
     process.exit(exitCode());
   };
 

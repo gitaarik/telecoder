@@ -1,6 +1,6 @@
 ---
 title: The telecoder CLI
-description: Every telecoder command and flag, for setup, checks and the background service.
+description: Every telecoder command and flag, for setup, checks, the background service and watching Claude Code work.
 sidebar:
   order: 3
 ---
@@ -80,6 +80,25 @@ Options:
 - `--dry-run`: show what install would write, and change nothing
 - `--no-follow`: `logs` prints the last 100 lines and stops
 - `--from-checkout`: install from a source checkout instead of an npm install
+
+## `telecoder watch`
+
+Shows the live Claude Code screen of a chat in your terminal, read-only. TeleCoder
+drives a real `claude` in a pty for each chat, and this is its screen: the same thing you
+would see had you typed the chat's messages into Claude Code yourself.
+
+```bash
+telecoder watch             # the most recently active chat
+telecoder watch mealplan    # a chat in this project (its folder name), or @botname
+telecoder watch --list      # list the running Claude Code sessions and exit
+```
+
+With no session running it waits for the next message to the bot. When a session ends it
+waits for the next one. Ctrl+C or `q` leaves. Nothing you type reaches Claude.
+
+- The screen is 120 columns by 40 rows. A smaller terminal shows part of it.
+- The bot serves the screens on a socket in `~/.telecoder/watch` that only your user can
+  open, so run `telecoder watch` as the user the bot runs as. `PTY_WATCH=false` turns it off.
 
 ## Where the config lives
 
