@@ -15,6 +15,12 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Changed
 
+- **CCR runs in the pty.** A chat on Claude Code Router took the Agent SDK
+  path whatever its `/method`, so the PTY-only features stayed behind on it.
+  The pty now spawns CCR's wrapper around the same `claude`, so everything
+  carries over. A session still never crosses backends: the pty refuses to
+  resume one the other backend minted and starts fresh.
+
 - **The status line is on by default**, with its topic line. Project, effort,
   model, context and cost show nowhere else in Telegram, and a new user
   doesn't know `/statusline`. It's sent silently now: the reply above it

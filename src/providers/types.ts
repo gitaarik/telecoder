@@ -211,9 +211,10 @@ export interface AgentOptions {
   /** Optional image attachments to send as multimodal vision input */
   images?: ImageAttachment[];
   /**
-   * Override the path to the `claude` executable spawned by the SDK.
-   * Used by the CCR provider to point at a wrapper script that exports
-   * ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN before exec'ing real claude.
+   * The executable the pty spawns in place of `claude`. The CCR provider
+   * points it at a wrapper script that exports ANTHROPIC_BASE_URL /
+   * ANTHROPIC_AUTH_TOKEN before exec'ing real claude. A live pty running the
+   * other one is respawned.
    */
   executableOverride?: string;
   /**

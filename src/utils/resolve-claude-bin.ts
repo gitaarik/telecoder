@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
 import { config } from '../config.js';
+import { resolveBin } from './resolve-bin.js';
 
 const require = createRequire(import.meta.url);
 
@@ -63,4 +64,17 @@ export function resolveClaudeExecutableForMethod(method: 'sdk' | 'pty'): string 
   return method === 'pty'
     ? process.env.CLAUDE_BIN || config.CLAUDE_EXECUTABLE_PATH
     : resolveActiveClaudeExecutable();
+}
+
+/**
+ * The `claude` the ptys run: CLAUDE_BIN, else the CLI found on PATH with
+ * ~/.local/bin searched first (see resolve-bin.ts). A path, not a bare name:
+ * node-pty execs the name as given, in the service's PATH, and a systemd user
+ * unit gets the bare default without ~/.local/bin, which is where the native
+ * installer puts the CLI. That failure is silent in the worst way: execvp
+ * writes "No such file or directory" into the pty and exits, so the bot sees a
+ * session that produced nothing and reports that the input box never appeared.
+ */
+export function resolvePtyClaudeBin(): string {
+  return process.env.CLAUDE_BIN || resolveBin('claude');
 }

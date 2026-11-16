@@ -5,7 +5,7 @@ import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
-import { claudeSessionFileExists, describeLogTail, sessionJsonlPath, readCommandReply, readLastApiErrorFromJsonl, readLastAssistantTurnText, readLastCompactionFromJsonl, readLastUsageFromJsonl, readLastUserPromptMarker, sessionJsonlMtimeMs, sessionJsonlSize, type CompactionInfo, type UserPromptMarker } from './session-jsonl.js';
+import { claudeSessionFileExists, describeLogTail, hasForeignThinkingSignatures, sessionJsonlPath, readCommandReply, readLastApiErrorFromJsonl, readLastAssistantTurnText, readLastCompactionFromJsonl, readLastUsageFromJsonl, readLastUserPromptMarker, sessionJsonlMtimeMs, sessionJsonlSize, type CompactionInfo, type UserPromptMarker } from './session-jsonl.js';
 import { clearDeliveredProse, getDeliveredProse, stripDeliveredPrefix } from './turn-prose.js';
 import { PtyTurnStream, TurnProseReader } from './pty-stream.js';
 import { isNativeCompactCommand } from './command-parser.js';
@@ -72,7 +72,7 @@ import { parseModal } from './tui-modal.js';
 import { claudeSetupScreen, ClaudeNotLoggedInError } from './claude-auth.js';
 import { dialogResumeState, turnHold } from './turn-end.js';
 import { isSuggestionsEnabled } from '../telegram/suggestions-settings.js';
-import { resolveBin } from '../utils/resolve-bin.js';
+import { resolvePtyClaudeBin } from '../utils/resolve-claude-bin.js';
 import { withPendingCarryOver } from './carry-over.js';
 import type { Context } from 'grammy';
 import { type AgentOptions, type AgentResponse, type Provider, type ProviderName, type ModelInfo, type AgentUsage, type EditDiffEvent, type ToolResultEvent } from '../providers/types.js';
@@ -82,17 +82,11 @@ const { Terminal } = headless;
 // ---- Config from prototype --------------------------------------------------
 
 /**
- * Resolved, not left bare. node-pty execs this name directly, so a bare
- * `claude` is looked up in the *service's* PATH — and a systemd user unit gets
- * the bare default, without ~/.local/bin, which is where the native installer
- * puts the CLI. The failure is silent in the worst way: execvp writes "No such
- * file or directory" into the pty and exits, so the bot sees a session that
- * produced nothing and reports that the input box never appeared.
- *
- * resolveBin exists for this and searches ~/.local/bin first on Linux; it just
- * was never wired up here. CLAUDE_BIN still wins for a CLI kept elsewhere.
+ * Resolved, not left bare, so the exec finds it in a service's PATH too; see
+ * resolvePtyClaudeBin. CCR's wrapper script takes its place for a chat on CCR
+ * (AgentOptions.executableOverride).
  */
-const CLAUDE_BIN = process.env.CLAUDE_BIN || resolveBin('claude');
+const CLAUDE_BIN = resolvePtyClaudeBin();
 
 // dist/claude/pty-provider.js → sibling dist/bin/mcp-server.js
 
@@ -338,6 +332,11 @@ interface PtySession {
   term: IPty;
   xterm: headless.Terminal;
   cwd: string;
+  /**
+   * The binary this pty runs: claude itself, or CCR's wrapper around it. A
+   * turn for the other one respawns, the way a workspace change does.
+   */
+  executable: string;
   /**
    * Pre-minted UUID passed to `claude --session-id`. Used as the registry key
    * for hook event dispatch (the hook payload's `session_id` matches this).
@@ -1108,16 +1107,17 @@ export class PtyProvider implements Provider {
       throw new Error("TeleCoder is shutting down, so this didn't reach Claude. Send it again once it's back.");
     }
     const requiredCwd = resolveCwd(sessionKey);
+    const executable = options?.executableOverride ?? CLAUDE_BIN;
     const existing = this.sessions.get(sessionKey);
     if (existing) {
-      if (existing.cwd === requiredCwd) {
+      if (existing.cwd === requiredCwd && existing.executable === executable) {
         // Reuse the live pty so claude keeps prior turns in context.
         existing.lastUsedAt = Date.now();
         existing.onProgress = options?.onProgress;
         existing.onTip = options?.onTip;
         return existing;
       }
-      // Workspace changed under us — restart cleanly.
+      // Workspace or backend changed under us — restart cleanly.
       this._cleanupSession(sessionKey);
     }
 
@@ -1127,11 +1127,38 @@ export class PtyProvider implements Provider {
     // picks up exactly where the previous turn left off. The id is preserved
     // across resumes, so our IPC routing key stays stable.
     const botSession = sessionManager.getSession(sessionKey);
-    const priorId = botSession?.claudeSessionId;
+    let priorId = botSession?.claudeSessionId;
+
+    // A session one backend minted can't be resumed by another: DeepSeek via
+    // CCR writes placeholder thinking-block signatures that the real Anthropic
+    // API rejects with `400 Invalid signature in thinking block`. The switch
+    // paths fork the session for us; this is the last-resort net for the ones
+    // that didn't (legacy sessions, in-memory loss over a restart). A
+    // mismatch abandons the old session id and starts fresh.
+    const providerName = options?.providerName;
+    if (priorId && providerName && botSession) {
+      const owner = botSession.ownerProvider;
+      const ownerMismatch = owner !== undefined && owner !== providerName;
+      // No recorded owner (legacy / restarted): fall back to a content scan,
+      // but only when resuming on real Anthropic — CCR/DeepSeek ignore sigs.
+      const poisonedForAnthropic =
+        owner === undefined &&
+        providerName === 'claude' &&
+        hasForeignThinkingSignatures(requiredCwd, priorId);
+      if (ownerMismatch || poisonedForAnthropic) {
+        console.warn(
+          `[PtyProvider] Refusing cross-backend resume of ${priorId} ` +
+            `(owner=${owner ?? 'unknown'}, now=${providerName}${poisonedForAnthropic ? ', foreign thinking signatures' : ''}); starting a fresh session.`,
+        );
+        sessionManager.startNewConversation(sessionKey);
+        priorId = undefined;
+      }
+    }
+
     const resuming = !!(priorId && claudeSessionFileExists(requiredCwd, priorId));
     const claudeSessionId = resuming ? priorId! : randomUUID();
     if (!resuming) {
-      sessionManager.setClaudeSessionId(sessionKey, claudeSessionId);
+      sessionManager.setClaudeSessionId(sessionKey, claudeSessionId, providerName);
     }
 
     const ipcPort = getIpcPort();
@@ -1197,7 +1224,7 @@ export class PtyProvider implements Provider {
     // Five minutes past the question timeout, and never under the 15 min it
     // has always been, so the bot's own question timer is the one that fires.
     const mcpCallMs = String(Math.max(15 * 60 * 1000, questionTimeoutMs() + 5 * 60 * 1000));
-    const term = spawn(CLAUDE_BIN, args, {
+    const term = spawn(executable, args, {
       name: 'xterm-256color',
       cols: COLS,
       rows: ROWS,
@@ -1260,6 +1287,7 @@ export class PtyProvider implements Provider {
       term,
       xterm,
       cwd: requiredCwd,
+      executable,
       claudeSessionId,
       lastChunkAt: Date.now(),
       lastUsedAt: Date.now(),

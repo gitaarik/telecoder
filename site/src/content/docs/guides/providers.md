@@ -37,13 +37,11 @@ carrying a plain-text summary of the conversation so far. The model preference i
 at the same time, since `opus`/`sonnet`/`haiku` don't map 1:1 once CCR's router decides
 the real backend per request.
 
-## What stays behind on CCR
+## What carries over on CCR
 
-CCR runs the same agent, so nearly everything carries over. The exception:
-
-- **PTY transport** — `ccr` always takes the SDK path, along with the PTY-only
-  features layered on it. The permission gate isn't one of them: it runs on the
-  SDK path too
+Everything but the session. CCR runs the same `claude` in the same pty, pointed
+at the proxy, so the permission gate, the MCP tools, background tasks and `/btw`
+work as they do on Claude. The session itself never crosses backends, as above.
 
 ```bash
 # .env

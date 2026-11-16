@@ -1,13 +1,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { config } from '../config.js';
-import { resolveActiveClaudeExecutable } from '../utils/resolve-claude-bin.js';
+import { resolvePtyClaudeBin } from '../utils/resolve-claude-bin.js';
 import { ensureStateDir, getStateDir } from '../utils/json-store.js';
 
 const SHIM_DIR = getStateDir();
 const SHIM_PATH = path.join(SHIM_DIR, 'claude-via-ccr.sh');
 
-let cachedShim: string | undefined;
+let cachedShim: { path: string; script: string } | undefined;
 
 function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
@@ -15,21 +15,16 @@ function shellSingleQuote(value: string): string {
 
 /**
  * Generate (or refresh) the wrapper script that exports CCR env vars and
- * execs the real `claude` binary. Returning the path lets the SDK launch
- * `claude` with CCR redirection without ever mutating `process.env` in the
- * TeleCoder process — keeping concurrent queries race-free.
+ * execs the `claude` the ptys run. Spawning the script in claude's place
+ * redirects one pty without ever mutating `process.env` in the TeleCoder
+ * process — the chats on Claude keep going to Anthropic.
  */
 export function getCcrShimPath(): string {
   if (!config.CCR_ENABLED) {
     throw new Error('CCR is not enabled (set CCR_ENABLED=true)');
   }
-  if (cachedShim && fs.existsSync(cachedShim)) {
-    return cachedShim;
-  }
 
-  ensureStateDir(SHIM_DIR, 'CcrShim');
-
-  const realClaude = resolveActiveClaudeExecutable();
+  const realClaude = resolvePtyClaudeBin();
   const baseUrl = shellSingleQuote(config.CCR_BASE_URL);
   const authToken = shellSingleQuote(config.CCR_AUTH_TOKEN);
   const target = shellSingleQuote(realClaude);
@@ -43,8 +38,14 @@ unset ANTHROPIC_API_KEY
 exec ${target} "$@"
 `;
 
+  // Rewritten when the target or the proxy settings changed, not on every
+  // turn: the script is read at each spawn.
+  if (cachedShim?.script === script && fs.existsSync(SHIM_PATH)) {
+    return SHIM_PATH;
+  }
+  ensureStateDir(SHIM_DIR, 'CcrShim');
   fs.writeFileSync(SHIM_PATH, script, { mode: 0o700 });
-  cachedShim = SHIM_PATH;
+  cachedShim = { path: SHIM_PATH, script };
   return SHIM_PATH;
 }
 
