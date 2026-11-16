@@ -73,11 +73,12 @@ describe('replyBareAudio', () => {
   let harness: ReturnType<typeof makeCtx>;
   beforeEach(() => { harness = makeCtx(); });
 
-  it('points at /transcribe for a file within the limit', async () => {
+  it('points at a voice note for a file within the limit', async () => {
     await replyBareAudio(harness.ctx, 5 * MB);
 
     const [text] = harness.reply.mock.calls[0];
-    expect(text).toContain('/transcribe');
+    expect(text).toContain('voice note');
+    expect(text).not.toContain('/transcribe');
     expect(text).not.toContain('too large');
   });
 

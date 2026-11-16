@@ -122,8 +122,6 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 ## Voice and audio
 
 - Send a voice note: it's transcribed with Groq Whisper and fed to Claude
-- `/transcribe` for transcription on its own
-- `/tts` speaks replies back as Telegram voice notes, through Groq Orpheus or OpenAI
 - [Voice](voice.md)
 
 ## Rich output

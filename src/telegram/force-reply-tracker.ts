@@ -2,7 +2,7 @@
  * Remembers which of the bot's own messages were ForceReply prompts, and which
  * flow each one opened.
  *
- * A ForceReply flow (`/project`, `/transcribe`) posts a question and
+ * A ForceReply flow (`/project`) posts a question and
  * takes the user's reply to it as the answer: Telegram pops the composer open
  * with the reply already attached. Two things need to know a reply answers a
  * prompt:
@@ -24,7 +24,7 @@ import type { Bot, Context } from 'grammy';
 import type { Formatted } from './send.js';
 import { replyFormatted } from './send.js';
 
-export type ForceReplyFlow = 'project' | 'transcribe';
+export type ForceReplyFlow = 'project';
 
 /** Plenty for any realistic number of prompts open at once; bounds the map. */
 const MAX_TRACKED = 200;

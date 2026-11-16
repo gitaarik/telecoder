@@ -104,6 +104,16 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Removed
 
+- **Spoken replies (`/tts`) and `/transcribe`.** Both came from Claudegram
+  and stand in for nothing Claude Code does: `/tts` read each reply aloud
+  through Groq Orpheus or OpenAI, and `/transcribe` turned audio into text
+  without Claude ever seeing it. Voice notes still become prompts, which is
+  the phone's way of typing. An audio file now gets a reply saying to record
+  a voice note instead. Gone with them: the `openai` dependency, `ffmpeg` on
+  the service's `PATH`, `TTS_ENABLED` and the other `TTS_*` settings,
+  `OPENAI_API_KEY` and `TRANSCRIBE_FILE_THRESHOLD_CHARS` (a startup line says
+  so while they are still in `.env`).
+
 - **`/handoff`.** It wrote the conversation to a markdown file in the project and
   sent it as a document. Claude Code's own `/export` does the same from the pty,
   `/teleport` carries a session to a terminal, and `/fork` and `/spinoff` carry

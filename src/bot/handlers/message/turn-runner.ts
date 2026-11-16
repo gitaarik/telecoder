@@ -10,7 +10,6 @@ import { Context } from 'grammy';
 import { sendToAgent } from '../../../providers/provider-router.js';
 import { messageSender } from '../../../telegram/message-sender.js';
 import { progressCallbacks, toolCallbacks, withStreamingTurn } from '../../../telegram/streaming-turn.js';
-import { maybeSendVoiceReply } from '../../../tts/voice-reply.js';
 import { fireAutoTopic } from './shared.js';
 import { closeTurn, relayCatchUpIfMissed } from './turn-notify.js';
 import { guardSpawn } from '../../../claude/memory-guard.js';
@@ -61,7 +60,6 @@ async function streamTurn(
 
     await messageSender.finishStreaming(ctx, response.text, { nextPromptSuggestion: response.nextPromptSuggestion });
     await relayCatchUpIfMissed(ctx, sessionKey, response.text || '');
-    await maybeSendVoiceReply(ctx, response.text);
 
     // Completion notification for long tasks (streaming edits don't trigger push notifications)
     await messageSender.sendCompletionNotification(ctx, Date.now() - startTime);

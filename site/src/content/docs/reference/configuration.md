@@ -78,24 +78,15 @@ How these three fit together: [Group roles](../guides/sharing.md#group-roles).
 | `CCR_AUTOSTART` | `false` | Run `ccr start` when the proxy isn't reachable |
 | `CCR_BINARY` | `ccr` | Path or name of the `ccr` binary for autostart |
 
-## Voice notes and spoken replies
+## Voice notes
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GROQ_API_KEY` | — | Groq API key, for transcription (Whisper) and spoken replies (Orpheus) |
-| `OPENAI_API_KEY` | — | OpenAI API key, for spoken replies |
-| `TTS_ENABLED` | `true` | `false` turns spoken replies off for every chat, and hides `/tts` |
-| `TTS_PROVIDER` | `groq` | `groq` (Orpheus) or `openai` |
-| `TTS_VOICE` | `coral` | Default voice. On Groq, a voice Groq doesn't have falls back to `troy` |
-| `TTS_MODEL` | `gpt-4o-mini-tts` | Speech model (OpenAI; Groq's is fixed) |
-| `TTS_SPEED` | `1.0` | Speaking speed, 0.25 to 4.0 (OpenAI) |
-| `TTS_INSTRUCTIONS` | — | How to speak, for `gpt-4o-mini-tts` models (OpenAI) |
-| `TTS_MAX_CHARS` | `4096` | Longer replies are cut at a sentence end before they're spoken |
+| `GROQ_API_KEY` | — | Groq API key, for transcribing voice notes (Whisper) |
 | `VOICE_SHOW_TRANSCRIPT` | `true` | Show transcript text before agent response |
 | `VOICE_LANGUAGE` | `en` | The language voice notes are transcribed in |
 | `VOICE_MAX_FILE_SIZE_MB` | `19` | Largest voice note to transcribe |
-| `TRANSCRIBE_ENABLED` | `true` | `false` turns off voice-note transcription and `/transcribe` |
-| `TRANSCRIBE_FILE_THRESHOLD_CHARS` | `4000` | `/transcribe` sends longer transcripts as a file |
+| `TRANSCRIBE_ENABLED` | `true` | `false` turns voice notes off |
 
 ## Setting up voice
 
@@ -106,23 +97,5 @@ How these three fit together: [Group roles](../guides/sharing.md#group-roles).
 # .env
 GROQ_API_KEY=your_groq_key
 ```
-
-</details>
-
-<details>
-<summary><strong>Spoken replies: Groq Orpheus or OpenAI</strong></summary>
-
-Groq is the default and uses `GROQ_API_KEY`. To use OpenAI instead:
-
-```bash
-# .env
-TTS_PROVIDER=openai
-OPENAI_API_KEY=your_openai_key
-TTS_MODEL=gpt-4o-mini-tts
-TTS_VOICE=coral
-TTS_RESPONSE_FORMAT=opus
-```
-
-13 OpenAI voices available: `alloy`, `ash`, `ballad`, `cedar`, `coral`, `echo`, `fable`, `marin`, `nova`, `onyx`, `sage`, `shimmer`, `verse`
 
 </details>

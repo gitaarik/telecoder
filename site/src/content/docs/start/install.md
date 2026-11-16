@@ -15,7 +15,6 @@ sidebar:
 | **Claude Code CLI, logged in** | Install it with `curl -fsSL https://claude.ai/install.sh \| bash` (it goes in `~/.local/bin`; log in again if that isn't on your `PATH` yet) and run `claude` once and `/login`, as the user the bot will run as. For a machine you won't sign in on, `claude setup-token` makes a long-lived token to put in `CLAUDE_CODE_OAUTH_TOKEN`; an `ANTHROPIC_API_KEY` works too, billed per use. The bot warns at startup if it finds no login, and replies with how to log in if a message fails on it. |
 | **Telegram bot token** | from [@BotFather](https://t.me/botfather) |
 | **Your Telegram user ID** | the number, not your @username. `telecoder init` finds it when you message your bot; by hand, message [@userinfobot](https://t.me/userinfobot) |
-| **ffmpeg** (optional) | only for spoken replies through Groq (`/tts`). Transcribing voice notes doesn't need it. |
 
 ## Install from npm
 
@@ -60,7 +59,7 @@ telecoder service uninstall   # stop it and remove the unit
 
 - **Linux** writes `~/.config/systemd/user/telecoder.service` and enables it. The unit
   runs the `node` and `telecoder` it was installed with, from `~/.telecoder` (or
-  `TELECODER_HOME`), with a `PATH` that finds `claude`, `git` and `ffmpeg`. It holds no
+  `TELECODER_HOME`), with a `PATH` that finds `claude` and `git`. It holds no
   secrets — the bot reads its `.env`. It restarts on any exit except a configuration
   error (exit 78: fix the `.env`, then `telecoder service restart`), and
   `systemctl --user stop telecoder` stops it for good. It asks before turning on

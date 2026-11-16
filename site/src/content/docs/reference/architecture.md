@@ -15,7 +15,7 @@ sidebar:
 | Agent tools | [Model Context Protocol](https://modelcontextprotocol.io/) server, for the tools that reach back into Telegram |
 | Config and scheduling | Zod, croner |
 | Tests | Vitest |
-| Optional | Groq and OpenAI for speech, and `ffmpeg` for Groq's spoken replies |
+| Optional | Groq Whisper, for voice notes |
 
 ## How it fits together
 
@@ -38,7 +38,7 @@ Telegram ⇄ grammY bot ⇄ provider router ─┬─ claude: the CLI in a pty �
 | `src/bin/` | The MCP server process |
 | `src/telegram/` | Streaming, markdown to entities, splitting, task cards |
 | `src/startup/` | Restoring chats after a restart |
-| `src/audio/`, `src/tts/` | Speech: voice transcription and spoken replies |
+| `src/audio/` | Voice-note transcription |
 | `src/utils/` | Shared helpers, including download, path and error sanitizing |
 | `tests/` | Vitest suite, mirroring `src/` |
 | `scripts/` | Bot control and shared-bot account setup |

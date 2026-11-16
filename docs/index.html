@@ -2607,9 +2607,9 @@
           </div>
           <div class="feature-card" data-category="media">
             <div class="feature-icon"><svg><use href="#i-mic"/></svg></div>
-            <h3>Talk to it, hear it back</h3>
-            <p>Send a voice message and it is transcribed with Whisper. Replies can come back as
-            speech, with a choice of voices and playback speed.</p>
+            <h3>Talk to it</h3>
+            <p>Send a voice message and it is transcribed with Whisper and sent to Claude as your
+            prompt.</p>
           </div>
           <div class="feature-card" data-category="media">
             <div class="feature-icon"><svg><use href="#i-vision"/></svg></div>
@@ -2665,7 +2665,7 @@
               <strong>Logging in:</strong> run <code>claude</code> and <code>/login</code> on the bot&rsquo;s machine, as the user it runs as. For a machine you won&rsquo;t sign in on, <code>claude setup-token</code> makes a long-lived token for <code>CLAUDE_CODE_OAUTH_TOKEN</code>; an <code>ANTHROPIC_API_KEY</code> works too.
             </div>
             <div class="prereq-note">
-              <strong>On Linux:</strong> <code>npm install</code> compiles <code>node-pty</code>, which needs <code>python3</code>, <code>make</code> and <code>g++</code> (<code>sudo apt install python3 make g++</code>, or <code>sudo dnf install python3 make gcc-c++</code>). Windows isn&rsquo;t supported natively; WSL 2 should work as Linux does, but is untested. <code>ffmpeg</code> is only needed for spoken replies through Groq.
+              <strong>On Linux:</strong> <code>npm install</code> compiles <code>node-pty</code>, which needs <code>python3</code>, <code>make</code> and <code>g++</code> (<code>sudo apt install python3 make g++</code>, or <code>sudo dnf install python3 make gcc-c++</code>). Windows isn&rsquo;t supported natively; WSL 2 should work as Linux does, but is untested.
             </div>
             <div class="prereq-note">
               <strong>Note:</strong> On macOS, TeleCoder uses <code>caffeinate</code> to prevent sleep during long operations.
@@ -2949,40 +2949,14 @@ CCR_AUTOSTART=true</pre>
                 </tr>
                 <tr><td colspan="3" style="color: var(--brand); font-weight: 600; padding-top: 1.25rem;">API Keys</td></tr>
                 <tr>
-                  <td class="var-name">OPENAI_API_KEY</td>
-                  <td>For OpenAI TTS voices</td>
-                  <td class="required-optional">For TTS</td>
-                </tr>
-                <tr>
                   <td class="var-name">GROQ_API_KEY</td>
-                  <td>For voice transcription &amp; Orpheus TTS</td>
+                  <td>For voice transcription</td>
                   <td class="required-optional">For voice</td>
                 </tr>
                 <tr><td colspan="3" style="color: var(--brand); font-weight: 600; padding-top: 1.25rem;">Feature Flags</td></tr>
                 <tr>
-                  <td class="var-name">TTS_ENABLED</td>
-                  <td>Enable text-to-speech (default: true)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
                   <td class="var-name">TRANSCRIBE_ENABLED</td>
                   <td>Enable voice transcription (default: true)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr><td colspan="3" style="color: var(--brand); font-weight: 600; padding-top: 1.25rem;">TTS Configuration</td></tr>
-                <tr>
-                  <td class="var-name">TTS_PROVIDER</td>
-                  <td><code>openai</code> or <code>groq</code> (default: groq)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
-                  <td class="var-name">TTS_VOICE</td>
-                  <td>Default voice name (default: coral)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
-                  <td class="var-name">TTS_SPEED</td>
-                  <td>Playback speed multiplier (default: 1.0)</td>
                   <td class="required-no">No</td>
                 </tr>
                 <tr><td colspan="3" style="color: var(--brand); font-weight: 600; padding-top: 1.25rem;">Display &amp; Behavior</td></tr>
@@ -3231,12 +3205,8 @@ CCR_AUTOSTART=true</pre>
           </h3>
           <div class="commands-grid">
             <div class="command-row">
-              <code class="command-code">/tts</code>
-              <span class="command-desc">Toggle text-to-speech for responses</span>
-            </div>
-            <div class="command-row">
-              <code class="command-code">/transcribe</code>
-              <span class="command-desc">Transcribe audio without sending to agent</span>
+              <code class="command-code">Send a voice note</code>
+              <span class="command-desc">Transcribed with Groq Whisper and sent to Claude as your prompt</span>
             </div>
           </div>
         </div>

@@ -17,8 +17,8 @@ function cbCtx(opts: { chatId?: number; data?: string; topicId?: number }): Cont
 
 describe('parseCallback', () => {
   it('returns session key + data when the prefix matches', () => {
-    const res = parseCallback(cbCtx({ chatId: 42, data: 'tts:voice:nova' }), 'tts:');
-    expect(res).toEqual({ chatId: 42, threadId: undefined, sessionKey: '42', data: 'tts:voice:nova' });
+    const res = parseCallback(cbCtx({ chatId: 42, data: 'sugg:on' }), 'sugg:');
+    expect(res).toEqual({ chatId: 42, threadId: undefined, sessionKey: '42', data: 'sugg:on' });
   });
 
   it('carries the forum thread into the session key', () => {
@@ -28,14 +28,14 @@ describe('parseCallback', () => {
   });
 
   it('returns null when the data does not start with the prefix', () => {
-    expect(parseCallback(cbCtx({ chatId: 42, data: 'other:thing' }), 'tts:')).toBeNull();
+    expect(parseCallback(cbCtx({ chatId: 42, data: 'other:thing' }), 'sugg:')).toBeNull();
   });
 
   it('returns null when there is no callback data', () => {
-    expect(parseCallback(cbCtx({ chatId: 42 }), 'tts:')).toBeNull();
+    expect(parseCallback(cbCtx({ chatId: 42 }), 'sugg:')).toBeNull();
   });
 
   it('returns null when there is no chat (no session key)', () => {
-    expect(parseCallback(cbCtx({ data: 'tts:x' }), 'tts:')).toBeNull();
+    expect(parseCallback(cbCtx({ data: 'sugg:x' }), 'sugg:')).toBeNull();
   });
 });

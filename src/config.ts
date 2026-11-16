@@ -163,8 +163,6 @@ const envSchema = z.object({
   // in the group but not admitted could never prompt the bot.
   GROUP_MEMBERS_DEFAULT: z.enum(['contributor', 'spectator']).default('spectator'),
   ANTHROPIC_API_KEY: z.string().optional(), // Optional - uses Claude Max subscription if not set
-  // OpenAI (TTS)
-  OPENAI_API_KEY: z.string().optional(),
   WORKSPACE_DIR: z.string().default(process.env.HOME || '.'),
   // The project this bot is for, set by /newbot for the bots it creates. A
   // conversation with nowhere else to be starts here, and a thread in it is
@@ -237,21 +235,6 @@ const envSchema = z.object({
     .string()
     .default('4000')
     .transform((val) => parseInt(val, 10)),
-  // TTS Configuration
-  TTS_ENABLED: z.string().default('true').transform(toBool),
-  TTS_PROVIDER: z.enum(['groq', 'openai']).default('groq'),
-  TTS_MODEL: z.string().default('gpt-4o-mini-tts'),
-  TTS_VOICE: z.string().default('coral'),
-  TTS_INSTRUCTIONS: z.string().default('Speak in a friendly, natural conversational tone.'),
-  TTS_SPEED: z
-    .string()
-    .default('1.0')
-    .transform((val) => parseFloat(val)),
-  TTS_MAX_CHARS: z
-    .string()
-    .default('4096')
-    .transform((val) => parseInt(val, 10)),
-  TTS_RESPONSE_FORMAT: z.string().default('opus'),
   IMAGE_MAX_FILE_SIZE_MB: z
     .string()
     .default('20')
@@ -279,11 +262,6 @@ const envSchema = z.object({
   VOICE_TIMEOUT_MS: z
     .string()
     .default('60000')
-    .transform((val) => parseInt(val, 10)),
-  // Transcribe command: send .txt file if transcript exceeds this many chars
-  TRANSCRIBE_FILE_THRESHOLD_CHARS: z
-    .string()
-    .default('4000')
     .transform((val) => parseInt(val, 10)),
   // Verbosity tier (quiet | normal | verbose | debug). Drives the defaults
   // for several rendering flags below; per-chat /verbosity overrides this,

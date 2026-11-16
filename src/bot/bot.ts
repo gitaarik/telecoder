@@ -29,8 +29,6 @@ import {
   handleStatus,
   handlePermissionMode,
   handlePermissionModeCallback,
-  handleTTS,
-  handleTTSCallback,
   handleSuggestions,
   handleSuggestionsCallback,
   handleBotStatus,
@@ -63,9 +61,6 @@ import {
   handleFile,
   handleStatusLine,
   handleStatusLineCallback,
-  handleTranscribe,
-  handleTranscribeAudio,
-  handleTranscribeDocument,
   handleBotName,
   handleTopic,
   handleRebuild,
@@ -100,6 +95,7 @@ import { handleVoice } from './handlers/voice.handler.js';
 import { handlePhoto, handleImageDocument, handleTextDocument } from './handlers/photo.handler.js';
 import {
   handleUnsupportedVideo,
+  handleUnsupportedAudio,
   handleUnsupportedMediaDocument,
 } from './handlers/media-fallback.js';
 import { createBatchMiddleware } from './middleware/message-batcher.js';
@@ -116,7 +112,7 @@ import { describeResponderRefusal } from '../telegram/admin-mention.js';
 import { handleAskUserFormCallback } from '../claude/ask-user-form.js';
 import { groupMentionMiddleware } from './middleware/group-mention.middleware.js';
 import { groupRoleMiddleware } from './middleware/group-role.middleware.js';
-import { repliedForceReplyFlow, trackForceReplyPrompts } from '../telegram/force-reply-tracker.js';
+import { trackForceReplyPrompts } from '../telegram/force-reply-tracker.js';
 import { initThreadTitles } from '../telegram/thread-titles.js';
 import { watchForDeletedThreads } from './deleted-threads.js';
 import { startPtyIdleReaper } from '../claude/pty-idle-reaper.js';
@@ -401,11 +397,9 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // has no reason to wait for this one. Their menu buttons likewise.
   cmd('statusline', handleStatusLine);
   cmd('verbosity', handleVerbosity);
-  cmd('tts', handleTTS);
   cmd('suggestions', handleSuggestions);
   bot.callbackQuery(/^statusline:/, handleStatusLineCallback);
   bot.callbackQuery(/^verbosity:/, handleVerbosityCallback);
-  bot.callbackQuery(/^tts:/, handleTTSCallback);
   bot.callbackQuery(/^sugg:/, handleSuggestionsCallback);
   // The same goes for the permission mode, which a turn applies as it starts,
   // and for the bot's and the thread's names.
@@ -536,11 +530,6 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   cmd('teleport', adminOnly(handleTeleport));
 
 
-  // Transcribe
-  if (config.TRANSCRIBE_ENABLED) {
-    cmd('transcribe', handleTranscribe);
-  }
-
   // Callback query handler for inline keyboards
   bot.on('callback_query:data', async (ctx) => {
     const data = ctx.callbackQuery.data;
@@ -595,25 +584,20 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // Handle voice messages
   bot.on('message:voice', handleVoice);
 
-  // Handle audio messages (music/audio files - separate from voice notes)
-  bot.on('message:audio', handleTranscribeAudio);
+  // Audio files (music, recordings — not voice notes) have no ingestion path;
+  // the handler says so rather than dropping them.
+  bot.on('message:audio', handleUnsupportedAudio);
 
   // Handle images
   bot.on('message:photo', handlePhoto);
 
   // Handle documents: route by MIME type
-  //   audio/* (replying to transcribe prompt) → transcribe
-  //   image/*                                  → image vision
-  //   anything else                            → read as text/PDF/etc.
+  //   image/*         → image vision
+  //   audio/*, video/* → explained as unsupported
+  //   anything else   → read as text/PDF/etc.
   bot.on('message:document', async (ctx) => {
     const doc = ctx.message?.document;
     const mime = doc?.mime_type ?? '';
-
-    // Try transcribe-document path first (audio MIME + reply to /transcribe's prompt)
-    if (mime.startsWith('audio/') && repliedForceReplyFlow(ctx) === 'transcribe') {
-      await handleTranscribeDocument(ctx);
-      return;
-    }
 
     if (mime.startsWith('image/')) {
       await handleImageDocument(ctx);

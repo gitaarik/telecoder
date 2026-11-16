@@ -1,5 +1,5 @@
 /**
- * Per-chat settings menus: /tts, /suggestions, /effort, /verbosity and the status line.
+ * Per-chat settings menus: /suggestions, /effort, /verbosity and the status line.
  *
  * They share one shape — render an inline keyboard reflecting current state,
  * flip a setting on tap, re-render — and several need the same pty-restart
@@ -25,7 +25,6 @@ import { EntityText, joinMessages, type EntityMessage } from '../../../telegram/
 import { replyFormatted, editCallbackMessage } from '../../../telegram/send.js';
 import { taskTracker } from '../../../telegram/task-tracker.js';
 import { promptLabel, cutLabel } from '../../../telegram/prompt-label.js';
-import { getTTSSettings, setTTSEnabled, setTTSVoice, setTTSAutoplay } from '../../../tts/tts-settings.js';
 import { getSuggestionsSettings, setSuggestionsEnabled } from '../../../telegram/suggestions-settings.js';
 import {
   VERBOSITY_INFO,
@@ -66,80 +65,6 @@ import {
 } from './prefs-scope.js';
 import { resolveLevel } from './all-view.js';
 
-const OPENAI_TTS_VOICES = [
-  'alloy', 'ash', 'ballad', 'coral',
-  'echo', 'fable', 'nova', 'onyx',
-  'sage', 'shimmer', 'verse', 'marin', 'cedar',
-] as const;
-
-const GROQ_TTS_VOICES = [
-  'autumn', 'diana', 'hannah', 'austin', 'daniel', 'troy',
-] as const;
-
-function getActiveTTSVoices(): readonly string[] {
-  return config.TTS_PROVIDER === 'groq' ? GROQ_TTS_VOICES : OPENAI_TTS_VOICES;
-}
-
-type TTSMenuMode = 'main' | 'voices';
-
-function buildTTSMenu(sessionKey: string, mode: TTSMenuMode) {
-  const settings = getTTSSettings(sessionKey);
-  const hasKey = config.TTS_PROVIDER === 'groq' ? !!config.GROQ_API_KEY : !!config.OPENAI_API_KEY;
-  const apiStatus = hasKey ? 'configured' : 'missing';
-  const providerLabel = config.TTS_PROVIDER === 'groq' ? 'Groq Orpheus' : 'OpenAI';
-
-  const statusLine = settings.enabled ? 'ON' : 'OFF';
-  const autoplayLine = settings.autoplay ? 'ON' : 'OFF';
-  const header = () => new EntityText().add('🔊 ').bold('Voice Replies').newline(2);
-
-  if (mode === 'voices') {
-    const voices = getActiveTTSVoices();
-    const voiceRows: { text: string; callback_data: string }[][] = [];
-    const chunkSize = 3;
-    for (let i = 0; i < voices.length; i += chunkSize) {
-      const chunk = voices.slice(i, i + chunkSize);
-      voiceRows.push(chunk.map((voice) => ({
-        text: voice === settings.voice ? `✓ ${voice}` : voice,
-        callback_data: `tts:voice:${voice}`,
-      })));
-    }
-
-    const recommended = config.TTS_PROVIDER === 'groq'
-      ? 'autumn, troy'
-      : 'marin, cedar';
-
-    return {
-      text: header().add(`Pick a voice.\nRecommended: ${recommended}.`).build(),
-      keyboard: [
-        ...voiceRows,
-        [{ text: 'Back', callback_data: 'tts:back' }],
-      ],
-    };
-  }
-
-  const autoplayLabel = settings.autoplay ? '✓ Autoplay' : 'Autoplay';
-
-  return {
-    text: header()
-      .add('Provider: ').bold(providerLabel).newline()
-      .add('Status: ').bold(statusLine).newline()
-      .add('Voice: ').bold(settings.voice).newline()
-      .add('Autoplay: ').bold(autoplayLine).newline()
-      .add('API key: ').bold(apiStatus)
-      .build(),
-    keyboard: [
-      [
-        { text: settings.enabled ? '✓ On' : 'On', callback_data: 'tts:on' },
-        { text: !settings.enabled ? '✓ Off' : 'Off', callback_data: 'tts:off' },
-      ],
-      [
-        { text: `Voice: ${settings.voice}`, callback_data: 'tts:voices' },
-        { text: autoplayLabel, callback_data: 'tts:autoplay' },
-      ],
-    ],
-  };
-}
-
 function buildSuggestionsMenu(sessionKey: string) {
   const settings = getSuggestionsSettings(sessionKey);
   const defaultLabel = config.PROMPT_SUGGESTIONS_DEFAULT ? 'on' : 'off';
@@ -162,76 +87,6 @@ function buildSuggestionsMenu(sessionKey: string) {
       ],
     ],
   };
-}
-
-export async function handleTTS(ctx: Context): Promise<void> {
-  if (!config.TTS_ENABLED) {
-    await replyFeatureDisabled(ctx, 'Voice replies');
-    return;
-  }
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const menu = buildTTSMenu(sessionKey, 'main');
-
-  await replyFormatted(ctx, menu.text, {
-    reply_markup: { inline_keyboard: menu.keyboard },
-  });
-}
-
-export async function handleTTSCallback(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const data = ctx.callbackQuery?.data;
-  if (!data || !data.startsWith('tts:')) return;
-
-  // A menu sent before TTS_ENABLED was turned off can still be tapped.
-  if (!config.TTS_ENABLED) {
-    await ctx.answerCallbackQuery({ text: buildFeatureDisabledMessage('Voice replies') });
-    return;
-  }
-
-  if (data === 'tts:on') {
-    const hasKey = config.TTS_PROVIDER === 'groq' ? !!config.GROQ_API_KEY : !!config.OPENAI_API_KEY;
-    const keyName = config.TTS_PROVIDER === 'groq' ? 'GROQ_API_KEY' : 'OPENAI_API_KEY';
-    if (!hasKey) {
-      await ctx.answerCallbackQuery({ text: `${keyName} missing. Set it in .env and restart.` });
-      setTTSEnabled(sessionKey, false);
-    } else {
-      setTTSEnabled(sessionKey, true);
-    }
-  } else if (data === 'tts:off') {
-    setTTSEnabled(sessionKey, false);
-  } else if (data === 'tts:autoplay') {
-    const current = getTTSSettings(sessionKey);
-    setTTSAutoplay(sessionKey, !current.autoplay);
-  } else if (data.startsWith('tts:voice:')) {
-    const voice = data.replace('tts:voice:', '');
-    const voices = getActiveTTSVoices();
-    if (voices.includes(voice)) {
-      setTTSVoice(sessionKey, voice);
-    }
-  }
-
-  const mode: TTSMenuMode = data === 'tts:voices' || data.startsWith('tts:voice:')
-    ? 'voices'
-    : 'main';
-  const menu = buildTTSMenu(sessionKey, mode);
-
-  await ctx.answerCallbackQuery();
-  try {
-    await editCallbackMessage(ctx, menu.text, {
-      reply_markup: { inline_keyboard: menu.keyboard },
-    });
-  } catch (error) {
-    // Ignore "message is not modified" — happens with duplicate callbacks
-    if (!(error instanceof Error && error.message.includes('message is not modified'))) {
-      throw error;
-    }
-  }
 }
 
 // ── /effort ──────────────────────────────────────────────────────

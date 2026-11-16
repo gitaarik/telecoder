@@ -304,7 +304,7 @@ export function resolveServiceSpec(deps: ServiceDeps, options: Pick<ServiceOptio
   const warnings: string[] = [];
   const nodePath = chooseNodePath(deps);
   const required = [path.dirname(nodePath)];
-  for (const tool of ['claude', 'git', 'ffmpeg']) {
+  for (const tool of ['claude', 'git']) {
     const found = which(deps, tool);
     if (found) required.push(path.dirname(found));
     else if (tool === 'claude') warnings.push('The claude CLI is not on your PATH. The bot needs it: install Claude Code, then run this again so the service can find it.');

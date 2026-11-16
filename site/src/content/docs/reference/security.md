@@ -42,6 +42,5 @@ Your messages go through Telegram to Claude Code, as if you had typed them in it
 A secret you send when Claude asks for one is the exception: it goes to Telegram like any
 message, until the bot deletes it, and from there only into the command Claude named. A Claude
 token made with `claude setup-token` doesn't go through Telegram at all. Claude Code keeps its
-own session transcripts in `~/.claude`. Voice notes are transcribed by Groq, and spoken replies
-(`/tts`) are made by Groq or OpenAI, each only if you set it up. Nothing is published anywhere:
+own session transcripts in `~/.claude`. Voice notes are transcribed by Groq, only if you set it up. Nothing is published anywhere:
 a long reply arrives in the chat in full.

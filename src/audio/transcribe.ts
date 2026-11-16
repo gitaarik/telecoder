@@ -55,12 +55,3 @@ export async function transcribeFile(filePath: string, options?: TranscribeOptio
 
   return transcript;
 }
-
-/**
- * Download a file from Telegram servers securely.
- * Constructs the URL via getTelegramFileUrl and delegates to downloadFileSecure.
- */
-export function downloadTelegramAudio(botToken: string, filePath: string, destPath: string): Promise<void> {
-  const fileUrl = getTelegramFileUrl(botToken, filePath);
-  return downloadFileSecure(fileUrl, destPath);
-}

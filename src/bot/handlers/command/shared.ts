@@ -62,7 +62,7 @@ export async function replyFeatureDisabled(ctx: Context, feature: string): Promi
 }
 
 /**
- * What a voice note or /transcribe gets when no Groq key is set: how to turn
+ * What a voice note gets when no Groq key is set: how to turn
  * transcription on, instead of a "Transcribing..." ack followed by a raw
  * "GROQ_API_KEY not configured" error. Declining voice in `telecoder init` is
  * the common case, so this is where most people learn how to add it later.

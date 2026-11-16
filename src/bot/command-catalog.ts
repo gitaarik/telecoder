@@ -62,7 +62,6 @@ export function buildCommandMenu(): CommandMenuEntry[] {
     { command: 'deny', description: '🚫 Remove someone admitted with /allow' },
     { command: 'members', description: '👥 Show who may prompt the agent in this group' },
     { command: 'teleport', description: '🚀 Move session to terminal' },
-    ...(config.TRANSCRIBE_ENABLED ? [{ command: 'transcribe', description: '🎤 Transcribe audio to text' }] : []),
     { command: 'file', description: '📎 Download a file from project' },
     { command: 'suggestions', description: '💡 Toggle predicted next-prompt buttons' },
     { command: 'model', description: '🤖 Switch AI model' },
@@ -80,7 +79,6 @@ export function buildCommandMenu(): CommandMenuEntry[] {
     { command: 'statusline', description: '📍 Toggle per-turn status line' },
     { command: 'botname', description: '✏️ Rename the bot (admins)' },
     { command: 'topic', description: '💬 Set the conversation topic' },
-    ...(config.TTS_ENABLED ? [{ command: 'tts', description: '🔊 Toggle voice replies' }] : []),
     { command: 'ping', description: '🏓 Check if bot is responsive' },
     { command: 'commands', description: '📜 List all commands' },
   ];

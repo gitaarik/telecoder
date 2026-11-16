@@ -49,19 +49,19 @@ export async function replyTooLargeToFetch(
 }
 
 /**
- * A bare audio upload. Transcription is opt-in via /transcribe, so rather than
- * dropping the file we say so; silence here read as "the bot is broken".
+ * An audio file. Only voice notes become prompts, so rather than dropping the
+ * file we say so; silence here read as "the bot is broken".
  */
 export async function replyBareAudio(ctx: Context, fileSizeBytes?: number): Promise<void> {
   if (exceedsDownloadLimit(fileSizeBytes)) {
     await replyTooLargeToFetch(ctx, 'Audio file', fileSizeBytes);
     return;
   }
-  console.log('[Media] Bare audio upload — pointed user at /transcribe');
+  console.log('[Media] Audio upload — unsupported, told user');
   await replyFormatted(ctx, new EntityText()
     .add('🎵 ').bold('Audio received').add(sizeSuffix(fileSizeBytes)).add('\n\n')
-    .add("I don't read audio files on their own. To transcribe this, run /transcribe "
-      + 'and reply to the prompt with the same file.')
+    .add("I can't read audio files. To talk to Claude, record a voice note instead, "
+      + "or point me at the file's path if it's already on this machine.")
     .build());
 }
 
@@ -77,8 +77,7 @@ export async function replyUnsupportedVideo(ctx: Context, fileSizeBytes?: number
   console.log('[Media] Video upload — unsupported, told user');
   await replyFormatted(ctx, new EntityText()
     .add('🎬 ').bold("Video isn't supported").add(sizeSuffix(fileSizeBytes)).add('\n\n')
-    .add("I can't read video files. Extract the audio and send that via /transcribe, "
-      + "or point me at the file's path if it's already on this machine.")
+    .add("I can't read video files. Point me at the file's path if it's already on this machine.")
     .build());
 }
 
@@ -116,6 +115,12 @@ export async function handleUnsupportedVideo(ctx: Context): Promise<void> {
 
   const media = ctx.message?.video ?? ctx.message?.video_note ?? ctx.message?.animation;
   await replyUnsupportedVideo(ctx, media?.file_size);
+}
+
+/** Entry point for `message:audio`: music and recordings, not voice notes. */
+export async function handleUnsupportedAudio(ctx: Context): Promise<void> {
+  if (!claimsMediaMessage(ctx, 'audio')) return;
+  await replyBareAudio(ctx, ctx.message?.audio?.file_size);
 }
 
 /**

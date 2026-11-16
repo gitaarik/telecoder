@@ -85,6 +85,10 @@ const REMOVED_SETTINGS: Array<{ name: string; stale: (value: string) => boolean;
   { name: 'CLAUDE_METHOD_DEFAULT', stale: () => true, note: 'the SDK transport was removed: every chat runs Claude Code in a pty.' },
   { name: 'CLAUDE_SDK_LOG_LEVEL', stale: () => true, note: 'the SDK transport was removed: every chat runs Claude Code in a pty.' },
   { name: 'CLAUDE_SDK_LOAD_USER_SETTINGS', stale: () => true, note: 'the SDK transport was removed; CLAUDE_PLUGINS and EXTRA_MCP_CONFIG bring plugins and MCP servers into the pty.' },
+  { name: 'TTS_ENABLED', stale: isOn, note: 'voice replies (/tts) were removed: Claude Code answers in text.' },
+  ...['TTS_PROVIDER', 'TTS_MODEL', 'TTS_VOICE', 'TTS_INSTRUCTIONS', 'TTS_SPEED', 'TTS_MAX_CHARS', 'TTS_RESPONSE_FORMAT', 'OPENAI_API_KEY']
+    .map((name) => ({ name, stale: () => true, note: 'voice replies (/tts) were removed: Claude Code answers in text.' })),
+  { name: 'TRANSCRIBE_FILE_THRESHOLD_CHARS', stale: () => true, note: '/transcribe was removed: voice notes still become prompts.' },
   { name: 'CCR_AUTO_PROMPT_ON_THROTTLE', stale: () => true, note: 'the one-tap CCR retry went with the SDK transport: /ccr switches a throttled chat over.' },
 ];
 for (const { name, stale, note } of REMOVED_SETTINGS) {

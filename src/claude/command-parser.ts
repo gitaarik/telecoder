@@ -114,17 +114,6 @@ export function getAvailableCommands(): EntityMessage {
     },
   ];
 
-  const mediaCommands: string[] = [];
-  if (config.TRANSCRIBE_ENABLED) {
-    mediaCommands.push('• `/transcribe` - Transcribe audio to text (reply to voice/audio, or ForceReply)');
-  }
-  if (config.TTS_ENABLED) {
-    mediaCommands.push('• `/tts` - Toggle voice replies');
-  }
-  if (mediaCommands.length > 0) {
-    sections.push({ title: 'Media Commands', commands: mediaCommands });
-  }
-
   sections.push({
     title: 'Bot Commands',
     commands: [

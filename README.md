@@ -40,7 +40,7 @@ TeleCoder puts Claude Code inside them.
 - **Claude can reach you.** It can ask with buttons, send you files, ask for an API key
   (your message is deleted the moment it arrives), schedule prompts, and report background
   tasks as they finish.
-- **Built for working away from your desk.** Voice notes in, spoken replies out. `/btw` asks
+- **Built for working away from your desk.** Send voice notes as prompts. `/btw` asks
   a side question without stopping the task, `/steer` corrects it mid-turn, and `/later` sets
   an idea aside for when Claude is done. Sessions carry on by themselves after a restart.
 - **More than one bot.** Run a bot per project from one process, and make a new one from

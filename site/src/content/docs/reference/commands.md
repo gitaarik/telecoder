@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-Every command TeleCoder registers. `/commands` lists them in Telegram, and Telegram's own `/` menu shows the ones that apply to your setup (`/provider` and `/ccr` only with `CCR_ENABLED`, `/transcribe` only with voice turned on, `/tts` only with `TTS_ENABLED`, `/rebuildbot` only in a source checkout). *Admin-only* matters on a shared bot: see [Sharing a bot](../guides/sharing.md). With one user, you are the admin.
+Every command TeleCoder registers. `/commands` lists them in Telegram, and Telegram's own `/` menu shows the ones that apply to your setup (`/provider` and `/ccr` only with `CCR_ENABLED`, `/rebuildbot` only in a source checkout). *Admin-only* matters on a shared bot: see [Sharing a bot](../guides/sharing.md). With one user, you are the admin.
 
 ## Session
 | Command | Description |
@@ -51,11 +51,9 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/file <path>` | Download a file. Guests get files from the chat's project only; admins from anywhere in `WORKSPACE_DIR`. Credential and bot-state paths (`.env`, `~/.ssh`, `~/.claude`, cloud CLI configs and the like) are refused for everyone |
 | `/suggestions` | Turn predicted next-prompt buttons under each reply on or off, from the next session |
 
-## Voice notes and spoken replies
+## Voice notes
 | Command | Description |
 |---------|-------------|
-| `/tts` | Turn spoken replies on or off, pick a voice |
-| `/transcribe` | Transcribe audio to text |
 | *Send voice note* | Auto-transcribed → processed by Claude |
 
 ## Utility

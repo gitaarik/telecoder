@@ -1,6 +1,6 @@
 ---
 title: Voice
-description: Send voice notes instead of typing, and have replies read back to you.
+description: Send voice notes instead of typing.
 sidebar:
   order: 7
 ---
@@ -11,7 +11,7 @@ Send a voice note and the bot transcribes it with Groq Whisper, shows you the tr
 and sends it to Claude as your message.
 
 You need a [Groq API key](https://console.groq.com/keys); Groq has a free tier.
-`telecoder init` asks for one, and you can say no: a voice note or `/transcribe` then
+`telecoder init` asks for one, and you can say no: a voice note then
 answers with how to turn it on. Run `telecoder init` again (it keeps your other answers
 and asks for the key), or add it to `~/.telecoder/.env` and `/restartbot`:
 
@@ -23,21 +23,5 @@ GROQ_API_KEY=gsk_...
 - **Transcript**: shown before Claude answers. `VOICE_SHOW_TRANSCRIPT=false` hides it.
 - **Size**: up to 19MB per note.
 
-`/transcribe` transcribes without sending anything to Claude: send it as a reply to a voice
-note or audio file. Audio files and video aren't sent to Claude on their own.
-
-## Spoken replies out
-
-`/tts` turns on spoken replies for the chat or thread you're in. Each reply then also
-arrives as a voice note, without its code blocks. The menu picks the voice, and whether it
-comes as a voice note that plays straight away or as an audio file.
-
-Two providers:
-
-- **Groq Orpheus**, the default. It uses the same `GROQ_API_KEY`, and needs `ffmpeg` on the
-  machine.
-- **OpenAI**: set `TTS_PROVIDER=openai` and `OPENAI_API_KEY`. `TTS_MODEL`, `TTS_SPEED` and
-  `TTS_INSTRUCTIONS` tune it.
-
-Replies longer than `TTS_MAX_CHARS` (4096) are cut at the end of a sentence. Every voice
-setting is in [Configuration](../reference/configuration.md#voice-notes-and-spoken-replies).
+Audio files and video aren't sent to Claude: only voice notes become prompts. Every voice
+setting is in [Configuration](../reference/configuration.md#voice-notes).

@@ -46,12 +46,6 @@ export {
 } from './command/topic.js';
 export { handleBotName } from './command/botname.js';
 export { handleAllow, handleDeny, handleMembers } from './command/access.js';
-export {
-  sendTranscriptResult,
-  handleTranscribe,
-  handleTranscribeAudio,
-  handleTranscribeDocument,
-} from './command/media.js';
 export { handleCost, parseCostOutput } from './command/cost.js';
 export { handleTasks, handleTasksCallback, handleShells, handleShellsCallback } from './command/tasks.js';
 export { handleBtw, btwLabel, formatSideAnswer } from './command/btw.js';
@@ -82,8 +76,6 @@ export { handleResume, handleResumeCallback } from './command/resume.js';
 export {
   handlePermissionMode,
   handlePermissionModeCallback,
-  handleTTS,
-  handleTTSCallback,
   handleEffort,
   handleEffortCallback,
   handleVerbosity,
