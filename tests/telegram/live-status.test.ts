@@ -3,8 +3,8 @@
  *
  * Every turn kept "typing…" up, renewed every four seconds until it ended, and
  * Telegram Desktop draws that animation on the CPU for as long as it shows —
- * so a long turn kept the client busy throughout. A turn with a live status
- * line no longer sends it. Once the action log is in the chat, the status line
+ * so a long turn kept the client busy throughout. The live status line stands
+ * in for it now. Once the action log is in the chat, the status line
  * moves to the bottom of the log, over the prompt the turn is running and the
  * time the log was drawn: the log is posted below the status bubble and the
  * prompt, and is usually tall enough to push both off screen.
@@ -13,12 +13,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Context } from 'grammy';
 import type { ToolResultEvent } from '../../src/providers/types.js';
-
-const isTerminalUIEnabled = vi.fn((_sessionKey: string) => true);
-vi.mock('../../src/telegram/terminal-settings.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/telegram/terminal-settings.js')>()),
-  isTerminalUIEnabled: (sessionKey: string) => isTerminalUIEnabled(sessionKey),
-}));
 
 // The verbose tier: tool results go to the action log.
 vi.mock('../../src/utils/verbosity.js', async (importOriginal) => ({
@@ -88,7 +82,6 @@ async function turnWithLog(chatId: number) {
 
 beforeEach(() => {
   vi.useFakeTimers();
-  isTerminalUIEnabled.mockReturnValue(true);
   hasPendingQuestionForSession.mockReturnValue(false);
   vi.spyOn(console, 'debug').mockImplementation(() => {});
 });
@@ -99,7 +92,7 @@ afterEach(() => {
 });
 
 describe('a running turn', () => {
-  it('sends no "typing…" when it has a live status line', async () => {
+  it('sends no "typing…": the live status line stands in for it', async () => {
     const sender = new MessageSender();
     const { ctx, api } = fakeChat(7001);
     await sender.startStreaming(ctx, 'run the tests');
@@ -107,20 +100,6 @@ describe('a running turn', () => {
 
     expect(api.sendChatAction).not.toHaveBeenCalled();
     await sender.cancelStreaming(ctx);
-  });
-
-  it('keeps "typing…" up when it has none', async () => {
-    isTerminalUIEnabled.mockReturnValue(false);
-    const sender = new MessageSender();
-    const { ctx, api } = fakeChat(7002);
-    await sender.startStreaming(ctx, 'run the tests');
-    expect(api.sendChatAction).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(4000);
-    expect(api.sendChatAction).toHaveBeenCalledTimes(2);
-
-    await sender.cancelStreaming(ctx);
-    await vi.advanceTimersByTimeAsync(8000);
-    expect(api.sendChatAction).toHaveBeenCalledTimes(2);
   });
 
   it('moves the status line to the bottom of the action log, and points the bubble at it', async () => {

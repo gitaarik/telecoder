@@ -1,9 +1,8 @@
-import { Context, Api, InputFile, GrammyError } from 'grammy';
+import { Context, InputFile, GrammyError } from 'grammy';
 import { config } from '../config.js';
 import { formatMarkdown, markdownToEntities, splitEntityMessage, MAX_MESSAGE_LENGTH } from './markdown.js';
 import { editFormatted, replyFormatted } from './send.js';
 import { stripReasoningSummary } from '../utils/reasoning-summary.js';
-import { isTerminalUIEnabled } from './terminal-settings.js';
 import {
   getSpinnerFrame,
   getThinkingVerb,
@@ -147,9 +146,7 @@ interface StreamState {
   /** Gap between edits that show new text; grows after Telegram rate-limits us. */
   streamIntervalMs: number;
   lastUpdate: number;
-  typingInterval: NodeJS.Timeout | null;
-  // Terminal UI mode additions
-  terminalMode: boolean;
+  // The live status line
   spinnerIndex: number;
   spinnerInterval: NodeJS.Timeout | null;
   currentOperation: ToolOperation | null;
@@ -167,7 +164,6 @@ interface StreamState {
   premiumModel?: string;
 }
 
-const TYPING_INTERVAL_MS = 4000; // Send typing every 4 seconds
 const MIN_EDIT_INTERVAL_MS = 10000; // Minimum time between status-only edits (~5 edits/min safe zone)
 
 /**
@@ -183,10 +179,7 @@ const MAX_STREAM_EDIT_INTERVAL_MS = 15000;
 /** How long after new text the status line keeps saying "Writing". */
 const WRITING_WINDOW_MS = 4000;
 
-/**
- * Under a reply that is still being written, where the status line would be
- * without the terminal UI: the text above it isn't final yet.
- */
+/** On the status line while the reply is being written: the text above it isn't final yet. */
 const STREAMING_INDICATOR = '✍️ Writing…';
 
 /**
@@ -509,20 +502,17 @@ export class MessageSender {
     if (!keyInfo) return;
     const { chatId, threadId, sessionKey } = keyInfo;
 
-    const terminalMode = isTerminalUIEnabled(sessionKey);
     const verbosityFlags = resolveVerbosityFlags(chatId);
     const actionLogEnabled = verbosityFlags.useActionLog && (verbosityFlags.showToolResults || verbosityFlags.showDiffs);
 
 
     const premiumModel = getPremiumModel(sessionKey);
     const initialText = `${getSpinnerFrame(0)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...${premiumBadge(premiumModel)}`;
+    // No "typing…": the turn has a live status line — in the bubble, then at
+    // the bottom of the action log — and Telegram Desktop draws the typing
+    // animation on the CPU for as long as it is up, which renewed every few
+    // seconds is the whole turn.
     const message = await ctx.reply(initialText);
-
-    // "typing…" only for a turn with no live status line. Terminal mode has
-    // one — in the bubble, then at the bottom of the action log — and Telegram
-    // Desktop draws the typing animation on the CPU for as long as it is up,
-    // which renewed every few seconds is the whole turn.
-    const typingInterval = terminalMode ? null : this.startTypingIndicator(ctx.api, chatId, threadId);
 
     const now = Date.now();
     const state: StreamState = {
@@ -540,9 +530,6 @@ export class MessageSender {
       ended: false,
       streamIntervalMs: ctx.chat?.type === 'private' ? STREAM_EDIT_INTERVAL_MS : GROUP_STREAM_EDIT_INTERVAL_MS,
       lastUpdate: now,
-      typingInterval,
-      // Terminal UI mode
-      terminalMode,
       spinnerIndex: 0,
       spinnerInterval: null,
       currentOperation: null,
@@ -575,14 +562,12 @@ export class MessageSender {
     }
 
     // Periodic refresh so the elapsed timer and spinner update even during long tool runs
-    if (terminalMode) {
-      state.spinnerInterval = setInterval(() => {
-        state.spinnerIndex += 1;
-        if (ctx) {
-          this.flushLive(ctx, state).catch(() => {});
-        }
-      }, MIN_EDIT_INTERVAL_MS);
-    }
+    state.spinnerInterval = setInterval(() => {
+      state.spinnerIndex += 1;
+      if (ctx) {
+        this.flushLive(ctx, state).catch(() => {});
+      }
+    }, MIN_EDIT_INTERVAL_MS);
   }
 
   private stopSpinnerAnimation(state: StreamState): void {
@@ -594,28 +579,6 @@ export class MessageSender {
       clearTimeout(state.flushTimer);
       state.flushTimer = null;
     }
-  }
-
-  startTypingIndicator(api: Api, chatId: number, threadId?: number): NodeJS.Timeout {
-    const opts = threadId !== undefined ? { message_thread_id: threadId } : {};
-    // Send typing immediately
-    api.sendChatAction(chatId, 'typing', opts).catch(() => {});
-
-    // Then send every TYPING_INTERVAL_MS
-    return setInterval(() => {
-      api.sendChatAction(chatId, 'typing', opts).catch(() => {});
-    }, TYPING_INTERVAL_MS);
-  }
-
-  private stopTypingIndicator(state: StreamState): void {
-    if (state.typingInterval) {
-      clearInterval(state.typingInterval);
-      state.typingInterval = null;
-    }
-  }
-
-  stopTypingInterval(interval: NodeJS.Timeout): void {
-    clearInterval(interval);
   }
 
   /**
@@ -631,8 +594,6 @@ export class MessageSender {
     if (ctx) {
       taskListDisplay.noteToolStart(ctx.api, sessionKey, toolName, sessionManager.getSession(sessionKey)?.claudeSessionId);
     }
-
-    if (!state.terminalMode) return;
 
     const { chatId } = parseSessionKey(sessionKey);
     const verbose = resolveVerbosityFlags(chatId).terminalUiVerbose;
@@ -692,7 +653,7 @@ export class MessageSender {
     }
 
     const streamState = this.streamStates.get(sessionKey);
-    if (streamState && streamState.terminalMode) {
+    if (streamState) {
       streamState.spinnerIndex += 1;
       this.flushLive(ctx, streamState).catch(() => {});
     }
@@ -984,16 +945,14 @@ export class MessageSender {
   }
 
   /**
-   * The status line as the action log draws it at its bottom, or undefined for
-   * a turn without one (terminal UI off).
+   * The status line as the action log draws it at its bottom.
    *
    * It shares a message with up to ten actions, so a long command is clipped
    * as compact mode clips it — verbose mode allows 3,500 characters — and a
    * long detail is cut short. The bubble's rate-limit note is left off: it is
    * about the bubble's own edits, which have stopped.
    */
-  private logStatusSource(state: StreamState): StatusSource | undefined {
-    if (!state.terminalMode) return undefined;
+  private logStatusSource(state: StreamState): StatusSource {
     return () => {
       const view = this.statusView(state);
       const operation = view.operation && {
@@ -1006,20 +965,12 @@ export class MessageSender {
   }
 
   /**
-   * The line under the live reply that says it isn't final: the status line
-   * with the terminal UI on, a pointer down to the action log once that
-   * carries the status line, or a plain "Writing" otherwise.
+   * The line under the live reply that says it isn't final: the status line,
+   * or a pointer down to the action log once that carries the status line.
    */
   private liveFooter(state: StreamState): EntityMessage {
-    if (state.terminalMode) {
-      if (actionLogger.showsStatus(state.sessionKey)) return plain(LOG_POINTER_LINE);
-      return renderStatusBubble(this.statusView(state));
-    }
-    if (hasPendingQuestionForSession(state.sessionKey)) return plain(AWAITING_ANSWER_LINE);
-    if (!state.content.trim()) {
-      return plain(`${getSpinnerFrame(state.spinnerIndex)} ${TOOL_ICONS.thinking} ${getThinkingVerb()}...${premiumBadge(state.premiumModel)}`);
-    }
-    return new EntityText().italic(STREAMING_INDICATOR).add(premiumBadge(state.premiumModel)).build();
+    if (actionLogger.showsStatus(state.sessionKey)) return plain(LOG_POINTER_LINE);
+    return renderStatusBubble(this.statusView(state));
   }
 
   /**
@@ -1052,7 +1003,7 @@ export class MessageSender {
 
     // Once the action log is in the chat it carries the status line, which it
     // redraws on its own throttle. The bubble's footer just points down at it.
-    if (state.terminalMode && actionLogger.showsStatus(state.sessionKey)) {
+    if (actionLogger.showsStatus(state.sessionKey)) {
       await actionLogger.refreshStatus(state.sessionKey, immediate);
       // The turn may have ended while the log was drawn.
       if (state.ended) return;
@@ -1195,7 +1146,7 @@ export class MessageSender {
     if (!keyInfo) return;
 
     const state = this.streamStates.get(keyInfo.sessionKey);
-    if (!state || !state.messageId || !state.terminalMode) return;
+    if (!state || !state.messageId) return;
     if (state.tip === tip) return;
 
     state.tip = tip;
@@ -1258,8 +1209,7 @@ export class MessageSender {
     const state = this.streamStates.get(sessionKey);
     if (!state) return;
 
-    // Stop typing indicator, spinner and any held-back refresh
-    this.stopTypingIndicator(state);
+    // Stop the spinner and any held-back refresh
     this.stopSpinnerAnimation(state);
     state.currentOperation = null;
     await this.endLiveEdits(state);
@@ -1352,8 +1302,6 @@ export class MessageSender {
 
     const state = this.streamStates.get(sessionKey);
     if (state) {
-      // Stop typing indicator and spinner
-      this.stopTypingIndicator(state);
       this.stopSpinnerAnimation(state);
       await this.endLiveEdits(state);
 

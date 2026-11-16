@@ -26,6 +26,7 @@ import { getSessionKeyFromCtx } from '../../utils/session-key.js';
 import { fireAutoTopic, requireSession, runQueuedTurn } from './message/shared.js';
 import { runTurn } from './message/turn-runner.js';
 import { handleProjectReply, handleFileReply } from './message/replies.js';
+import { repliedForceReplyFlow } from '../../telegram/force-reply-tracker.js';
 
 export { closeTurn, relayCatchUpIfMissed } from './message/turn-notify.js';
 export { runQueuedTurn } from './message/shared.js';
@@ -60,22 +61,15 @@ export async function handleMessage(ctx: Context): Promise<void> {
   }
   markProcessed(messageId);
 
-  // Check if this is a reply to a ForceReply prompt
-  const replyTo = ctx.message?.reply_to_message;
-  if (replyTo && replyTo.from?.is_bot) {
-    const replyText = replyTo.text || '';
-
-    // Handle project path reply
-    if (replyText.includes('Set Project Directory')) {
-      await handleProjectReply(ctx, sessionKey, text);
-      return;
-    }
-
-    // Handle file download reply
-    if (replyText.includes('Download File')) {
-      await handleFileReply(ctx, sessionKey, text);
-      return;
-    }
+  // An answer to one of the bot's ForceReply prompts goes to the flow that asked.
+  const flow = repliedForceReplyFlow(ctx);
+  if (flow === 'project') {
+    await handleProjectReply(ctx, sessionKey, text);
+    return;
+  }
+  if (flow === 'file') {
+    await handleFileReply(ctx, sessionKey, text);
+    return;
   }
 
   // A slash command the bot didn't register is on its way to Claude as a

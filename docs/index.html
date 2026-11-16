@@ -2105,8 +2105,7 @@
             <div class="feature-icon"><svg><use href="#i-stream"/></svg></div>
             <h3>Watch it work</h3>
             <p>The reply shows while Claude writes it, in both transports. Tool status, edit diffs
-            and Claude Code's own contextual tips stream into the chat as it goes.
-            <code>/terminalui</code> switches to a terminal-style view.</p>
+            and Claude Code's own contextual tips stream into the chat as it goes.</p>
           </div>
           <div class="feature-card" data-category="agent">
             <div class="feature-icon"><svg><use href="#i-model"/></svg></div>
@@ -2983,11 +2982,6 @@ CCR_AUTOSTART=true</pre>
                 </tr>
                 <tr><td colspan="3" style="color: var(--brand); font-weight: 600; padding-top: 1.25rem;">Display &amp; Behavior</td></tr>
                 <tr>
-                  <td class="var-name">TERMINAL_UI_DEFAULT</td>
-                  <td>Terminal-style display on by default (default: true)</td>
-                  <td class="required-no">No</td>
-                </tr>
-                <tr>
                   <td class="var-name">CANCEL_ON_NEW_MESSAGE</td>
                   <td>Auto-cancel running query on new message (default: false)</td>
                   <td class="required-no">No</td>
@@ -3060,10 +3054,6 @@ CCR_AUTOSTART=true</pre>
               <span class="command-desc">Open a project from your workspace directory</span>
             </div>
             <div class="command-row">
-              <code class="command-code">/newproject &lt;name&gt;</code>
-              <span class="command-desc">Create and open a new project</span>
-            </div>
-            <div class="command-row">
               <code class="command-code">/newbot [project]</code>
               <span class="command-desc">Create a bot for a project without going through BotFather: one tap on Telegram's create-a-bot screen, and it starts in that project. Needs Bot Management Mode on the bot you send it to. Admin-only.</span>
             </div>
@@ -3073,7 +3063,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/status</code>
-              <span class="command-desc">Show current session and project info</span>
+              <span class="command-desc">Current session info: project, topic, effort, model, provider, transport, context and cost</span>
             </div>
             <div class="command-row">
               <code class="command-code">/projectcommands</code>
@@ -3204,10 +3194,6 @@ CCR_AUTOSTART=true</pre>
             <div class="command-row">
               <code class="command-code">/mode &lt;manual|acceptEdits|plan|auto|bypass&gt;</code>
               <span class="command-desc">How much Claude asks before acting, per chat or thread. Same modes the desktop cycles with shift+tab; buttons if you pass no argument. Default follows the transport, and the menu spells out what that resolves to — auto on PTY, accept edits on the SDK. Admin-only.</span>
-            </div>
-            <div class="command-row">
-              <code class="command-code">/terminalui</code>
-              <span class="command-desc">Toggle terminal-style display with spinners: a live status line (what's running, and for how long) that stands in for Telegram's "typing…" indicator, which Telegram Desktop animates on the CPU</span>
             </div>
             <div class="command-row">
               <code class="command-code">/statusline</code>

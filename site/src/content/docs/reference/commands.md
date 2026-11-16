@@ -12,11 +12,10 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 |---------|-------------|
 | `/start` | Welcome message |
 | `/project` | Set working directory (interactive picker) — admin-only |
-| `/newproject <name>` | Create and switch to a new project — admin-only |
 | `/newbot [project]` | Create a bot for a project (this chat's if none is given) without BotFather. Needs Bot Management Mode on the bot you send it to ([details](../guides/multiple-bots.md)) — admin-only |
 | `/projectcommands` | List every slash command available here — project, built-in skills, plugins — and the ones TeleCoder shadows |
 | `/clear` | Clear conversation history (project stays selected) |
-| `/status` | Current session info |
+| `/status` | Current session info: project, topic, effort, model, provider, transport, context and cost |
 | `/resume [words\|id]` | Pick, search or open any Claude Code session, like Claude Code's own `/resume` |
 | `/recap [N]` | Re-read the last N exchanges of the current session (default 3), ending with the same status message as a normal turn |
 | `/prompts [N]` | List just the last N prompts you sent, without the replies (default 15, max 25) |
@@ -47,7 +46,6 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/provider` | Switch backend — Claude / CCR (shown when `CCR_ENABLED`) — admin-only |
 | `/ccr` | Sticky toggle between Claude and CCR routing (shown when `CCR_ENABLED`) — admin-only |
 | `/verbosity` | Pick verbosity tier (quiet / normal / verbose / debug) |
-| `/terminalui` | Toggle terminal-style display |
 
 ## Files and output
 | Command | Description |

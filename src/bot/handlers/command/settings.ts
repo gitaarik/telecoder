@@ -1,5 +1,5 @@
 /**
- * Per-chat settings menus: /terminalui, /tts, /suggestions, /effort, /verbosity, /method and the status line.
+ * Per-chat settings menus: /tts, /suggestions, /effort, /verbosity, /method and the status line.
  *
  * They share one shape — render an inline keyboard reflecting current state,
  * flip a setting on tap, re-render — and several need the same pty-restart
@@ -28,7 +28,6 @@ import { replyFormatted, editCallbackMessage } from '../../../telegram/send.js';
 import { taskTracker } from '../../../telegram/task-tracker.js';
 import { promptLabel, cutLabel } from '../../../telegram/prompt-label.js';
 import { getTTSSettings, setTTSEnabled, setTTSVoice, setTTSAutoplay } from '../../../tts/tts-settings.js';
-import { getTerminalUISettings, setTerminalUIEnabled } from '../../../telegram/terminal-settings.js';
 import { getSuggestionsSettings, setSuggestionsEnabled } from '../../../telegram/suggestions-settings.js';
 import {
   VERBOSITY_INFO,
@@ -164,64 +163,6 @@ function buildSuggestionsMenu(sessionKey: string) {
       ],
     ],
   };
-}
-
-export async function handleTerminalUI(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const settings = getTerminalUISettings(sessionKey);
-  const currentStatus = settings.enabled ? 'ON' : 'OFF';
-
-  const keyboard = [
-    [
-      {
-        text: settings.enabled ? '✓ On' : 'On',
-        callback_data: 'terminalui:on'
-      },
-      {
-        text: !settings.enabled ? '✓ Off' : 'Off',
-        callback_data: 'terminalui:off'
-      },
-    ],
-  ];
-
-  await replyFormatted(
-    ctx,
-    new EntityText()
-      .add('🖥️ ').bold('Terminal UI Mode').newline(2)
-      .add('Current: ').bold(currentStatus).newline()
-      .italic(terminalUIDescription(settings.enabled))
-      .build(),
-    { reply_markup: { inline_keyboard: keyboard } },
-  );
-}
-
-function terminalUIDescription(enabled: boolean): string {
-  return enabled
-    ? 'Shows spinner animations and tool status during operations'
-    : 'Classic streaming mode with simple cursor';
-}
-
-export async function handleTerminalUICallback(ctx: Context): Promise<void> {
-  const cb = parseCallback(ctx, 'terminalui:');
-  if (!cb) return;
-  const { sessionKey, data } = cb;
-
-  const newState = data.replace('terminalui:', '') === 'on';
-  setTerminalUIEnabled(sessionKey, newState);
-
-  const statusText = newState ? 'ON' : 'OFF';
-
-  await ctx.answerCallbackQuery({ text: `Terminal UI ${statusText}!` });
-  await editCallbackMessage(
-    ctx,
-    new EntityText()
-      .add('✅ Terminal UI ').bold(statusText).newline(2)
-      .italic(terminalUIDescription(newState))
-      .build(),
-  );
 }
 
 export async function handleTTS(ctx: Context): Promise<void> {

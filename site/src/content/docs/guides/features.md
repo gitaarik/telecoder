@@ -126,7 +126,8 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 - A status line closing every reply: topic, project, effort, model, context use and cost,
   on by default and sent silently; `/statusline` turns it off or adds your last prompts
   and a `claude --resume` command
-- Terminal-style tool status (`/terminalui`) and four verbosity tiers (`/verbosity`)
+- A live status line while Claude works: what's running and for how long, in the reply
+  and then at the bottom of the action log, with four verbosity tiers (`/verbosity`)
 - Claude Code's task list as a live card
 - `/topic` sets the conversation topic shown in the status line and as the thread's name; `/botname` renames the bot in Telegram, without a trip to BotFather
 - Inline keyboards for settings

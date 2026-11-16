@@ -3,7 +3,8 @@
  * command posts a question and the user's *next* message is the answer
  * (/project path, /file path).
  *
- * `handleMessage` routes here by matching the prompt text it is replying to.
+ * `handleMessage` routes here by the flow the prompt it is replying to opened
+ * (see force-reply-tracker.ts).
  */
 
 import { Context } from 'grammy';

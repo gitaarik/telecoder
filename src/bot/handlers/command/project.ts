@@ -1,5 +1,5 @@
 /**
- * /project, /newproject and the inline project browser.
+ * /project and the inline project browser.
  *
  * Owns the paginated directory-browser state, the favorites screen, and the
  * switching logic that rewires a session to a new working directory.
@@ -16,8 +16,8 @@ import { EntityText, type EntityMessage } from '../../../telegram/entities.js';
 import { replyFormatted, editCallbackMessage } from '../../../telegram/send.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../../../utils/workspace-guard.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
+import { sendForceReplyPrompt } from '../../../telegram/force-reply-tracker.js';
 import {
-  replyMd,
   parseCallback,
   projectStatusSuffix,
   resumeCommandMessage,
@@ -424,13 +424,7 @@ async function sendProjectManualPrompt(ctx: Context): Promise<void> {
   }
   prompt.add('\n\n👇 ').italic('Enter the path below:');
 
-  await replyFormatted(ctx, prompt.build(), {
-    reply_markup: {
-      force_reply: true,
-      input_field_placeholder: '/home/user/projects/myapp',
-      selective: true,
-    },
-  });
+  await sendForceReplyPrompt(ctx, 'project', prompt.build(), '/home/user/projects/myapp');
 }
 
 function getProjectState(sessionKey: string): ProjectBrowserState {
@@ -510,8 +504,9 @@ export async function handleProject(ctx: Context): Promise<void> {
     await replyFormatted(
       ctx,
       new EntityText()
-        .add(`📁 Project "${args}" doesn't exist.\n\nCreate it? Use: `)
-        .code(`/newproject ${args}`)
+        .add(`📁 There's no project at `).code(projectPath).add('.\n\nAsk Claude to create it from the project you\'re in, or run ')
+        .code(`mkdir ${projectPath}`)
+        .add(' and open it with ').code(`/project ${args}`).add('.')
         .build(),
     );
     return;
@@ -528,53 +523,6 @@ export async function handleProject(ctx: Context): Promise<void> {
 
   const newConv = sessionManager.getSession(sessionKey)?.conversationId;
   const back = withBackToPrevious(projectOpenedMessage('✅ Project: ', args, sessionKey), sessionKey, newConv);
-  await replyFormatted(ctx, back.text, back.options);
-
-  const s = sessionManager.getSession(sessionKey);
-  if (s?.claudeSessionId) {
-    await replyFormatted(ctx, resumeCommandMessage(s.claudeSessionId));
-  }
-}
-
-export async function handleNewProject(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const text = ctx.message?.text || '';
-  const args = text.split(' ').slice(1).join(' ').trim();
-
-  if (!args) {
-    await replyMd(ctx, 'Usage: `/newproject <name>`');
-    return;
-  }
-
-  if (!/^[a-zA-Z0-9_-]+$/.test(args)) {
-    await replyMd(ctx, '❌ Project name can only contain letters, numbers, dashes and underscores.');
-    return;
-  }
-
-  const projectPath = path.join(config.WORKSPACE_DIR, args);
-
-  if (fs.existsSync(projectPath)) {
-    await replyFormatted(
-      ctx,
-      new EntityText()
-        .add(`❌ Project "${args}" already exists. Use `)
-        .code(`/project ${args}`)
-        .add(' to open it.')
-        .build(),
-    );
-    return;
-  }
-
-  fs.mkdirSync(projectPath, { recursive: true, mode: 0o700 });
-  sessionManager.setWorkingDirectory(sessionKey, projectPath);
-  clearConversation(sessionKey);
-  clearTopic(sessionKey);
-
-  const newConv = sessionManager.getSession(sessionKey)?.conversationId;
-  const back = withBackToPrevious(projectOpenedMessage('✅ Created and opened: ', args, sessionKey), sessionKey, newConv);
   await replyFormatted(ctx, back.text, back.options);
 
   const s = sessionManager.getSession(sessionKey);

@@ -21,6 +21,19 @@ reasoning — the commit bodies are the long form, this is the index.
   already rang the phone. `STATUS_LINE_DEFAULT=false` restores the old
   default; the last-prompts and `claude --resume` lines stay opt-in.
 
+- **`/status` shows what a Telegram user acts on**: bot, project, topic,
+  effort, model, provider, transport, context, cost and last activity. The
+  session id is one tap away under `/statusline`'s "Show session", and the
+  bot's uptime is `/botstatus`'s. Created, Working Directory and Uptime are
+  gone from it.
+
+- **An answer to a ForceReply prompt is routed by the prompt's id**, not by
+  phrases in its text ("Set Project Directory", "Download File", "Transcribe
+  Audio") that had to stay in step with the handlers. The tracker that already
+  knew which messages were prompts, for the group mention gate, now also knows
+  which flow each opened. An answer to a prompt from before a restart goes to
+  Claude as a message; re-open the prompt.
+
 ### Fixed
 
 - **A background task claude stopped no longer shows as running forever.**
@@ -28,6 +41,17 @@ reasoning — the commit bodies are the long form, this is the index.
   that notification was the only thing that retired a task, so "🔄 Running in
   background" stayed under every later reply until the bot restarted, and the
 ### Removed
+
+- **`/terminalui` and `TERMINAL_UI_DEFAULT`.** The "classic" mode it switched
+  to was Claudegram's: a bare "Thinking…" bubble and Telegram's "typing…"
+  indicator, with no sign of what Claude was doing. Every turn now has the
+  live status line, and `/verbosity` sets how much it shows. The typing
+  indicator, which Telegram Desktop animates on the CPU for the whole turn, is
+  gone with it. `TERMINAL_UI_VERBOSE` stays: it is a verbosity override.
+
+- **`/newproject`.** Making a folder under the workspace is file management,
+  not Claude Code: ask Claude to create the project, or `mkdir` it, and open it
+  with `/project`. `/newbot` says so too for a project folder that isn't there.
 
 - **Claudegram's agent modes, session list and process controls.** TeleCoder
   is for the real Claude Code experience in Telegram, and these came over from

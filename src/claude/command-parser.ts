@@ -93,7 +93,6 @@ export function getAvailableCommands(): EntityMessage {
       title: 'Session Commands',
       commands: [
         '• `/project <path>` - Set working directory',
-        '• `/newproject <name>` - Create a new project',
         '• `/newbot [project]` - Create a bot for a project, named after it and starting in it',
         '• `/resume` - Pick from recent sessions to resume',
         '• `/teleport` - Move session to terminal (forked)',
@@ -143,7 +142,6 @@ export function getAvailableCommands(): EntityMessage {
       '• `/mode` - How much Claude asks before acting',
       `• \`/autoapprove [30m|off|status]\` - Let the gate approve instead of asking, for a while${approverTag}`,
       '• `/verbosity` - Pick verbosity tier (quiet / normal / verbose / debug)',
-      '• `/terminalui` - Toggle terminal-style display',
       '• `/botname <name>` - Rename the bot (admins)',
       '• `/topic <text>` - Set current work topic in bot name',
     ],

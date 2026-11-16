@@ -81,6 +81,7 @@ const REMOVED_SETTINGS: Array<{ name: string; stale: (value: string) => boolean;
   { name: 'DANGEROUS_MODE', stale: isOn, note: 'it was removed: /mode sets how much Claude asks before acting.' },
   { name: 'MAX_LOOP_ITERATIONS', stale: (v) => v !== '5', note: '/loop was removed: Claude Code works until a task is done, and its own /loop skill reaches it now.' },
   { name: 'BOT_MODE', stale: () => true, note: 'it was removed with the botctl script: the bot runs under pm2, systemd or launchd.' },
+  { name: 'TERMINAL_UI_DEFAULT', stale: (v) => !isOn(v), note: '/terminalui was removed: every turn has the live status line, and /verbosity sets how much it shows.' },
 ];
 for (const { name, stale, note } of REMOVED_SETTINGS) {
   const value = process.env[name];

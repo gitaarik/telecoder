@@ -2,20 +2,14 @@
  * Coverage for showing the reply while it is being written.
  *
  * The reply used to reach the chat only when the turn ended. It is now edited
- * into the status bubble as it grows, formatted, with the status line (or a
- * "Writing" line) under it as the sign that it isn't final, and overflows into
+ * into the status bubble as it grows, formatted, with the status line under it
+ * as the sign that it isn't final, and overflows into
  * messages of its own past Telegram's limit. The final text then takes the
  * place of the live one.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GrammyError, type Context } from 'grammy';
-
-const isTerminalUIEnabled = vi.fn((_sessionKey: string) => false);
-vi.mock('../../src/telegram/terminal-settings.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/telegram/terminal-settings.js')>()),
-  isTerminalUIEnabled: (sessionKey: string) => isTerminalUIEnabled(sessionKey),
-}));
 
 // No action log: the reply is edited into the bubble.
 vi.mock('../../src/utils/verbosity.js', async (importOriginal) => ({
@@ -60,13 +54,12 @@ function fakeChat(chatId: number, type: 'private' | 'supergroup' = 'private') {
 describe('live reply', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    isTerminalUIEnabled.mockReturnValue(false);
   });
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it('edits the reply into the bubble, formatted, with a Writing line under it', async () => {
+  it('edits the reply into the bubble, formatted, with the status line under it', async () => {
     const sender = new MessageSender();
     const chat = fakeChat(101);
     await sender.startStreaming(chat.ctx, 'hi');
@@ -76,12 +69,9 @@ describe('live reply', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     const [edit] = chat.edits(BUBBLE);
-    expect(edit.text).toBe('Here is the answer\n\n✍️ Writing…');
+    expect(edit.text).toMatch(/^Here is the answer\n\n\S+ ✍️ Writing…$/);
     expect(edit.other.parse_mode).toBeUndefined();
-    expect(edit.other.entities).toEqual([
-      { type: 'bold', offset: 8, length: 3 },
-      { type: 'italic', offset: 20, length: 11 },
-    ]);
+    expect(edit.other.entities).toContainEqual({ type: 'bold', offset: 8, length: 3 });
   });
 
   it('holds back edits closer together than the stream interval, then catches up', async () => {
@@ -202,8 +192,7 @@ describe('live reply', () => {
     expect(chat.edits(BUBBLE).at(-1)!.text).toBe('Partial answer\n\n⚠️ Request cancelled');
   });
 
-  it('shows the status line under the reply with the terminal UI on', async () => {
-    isTerminalUIEnabled.mockReturnValue(true);
+  it('shows the status line under the reply', async () => {
     const sender = new MessageSender();
     const chat = fakeChat(107);
     await sender.startStreaming(chat.ctx, 'hi');

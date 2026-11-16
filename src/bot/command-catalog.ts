@@ -29,7 +29,6 @@ export function buildCommandMenu(): CommandMenuEntry[] {
   return [
     { command: 'start', description: '🚀 Show help and getting started' },
     { command: 'project', description: '📁 Set working directory' },
-    { command: 'newproject', description: '📁 Create a new project' },
     { command: 'newbot', description: '🤖 Create a bot for a project' },
     { command: 'status', description: '📊 Show current session status' },
     { command: 'clear', description: '🗑️ Clear conversation history' },
@@ -80,7 +79,6 @@ export function buildCommandMenu(): CommandMenuEntry[] {
     ...(config.CCR_ENABLED ? [{ command: 'ccr', description: '🔌 Toggle CCR routing (alt providers)' }] : []),
     { command: 'mode', description: '🔐 How much Claude asks before acting' },
     { command: 'autoapprove', description: '⚡ Approve guarded commands for a while' },
-    { command: 'terminalui', description: '🖥️ Toggle terminal-style display' },
     { command: 'statusline', description: '📍 Toggle per-turn status line' },
     { command: 'botname', description: '✏️ Rename the bot (admins)' },
     { command: 'topic', description: '💬 Set the conversation topic' },

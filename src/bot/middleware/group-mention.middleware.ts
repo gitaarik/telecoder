@@ -10,7 +10,8 @@
  * Addressed means one of:
  *   - an @mention of this bot's username
  *   - a slash command meant for this bot (`/status` or `/status@this_bot`)
- *   - an answer to one of the bot's ForceReply prompts (/project, /file),
+ *   - an answer to one of the bot's ForceReply prompts (/project, /file,
+ *     /transcribe),
  *     where Telegram attaches the reply itself and leaves nowhere to put a
  *     mention
  *

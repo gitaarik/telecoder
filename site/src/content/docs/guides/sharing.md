@@ -152,8 +152,8 @@ peers who all own the box.
 
 Commands that reconfigure the bot rather than drive the conversation stay with
 admins — `/restartbot`, `/rebuildbot`, `/update`, `/mode`, `/method`,
-`/provider`, `/ccr`, `/permissions`, `/teleport`, `/project`, `/newproject`,
-`/newbot`, `/users`, `/allow` and `/deny`, along with the inline buttons those
+`/provider`, `/ccr`, `/permissions`, `/teleport`, `/project`, `/newbot`,
+`/users`, `/allow` and `/deny`, along with the inline buttons those
 open. A contributor drives the conversation; only an admin repoints or restarts
 the bot. `/members` is readable by anyone who can prompt.
 

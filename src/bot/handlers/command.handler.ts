@@ -8,6 +8,7 @@ import { getAvailableCommands } from '../../claude/command-parser.js';
 import { isProcessing } from '../../claude/request-queue.js';
 import { EntityText, joinMessages, trimMessage, type EntityMessage } from '../../telegram/entities.js';
 import { replyFormatted, replyParts } from '../../telegram/send.js';
+import { sendForceReplyPrompt } from '../../telegram/force-reply-tracker.js';
 import { contextHealthColor, fmtTokens, getProgressBar } from '../../utils/format.js';
 import * as path from 'path';
 import { execFile } from 'child_process';
@@ -56,7 +57,6 @@ export { handleBtw, btwLabel, formatSideAnswer } from './command/btw.js';
 import { listProjectFiles } from './command/project.js';
 export {
   handleProject,
-  handleNewProject,
   handleProjectCallback,
 } from './command/project.js';
 export {
@@ -83,8 +83,6 @@ export { handleResume, handleResumeCallback } from './command/resume.js';
 export {
   handlePermissionMode,
   handlePermissionModeCallback,
-  handleTerminalUI,
-  handleTerminalUICallback,
   handleTTS,
   handleTTSCallback,
   handleEffort,
@@ -224,7 +222,6 @@ export async function handleStart(ctx: Context): Promise<void> {
     .add('\n2. Start chatting with Claude about your code!\n\n')
     .bold('Commands:')
     .add('\n• ').code('/project <path>').add(' - Open a project')
-    .add('\n• ').code('/newproject <name>').add(' - Create a new project')
     .add('\n• ').code('/clear').add(' - Clear session and start fresh')
     .add('\n• ').code('/status').add(' - Show current session info')
     .add('\n• ').code('/commands').add(' - Show all commands; ').code('/commands <words>').add(' searches them')
@@ -282,8 +279,7 @@ export async function handleStatus(ctx: Context): Promise<void> {
     field('🧠', 'Model').add(currentModel);
     if (provider === 'ccr') status.add(' ').italic('(routed via CCR)');
     field('🔌', 'Provider').add(provider);
-    field('🆔', 'Session ID').code(session.claudeSessionId ?? session.conversationId);
-    field('📁', 'Working Directory').code(session.workingDirectory);
+    field('🚇', 'Transport').add(getActiveMethod(sessionKey));
     if (cached) {
       // Cache reads and writes are most of the context, and without them this
       // read about 0%. Same sum as the usage footer's.
@@ -308,9 +304,9 @@ export async function handleStatus(ctx: Context): Promise<void> {
       field('👤', 'Your role here').add(role);
     }
 
-    field('🕰️', 'Created').add(session.createdAt.toLocaleString());
+    // The session id is one tap away under /statusline's "Show session", and
+    // the bot's uptime is /botstatus's business.
     field('⏱️', 'Last Activity').add(session.lastActivity.toLocaleString());
-    field('⏳', 'Uptime').add(getUptimeFormatted());
 
     await replyFormatted(ctx, status.build());
   } catch (err) {
@@ -711,16 +707,11 @@ export async function handleFile(ctx: Context): Promise<void> {
       fileList = b.build();
     }
 
-    await replyFormatted(
+    await sendForceReplyPrompt(
       ctx,
+      'file',
       modePrompt('📎', 'Download File', session.workingDirectory, fileList, 'Enter the file path:'),
-      {
-        reply_markup: {
-          force_reply: true,
-          input_field_placeholder: 'src/index.ts',
-          selective: true,
-        },
-      }
+      'src/index.ts',
     );
     return;
   }

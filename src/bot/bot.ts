@@ -25,7 +25,6 @@ import {
   handleClear,
   handleClearCallback,
   handleProject,
-  handleNewProject,
   handleProjectCallback,
   handleStatus,
   handlePermissionMode,
@@ -63,8 +62,6 @@ import {
   handleProjectCommands,
   handleTeleport,
   handleFile,
-  handleTerminalUI,
-  handleTerminalUICallback,
   handleStatusLine,
   handleStatusLineCallback,
   handleTranscribe,
@@ -121,7 +118,7 @@ import { describeResponderRefusal } from '../telegram/admin-mention.js';
 import { handleAskUserFormCallback } from '../claude/ask-user-form.js';
 import { groupMentionMiddleware } from './middleware/group-mention.middleware.js';
 import { groupRoleMiddleware } from './middleware/group-role.middleware.js';
-import { trackForceReplyPrompts } from '../telegram/force-reply-tracker.js';
+import { repliedForceReplyFlow, trackForceReplyPrompts } from '../telegram/force-reply-tracker.js';
 import { initThreadTitles } from '../telegram/thread-titles.js';
 import { watchForDeletedThreads } from './deleted-threads.js';
 import { startPtyIdleReaper } from '../claude/pty-idle-reaper.js';
@@ -401,12 +398,10 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // has no reason to wait for this one. Their menu buttons likewise.
   cmd('statusline', handleStatusLine);
   cmd('verbosity', handleVerbosity);
-  cmd('terminalui', handleTerminalUI);
   cmd('tts', handleTTS);
   cmd('suggestions', handleSuggestions);
   bot.callbackQuery(/^statusline:/, handleStatusLineCallback);
   bot.callbackQuery(/^verbosity:/, handleVerbosityCallback);
-  bot.callbackQuery(/^terminalui:/, handleTerminalUICallback);
   bot.callbackQuery(/^tts:/, handleTTSCallback);
   bot.callbackQuery(/^sugg:/, handleSuggestionsCallback);
   // The same goes for the permission mode, which a turn applies as it starts,
@@ -508,7 +503,6 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // moves everyone's session, and /teleport and /permissions reach the
   // guardrails rather than the conversation.
   cmd('project', adminOnly(handleProject));
-  cmd('newproject', adminOnly(handleNewProject));
   // /compact is a native Claude Code slash command, not a bot command — route it
   // through the normal message pipeline (handleMessage), which forwards it to
   // the active provider. The PTY provider runs the real compaction and reports
@@ -617,14 +611,10 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
     const doc = ctx.message?.document;
     const mime = doc?.mime_type ?? '';
 
-    // Try transcribe-document path first (audio MIME + reply to ForceReply)
-    const replyTo = ctx.message?.reply_to_message;
-    if (replyTo && replyTo.from?.is_bot && mime.startsWith('audio/')) {
-      const replyText = (replyTo as { text?: string }).text || '';
-      if (replyText.includes('Transcribe Audio')) {
-        await handleTranscribeDocument(ctx);
-        return;
-      }
+    // Try transcribe-document path first (audio MIME + reply to /transcribe's prompt)
+    if (mime.startsWith('audio/') && repliedForceReplyFlow(ctx) === 'transcribe') {
+      await handleTranscribeDocument(ctx);
+      return;
     }
 
     if (mime.startsWith('image/')) {

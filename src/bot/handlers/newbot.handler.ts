@@ -78,7 +78,7 @@ export async function offerNewBot(
     };
   }
   if (!fs.existsSync(projectPath) || !fs.statSync(projectPath).isDirectory()) {
-    return { ok: false, message: `There's no project folder at ${projectPath}. Create it with /newproject first.` };
+    return { ok: false, message: `There's no project folder at ${projectPath}. Create it first — ask Claude to, or run mkdir.` };
   }
 
   const project = path.basename(projectPath);

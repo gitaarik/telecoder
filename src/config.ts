@@ -308,12 +308,7 @@ const envSchema = z.object({
     .string()
     .default('true')
     .transform((val) => val.toLowerCase() === 'true'),
-  // Terminal UI mode
-  TERMINAL_UI_DEFAULT: z
-    .string()
-    .default('true')
-    .transform((val) => val.toLowerCase() === 'true'),
-  // Terminal UI verbose: show full commands/paths without truncation and longer session previews.
+  // Status-line verbose: show full commands/paths without truncation and longer session previews.
   // When set, overrides the verbosity tier.
   TERMINAL_UI_VERBOSE: z
     .string()

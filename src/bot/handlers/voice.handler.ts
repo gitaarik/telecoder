@@ -17,6 +17,7 @@ import { sanitizeError, sanitizePath } from '../../utils/sanitize.js';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
 import { requireSession } from './session-guard.js';
 import { replyFeatureDisabled } from './command/shared.js';
+import { repliedForceReplyFlow } from '../../telegram/force-reply-tracker.js';
 import { progressCallbacks, withStreamingTurn } from '../../telegram/streaming-turn.js';
 
 export async function handleVoice(ctx: Context): Promise<void> {
@@ -46,14 +47,10 @@ export async function handleVoice(ctx: Context): Promise<void> {
     return;
   }
 
-  // If this is a reply to the bot's "Transcribe Audio" ForceReply, route to transcribe-only flow
-  const replyTo = ctx.message?.reply_to_message;
-  if (replyTo && replyTo.from?.is_bot) {
-    const replyText = (replyTo as { text?: string }).text || '';
-    if (replyText.includes('Transcribe Audio')) {
-      await handleTranscribeOnly(ctx, chatId, messageId, voice);
-      return;
-    }
+  // An answer to /transcribe's prompt is transcribed and nothing more.
+  if (repliedForceReplyFlow(ctx) === 'transcribe') {
+    await handleTranscribeOnly(ctx, chatId, messageId, voice);
+    return;
   }
 
   // Check session — fall back to disk if the bot restarted recently.

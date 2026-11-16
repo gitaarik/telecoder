@@ -10,7 +10,7 @@ import * as path from 'path';
 import { config } from '../../../config.js';
 import { messageSender } from '../../../telegram/message-sender.js';
 import { EntityText } from '../../../telegram/entities.js';
-import { replyFormatted } from '../../../telegram/send.js';
+import { repliedForceReplyFlow, sendForceReplyPrompt } from '../../../telegram/force-reply-tracker.js';
 import { isDuplicate, markProcessed } from '../../../telegram/deduplication.js';
 import { isStaleMessage } from '../../middleware/stale-filter.js';
 import { replyBareAudio, exceedsDownloadLimit, replyTooLargeToFetch } from '../media-fallback.js';
@@ -143,16 +143,11 @@ export async function handleTranscribe(ctx: Context): Promise<void> {
   }
 
   // Path B: no audio attached — send ForceReply prompt
-  await replyFormatted(
+  await sendForceReplyPrompt(
     ctx,
+    'transcribe',
     new EntityText().add('🎤 ').bold('Transcribe Audio').add('\n\n').italic('Send a voice note or audio file:').build(),
-    {
-      reply_markup: {
-        force_reply: true,
-        input_field_placeholder: 'Send a voice note or audio file',
-        selective: true,
-      },
-    }
+    'Send a voice note or audio file',
   );
 }
 
@@ -186,9 +181,7 @@ export async function handleTranscribeAudio(ctx: Context): Promise<void> {
   // Transcription is opt-in: the file has to be a reply to the /transcribe
   // ForceReply prompt. A bare audio upload isn't a transcribe request, but it
   // isn't nothing either — tell the user how to ask for one.
-  const replyTo = ctx.message?.reply_to_message;
-  const replyText = replyTo?.from?.is_bot ? ((replyTo as { text?: string }).text || '') : '';
-  if (!replyText.includes('Transcribe Audio')) {
+  if (repliedForceReplyFlow(ctx) !== 'transcribe') {
     await replyBareAudio(ctx, audio.file_size);
     return;
   }
@@ -205,10 +198,7 @@ export async function handleTranscribeDocument(ctx: Context): Promise<void> {
     return;
   }
 
-  const replyTo = ctx.message?.reply_to_message;
-  if (!replyTo || !replyTo.from?.is_bot) return;
-  const replyText = (replyTo as { text?: string }).text || '';
-  if (!replyText.includes('Transcribe Audio')) return;
+  if (repliedForceReplyFlow(ctx) !== 'transcribe') return;
 
   const doc = ctx.message?.document;
   if (!doc || !doc.mime_type?.startsWith('audio/')) return;

@@ -1,37 +1,49 @@
 /**
- * Remembers which of the bot's own messages were ForceReply prompts.
+ * Remembers which of the bot's own messages were ForceReply prompts, and which
+ * flow each one opened.
  *
- * In a group the bot only answers when it is @mentioned, but the ForceReply
- * flows (`/project`, `/file`) are answered by replying to the
- * prompt — Telegram pops the composer open with the reply already attached,
- * and there is nowhere to put a mention. Those replies have to stay
- * addressed, so the gate needs to tell "answering a prompt" apart from
- * "quoting something the bot said".
+ * A ForceReply flow (`/project`, `/file`, `/transcribe`) posts a question and
+ * takes the user's reply to it as the answer: Telegram pops the composer open
+ * with the reply already attached. Two things need to know a reply answers a
+ * prompt:
  *
- * Rather than re-deriving that from the prompt's wording (a list that would
- * drift from the handlers), a transformer watches outgoing sendMessage calls
- * and records the id of any message sent with a force_reply keyboard.
+ *   - the message handlers, to route the answer to the flow that asked, which
+ *     {@link forceReplyFlow} tells them from the prompt's id rather than from
+ *     its wording — a list of phrases that would drift from the handlers;
+ *   - the group mention gate, since in a group the bot only answers when it is
+ *     @mentioned and a reply to a prompt has nowhere to put a mention. A
+ *     transformer watches outgoing sendMessage calls and records every message
+ *     sent with a force_reply keyboard, so that gate holds for a prompt sent
+ *     any other way too.
  *
  * The ids live in memory only: these prompts are answered within seconds, and
  * a prompt left hanging across a restart is better re-opened than resurrected.
  */
 
-import type { Bot } from 'grammy';
+import type { Bot, Context } from 'grammy';
+import type { Formatted } from './send.js';
+import { replyFormatted } from './send.js';
 
-/** Plenty for any realistic number of prompts open at once; bounds the set. */
+export type ForceReplyFlow = 'project' | 'file' | 'transcribe';
+
+/** Plenty for any realistic number of prompts open at once; bounds the map. */
 const MAX_TRACKED = 200;
 
-const prompts = new Set<string>();
+/** Prompt → the flow it opened, or undefined for one sent outside {@link sendForceReplyPrompt}. */
+const prompts = new Map<string, ForceReplyFlow | undefined>();
 
 const key = (chatId: number, messageId: number): string => `${chatId}:${messageId}`;
 
-export function rememberForceReplyPrompt(chatId: number, messageId: number): void {
+export function rememberForceReplyPrompt(chatId: number, messageId: number, flow?: ForceReplyFlow): void {
   const k = key(chatId, messageId);
   // Re-inserting moves it to the end, so the oldest entry is always first out.
+  // The transformer records a prompt first, without its flow; the sender then
+  // names the flow, which must not be lost to a later nameless record.
+  const known = prompts.get(k);
   prompts.delete(k);
-  prompts.add(k);
+  prompts.set(k, flow ?? known);
   while (prompts.size > MAX_TRACKED) {
-    const oldest = prompts.values().next();
+    const oldest = prompts.keys().next();
     if (oldest.done) break;
     prompts.delete(oldest.value);
   }
@@ -41,7 +53,39 @@ export function isForceReplyPrompt(chatId: number, messageId: number): boolean {
   return prompts.has(key(chatId, messageId));
 }
 
-/** Test seam — the set is module state that would otherwise leak between cases. */
+/** The flow a reply to `messageId` answers, or undefined when it answers no open prompt. */
+export function forceReplyFlow(chatId: number, messageId: number): ForceReplyFlow | undefined {
+  return prompts.get(key(chatId, messageId));
+}
+
+/**
+ * The flow the message being replied to opened, if it is one of this bot's
+ * prompts. Undefined for a message that isn't a reply, replies to a user, or
+ * replies to a bot message that was no prompt (or one from before a restart).
+ */
+export function repliedForceReplyFlow(ctx: Context): ForceReplyFlow | undefined {
+  const replyTo = ctx.message?.reply_to_message;
+  const chatId = ctx.chat?.id;
+  if (!replyTo?.from?.is_bot || chatId === undefined) return undefined;
+  return forceReplyFlow(chatId, replyTo.message_id);
+}
+
+/**
+ * Post a ForceReply prompt for `flow` and remember which flow it opened.
+ * `selective` keeps the composer from opening for everyone else in a group.
+ */
+export async function sendForceReplyPrompt(ctx: Context, flow: ForceReplyFlow, text: Formatted, placeholder: string): Promise<void> {
+  const sent = await replyFormatted(ctx, text, {
+    reply_markup: {
+      force_reply: true,
+      input_field_placeholder: placeholder,
+      selective: true,
+    },
+  });
+  rememberForceReplyPrompt(sent.chat.id, sent.message_id, flow);
+}
+
+/** Test seam — the map is module state that would otherwise leak between cases. */
 export function clearForceReplyPrompts(): void {
   prompts.clear();
 }
