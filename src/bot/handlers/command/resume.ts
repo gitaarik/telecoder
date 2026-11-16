@@ -33,6 +33,7 @@ import {
 import { setPendingCarryOver } from '../../../claude/carry-over.js';
 import { isProcessing } from '../../../claude/request-queue.js';
 import { clearConversation, getActiveProviderName } from '../../../providers/provider-router.js';
+import { prewarmClaude } from '../../../claude/prewarm.js';
 import { buildCarryOverPreamble } from '../../../providers/provider-switch.js';
 import { EntityText, type EntityMessage } from '../../../telegram/entities.js';
 import { buildLetteredKeyboard, letteredOptionLines } from '../../../telegram/lettered-options.js';
@@ -370,6 +371,9 @@ async function resumeScanned(ctx: Context, sessionKey: string, s: ScannedSession
   } else {
     await replyFormatted(ctx, text);
   }
+  // Last of the state changes above is long done; the claude this starts is
+  // the one the first message would have.
+  void prewarmClaude(ctx, sessionKey);
   if (carriedOver) return;
 
   await replyFormatted(ctx, resumeCommandMessage(sessionId));

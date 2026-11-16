@@ -354,6 +354,15 @@ const envSchema = z.object({
     .string()
     .default('3600000')
     .transform((val) => parseInt(val, 10)),
+  // Start a chat's `claude` as soon as its conversation is chosen — /project,
+  // /clear, /resume — instead of on the first message after, so that message
+  // doesn't wait for Claude Code to start. Skipped without a word when memory
+  // is under the guard's floor; one nobody ends up using is ended by the idle
+  // timeout like any other. false starts it on the first message.
+  PREWARM_CLAUDE: z
+    .string()
+    .default('true')
+    .transform((val) => val.toLowerCase() === 'true'),
   // Memory guard. Before a typed message starts a new `claude` for a PTY chat
   // — a new chat or thread, or one whose claude was ended — the machine's
   // available memory (MemAvailable) is checked, less a few hundred MB for

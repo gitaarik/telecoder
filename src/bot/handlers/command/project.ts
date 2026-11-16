@@ -11,6 +11,7 @@ import * as path from 'path';
 import { config } from '../../../config.js';
 import { sessionManager } from '../../../claude/session-manager.js';
 import { clearConversation } from '../../../providers/provider-router.js';
+import { prewarmClaude } from '../../../claude/prewarm.js';
 import { projectFavorites } from '../../../providers/project-favorites.js';
 import { EntityText, type EntityMessage } from '../../../telegram/entities.js';
 import { replyFormatted, editCallbackMessage } from '../../../telegram/send.js';
@@ -75,6 +76,7 @@ async function selectProjectFromCallback(ctx: Context, sessionKey: string, proje
   if (s?.claudeSessionId) {
     await replyFormatted(ctx, resumeCommandMessage(s.claudeSessionId));
   }
+  void prewarmClaude(ctx, sessionKey);
 }
 
 /** "<lead><name>", the chat-now line and the project status block. */
@@ -529,4 +531,5 @@ export async function handleProject(ctx: Context): Promise<void> {
   if (s?.claudeSessionId) {
     await replyFormatted(ctx, resumeCommandMessage(s.claudeSessionId));
   }
+  void prewarmClaude(ctx, sessionKey);
 }

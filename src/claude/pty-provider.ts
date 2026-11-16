@@ -442,6 +442,14 @@ interface PtySession {
    */
   awaitingResumeReplay: boolean;
   /**
+   * True for a claude started ahead of its first prompt (see prewarm) on a
+   * session id the bot's session doesn't carry yet. Until a prompt goes in
+   * there is no conversation under that id — claude writes no transcript
+   * before one — and everything that asks "has this chat a conversation?"
+   * asks the bot's session. The first turn to use this pty records the id.
+   */
+  idUnclaimed: boolean;
+  /**
    * Set to true after we've scanned this pty's startup output for Claude
    * Code's update banner. The banner only renders during the first TUI draw,
    * but it lingers in the xterm scrollback for the lifetime of the pty — so
@@ -596,6 +604,25 @@ export class PtyProvider implements Provider {
       return false; // pty already gone
     }
     markSelfTurnInterrupted(sessionKey);
+    return true;
+  }
+
+  /**
+   * Start this chat's claude now, ahead of the message that would otherwise
+   * start it, so that message finds the input box already open. Spawns and
+   * nothing more: the readiness wait a turn runs reads the screen as it
+   * stands, so the first prompt waits out whatever is left of the startup,
+   * and a dialog claude opened on the way (folder trust) is relayed then, as
+   * it always was. A chat that already has a claude is left alone — a turn
+   * may be using it. Returns whether one was started.
+   */
+  prewarm(sessionKey: string, options?: Pick<AgentOptions, 'executableOverride' | 'providerName' | 'telegramCtx'>): boolean {
+    if (this.closing || this.sessions.has(sessionKey)) return false;
+    const session = this._getOrCreateSession(sessionKey, options, true);
+    // Claude can start a turn of its own before the first prompt (a resumed
+    // session reporting a task that ended while it was down), and a tool
+    // called there needs the chat.
+    if (options?.telegramCtx) registerSessionChat(session.claudeSessionId, sessionKey, options.telegramCtx);
     return true;
   }
 
@@ -1101,7 +1128,7 @@ export class PtyProvider implements Provider {
     }
   }
 
-  private _getOrCreateSession(sessionKey: string, options?: AgentOptions): PtySession {
+  private _getOrCreateSession(sessionKey: string, options?: AgentOptions, ahead = false): PtySession {
     // closeAll has ended every claude; one started now would outlive the bot.
     if (this.closing) {
       throw new Error("TeleCoder is shutting down, so this didn't reach Claude. Send it again once it's back.");
@@ -1115,6 +1142,10 @@ export class PtyProvider implements Provider {
         existing.lastUsedAt = Date.now();
         existing.onProgress = options?.onProgress;
         existing.onTip = options?.onTip;
+        if (existing.idUnclaimed && !ahead) {
+          existing.idUnclaimed = false;
+          sessionManager.setClaudeSessionId(sessionKey, existing.claudeSessionId, options?.providerName);
+        }
         return existing;
       }
       // Workspace or backend changed under us — restart cleanly.
@@ -1157,7 +1188,9 @@ export class PtyProvider implements Provider {
 
     const resuming = !!(priorId && claudeSessionFileExists(requiredCwd, priorId));
     const claudeSessionId = resuming ? priorId! : randomUUID();
-    if (!resuming) {
+    // A new id is the bot session's from the first prompt on, not before.
+    const idUnclaimed = !resuming && ahead;
+    if (!resuming && !ahead) {
       sessionManager.setClaudeSessionId(sessionKey, claudeSessionId, providerName);
     }
 
@@ -1310,6 +1343,7 @@ export class PtyProvider implements Provider {
       lastTypedPrompt: undefined,
       boxMayHold: undefined,
       awaitingResumeReplay: resuming,
+      idUnclaimed,
       updateBannerChecked: false,
       turnRelay: null,
       relayingModal: false,

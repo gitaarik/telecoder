@@ -49,6 +49,9 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 - `/deletethread` deletes a thread and ends its session. A thread deleted by hand is noticed
   the first time something is sent into it, and an idle PTY session's `claude` is ended after
   an hour either way
+- Claude Code starts as soon as the conversation is chosen, with `/project`, `/clear` or
+  `/resume`, so the first message doesn't wait for it to start. Skipped when memory is
+  short, and `PREWARM_CLAUDE=false` turns it off
 - [Threads and forks](threads-and-forks.md)
 
 ## Working while Claude works

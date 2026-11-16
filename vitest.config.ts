@@ -26,6 +26,9 @@ export default defineConfig({
       // worker otherwise inherits that worker's BOT_NAME (e.g. "TeleCoder 6"),
       // and the botname tests assert against the default.
       BOT_NAME: 'TeleCoder',
+      // A handler test that picks a project must not start a real claude for
+      // it. The tests of the early start itself turn it back on.
+      PREWARM_CLAUDE: 'false',
     },
     include: ['tests/**/*.test.ts'],
     coverage: {

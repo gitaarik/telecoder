@@ -141,6 +141,22 @@ export async function guardSpawn(ctx: Context | undefined, sessionKey: string): 
   return askChat(ctx, sessionKey, mem, starting);
 }
 
+/**
+ * Whether a claude may be started for `sessionKey` before anyone has sent it
+ * anything (see prewarm.ts). An early start is a convenience, so it gets the
+ * same floor and none of the remedies: nothing is reaped for it and nobody is
+ * asked. Under the floor it just doesn't happen, and the first message goes
+ * through {@link guardSpawn} as it would have. One that is allowed is counted
+ * like any other spawn.
+ */
+export function allowPrewarm(sessionKey: string): boolean {
+  if (!isMemoryGuardEnabled()) return true;
+  const starting = countStarting(sessionKey);
+  if (isTight(readMemory(), starting)) return false;
+  noteSpawn(sessionKey);
+  return true;
+}
+
 interface OtherClaudes {
   busy: number;
   /** Idle claudes that could be ended, longest idle first. */

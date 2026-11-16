@@ -57,7 +57,7 @@ vi.mock('../../src/claude/ask-user.js', () => ({
   },
 }));
 
-const { guardSpawn, buildMemoryGuardMessage, formatIdle, resolveMinAvailableMB, clearStartingClaudes, SPAWN_RESERVE_MB } = await import('../../src/claude/memory-guard.js');
+const { guardSpawn, allowPrewarm, buildMemoryGuardMessage, formatIdle, resolveMinAvailableMB, clearStartingClaudes, SPAWN_RESERVE_MB } = await import('../../src/claude/memory-guard.js');
 const { parseMeminfo } = await import('../../src/utils/memory-pressure.js');
 const { config } = await import('../../src/config.js');
 
@@ -241,6 +241,45 @@ describe('the question', () => {
     expect(formatIdle(150_000)).toBe('3 min');
     expect(formatIdle(3_900_000)).toBe('1 h 5 min');
     expect(formatIdle(7_200_000)).toBe('2 h');
+  });
+});
+
+describe('allowPrewarm', () => {
+  beforeEach(() => {
+    fake.availableMB = [2048];
+    fake.live = false;
+    fake.reaped = [];
+    fake.reapCalls = [];
+    fake.asked = [];
+    fake.sent = [];
+    (config as { MEMORY_GUARD_MIN_AVAILABLE_MB: number | 'auto' }).MEMORY_GUARD_MIN_AVAILABLE_MB = 1024;
+    (config as { MEMORY_GUARD_MAX_SWAP_USED_MB: number }).MEMORY_GUARD_MAX_SWAP_USED_MB = 0;
+    clearStartingClaudes();
+  });
+
+  it('allows an early start with room in memory, and counts it like any spawn', async () => {
+    // 1300 MB clears the 1024 floor once; a second chat sees it less the first one's reservation.
+    fake.availableMB = [1300];
+    expect(allowPrewarm('1:1')).toBe(true);
+    expect(allowPrewarm('1:2')).toBe(false);
+    // The message that follows the early start is that chat's own spawn.
+    expect((await guardSpawn(ctx(), '1:1')).proceed).toBe(true);
+    expect(fake.asked).toEqual([]);
+  });
+
+  it('refuses under the floor without reaping anything or asking anyone', () => {
+    fake.availableMB = [600];
+    fake.reaped = ['9:9'];
+    expect(allowPrewarm(KEY)).toBe(false);
+    expect(fake.reapCalls).toEqual([]);
+    expect(fake.asked).toEqual([]);
+    expect(fake.sent).toEqual([]);
+  });
+
+  it('always allows it with the guard off', () => {
+    (config as { MEMORY_GUARD_MIN_AVAILABLE_MB: number | 'auto' }).MEMORY_GUARD_MIN_AVAILABLE_MB = 0;
+    fake.availableMB = [100];
+    expect(allowPrewarm(KEY)).toBe(true);
   });
 });
 

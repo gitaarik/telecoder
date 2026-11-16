@@ -11,6 +11,7 @@ import { Context } from 'grammy';
 import * as fs from 'fs';
 import * as path from 'path';
 import { clearConversation } from '../../../providers/provider-router.js';
+import { prewarmClaude } from '../../../claude/prewarm.js';
 import { sessionManager } from '../../../claude/session-manager.js';
 import { EntityText } from '../../../telegram/entities.js';
 import { replyFormatted } from '../../../telegram/send.js';
@@ -64,4 +65,5 @@ export async function handleProjectReply(ctx: Context, sessionKey: string, proje
   if (s?.claudeSessionId) {
     await replyFormatted(ctx, resumeCommandMessage(s.claudeSessionId));
   }
+  void prewarmClaude(ctx, sessionKey);
 }

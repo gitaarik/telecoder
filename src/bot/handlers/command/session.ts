@@ -14,6 +14,7 @@ import { config } from '../../../config.js';
 import { sessionManager } from '../../../claude/session-manager.js';
 import { sessionHistory } from '../../../claude/session-history.js';
 import { clearConversation, getCachedUsage } from '../../../providers/provider-router.js';
+import { prewarmClaude } from '../../../claude/prewarm.js';
 import { messageSender } from '../../../telegram/message-sender.js';
 import { EntityText, type EntityMessage } from '../../../telegram/entities.js';
 import { replyFormatted, editCallbackMessage, replyMarkdown } from '../../../telegram/send.js';
@@ -68,6 +69,7 @@ export async function handleClear(ctx: Context): Promise<void> {
     const projectName = session ? path.basename(session.workingDirectory) : null;
     const back = withBackToPrevious(clearedMessage(projectName), sessionKey, session?.conversationId);
     await replyFormatted(ctx, back.text, back.options);
+    void prewarmClaude(ctx, sessionKey);
     return;
   }
 
@@ -124,6 +126,7 @@ export async function handleClearCallback(ctx: Context): Promise<void> {
     await ctx.answerCallbackQuery({ text: 'Conversation cleared!' });
     const back = withBackToPrevious(clearedMessage(projectName), sessionKey, session?.conversationId);
     await editCallbackMessage(ctx, back.text, back.options);
+    void prewarmClaude(ctx, sessionKey);
   } else {
     await ctx.answerCallbackQuery({ text: 'Cancelled' });
     await editCallbackMessage(ctx, '👍 Clear cancelled. Your session is intact.');
@@ -157,6 +160,7 @@ export async function resumeHistoryEntry(ctx: Context, sessionKey: string, conve
 
   await taskListDisplay.showRestored(ctx.api, sessionKey, session.claudeSessionId);
   await sendRecapHint(ctx, sessionKey);
+  void prewarmClaude(ctx, sessionKey);
 }
 
 /** "<lead><project>", the working directory and the project status block. */
@@ -198,6 +202,7 @@ export async function continueLastSession(ctx: Context): Promise<void> {
 
   await taskListDisplay.showRestored(ctx.api, sessionKey, session.claudeSessionId);
   await sendRecapHint(ctx, sessionKey);
+  void prewarmClaude(ctx, sessionKey);
 }
 
 // Cap for the user-prompt blockquote — long pasted prompts shouldn't dominate

@@ -7,6 +7,16 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Added
 
+- **Claude Code starts when the conversation is chosen, not on the first
+  message.** The first message after `/project`, `/clear` or `/resume` used to
+  wait for Claude Code to start, a few seconds and more for a long resumed
+  conversation. The bot now starts it as those commands finish, and the
+  message finds it ready or waits out only what is left. When memory is under
+  the guard's floor the early start is skipped: nothing is ended for it and
+  nobody is asked. A new session id is recorded with the first message, as
+  before, so an early start nobody uses leaves nothing behind and is ended by
+  the idle timeout. `PREWARM_CLAUDE=false` turns it off.
+
 - **A new bot gets the TeleCoder icon.** `telecoder init` offers it to a bot
   that has no profile picture yet, and a bot made with `/newbot` starts with
   it. A plain letter on a coloured disc is hard to tell from the next bot's.
