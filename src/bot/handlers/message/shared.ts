@@ -17,10 +17,8 @@ import { readLastAiTitle } from '../../../claude/session-jsonl.js';
 import { namesThread } from '../../../telegram/thread-titles.js';
 import { userPreferences } from '../../../providers/user-preferences.js';
 import { parseSessionKey } from '../../../utils/session-key.js';
-import { resolveShareableFile } from '../../file-access.js';
 import { getSessionTopic, setSessionTopic } from '../command.handler.js';
 import { getMsSinceTopicSet } from '../command/topic-store.js';
-import { requireSession } from '../session-guard.js';
 import { turnErrorReply } from '../../../claude/claude-auth.js';
 
 export { requireSession } from '../session-guard.js';
@@ -77,26 +75,6 @@ export function fireAutoTopic(ctx: Context, sessionKey: string, userMessage: str
   })();
 }
 
-
-/**
- * Resolve a user-typed file path against the active session, enforcing the
- * file-access rules (see bot/file-access.ts: the credential denylist for
- * everyone, the project directory for guests, the workspace for admins) and
- * that the target is an existing regular file.
- *
- * Every rejection is reported to the chat and returns null, so callers only
- * need to early-return.
- */
-export async function resolveUserFilePath(
-  ctx: Context,
-  sessionKey: string,
-  filePath: string,
-): Promise<string | null> {
-  const session = await requireSession(ctx, sessionKey);
-  if (!session) return null;
-
-  return resolveShareableFile(ctx, session.workingDirectory, filePath);
-}
 
 /**
  * Queue a turn and turn any failure into a user-facing error.

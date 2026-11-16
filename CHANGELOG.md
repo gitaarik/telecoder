@@ -36,11 +36,23 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Fixed
 
+- **Claude's send-file tool follows the same rules as `/file`.** It checked
+  only that the path was under the workspace or `/tmp`, and the scope guard
+  that prompts for a credential path watches Read and Bash, not MCP tools. So
+  a guest who asked Claude for `~/.ssh/id_rsa` got it, unless Claude happened
+  to read it first. Both transports now refuse credential and bot-state paths
+  for everyone and confine a guest to the chat's project, as `/file` has.
+
 - **A background task claude stopped no longer shows as running forever.**
   Claude writes no task-notification for a task it ends with TaskStop, and
   that notification was the only thing that retired a task, so "🔄 Running in
   background" stayed under every later reply until the bot restarted, and the
 ### Removed
+
+- **The `/file` prompt.** Sent bare, `/file` posted a "Download File" card
+  with eight guessed-at files and waited for a reply. Nobody browses a project
+  that way when Claude can send the file by name; `/file <path>` stays, for a
+  file you know while Claude is busy, and bare `/file` says how to use it.
 
 - **`/terminalui` and `TERMINAL_UI_DEFAULT`.** The "classic" mode it switched
   to was Claudegram's: a bare "Thinking…" bubble and Telegram's "typing…"

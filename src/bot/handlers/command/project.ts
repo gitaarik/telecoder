@@ -530,38 +530,3 @@ export async function handleProject(ctx: Context): Promise<void> {
     await replyFormatted(ctx, resumeCommandMessage(s.claudeSessionId));
   }
 }
-
-export function listProjectFiles(projectPath: string, maxDepth: number = 2): string[] {
-  const files: string[] = [];
-
-  function walk(dir: string, depth: number, prefix: string = '') {
-    if (depth > maxDepth) return;
-    try {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-        const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
-        if (entry.isFile()) {
-          files.push(relativePath);
-        } else if (entry.isDirectory() && depth < maxDepth) {
-          walk(path.join(dir, entry.name), depth + 1, relativePath);
-        }
-      }
-    } catch {
-      // Ignore permission errors
-    }
-  }
-
-  walk(projectPath, 0);
-  // Sort by common file types first (README, package.json, src files)
-  return files.sort((a, b) => {
-    const priority = (f: string) => {
-      if (f === 'README.md') return 0;
-      if (f === 'package.json') return 1;
-      if (f.startsWith('src/')) return 2;
-      if (f.endsWith('.md')) return 3;
-      return 4;
-    };
-    return priority(a) - priority(b);
-  });
-}

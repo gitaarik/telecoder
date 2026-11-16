@@ -1,5 +1,6 @@
 /**
- * Which files may be sent out of the machine from chat with `/file`.
+ * Which files may be sent out of the machine, by `/file` from chat and by
+ * claude's send-file tool.
  *
  * It used to accept any path under WORKSPACE_DIR, which defaults to $HOME.
  * On a shared bot that let any guest fetch `~/.claude/.credentials.json` or
@@ -27,9 +28,11 @@ import { getWorkspaceRoot } from '../utils/workspace-guard.js';
 import { EntityText } from '../telegram/entities.js';
 import { replyFormatted } from '../telegram/send.js';
 
+export type ShareableRefusal = 'sensitive' | 'outside-root' | 'not-found' | 'directory';
+
 export type ShareablePathResult =
   | { ok: true; path: string }
-  | { ok: false; reason: 'sensitive' | 'outside-root' | 'not-found' | 'directory' };
+  | { ok: false; reason: ShareableRefusal };
 
 /** Expand `~`, then resolve against `cwd` unless already absolute. */
 function toAbsolute(raw: string, cwd: string): string {
@@ -88,6 +91,41 @@ export function resolveShareablePath(raw: string, opts: { cwd: string; root: str
  */
 export function shareRootFor(userId: number | undefined, projectDir: string): string {
   return isAdmin(userId) ? getWorkspaceRoot() : projectDir;
+}
+
+/**
+ * Where claude's send-file tool may read from: the share root of the user whose
+ * message the turn answers (see {@link shareRootFor}), and failing that /tmp,
+ * where claude drops files it made to send. A self-started turn has no user and
+ * is held to the project. A refusal names the root the caller is confined to,
+ * so claude can tell the user why.
+ */
+export function resolveSendablePath(
+  raw: string,
+  cwd: string,
+  userId: number | undefined,
+): { ok: true; path: string } | { ok: false; reason: ShareableRefusal; root: string } {
+  const root = shareRootFor(userId, cwd);
+  const inRoot = resolveShareablePath(raw, { cwd, root });
+  if (inRoot.ok) return inRoot;
+  if (inRoot.reason !== 'outside-root') return { ...inRoot, root };
+  const inTmp = resolveShareablePath(raw, { cwd, root: '/tmp' });
+  return inTmp.ok ? inTmp : { ...inTmp, root };
+}
+
+/** What the tool tells claude for each refusal; the shared wording for both transports. */
+export function sendableRefusalMessage(reason: ShareableRefusal, raw: string, root: string): string {
+  const shown = path.basename(raw.trim()) || raw.trim();
+  switch (reason) {
+    case 'sensitive':
+      return `Error: ${shown} is a credential or bot-state path (SSH, cloud and Claude credentials, .env files and the like). Such files are never sent. Access denied.`;
+    case 'outside-root':
+      return `Error: File path must be within ${root} or /tmp. Access denied.`;
+    case 'not-found':
+      return `Error: File not found: ${shown}`;
+    case 'directory':
+      return `Error: Path is a directory, not a file: ${shown}`;
+  }
 }
 
 /**

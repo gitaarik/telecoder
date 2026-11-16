@@ -23,6 +23,7 @@ import { registerIpcHandler, type ActiveTurn } from './ipc-server.js';
 import { settleBeforePost } from './monitor-relay.js';
 import { sessionManager } from './session-manager.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../utils/workspace-guard.js';
+import { resolveSendablePath, sendableRefusalMessage } from '../bot/file-access.js';
 import {
   createPendingQuestion,
   buildAskUserMessageText,
@@ -274,9 +275,10 @@ registerIpcHandler('/mcp/create_bot', async (turn, body) => {
 });
 
 // ── /mcp/send_file ───────────────────────────────────────────────────
-// Sends a file from the bot's filesystem (workspace or /tmp) to the user via
-// Telegram. Mirrors the SDK in-process MCP tool in src/claude/mcp-tools.ts but
-// routed through IPC so the MCP subprocess can stay out of process.
+// Sends a file from the bot's filesystem to the user via Telegram, under the
+// same rules as /file (bot/file-access.ts) plus /tmp. Mirrors the SDK
+// in-process MCP tool in src/claude/mcp-tools.ts but routed through IPC so the
+// MCP subprocess can stay out of process.
 registerIpcHandler('/mcp/send_file', async (turn, body) => {
   const filePath = String(body.file_path ?? '');
   const caption = typeof body.caption === 'string' && body.caption.length > 0 ? body.caption : undefined;
@@ -291,27 +293,18 @@ registerIpcHandler('/mcp/send_file', async (turn, body) => {
     return { success: false, message: 'Error: No Telegram context for this turn.' };
   }
 
-  // Resolve relative paths against the session's workspace, same as SDK mode.
-  const resolvedPath = path.isAbsolute(filePath)
-    ? filePath
-    : path.resolve(session.workingDirectory, filePath);
-
-  // Path must be inside the workspace root or /tmp — anything outside is
-  // treated as an exfiltration attempt and rejected. Same guards as the
-  // in-process MCP version.
-  const workspaceRoot = getWorkspaceRoot();
-  if (!isPathWithinRoot(workspaceRoot, resolvedPath) && !isPathWithinRoot('/tmp', resolvedPath)) {
-    return { success: false, message: `Error: File path must be within the workspace (${workspaceRoot}) or /tmp. Access denied.` };
+  // The credential denylist for everyone, the chat's project for a guest, the
+  // workspace for an admin — judged by who sent the message this turn answers
+  // — and /tmp for files claude made to send.
+  const resolved = resolveSendablePath(filePath, session.workingDirectory, ctx.from?.id);
+  if (!resolved.ok) {
+    if (resolved.reason === 'sensitive') {
+      console.log(`[MCP] send_file REFUSED credential path for user:${ctx.from?.id ?? 'unknown'}`);
+    }
+    return { success: false, message: sendableRefusalMessage(resolved.reason, filePath, resolved.root) };
   }
-
-  if (!fs.existsSync(resolvedPath)) {
-    return { success: false, message: `Error: File not found: ${path.basename(resolvedPath)}` };
-  }
-
+  const resolvedPath = resolved.path;
   const stat = fs.statSync(resolvedPath);
-  if (stat.isDirectory()) {
-    return { success: false, message: `Error: Path is a directory, not a file: ${path.basename(resolvedPath)}` };
-  }
   if (stat.size > TELEGRAM_MAX_FILE_SIZE) {
     const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);
     return { success: false, message: `Error: File too large (${sizeMB}MB). Telegram limit is 50MB.` };

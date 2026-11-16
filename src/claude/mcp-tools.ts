@@ -15,6 +15,7 @@ import * as path from 'path';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
 import { getWorkspaceRoot, isPathWithinRoot } from '../utils/workspace-guard.js';
+import { resolveSendablePath, sendableRefusalMessage } from '../bot/file-access.js';
 import { setSessionTopic, clearTopic } from '../bot/handlers/command/topic-store.js';
 import { messageSender } from '../telegram/message-sender.js';
 import {
@@ -165,7 +166,7 @@ const TELEGRAM_MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 function sendFileTool(toolsCtx: McpToolsContext) {
   return tool(
     'telecoder_send_file',
-    'Send a file from the server to the user via Telegram. The file must be within the current working directory or /tmp. Use this after creating files (SVGs, images, reports, etc.) to deliver them directly to the user. Maximum file size: 50MB.',
+    'Send a file from the server to the user via Telegram. The file must be within the project (or the workspace, for an admin) or /tmp; credential files such as .env or ~/.ssh are never sent. Use this after creating files (SVGs, images, reports, etc.) to deliver them directly to the user. Maximum file size: 50MB.',
     {
       file_path: z.string().describe('Absolute or relative path to the file to send. Relative paths are resolved from the current working directory.'),
       caption: z.string().optional().describe('Optional caption to display with the file in Telegram'),
@@ -182,37 +183,22 @@ function sendFileTool(toolsCtx: McpToolsContext) {
           };
         }
 
-        // Resolve relative paths against the session working directory
-        const resolvedPath = path.isAbsolute(file_path)
-          ? file_path
-          : path.resolve(session.workingDirectory, file_path);
-
-        // Security: validate the path is within allowed directories
-        const workspaceRoot = getWorkspaceRoot();
-        const inWorkspace = isPathWithinRoot(workspaceRoot, resolvedPath);
-        const inTmp = isPathWithinRoot('/tmp', resolvedPath);
-
-        if (!inWorkspace && !inTmp) {
+        // The same rules as /file (bot/file-access.ts): the credential denylist
+        // for everyone, the chat's project for a guest, the workspace for an
+        // admin — judged by who sent the message this turn answers. Plus /tmp,
+        // where claude drops files it made to send.
+        const resolved = resolveSendablePath(file_path, session.workingDirectory, ctx.from?.id);
+        if (!resolved.ok) {
+          if (resolved.reason === 'sensitive') {
+            console.log(`[MCP] send_file REFUSED credential path for user:${ctx.from?.id ?? 'unknown'}`);
+          }
           return {
-            content: [{ type: 'text' as const, text: `Error: File path must be within the workspace (${workspaceRoot}) or /tmp. Access denied.` }],
+            content: [{ type: 'text' as const, text: sendableRefusalMessage(resolved.reason, file_path, resolved.root) }],
             isError: true,
           };
         }
-
-        if (!fs.existsSync(resolvedPath)) {
-          return {
-            content: [{ type: 'text' as const, text: `Error: File not found: ${path.basename(resolvedPath)}` }],
-            isError: true,
-          };
-        }
-
+        const resolvedPath = resolved.path;
         const stat = fs.statSync(resolvedPath);
-        if (stat.isDirectory()) {
-          return {
-            content: [{ type: 'text' as const, text: `Error: Path is a directory, not a file: ${path.basename(resolvedPath)}` }],
-            isError: true,
-          };
-        }
 
         if (stat.size > TELEGRAM_MAX_FILE_SIZE) {
           const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);

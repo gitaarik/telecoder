@@ -25,7 +25,7 @@ import { offerCommandFix } from './command-fallback.js';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
 import { fireAutoTopic, requireSession, runQueuedTurn } from './message/shared.js';
 import { runTurn } from './message/turn-runner.js';
-import { handleProjectReply, handleFileReply } from './message/replies.js';
+import { handleProjectReply } from './message/replies.js';
 import { repliedForceReplyFlow } from '../../telegram/force-reply-tracker.js';
 
 export { closeTurn, relayCatchUpIfMissed } from './message/turn-notify.js';
@@ -65,10 +65,6 @@ export async function handleMessage(ctx: Context): Promise<void> {
   const flow = repliedForceReplyFlow(ctx);
   if (flow === 'project') {
     await handleProjectReply(ctx, sessionKey, text);
-    return;
-  }
-  if (flow === 'file') {
-    await handleFileReply(ctx, sessionKey, text);
     return;
   }
 

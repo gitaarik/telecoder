@@ -8,7 +8,6 @@ import { getAvailableCommands } from '../../claude/command-parser.js';
 import { isProcessing } from '../../claude/request-queue.js';
 import { EntityText, joinMessages, trimMessage, type EntityMessage } from '../../telegram/entities.js';
 import { replyFormatted, replyParts } from '../../telegram/send.js';
-import { sendForceReplyPrompt } from '../../telegram/force-reply-tracker.js';
 import { contextHealthColor, fmtTokens, getProgressBar } from '../../utils/format.js';
 import * as path from 'path';
 import { execFile } from 'child_process';
@@ -54,7 +53,6 @@ export {
 export { handleCost, parseCostOutput } from './command/cost.js';
 export { handleTasks, handleTasksCallback, handleShells, handleShellsCallback } from './command/tasks.js';
 export { handleBtw, btwLabel, formatSideAnswer } from './command/btw.js';
-import { listProjectFiles } from './command/project.js';
 export {
   handleProject,
   handleProjectCallback,
@@ -417,28 +415,6 @@ export async function handleCommands(ctx: Context): Promise<void> {
   await replyParts(ctx, getAvailableCommands());
 }
 
-/**
- * What /file shows when it arrives without its argument: the title, the
- * project, the file list, and the ask the force-reply answers.
- */
-function modePrompt(
-  emoji: string,
-  title: string,
-  workingDirectory: string,
-  body: string | EntityMessage | undefined,
-  ask: string,
-): EntityMessage {
-  const b = new EntityText()
-    .add(`${emoji} `).bold(title)
-    .add('\n\n').italic(`Project: ${path.basename(workingDirectory)}`);
-  if (body) {
-    b.add('\n\n');
-    if (typeof body === 'string') b.add(body);
-    else b.append(body);
-  }
-  return b.add('\n\n👇 ').italic(ask).build();
-}
-
 /** Show the current permission-gate state and the patterns it enforces. */
 export async function handlePermissions(ctx: Context): Promise<void> {
   const { isPermissionGateEnabled, isPermissionGateImplicit, listDangerousPatterns } =
@@ -698,21 +674,11 @@ export async function handleFile(ctx: Context): Promise<void> {
   if (!session) return;
 
   if (!filePath) {
-    // List some files in the project to help user
-    const projectFiles = listProjectFiles(session.workingDirectory);
-    let fileList: EntityMessage | undefined;
-    if (projectFiles.length > 0) {
-      const b = new EntityText().bold('Recent files:');
-      for (const f of projectFiles.slice(0, 8)) b.add('\n• ').code(f);
-      fileList = b.build();
-    }
-
-    await sendForceReplyPrompt(
-      ctx,
-      'file',
-      modePrompt('📎', 'Download File', session.workingDirectory, fileList, 'Enter the file path:'),
-      'src/index.ts',
-    );
+    await replyFormatted(ctx, new EntityText()
+      .add('📎 Usage: ').code('/file <path>')
+      .add(', relative to the project, e.g. ').code('/file src/index.ts')
+      .add('. Or just ask Claude to send you the file.')
+      .build());
     return;
   }
 

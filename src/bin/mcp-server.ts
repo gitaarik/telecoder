@@ -262,7 +262,7 @@ server.tool(
 // ── telecoder_send_file (IPC: needs bot for Telegram sendDocument) ──
 server.tool(
   'telecoder_send_file',
-  'Send a file from the server to the user via Telegram. The file must be within the current working directory or /tmp. Use this after creating files (SVGs, images, reports, etc.) to deliver them directly to the user. Maximum file size: 50MB.',
+  'Send a file from the server to the user via Telegram. The file must be within the project (or the workspace, for an admin) or /tmp; credential files such as .env or ~/.ssh are never sent. Use this after creating files (SVGs, images, reports, etc.) to deliver them directly to the user. Maximum file size: 50MB.',
   {
     file_path: z.string().describe('Absolute or workspace-relative path to the file to send.'),
     caption: z.string().optional().describe('Optional caption to display with the file in Telegram.'),

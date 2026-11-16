@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import type { Context } from 'grammy';
 
-const { resolveShareablePath, shareRootFor, resolveShareableFile } =
+const { resolveShareablePath, shareRootFor, resolveShareableFile, resolveSendablePath, sendableRefusalMessage } =
   await import('../../src/bot/file-access.js');
 const { getWorkspaceRoot } = await import('../../src/utils/workspace-guard.js');
 
@@ -103,6 +103,50 @@ describe('resolveShareablePath', () => {
   it('reports missing files and directories inside the root', () => {
     expect(resolveShareablePath('src/missing.ts', guestOpts())).toEqual({ ok: false, reason: 'not-found' });
     expect(resolveShareablePath('src', guestOpts())).toEqual({ ok: false, reason: 'directory' });
+  });
+});
+
+describe('resolveSendablePath', () => {
+  let tmpFile: string;
+  beforeAll(() => {
+    tmpFile = path.join(fs.mkdtempSync('/tmp/send-file-'), 'report.svg');
+    fs.writeFileSync(tmpFile, '<svg/>');
+  });
+  afterAll(() => {
+    fs.rmSync(path.dirname(tmpFile), { recursive: true, force: true });
+  });
+
+  it('sends a project file for a guest, and names the project when refusing', () => {
+    expect(resolveSendablePath('src/index.ts', project, GUEST)).toEqual({ ok: true, path: path.join(project, 'src', 'index.ts') });
+    // The fixture itself lives under /tmp, which the tool may read, so an
+    // existing file outside both roots stands in for another project.
+    expect(resolveSendablePath('/etc/hostname', project, GUEST))
+      .toEqual({ ok: false, reason: 'outside-root', root: project });
+  });
+
+  it('lets a file claude made under /tmp through for anyone', () => {
+    expect(resolveSendablePath(tmpFile, project, GUEST)).toEqual({ ok: true, path: fs.realpathSync(tmpFile) });
+    expect(resolveSendablePath('/tmp/nope-' + process.pid, project, GUEST))
+      .toEqual({ ok: false, reason: 'not-found', root: project });
+  });
+
+  it('never sends a credential, from the workspace or /tmp', () => {
+    expect(resolveSendablePath(path.join(workspace, '.ssh', 'id_ed25519'), project, ADMIN))
+      .toEqual({ ok: false, reason: 'sensitive', root: getWorkspaceRoot() });
+    expect(resolveSendablePath('/tmp/.env', project, ADMIN).reason).toBe('sensitive');
+    expect(resolveSendablePath('.env', project, GUEST).reason).toBe('sensitive');
+  });
+
+  it('holds a turn with no user to the project', () => {
+    expect(resolveSendablePath('/etc/hostname', project, undefined))
+      .toEqual({ ok: false, reason: 'outside-root', root: project });
+  });
+
+  it('words each refusal for claude', () => {
+    expect(sendableRefusalMessage('outside-root', 'x.md', project)).toBe(`Error: File path must be within ${project} or /tmp. Access denied.`);
+    expect(sendableRefusalMessage('sensitive', '~/.ssh/id_rsa', project)).toMatch(/^Error: id_rsa is a credential/);
+    expect(sendableRefusalMessage('not-found', 'src/nope.ts', project)).toBe('Error: File not found: nope.ts');
+    expect(sendableRefusalMessage('directory', 'src', project)).toBe('Error: Path is a directory, not a file: src');
   });
 });
 

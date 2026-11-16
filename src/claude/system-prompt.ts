@@ -45,7 +45,7 @@ const SEND_FILE_TOOL_PROMPT = `
 Send File Tool:
 You have a telecoder_send_file MCP tool that sends files to the user via Telegram.
 Use it after creating or generating files (SVGs, images, PDFs, reports, code bundles, etc.) to deliver them directly.
-The file must be within the current working directory or /tmp. Maximum size: 50MB.
+The file must be within the project (or the workspace, for an admin) or /tmp; credential files such as .env or ~/.ssh are never sent. Maximum size: 50MB.
 When you generate a file and the user would benefit from receiving it, proactively send it — no need to ask.`;
 
 const ASK_USER_TOOL_PROMPT = `

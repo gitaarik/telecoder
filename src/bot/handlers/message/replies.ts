@@ -1,7 +1,7 @@
 /**
  * Handlers for replies to the bot's ForceReply prompts — the flows where a
  * command posts a question and the user's *next* message is the answer
- * (/project path, /file path).
+ * (the /project path).
  *
  * `handleMessage` routes here by the flow the prompt it is replying to opened
  * (see force-reply-tracker.ts).
@@ -12,7 +12,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { clearConversation } from '../../../providers/provider-router.js';
 import { sessionManager } from '../../../claude/session-manager.js';
-import { messageSender } from '../../../telegram/message-sender.js';
 import { EntityText } from '../../../telegram/entities.js';
 import { replyFormatted } from '../../../telegram/send.js';
 import {
@@ -20,7 +19,6 @@ import {
   resumeCommandMessage,
   clearTopic,
 } from '../command.handler.js';
-import { resolveUserFilePath } from './shared.js';
 
 // Handle reply to project ForceReply prompt
 export async function handleProjectReply(ctx: Context, sessionKey: string, projectPath: string): Promise<void> {
@@ -65,17 +63,5 @@ export async function handleProjectReply(ctx: Context, sessionKey: string, proje
   const s = sessionManager.getSession(sessionKey);
   if (s?.claudeSessionId) {
     await replyFormatted(ctx, resumeCommandMessage(s.claudeSessionId));
-  }
-}
-
-// Handle reply to file ForceReply prompt
-export async function handleFileReply(ctx: Context, sessionKey: string, filePath: string): Promise<void> {
-  const fullPath = await resolveUserFilePath(ctx, sessionKey, filePath);
-  if (!fullPath) return;
-
-  const success = await messageSender.sendDocument(ctx, fullPath, `📎 ${path.basename(fullPath)}`);
-
-  if (!success) {
-    await ctx.reply('❌ Failed to send file. It may be too large (>50MB) or inaccessible.');
   }
 }
