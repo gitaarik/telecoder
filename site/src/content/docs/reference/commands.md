@@ -15,7 +15,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/newbot [project]` | Create a bot for a project (this chat's if none is given) without BotFather. Needs Bot Management Mode on the bot you send it to ([details](../guides/multiple-bots.md)) — admin-only |
 | `/projectcommands` | List every slash command available here — project, built-in skills, plugins — and the ones TeleCoder shadows |
 | `/clear` | Clear conversation history (project stays selected) |
-| `/status` | Current session info: project, topic, effort, model, provider, transport, context and cost |
+| `/status` | Current session info: project, topic, effort, model, provider, context and cost |
 | `/resume [words\|id]` | Pick, search or open any Claude Code session, like Claude Code's own `/resume` |
 | `/recap [N]` | Re-read the last N exchanges of the current session (default 3), ending with the same status message as a normal turn |
 | `/prompts [N]` | List just the last N prompts you sent, without the replies (default 15, max 25) |
@@ -37,12 +37,11 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 |---------|-------------|
 | `/model` | Switch Sonnet / Opus / Haiku — this bot, or add `all` for every instance |
 | `/effort` | Set reasoning effort (low / medium / high / xhigh / max / auto); `all` works here too |
-| `/btw` | Ask a side question without interrupting the running task. It answers only, without changing files. In SDK mode it needs a running turn |
+| `/btw` | Ask a side question without interrupting the running task. It answers only, without changing files |
 | `/steer <text>` | Stop the running turn and send the text in its place, as a correction; `⚡ Interrupt & send` on a queued message does the same |
 | `/later [text]` | Set an idea aside without sending it; once Claude is done, the bot asks whether to send it, with Send and Drop. Alone, lists what's set aside |
 | `/mode` | How much Claude asks before acting (manual / accept edits / plan / auto / bypass) — admin-only |
 | `/autoapprove [duration]` | Answer the permission gate's prompts in advance in this chat for a while (default `30m`, at most `4h`; a restart ends it), posting each command it lets through; `off` ends it, `status` reads it back. The most destructive commands still ask — admins and approvers |
-| `/method` | Switch Claude transport (SDK / PTY) — admin-only |
 | `/provider` | Switch backend — Claude / CCR (shown when `CCR_ENABLED`) — admin-only |
 | `/ccr` | Sticky toggle between Claude and CCR routing (shown when `CCR_ENABLED`) — admin-only |
 | `/verbosity` | Pick verbosity tier (quiet / normal / verbose / debug) |
@@ -51,7 +50,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | Command | Description |
 |---------|-------------|
 | `/file <path>` | Download a file. Guests get files from the chat's project only; admins from anywhere in `WORKSPACE_DIR`. Credential and bot-state paths (`.env`, `~/.ssh`, `~/.claude`, cloud CLI configs and the like) are refused for everyone |
-| `/suggestions` | Turn predicted next-prompt buttons under each reply on or off, from the next session (PTY mode) |
+| `/suggestions` | Turn predicted next-prompt buttons under each reply on or off, from the next session |
 
 ## Voice and TTS
 | Command | Description |
@@ -65,12 +64,12 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 |---------|-------------|
 | `/ping` | Health check |
 | `/context` | Show Claude context / token usage |
-| `/cost` | Show usage limits and cost as Claude Code reports them — session/weekly limits on a subscription, dollar totals on API billing — plus TeleCoder's own running tally for the conversation, which the CLI cannot keep (SDK mode only) |
-| `/compact` | Compact the context window (SDK and PTY), reporting the token reduction |
+| `/cost` | Show usage limits and cost as Claude Code reports them — session/weekly limits on a subscription, dollar totals on API billing |
+| `/compact` | Compact the context window, reporting the token reduction |
 | `/statusline` | Toggle the status line that closes every reply (project, effort, model, context %, cost). On by default (`STATUS_LINE_DEFAULT`), with the topic; your last prompts and a `claude --resume` command are sub-toggles |
 | `/botname [name\|reset]` | Rename the bot in Telegram. The name is kept per bot and wins over `BOT_NAME`; `reset` goes back to it. Telegram throttles renames hard, so a refused one is reported and sent again when the cooldown ends. Alone, shows the name Telegram has and any pending cooldown — admin-only |
 | `/topic` | Set or clear the conversation topic |
-| `/tasks` | List active background tasks, with details per task; in PTY mode, a task's output so far, and Claude Code's own `/tasks` view with a button per row |
+| `/tasks` | List active background tasks, with details per task, a task's output so far, and Claude Code's own `/tasks` view with a button per row |
 | `/shells` | List and kill OS-level background shells from the PTY session |
 | `/permissions` | Show the permission-gate state, your role, and the patterns it enforces — admin-only |
 | `/users` | Who can use this bot — admins, guests, and people seen but not let in — admin-only |

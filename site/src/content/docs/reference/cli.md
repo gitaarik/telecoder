@@ -16,7 +16,7 @@ or `--help` after a command, shows that command with all its options. `telecoder
 
 The setup wizard. It checks Node and your Claude login, then asks for the bot token (and
 checks it with Telegram), your Telegram user ID (send the bot `/start`), your projects
-folder, SDK or PTY, and voice. It writes `~/.telecoder/.env`, readable by you only,
+folder, and voice. It writes `~/.telecoder/.env`, readable by you only,
 and offers to install the service.
 
 Run it again to keep, edit or replace your setup; the old file is backed up first.
@@ -27,7 +27,6 @@ from arguments, because arguments show up in `ps`:
 - `--token-env VAR`: the bot token, from the variable `VAR`
 - `--owner-id ID`: your Telegram user ID
 - `--workspace DIR`: your projects folder
-- `--transport sdk|pty`
 - `--groq-key-env VAR`: a Groq key for voice
 - `--icon`, `--no-icon`: give the bot the TeleCoder icon as its profile picture, or leave its
   picture alone. By default the bot gets the icon only when it has no picture yet.

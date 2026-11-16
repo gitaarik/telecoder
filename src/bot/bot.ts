@@ -80,10 +80,8 @@ import {
   handleShellsCallback,
   handleVerbosity,
   handleVerbosityCallback,
-  handleMethodCommand,
-  handleMethodCallback,
 } from './handlers/command.handler.js';
-import { handleMessage, handleCcrThrottleCallback } from './handlers/message.handler.js';
+import { handleMessage } from './handlers/message.handler.js';
 import { handleSchedule, handleSchedules, handleUnschedule } from './handlers/schedule.handler.js';
 import { handleForkCallback, handleAcceptCommand, handleDeclineCommand, handleForkCommand, handleSpinoffCommand, forkPastRunningTurnIntoThread } from './handlers/fork.handler.js';
 import { askBtw } from './handlers/command/btw.js';
@@ -505,16 +503,15 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   cmd('project', adminOnly(handleProject));
   // /compact is a native Claude Code slash command, not a bot command — route it
   // through the normal message pipeline (handleMessage), which forwards it to
-  // the active provider. The PTY provider runs the real compaction and reports
-  // the token reduction; the SDK provider explains it's PTY-only. Registering it
-  // here (rather than relying on fall-through to the text handler) makes dispatch
-  // explicit and lets grammY match the group-chat `/compact@BotName` form.
+  // the active provider; the pty runs the real compaction and reports the token
+  // reduction. Registering it here (rather than relying on fall-through to the
+  // text handler) makes dispatch explicit and lets grammY match the group-chat
+  // `/compact@BotName` form.
   cmd('compact', handleMessage, { forwardsToAgent: true });
   cmd('update', adminOnly(handleUpdate));
 
   cmd('model', handleModelCommand);
   cmd('effort', handleEffort);
-  cmd('method', adminOnly(handleMethodCommand));
   if (config.CCR_ENABLED) {
     cmd('provider', adminOnly(handleProviderCommand));
   }
@@ -565,10 +562,6 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
       await adminOnly(handleUpdateCallback)(ctx);
     } else if (data.startsWith('effort:')) {
       await handleEffortCallback(ctx);
-    } else if (data.startsWith('method:')) {
-      await adminOnly(handleMethodCallback)(ctx);
-    } else if (data.startsWith('ccr_throttle:')) {
-      await handleCcrThrottleCallback(ctx);
     } else if (data.startsWith('sgt:')) {
       await handleSuggestionTapCallback(ctx);
     }

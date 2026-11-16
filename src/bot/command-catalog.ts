@@ -69,7 +69,6 @@ export function buildCommandMenu(): CommandMenuEntry[] {
     { command: 'model', description: '🤖 Switch AI model' },
     { command: 'effort', description: '🎯 Set reasoning effort level' },
     { command: 'verbosity', description: '🎚️ Set verbosity tier (quiet/normal/verbose/debug)' },
-    { command: 'method', description: '🛰️ Switch Claude transport (SDK / PTY)' },
     { command: 'btw', description: '💬 Side question without interrupting' },
     { command: 'later', description: '🔔 Set an idea aside for after the turn' },
     { command: 'steer', description: '⚡ Stop the turn and send this instead' },

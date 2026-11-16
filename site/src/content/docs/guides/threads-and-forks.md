@@ -96,7 +96,7 @@ session, stopping a turn that's still running. The conversation stays on disk, s
 
 Deleting a thread from Telegram's own menu works too, but Telegram doesn't tell the bot.
 TeleCoder notices the first time it tries to send something into the thread, and ends the
-session then. A thread deleted while idle sends nothing, so in PTY mode its `claude`
+session then. A thread deleted while idle sends nothing, so its `claude`
 process is ended once it has been idle for an hour (`CLAUDE_PTY_IDLE_TIMEOUT_MS`), as is
 any other idle session's. That costs the next message there a few seconds while the
 conversation resumes, and nothing else. A session with a turn, a background task or a

@@ -1,6 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { fmtTokens, getProgressBar } from '../../src/utils/format.js';
-import { formatResetIn } from '../../src/bot/handlers/message.handler.js';
 
 describe('fmtTokens', () => {
   it('renders small counts verbatim', () => {
@@ -38,29 +37,3 @@ describe('getProgressBar', () => {
   });
 });
 
-describe('formatResetIn', () => {
-  afterEach(() => vi.restoreAllMocks());
-
-  it('returns empty string when no reset time or already passed', () => {
-    expect(formatResetIn(undefined)).toBe('');
-    expect(formatResetIn(Date.now() - 1000)).toBe('');
-  });
-
-  it('formats sub-hour resets in minutes', () => {
-    const now = 1_000_000_000_000;
-    vi.spyOn(Date, 'now').mockReturnValue(now);
-    expect(formatResetIn(now + 30 * 60_000)).toBe(' Resets in ~30 min.');
-  });
-
-  it('formats multi-hour resets as hours and minutes', () => {
-    const now = 1_000_000_000_000;
-    vi.spyOn(Date, 'now').mockReturnValue(now);
-    expect(formatResetIn(now + (2 * 60 + 15) * 60_000)).toBe(' Resets in ~2h 15m.');
-  });
-
-  it('omits the minute part on a whole-hour reset', () => {
-    const now = 1_000_000_000_000;
-    vi.spyOn(Date, 'now').mockReturnValue(now);
-    expect(formatResetIn(now + 3 * 60 * 60_000)).toBe(' Resets in ~3h.');
-  });
-});

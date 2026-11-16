@@ -21,7 +21,6 @@
 
 import type { Api, Bot } from 'grammy';
 import { sessionManager } from '../claude/session-manager.js';
-import { releaseHeldQuery } from '../claude/held-query.js';
 import { clearConversation } from '../providers/provider-router.js';
 import { userPreferences } from '../providers/user-preferences.js';
 import { forgetThreadTitle } from '../telegram/thread-titles.js';
@@ -52,7 +51,6 @@ export async function forgetThread(api: Api, sessionKey: string, why: string): P
   } catch (err) {
     console.error(`[DeletedThreads] Stopping the turn in ${sessionKey} failed:`, sanitizeError(err));
   }
-  releaseHeldQuery(sessionKey);
   clearConversation(sessionKey);
   sessionManager.clearSession(sessionKey);
   forgetThreadTitle(sessionKey);

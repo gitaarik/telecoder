@@ -1,14 +1,6 @@
 import type { SettingsScope } from '../utils/session-key.js';
 
 export type ProviderName = 'claude' | 'ccr';
-export type ClaudeMethod = 'sdk' | 'pty';
-
-export interface ThrottleInfo {
-  /** Original error text from the upstream as surfaced by the SDK. */
-  message: string;
-  /** Reset time parsed from the error (epoch ms), if discoverable. */
-  resetAt?: number;
-}
 
 export interface AgentUsage {
   inputTokens: number;
@@ -48,8 +40,6 @@ export interface AgentResponse {
   usage?: AgentUsage;
   compaction?: { trigger: 'manual' | 'auto'; preTokens: number };
   sessionInit?: { model: string; sessionId: string };
-  /** Present when the upstream signalled a Max usage-limit throttle. */
-  throttle?: ThrottleInfo;
   /**
    * Speculative next-prompt suggestion scraped from claude's TUI ghost text
    * at end-of-turn. Only populated when the chat has /suggestions enabled

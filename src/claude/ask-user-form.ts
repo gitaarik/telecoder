@@ -92,8 +92,8 @@ const pending: Map<string, FormState> = new Map();
 // ── Parsing ──────────────────────────────────────────────────────────
 
 /**
- * Validate the `questions` argument as it arrives — from zod in SDK mode, or
- * straight off the IPC body in PTY mode. Returns the questions, or the error
+ * Validate the `questions` argument as it arrives, straight off the IPC
+ * body. Returns the questions, or the error
  * the model should read. A single question is not a form; the caller routes
  * it through the ordinary one-question path.
  */
@@ -436,8 +436,8 @@ function nextUnanswered(answers: (number | undefined)[], from: number): number {
 // ── Posting and waiting ──────────────────────────────────────────────
 
 /**
- * Post a form and wait for Submit: the whole of what the SDK tool and the
- * PTY/IPC handler do once they have a chat to post into. Returns the text the
+ * Post a form and wait for Submit: the whole of what the IPC handler does
+ * once it has a chat to post into. Returns the text the
  * model reads as its tool result.
  */
 export async function runAskUserForm(opts: {

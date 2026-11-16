@@ -65,9 +65,8 @@ export function questionTimeoutMs(): number {
 }
 
 /**
- * Build the plain-text body for an ask_user Telegram message, shared by SDK
- * mode (mcp-tools.ts) and PTY/IPC mode (mcp-bridge.ts) so both render
- * identically.
+ * Build the plain-text body for an ask_user Telegram message, for the IPC
+ * handler in mcp-bridge.ts.
  *
  * Layout:
  *   ❓ <question>
@@ -107,9 +106,8 @@ export function buildAskUserMessageText(
 }
 
 /**
- * The inline keyboard for a question, shared by SDK mode (mcp-tools.ts) and
- * PTY/IPC mode (mcp-bridge.ts) so both render identically — and with every
- * other lettered picker, through {@link buildLetteredKeyboard}.
+ * The inline keyboard for a question, for the IPC handler in mcp-bridge.ts —
+ * rendered like every other lettered picker, through {@link buildLetteredKeyboard}.
  */
 export function buildAskUserKeyboard(
   id: string,
@@ -151,8 +149,7 @@ function appendFooter(original: string, footer: string): string | null {
 }
 
 /**
- * The line an ask_user question ends on once it expires — shared by SDK mode
- * and PTY/IPC mode, like the rest of the message.
+ * The line an ask_user question ends on once it expires.
  */
 export function buildAskUserExpiredNote(): string {
   return `No answer within ${questionTimeoutMinutes()} min, so Claude carried on without one.`;

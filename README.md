@@ -33,10 +33,10 @@ TeleCoder puts Claude Code inside them.
 - **Forks.** `/fork` copies the conversation into a new thread; `/spinoff` splits a task off
   with a compacted copy of the context; `/tree` draws the branches and lets you jump between
   them.
-- **The full CLI, not a subset.** In PTY mode TeleCoder drives the real `claude` TUI, so a
-  project's `CLAUDE.md`, settings, skills and slash commands work as they do in your terminal,
-  and its permission dialogs arrive as buttons. `/model`, `/effort`, `/compact`, `/context`,
-  `/cost` and `/resume` are there too. The Agent SDK mode is the lighter default.
+- **The full CLI, not a subset.** TeleCoder drives the real `claude` TUI, so a project's
+  `CLAUDE.md`, settings, skills and slash commands work as they do in your terminal, and its
+  permission dialogs arrive as buttons. `/model`, `/effort`, `/compact`, `/context`, `/cost`
+  and `/resume` are there too.
 - **Claude can reach you.** It can ask with buttons, send you files, ask for an API key
   (your message is deleted the moment it arrives), schedule prompts, and report background
   tasks as they finish.
@@ -93,7 +93,7 @@ upgrades from chat. To run from a git checkout instead, see
 - [Features](site/src/content/docs/guides/features.md): everything TeleCoder does
 - [Commands](site/src/content/docs/reference/commands.md): every bot command
 - [Multiple bots](site/src/content/docs/guides/multiple-bots.md): `instances.json`, `/newbot` and a home project per bot
-- [Providers](site/src/content/docs/guides/providers.md): SDK or PTY, and Claude Code Router for when Max throttles
+- [Providers](site/src/content/docs/guides/providers.md): Claude Code Router for when Max throttles
 - [Sharing a bot](site/src/content/docs/guides/sharing.md): admins, guests, group roles, the permission gate and a separate Unix account
 - [Configuration](site/src/content/docs/reference/configuration.md): every `.env` setting
 - [Security](site/src/content/docs/reference/security.md): what's protected, what's stored and where data goes

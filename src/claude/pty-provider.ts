@@ -65,7 +65,7 @@ import { questionTimeoutMs } from './ask-user.js';
 import {
   ensurePermissionMode,
   permissionModeInfo,
-  transportDefaultMode,
+  defaultPermissionMode,
   type ModePty,
 } from './permission-mode.js';
 import { parseModal } from './tui-modal.js';
@@ -1734,7 +1734,7 @@ export class PtyProvider implements Provider {
    */
   private async _applyPermissionMode(session: PtySession, sessionKey: string): Promise<void> {
     const chosen = userPreferences.getPermissionMode(sessionKey);
-    const target = chosen ?? transportDefaultMode('pty');
+    const target = chosen ?? defaultPermissionMode();
 
     const pty: ModePty = {
       write: (data) => session.term.write(data),

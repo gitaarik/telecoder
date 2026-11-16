@@ -93,7 +93,6 @@ describe('/status', () => {
     }) + '\n');
     sessionManager.createSession(String(chat), project);
     sessionManager.setClaudeSessionId(String(chat), 'branch');
-    userPreferences.setMethod(chat, 'pty');
     usage = undefined;
 
     const reply = vi.fn(async (_text: string, _opts?: unknown) => ({}));

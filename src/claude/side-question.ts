@@ -24,6 +24,7 @@
  */
 
 import { execFile } from 'child_process';
+import { resolvePtyClaudeBin } from '../utils/resolve-claude-bin.js';
 import { sessionJsonlPath } from './session-jsonl.js';
 import { config } from '../config.js';
 import * as fs from 'fs';
@@ -189,6 +190,7 @@ function consumeStreamRecord(
 }
 
 function runClaude(
+  executable: string,
   args: string[],
   cwd: string,
   timeoutMs: number,
@@ -196,7 +198,7 @@ function runClaude(
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = execFile(
-      process.env.CLAUDE_BIN || config.CLAUDE_EXECUTABLE_PATH,
+      executable,
       args,
       { cwd, timeout: timeoutMs, maxBuffer: MAX_OUTPUT_BYTES, env: process.env },
       (error, stdout, stderr) => {
@@ -242,10 +244,13 @@ export async function askForkedSideQuestion(opts: {
   question: string;
   sessionId: string;
   cwd: string;
+  /** What to run in place of the ptys' `claude`: CCR's wrapper, for a CCR session. */
+  executable?: string;
   timeoutMs?: number;
   onProgress?: (p: SideQuestionProgress) => void;
 }): Promise<SideQuestionResult> {
   const { question, sessionId, cwd, onProgress } = opts;
+  const executable = opts.executable ?? resolvePtyClaudeBin();
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const startedAt = Date.now();
 
@@ -290,12 +295,12 @@ export async function askForkedSideQuestion(opts: {
 
   let result: SideQuestionResult;
   try {
-    result = extractAnswer(await runClaude(streamArgs, cwd, timeoutMs, trackProgress));
+    result = extractAnswer(await runClaude(executable, streamArgs, cwd, timeoutMs, trackProgress));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!isUnknownOptionError(message)) throw error;
     console.warn('[btw] CLI rejected the streaming flags — retrying without progress');
-    result = extractAnswer(await runClaude(fallbackArgs, cwd, timeoutMs));
+    result = extractAnswer(await runClaude(executable, fallbackArgs, cwd, timeoutMs));
     if (result.forkSessionId && result.forkSessionId !== sessionId) {
       try {
         fs.rmSync(sessionJsonlPath(cwd, result.forkSessionId), { force: true });

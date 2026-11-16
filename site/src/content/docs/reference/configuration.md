@@ -21,7 +21,7 @@ and nothing below changes anything.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ADMIN_USER_IDS` | all allowed users | Who may approve permission prompts and run lifecycle/transport commands |
+| `ADMIN_USER_IDS` | all allowed users | Who may approve permission prompts and run the lifecycle and backend commands |
 | `APPROVER_USER_IDS` | — | Guests who may answer someone else's prompt — never their own — and get no lifecycle commands. Needs `ADMIN_USER_IDS`; the ids must be allowed, from `.env` or `/allow` |
 | `ALLOWED_GROUP_IDS` | — | Group/supergroup chat IDs the bot is shared in |
 | `RESTRICT_TO_GROUPS` | `false` | Confine guests to those groups; admins can still DM the bot |
@@ -31,7 +31,6 @@ and nothing below changes anything.
 | `SCOPE_ALLOWED_PATHS` | — | Extra in-bounds directories, comma-separated |
 | `CHARTER_JUDGE` | `auto` | Read each guest message against a charter before it runs |
 | `CHARTER_FILE` | `WORKSPACE_DIR/CHARTER.md` | The charter the judge reads |
-| `CLAUDE_METHOD_DEFAULT` | `sdk` | Transport for chats that haven't run `/method`; the gate runs on both |
 
 See [Sharing a bot](../guides/sharing.md) for how the pieces fit together.
 
@@ -42,8 +41,8 @@ See [Sharing a bot](../guides/sharing.md) for how the pieces fit together.
 | `ANTHROPIC_API_KEY` | — | API key (optional with Claude Max subscription) |
 | `WORKSPACE_DIR` | `$HOME` | Root directory for project picker |
 | `HOME_PROJECT` | — | The project this bot is for: new conversations start there, and its threads are named without it. Usually set per bot in `instances.json`, which `/newbot` does. Absolute, or relative to `WORKSPACE_DIR` |
-| `CLAUDE_PLUGINS` | — | Marketplace plugins to bring into the agent, as `plugin@marketplace` ids, comma-separated. Neither transport reads `~/.claude/settings.json`, so a plugin enabled in your terminal is missing in Telegram until it's named here |
-| `CLAUDE_EXECUTABLE_PATH` | `claude` | Path to Claude Code CLI |
+| `CLAUDE_PLUGINS` | — | Marketplace plugins to bring into the agent, as `plugin@marketplace` ids, comma-separated. The pty doesn't read `~/.claude/settings.json`, so a plugin enabled in your terminal is missing in Telegram until it's named here |
+| `CLAUDE_EXECUTABLE_PATH` | `claude` | The `claude` the Haiku side calls run when `CLAUDE_USE_BUNDLED_EXECUTABLE=false`. Chats run `CLAUDE_BIN`, else the `claude` on PATH |
 | `BOT_NAME` | `TeleCoder` | The bot's name: what it's called in the system prompt and its messages, and the display name it sets in Telegram at startup when the setting is given. Unset, the BotFather name is kept. A name given with `/botname` wins over this |
 | `CANCEL_ON_NEW_MESSAGE` | `false` | Auto-cancel running query on new message |
 | `MESSAGE_BATCH_TIMEOUT_MS` | `1500` | How long to wait for the next part of a long paste that Telegram split (2000+ characters) before sending the parts as one prompt; `0` turns it off |
@@ -52,10 +51,9 @@ See [Sharing a bot](../guides/sharing.md) for how the pieces fit together.
 | `MEMORY_GUARD_MIN_AVAILABLE_MB` | `auto` | Before a message starts a new `claude` for a PTY chat, the machine's available memory is checked, less a few hundred MB for every claude let through in the last half minute (one just started hasn't taken its memory yet, so two threads started together can't both slip past). Under this many MB, claudes idle longer than `MEMORY_GUARD_REAP_IDLE_MS` are ended first; if that still leaves too little, the chat is asked whether to start anyway, end the longest-idle claude first, or drop the message. `auto` is a quarter of the machine's RAM, at least 1024 MB. `0` turns the guard off |
 | `MEMORY_GUARD_MAX_SWAP_USED_MB` | `0` | Swap in use above this many MB also counts as tight, so the guard asks even while available memory looks fine. Off at `0`: swap stays occupied long after the pressure that filled it has passed, so on a machine that swaps at all this asks on every new chat |
 | `MEMORY_GUARD_REAP_IDLE_MS` | `300000` | The shorter idle window the memory guard reaps with when memory is tight (5 min). A chat reaped this way resumes from its transcript on its next message |
-| `PROMPT_SUGGESTIONS_DEFAULT` | `false` | Predicted next-prompt buttons for chats that haven't used `/suggestions` (PTY mode) |
+| `PROMPT_SUGGESTIONS_DEFAULT` | `false` | Predicted next-prompt buttons for chats that haven't used `/suggestions` |
 | `STATUS_LINE_DEFAULT` | `true` | The status line that closes every reply, with its topic line, for chats that haven't used `/statusline`. Its last-prompts and `claude --resume` lines stay opt-in |
 | `QUESTION_TIMEOUT_MINUTES` | `10` | How long a question from Claude (buttons, polls, relayed dialogs) waits before the turn carries on without an answer and the question closes |
-| `CLAUDE_SDK_LOG_LEVEL` | `basic` | SDK log level: off, basic, verbose, trace |
 
 ## Group chats
 
@@ -75,7 +73,6 @@ How these three fit together: [Group roles](../guides/sharing.md#group-roles).
 | `CCR_ENABLED` | `false` | Enable `/ccr` and CCR in `/provider` |
 | `CCR_BASE_URL` | `http://localhost:3456` | Where CCR's local proxy listens |
 | `CCR_AUTH_TOKEN` | — | CCR's local auth token |
-| `CCR_AUTO_PROMPT_ON_THROTTLE` | `true` | Offer a one-tap CCR retry on Max throttle |
 | `CCR_AUTOSTART` | `false` | Run `ccr start` when the proxy isn't reachable |
 | `CCR_BINARY` | `ccr` | Path or name of the `ccr` binary for autostart |
 

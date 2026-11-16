@@ -136,7 +136,6 @@ describe('/recap', () => {
 
     /** The chat as yours is set up: the PTY, and everything a turn can end with on show. */
     function showAll(chat: number): void {
-      userPreferences.setMethod(chat, 'pty');
       userPreferences.setVerbosity(chat, 'verbose');
       userPreferences.setShowStatusLine(chat, true);
       userPreferences.setShowPromptInStatusLine(chat, true);
@@ -175,7 +174,6 @@ describe('/recap', () => {
 
     it('with nothing more when the chat turned both off', async () => {
       const { ctx, reply, chat } = chatWithTranscript('/recap', CONVERSATION);
-      userPreferences.setMethod(chat, 'pty');
       userPreferences.setVerbosity(chat, 'quiet');
       userPreferences.setShowStatusLine(chat, false);
       await handleRecap(ctx);

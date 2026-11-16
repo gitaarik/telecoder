@@ -12,8 +12,7 @@ import { contextHealthColor, fmtTokens, getProgressBar } from '../../utils/forma
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { resolveShareableFile } from '../file-access.js';
-import { resolveClaudeExecutableForMethod } from '../../utils/resolve-claude-bin.js';
-import { getActiveMethod } from '../../providers/claude-provider.js';
+import { resolvePtyClaudeBin } from '../../utils/resolve-claude-bin.js';
 import { contextTokens } from '../../providers/types.js';
 import { stopTurn } from '../middleware/queued-messages.js';
 import { groupAvailableCommands, type AvailableCommands } from '../../claude/available-commands.js';
@@ -87,8 +86,6 @@ export {
   handleEffortCallback,
   handleVerbosity,
   handleVerbosityCallback,
-  handleMethodCommand,
-  handleMethodCallback,
   handleSuggestions,
   handleSuggestionsCallback,
   handleStatusLine,
@@ -258,7 +255,7 @@ export async function handleStatus(ctx: Context): Promise<void> {
 
     const projectName = path.basename(session.workingDirectory);
 
-    // On CCR, the SDK alias doesn't reflect which backend actually served
+    // On CCR, the model alias doesn't reflect which backend actually served
     // the turn — CCR picks per-request based on its router config. We
     // don't try to discover the true backend (would require log parsing).
     // The "Provider: ccr" line below already signals the routing.
@@ -277,7 +274,6 @@ export async function handleStatus(ctx: Context): Promise<void> {
     field('🧠', 'Model').add(currentModel);
     if (provider === 'ccr') status.add(' ').italic('(routed via CCR)');
     field('🔌', 'Provider').add(provider);
-    field('🚇', 'Transport').add(getActiveMethod(sessionKey));
     if (cached) {
       // Cache reads and writes are most of the context, and without them this
       // read about 0%. Same sum as the usage footer's.
@@ -327,7 +323,7 @@ export async function handleContext(ctx: Context): Promise<void> {
   const session = await requireActiveSession(ctx, sessionKey);
   if (!session) return;
 
-  // Try cached SDK usage first (instant, no CLI shell-out)
+  // Try the cached usage first (instant, no CLI shell-out)
   const cached = getCachedUsage(sessionKey);
   if (cached) {
     const used = contextTokens(cached);
@@ -538,10 +534,10 @@ export async function handleProjectCommands(ctx: Context): Promise<void> {
   const { getBotCommandNames } = await import('../../claude/command-parser.js');
 
   const projectCommands = getProjectCommands(session.workingDirectory);
-  // Ask the binary this chat's turns actually run through. SDK and PTY mode
-  // can be different installs at different versions, and their command sets
-  // differ — listing the wrong one would name commands that don't exist here.
-  const executable = resolveClaudeExecutableForMethod(getActiveMethod(keyInfo.sessionKey));
+  // Ask the binary the chat's turns actually run through: command sets differ
+  // between releases, and another install's list would name commands that
+  // don't exist here.
+  const executable = resolvePtyClaudeBin();
   // A cold cache means a probe — a fresh headless process — so show a typing
   // indicator rather than leaving the chat silent for a second or two.
   const typing = ctx.replyWithChatAction?.('typing');

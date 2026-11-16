@@ -169,28 +169,20 @@ const envSchema = z.object({
   // named without the project in front, since the bot's name already says it.
   // Absolute, or relative to WORKSPACE_DIR.
   HOME_PROJECT: z.string().optional(),
+  // The `claude` the Haiku side calls (topic names, the charter judge) run
+  // through: the copy bundled with the agent SDK, or CLAUDE_EXECUTABLE_PATH
+  // when the flag is false. The ptys spawn CLAUDE_BIN, else the one on PATH.
   CLAUDE_EXECUTABLE_PATH: z.string().default('claude'),
   CLAUDE_USE_BUNDLED_EXECUTABLE: z
     .string()
     .default('true')
     .transform((val) => val.toLowerCase() === 'true'),
-  CLAUDE_SDK_LOG_LEVEL: z.enum(['off', 'basic', 'verbose', 'trace']).default('basic'),
-  // Load user-level Claude settings (~/.claude/settings.json: plugins, hooks, MCP servers)
-  // into the bot's SDK subprocess. Default false so the bot runs in an isolated env;
-  // user-level plugins/MCP servers can otherwise inflate tool counts and trigger the
-  // SDK's tool-deferral mechanism, breaking proactive MCP tool calls (e.g. auto-topic).
-  CLAUDE_SDK_LOAD_USER_SETTINGS: z
-    .string()
-    .default('false')
-    .transform((val) => val.toLowerCase() === 'true'),
   // Path to a JSON file of extra MCP servers ({"mcpServers": {...}}) to hand the
-  // pty alongside the bot's own. Opt-in and named explicitly for the same reason
-  // the flag above defaults to false: the spawn passes --strict-mcp-config, which
-  // is what keeps the tool surface predictable, and the alternative to this is
-  // loading every server the user has ever configured — broken ones included.
-  // Named separately from CLAUDE_SDK_LOAD_USER_SETTINGS because MCP servers live
-  // in ~/.claude.json rather than in settings.json: --setting-sources cannot
-  // reach them either way.
+  // pty alongside the bot's own. Opt-in and named explicitly: the spawn passes
+  // --strict-mcp-config, which is what keeps the tool surface predictable, and
+  // the alternative to this is loading every server the user has ever
+  // configured — broken ones included. MCP servers live in ~/.claude.json
+  // rather than in settings.json, so --setting-sources cannot reach them.
   EXTRA_MCP_CONFIG: z.string().optional(),
   // Marketplace plugins to enable inside the agent, as the `plugin@marketplace`
   // ids `claude plugin list` prints, comma-separated. Neither transport reads
@@ -235,9 +227,6 @@ const envSchema = z.object({
     .string()
     .default('true')
     .transform((val) => val.toLowerCase() === 'true'),
-  // Transport a chat uses until someone picks one with /method. The permission
-  // gate runs on both (a PreToolUse hook either way). Per-chat /method wins.
-  CLAUDE_METHOD_DEFAULT: z.enum(['sdk', 'pty']).default('sdk'),
   STREAMING_DEBOUNCE_MS: z
     .string()
     .default('500')
@@ -311,13 +300,6 @@ const envSchema = z.object({
   // Status-line verbose: show full commands/paths without truncation and longer session previews.
   // When set, overrides the verbosity tier.
   TERMINAL_UI_VERBOSE: z
-    .string()
-    .default('false')
-    .transform((val) => val.toLowerCase() === 'true'),
-  // Logging: show SDK hook JSON dumps (PreToolUse, PostToolUse, stderr, etc.)
-  // When false (default), verbose mode shows clean operational logs without hook noise.
-  // When true, verbose mode includes full hook JSON payloads and stderr output.
-  LOG_AGENT_HOOKS: z
     .string()
     .default('false')
     .transform((val) => val.toLowerCase() === 'true'),
@@ -439,12 +421,6 @@ const envSchema = z.object({
   // Path or name of the `ccr` binary used for autostart. Defaults to `ccr`
   // (resolved via PATH). Override if `ccr` lives somewhere systemd can't see.
   CCR_BINARY: z.string().default('ccr'),
-  // When the Anthropic API reports a Max usage limit, automatically prompt
-  // the user with an inline keyboard offering to switch to CCR.
-  CCR_AUTO_PROMPT_ON_THROTTLE: z
-    .string()
-    .default('true')
-    .transform((val) => val.toLowerCase() === 'true'),
 });
 
 /**

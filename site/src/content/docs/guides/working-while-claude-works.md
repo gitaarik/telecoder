@@ -14,8 +14,8 @@ Claude often works for minutes at a time. You don't have to wait for it.
 ```
 
 `/btw` answers a question alongside the running task, without interrupting it. It sees the
-conversation so far but can't change files, so it only answers. In SDK mode it needs a turn
-to be running; in PTY mode it works whenever the thread has a conversation.
+conversation so far but can't change files, so it only answers. It works whenever the
+thread has a conversation, whether or not a turn is running.
 
 ## Correct the turn: `/steer`
 
@@ -63,6 +63,6 @@ a stuck one, and `/status` shows what's running.
 
 - **Long pastes**: Telegram splits a long message into parts. The bot glues them back into
   one prompt.
-- **Suggested next prompts**: in PTY mode, the prompt Claude Code predicts you'll send next
+- **Suggested next prompts**: the prompt Claude Code predicts you'll send next
   can appear as a `💡` button under the reply. Turn it on with `/suggestions`.
 - **Voice notes**: talk instead of typing. See [Voice](voice.md).

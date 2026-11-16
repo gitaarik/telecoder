@@ -10,7 +10,6 @@
  *   turn-runner.ts running a prompt through a provider; all turn entry points
  *   turn-notify.ts what gets posted after a turn: catch-up relay + notices
  *   replies.ts     the ForceReply answer handlers
- *   throttle.ts    CCR throttle state and the switch-and-retry prompt
  *
  * Re-exports below keep the import path stable for bot.ts and the other
  * consumers that predate the split.
@@ -30,8 +29,7 @@ import { repliedForceReplyFlow } from '../../telegram/force-reply-tracker.js';
 
 export { closeTurn, relayCatchUpIfMissed } from './message/turn-notify.js';
 export { runQueuedTurn } from './message/shared.js';
-export { formatResetIn } from './message/throttle.js';
-export { handleCcrThrottleCallback, dispatchPromptFromCallback } from './message/turn-runner.js';
+export { dispatchPromptFromCallback } from './message/turn-runner.js';
 
 export async function handleMessage(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);

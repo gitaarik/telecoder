@@ -62,12 +62,12 @@ What that buys you:
   tedium. `/autoapprove off` ends it early, `/autoapprove status` reads it back.
 - **The gate turns itself on.** With guests present you get prompts without
   setting a second variable; `TELECODER_PERMISSION_PROMPTS=0` opts out.
-- **Lifecycle and transport are yours.** `/update`, `/restartbot`,
-  `/rebuildbot`, `/method`, `/provider` and `/ccr` refuse a guest.
-- **The same gate on every transport.** It is a PreToolUse hook on the SDK
-  transport (the default, and the one CCR uses) and on the PTY one, in every
-  `/mode` including bypass, and it covers subagents' tool calls too. If it
-  breaks while judging a call, the call is denied.
+- **Lifecycle and backend are yours.** `/update`, `/restartbot`,
+  `/rebuildbot`, `/provider` and `/ccr` refuse a guest.
+- **The same gate on every turn.** It is a PreToolUse hook on the `claude`
+  the pty runs, on Claude and on CCR, in every `/mode` including bypass, and it
+  covers subagents' tool calls too. If it breaks while judging a call, the
+  call is denied.
 - **Out-of-scope paths prompt too.** `cat ~/.ssh/id_rsa`, an edit to a project
   nobody was invited to, a read of this bot's own `.env` — all held. System
   paths and language toolchains stay readable without prompting, because a
@@ -151,7 +151,7 @@ in. `spectator` is the default: nobody can prompt the agent until an admin runs
 peers who all own the box.
 
 Commands that reconfigure the bot rather than drive the conversation stay with
-admins — `/restartbot`, `/rebuildbot`, `/update`, `/mode`, `/method`,
+admins — `/restartbot`, `/rebuildbot`, `/update`, `/mode`,
 `/provider`, `/ccr`, `/permissions`, `/teleport`, `/project`, `/newbot`,
 `/users`, `/allow` and `/deny`, along with the inline buttons those
 open. A contributor drives the conversation; only an admin repoints or restarts

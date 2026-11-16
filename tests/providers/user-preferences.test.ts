@@ -169,11 +169,11 @@ describe('userPreferences per thread', () => {
   it('falls back to the chat for whatever the thread never set', async () => {
     const store = await loadStore();
     store.setModel(42, 'opus');
-    store.setMethod(42, 'pty');
+    store.setVerbosity(42, 'quiet');
     store.setEffort('42:7', 'low');
 
     expect(store.getModel('42:7')).toBe('opus');
-    expect(store.getMethod('42:7')).toBe('pty');
+    expect(store.getVerbosity('42:7')).toBe('quiet');
     expect(store.getEffort('42:7')).toBe('low');
     expect(store.getEffort(42)).toBeUndefined();
   });
@@ -214,12 +214,12 @@ describe('userPreferences per thread', () => {
     const store = await loadStore();
     store.setModel(42, 'opus');
     store.setModel('42:7', 'haiku');
-    store.setMethod('42:7', 'pty');
+    store.setVerbosity('42:7', 'quiet');
 
     store.copyScope('42:7', '42:9');
 
     expect(store.getModel('42:9')).toBe('haiku');
-    expect(store.getMethod('42:9')).toBe('pty');
+    expect(store.getVerbosity('42:9')).toBe('quiet');
     // The copy is the new thread's own: changing the source leaves it be.
     store.setModel('42:7', 'sonnet');
     expect(store.getModel('42:9')).toBe('haiku');

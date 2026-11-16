@@ -8,7 +8,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const fake = vi.hoisted(() => ({
   availableMB: [] as number[], // successive readMemory() answers
-  method: 'pty' as 'pty' | 'sdk',
   live: false,
   sessions: [] as { sessionKey: string; pid: number; idleMs: number; generating: boolean }[],
   reaped: [] as string[],
@@ -28,7 +27,6 @@ vi.mock('../../src/utils/memory-pressure.js', async (importOriginal) => ({
 }));
 
 vi.mock('../../src/providers/claude-provider.js', () => ({
-  getActiveMethod: () => fake.method,
   getPtyProvider: () => ({
     hasLiveSession: () => fake.live,
     describeSessions: () => fake.sessions,
@@ -108,11 +106,8 @@ describe('guardSpawn', () => {
     expect(fake.reapCalls).toEqual([]);
   });
 
-  it('passes an SDK chat and a disabled guard', async () => {
+  it('passes a disabled guard', async () => {
     fake.availableMB = [100];
-    fake.method = 'sdk';
-    expect((await guardSpawn(ctx(), KEY)).proceed).toBe(true);
-    fake.method = 'pty';
     (config as { MEMORY_GUARD_MIN_AVAILABLE_MB: number }).MEMORY_GUARD_MIN_AVAILABLE_MB = 0;
     expect((await guardSpawn(ctx(), KEY)).proceed).toBe(true);
     expect(fake.reapCalls).toEqual([]);

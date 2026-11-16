@@ -20,8 +20,7 @@ import { sessionManager } from '../../claude/session-manager.js';
 import { getBotCommandNames, getForwardedCommandNames } from '../../claude/command-parser.js';
 import { getAvailableCommands, getCachedAvailableCommands } from '../../claude/available-commands.js';
 import { getProjectCommands } from '../../claude/project-commands.js';
-import { getActiveMethod } from '../../providers/claude-provider.js';
-import { resolveClaudeExecutableForMethod } from '../../utils/resolve-claude-bin.js';
+import { resolvePtyClaudeBin } from '../../utils/resolve-claude-bin.js';
 import { sanitizeError } from '../../utils/sanitize.js';
 import { markAlreadyAddressed } from '../middleware/group-mention.middleware.js';
 import { buildUnknownCommandMessage, findCommandFix, type CommandFix } from '../command-catalog.js';
@@ -102,7 +101,7 @@ export async function offerCommandFix(ctx: Context, sessionKey: string, text: st
   // A project command added since the last probe isn't in the snapshot yet.
   if (getProjectCommands(workingDirectory).some((c) => c.name === fix.token)) return false;
 
-  const executable = resolveClaudeExecutableForMethod(getActiveMethod(sessionKey));
+  const executable = resolvePtyClaudeBin();
   let snapshot = getCachedAvailableCommands(workingDirectory, executable);
   if (!snapshot) {
     // A cold cache means a probe — a fresh headless process — so show typing

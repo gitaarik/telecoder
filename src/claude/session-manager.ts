@@ -125,7 +125,7 @@ class SessionManager {
         );
         return existing;
       }
-      // Different directory: start a new conversation. The Agent SDK session
+      // Different directory: start a new conversation. The Claude Code session
       // is bound to the original cwd, so we mint a fresh conversationId and
       // leave the prior history entry intact for "back to previous project".
       return this.createSession(sessionKey, directory);
@@ -216,7 +216,7 @@ class SessionManager {
   /**
    * Start a fresh conversation in the same project, preserving the prior
    * entry in session history so the user can return to it. Used by /clear,
-   * which must actually sever the SDK session — the existing
+   * which must actually sever the Claude session — the existing
    * `claudeSessionId` would otherwise be re-used on the next message and the
    * Anthropic-side conversation history would persist server-side.
    */

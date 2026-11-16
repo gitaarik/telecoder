@@ -42,13 +42,12 @@ a Pro or Max plan works. An `ANTHROPIC_API_KEY` works too, billed per use. With
 [Claude Code Router](../guides/providers.md) you can also route to other model
 providers, for example when your plan's limit runs out.
 
-## SDK or PTY mode?
+## Does it use the Agent SDK?
 
-SDK mode, the default, talks to Claude through the Agent SDK. It's lighter and simpler.
-PTY mode drives the real `claude` terminal app behind the scenes, so everything that
-works in your terminal works in Telegram too: your `CLAUDE.md`, settings, skills,
-plugins and slash commands. Switch with `/method`. [Providers](../guides/providers.md)
-compares the two.
+Not for your chats. TeleCoder drives the real `claude` terminal app behind the scenes,
+so everything that works in your terminal works in Telegram too: your `CLAUDE.md`,
+settings, skills, plugins and slash commands, on your own login. The Agent SDK is used
+only for small one-shot Haiku calls, such as naming a conversation's topic.
 
 ## Does it work on Windows?
 

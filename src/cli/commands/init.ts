@@ -26,7 +26,6 @@ const USAGE = [
   '                       (never pass the token itself: arguments show up in ps)',
   '  --owner-id ID        your numeric Telegram user id',
   '  --workspace DIR      the folder your projects are in (default: ~/projects or ~)',
-  '  --transport sdk|pty  how Claude Code runs (default: sdk)',
   '  --groq-key-env VAR   turn voice transcription on, with the Groq key in VAR',
   '  --icon               give the bot the TeleCoder icon as its profile picture,',
   '                       replacing one it has (default: only when it has none)',
@@ -49,10 +48,6 @@ export function parseInitArgs(args: string[]): ParsedInitArgs {
     '--owner-id': (v) => { opts.ownerId = v; },
     '--workspace': (v) => { opts.workspace = v; },
     '--groq-key-env': (v) => { opts.groqKeyEnv = v; },
-    '--transport': (v) => {
-      if (v !== 'sdk' && v !== 'pty') return '--transport takes sdk or pty.';
-      opts.transport = v;
-    },
   };
   for (let i = 0; i < args.length; i++) {
     const [flag, inline] = args[i].includes('=') ? args[i].split(/=(.*)/s, 2) : [args[i], undefined];

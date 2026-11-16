@@ -55,7 +55,7 @@ reasoning — the commit bodies are the long form, this is the index.
   only that the path was under the workspace or `/tmp`, and the scope guard
   that prompts for a credential path watches Read and Bash, not MCP tools. So
   a guest who asked Claude for `~/.ssh/id_rsa` got it, unless Claude happened
-  to read it first. Both transports now refuse credential and bot-state paths
+  to read it first. Both routes now refuse credential and bot-state paths
   for everyone and confine a guest to the chat's project, as `/file` has.
 
 - **A background task claude stopped no longer shows as running forever.**
@@ -63,6 +63,22 @@ reasoning — the commit bodies are the long form, this is the index.
   that notification was the only thing that retired a task, so "🔄 Running in
   background" stayed under every later reply until the bot restarted, and the
 ### Removed
+
+- **The SDK transport.** Every chat runs Claude Code in a pty now: the real
+  `claude` CLI, on your own login, with your `CLAUDE.md`, skills, plugins and
+  slash commands. The Agent SDK path was Claudegram's custom agent with a
+  system prompt of its own, it lagged the pty on every feature (`/shells`,
+  task output, `/btw` without a running turn, scheduled prompts, the live
+  screen), and Anthropic's SDK terms do not allow third-party products to
+  offer claude.ai login on it. The SDK stays only for the one-shot Haiku
+  side calls. Gone with it: `/method`, `telecoder init`'s transport question
+  and `--transport`, `CLAUDE_METHOD_DEFAULT`, `CLAUDE_SDK_LOG_LEVEL` and
+  `CLAUDE_SDK_LOAD_USER_SETTINGS` (a startup line says so while they are
+  still in `.env`), `/cost`'s per-turn tally (the live session's totals
+  replace it), and the one-tap "switch to CCR and retry" offer on a Max
+  throttle with `CCR_AUTO_PROMPT_ON_THROTTLE` — it read the error off the
+  SDK's result, which the pty never sees; `/ccr` is the switch. `/mode`'s
+  default is `auto` everywhere, Claude Code's own.
 
 - **The `/file` prompt.** Sent bare, `/file` posted a "Download File" card
   with eight guessed-at files and waited for a reply. Nobody browses a project

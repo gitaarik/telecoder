@@ -49,10 +49,6 @@ telecoder init
   from that. Only the IDs you allow can use the bot.
 - **Your projects folder**, the folder your code lives in, such as `~/dev`.
   TeleCoder offers the folders in it as projects.
-- **SDK or PTY.** SDK is the lighter default. PTY drives the real `claude` terminal app,
-  so your `CLAUDE.md`, skills, plugins and slash commands all work as in a terminal.
-  You can switch any time with `/method`; [Providers](../guides/providers.md) has the
-  details.
 - **Voice**, optional.
 - **A picture for the bot.** If your bot has no profile picture yet, the wizard offers
   to give it the TeleCoder icon, so it's easy to spot in your chat list.

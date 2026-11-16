@@ -40,8 +40,8 @@ export function isAtLeast(
   return version.patch >= patch;
 }
 
-// Keyed by binary path — PTY mode spawns CLAUDE_BIN while SDK mode usually
-// spawns the SDK's bundled binary, and the two are often different releases.
+// Keyed by binary path — the ptys spawn CLAUDE_BIN while the Haiku side calls
+// run the agent SDK's bundled binary, and the two are often different releases.
 const cache = new Map<string, Promise<ClaudeVersion | undefined>>();
 
 export async function getClaudeVersion(bin: string): Promise<ClaudeVersion | undefined> {

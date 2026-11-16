@@ -27,10 +27,8 @@ export interface PermissionModeInfo {
   label: string;
   /** Claude's own one-line description of what the mode does. */
   description: string;
-  /** What `--permission-mode` accepts. Not always the same as {@link sdk}. */
+  /** What `--permission-mode` accepts. */
   cli: string;
-  /** What the SDK's `permissionMode` option accepts. */
-  sdk: 'default' | 'acceptEdits' | 'plan' | 'auto' | 'bypassPermissions';
   /**
    * The phrase the TUI prints in its indicator while this mode is on. Measured
    * against a live pty — claude draws `⏸ manual mode on · ? for shortcuts` and
@@ -46,7 +44,6 @@ export const PERMISSION_MODES: readonly PermissionModeInfo[] = [
     label: 'Manual',
     description: 'ask before every edit',
     cli: 'manual',
-    sdk: 'default',
     tuiPhrase: 'manual mode',
   },
   {
@@ -54,7 +51,6 @@ export const PERMISSION_MODES: readonly PermissionModeInfo[] = [
     label: 'Accept edits',
     description: 'edit freely, ask for commands',
     cli: 'acceptEdits',
-    sdk: 'acceptEdits',
     tuiPhrase: 'accept edits',
   },
   {
@@ -62,7 +58,6 @@ export const PERMISSION_MODES: readonly PermissionModeInfo[] = [
     label: 'Plan',
     description: 'research and propose, never touch files',
     cli: 'plan',
-    sdk: 'plan',
     tuiPhrase: 'plan mode',
   },
   {
@@ -70,7 +65,6 @@ export const PERMISSION_MODES: readonly PermissionModeInfo[] = [
     label: 'Auto',
     description: 'Claude decides what is safe',
     cli: 'auto',
-    sdk: 'auto',
     tuiPhrase: 'auto mode',
   },
   {
@@ -78,7 +72,6 @@ export const PERMISSION_MODES: readonly PermissionModeInfo[] = [
     label: 'Bypass',
     description: 'never ask — what the pty ran in before auto',
     cli: 'bypassPermissions',
-    sdk: 'bypassPermissions',
     tuiPhrase: 'bypass permissions',
   },
 ];
@@ -94,26 +87,16 @@ export function isPermissionModeId(value: string): value is PermissionModeId {
 }
 
 /**
- * The mode a chat runs in when it has chosen none.
- *
- * "Default" means "leave it to the transport", and the transports disagree, so
- * this is where the disagreement is written down — beside the table, rather
- * than in either transport, so the answer /mode prints and the answer a turn
- * runs in cannot drift apart.
- *
- * The pty answers `auto`, which is also what claude itself launches in when
- * nobody passes a flag. It ran bypassed for as long as it had no way to answer
- * a permission prompt; now that dialogs reach the chat mid-turn, the mode that
- * never asks is a choice rather than the only thing that worked. `/mode bypass`
- * is still one tap away for a chat that wants it back.
- *
- * The SDK answers `acceptEdits`, the mode that transport always ran in. The
- * `DANGEROUS_MODE` flag that once promoted it to bypass is gone: a config flag
- * quietly re-loosening a default is the kind of surprise this whole function
- * exists to prevent, and `/mode` is the one place a chat chooses.
+ * The mode a chat runs in until it picks one with /mode: `auto`, which is also
+ * what claude itself launches in when nobody passes a flag. The pty ran
+ * bypassed for as long as it had no way to answer a permission prompt; now
+ * that dialogs reach the chat mid-turn, the mode that never asks is a choice
+ * rather than the only thing that worked. `/mode bypass` is one tap away for a
+ * chat that wants it back. /mode prints this through permissionModeInfo, so
+ * the menu cannot describe a mode a turn would not run in.
  */
-export function transportDefaultMode(method: 'sdk' | 'pty'): PermissionModeId {
-  return method === 'pty' ? 'auto' : 'acceptEdits';
+export function defaultPermissionMode(): PermissionModeId {
+  return 'auto';
 }
 
 /**

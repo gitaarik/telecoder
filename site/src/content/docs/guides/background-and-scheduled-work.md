@@ -8,17 +8,17 @@ sidebar:
 ## Background tasks
 
 When Claude starts something in the background (a long build, a subagent, a monitor that
-watches a log), you see it in the chat. In PTY mode it's one card, **📡 Background
+watches a log), you see it in the chat: one card, **📡 Background
 activity**, that updates in place: what's running and for how long, and what just
 happened. It moves to the bottom of the chat, so your phone notifies you, when a monitor
 fires, something fails, or a long task finishes.
 
-- **`/tasks`** lists the background tasks, with details per task. In PTY mode, **📄 Output**
+- **`/tasks`** lists the background tasks, with details per task. **📄 Output**
   on a task shows what it has printed so far, the way Enter on a task in Claude Code's own
   `/tasks` does, and **🔎 Ask claude** shows Claude Code's own list, with a button per row
   that opens that row's output. That list also covers work the bot never saw start, such
   as a shell Claude backgrounded on its own or anything from before the bot's last restart.
-- **`/shells`** lists the background processes and stops them (PTY mode).
+- **`/shells`** lists the background processes and stops them.
 
 When a background task reports back, Claude can pick it up by itself, and its answer
 arrives like any other reply.
@@ -45,7 +45,7 @@ When it fires, the prompt goes into the thread's current conversation, under a
 Schedules survive restarts, but fires missed while the bot was down aren't made up. A fire
 that comes due while Claude is busy waits its turn.
 
-In PTY mode, Claude can schedule prompts too: ask it to *"check this every hour"*, and the
+Claude can schedule prompts too: ask it to *"check this every hour"*, and the
 schedule shows up in `/schedules` like your own.
 
 ## Unattended jobs

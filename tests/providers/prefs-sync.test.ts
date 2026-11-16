@@ -22,7 +22,6 @@ const clearModel = vi.fn();
 const setEffort = vi.fn();
 const clearEffort = vi.fn();
 const getActiveProviderName = vi.fn();
-const getMethod = vi.fn();
 const listSessionKeysForChat = vi.fn();
 const clearConversation = vi.fn();
 const isInFlight = vi.fn();
@@ -34,10 +33,6 @@ vi.mock('../../src/providers/provider-router.js', () => ({
   clearEffort: (...a: unknown[]) => clearEffort(...a),
   getActiveProviderName: (...a: unknown[]) => getActiveProviderName(...a),
   isValidEffortLevel: (l: string) => ['low', 'medium', 'high', 'xhigh', 'max'].includes(l),
-}));
-
-vi.mock('../../src/providers/user-preferences.js', () => ({
-  userPreferences: { getMethod: (...a: unknown[]) => getMethod(...a) },
 }));
 
 vi.mock('../../src/providers/claude-provider.js', () => ({
@@ -67,7 +62,6 @@ describe('applyPrefsChange', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getActiveProviderName.mockReturnValue('claude');
-    getMethod.mockReturnValue('sdk');
     listSessionKeysForChat.mockReturnValue([]);
     isInFlight.mockReturnValue(false);
   });
@@ -113,17 +107,8 @@ describe('applyPrefsChange', () => {
     expect(setEffort).not.toHaveBeenCalled();
   });
 
-  it('leaves pty sessions alone when the chat runs on the SDK', () => {
-    getMethod.mockReturnValue('sdk');
-    listSessionKeysForChat.mockReturnValue(['42', '42:7']);
-
-    applyPrefsChange(change());
-
-    expect(clearConversation).not.toHaveBeenCalled();
-  });
 
   it('restarts every pty session for the chat, forum topics included', () => {
-    getMethod.mockReturnValue('pty');
     listSessionKeysForChat.mockReturnValue(['42', '42:7']);
 
     const outcome = applyPrefsChange(change());
@@ -134,7 +119,6 @@ describe('applyPrefsChange', () => {
   });
 
   it('does not kill a session that is mid-turn, and reports it', () => {
-    getMethod.mockReturnValue('pty');
     listSessionKeysForChat.mockReturnValue(['42', '42:7']);
     isInFlight.mockImplementation((key: string) => key === '42:7');
 
@@ -238,7 +222,6 @@ describe('initPrefsSync', () => {
     isMainThread = false;
     parentPort.removeAllListeners();
     getActiveProviderName.mockReturnValue('claude');
-    getMethod.mockReturnValue('sdk');
     listSessionKeysForChat.mockReturnValue([]);
     isInFlight.mockReturnValue(false);
   });

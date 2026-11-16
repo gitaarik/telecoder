@@ -26,7 +26,6 @@ export const INHERITED_CLAUDE_SESSION_VARS = [
   'CLAUDE_CODE_EXECPATH',
   'CLAUDE_PID',
   'CLAUDE_AGENT_SDK_VERSION',
-  'CLAUDE_SDK_LOAD_USER_SETTINGS',
 ];
 
 /** A copy of `env` with the parent session's markers removed. */

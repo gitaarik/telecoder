@@ -7,14 +7,14 @@ sidebar:
 
 - **User whitelist** — only approved Telegram IDs can interact
 - **Admins & guests** — a shared bot can reserve approvals, lifecycle and
-  transport for `ADMIN_USER_IDS`; see [Sharing a bot](../guides/sharing.md)
+  the backend switch for `ADMIN_USER_IDS`; see [Sharing a bot](../guides/sharing.md)
 - **Group confinement** — `RESTRICT_TO_GROUPS` keeps guests out of private chats
 - **Group roles** — inside a group, admins / contributors / spectators, so being
   in the chat need not mean being able to prompt the agent (`GROUP_MEMBERS_DEFAULT`)
 - **Addressed-only** — `GROUP_REQUIRE_MENTION` keeps human conversation in a
   shared group from becoming prompts
 - **Permission gate** — dangerous Bash patterns pause for an admin's approval,
-  on the SDK and PTY transports alike (CCR included), subagents too
+  on Claude and on CCR alike, subagents too
 - **Scope guard** — tool calls reaching outside the shared projects, or at any
   credential path, pause too
 - **Charter judge** — guest messages are read against a charter before they run

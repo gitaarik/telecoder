@@ -104,28 +104,9 @@ describe('parseCostOutput', () => {
     expect(out).not.toContain('```');
   });
 
-  it('still reports the tally when the CLI output is unrecognised', () => {
-    const out = parseCostOutput('some future wording', { usd: 0.5, turns: 3 });
-    expect(out).toContain('**This chat:** $0.5000 across 3 turns');
-  });
-
-  it("appends TeleCoder's own tally for the conversation", () => {
-    const out = parseCostOutput(SUBSCRIPTION_OUTPUT, { usd: 0.4212, turns: 7 });
-    expect(out).toContain('**This chat:** $0.4212 across 7 turns');
-  });
-
-  it('counts a single turn in the singular', () => {
-    expect(parseCostOutput(SUBSCRIPTION_OUTPUT, { usd: 0.05, turns: 1 })).toContain('across 1 turn —');
-  });
-
-  it('omits the tally when no turn has been recorded', () => {
-    // Every PTY-mode chat: that mode never receives a cost figure to add up.
-    expect(parseCostOutput(SUBSCRIPTION_OUTPUT, { usd: 0, turns: 0 })).not.toContain('This chat:');
-    expect(parseCostOutput(SUBSCRIPTION_OUTPUT)).not.toContain('This chat:');
-  });
 
   it("leads with the live session's totals when the TUI could be asked", () => {
-    const out = parseCostOutput(SUBSCRIPTION_OUTPUT, undefined, LIVE_SESSION);
+    const out = parseCostOutput(SUBSCRIPTION_OUTPUT, LIVE_SESSION);
     expect(out).toContain('**This session**');
     expect(out).toContain('- **Total cost:** $52.30');
     expect(out).toContain('- **Total duration (wall):** 1d 13h 23m');
@@ -135,13 +116,13 @@ describe('parseCostOutput', () => {
   });
 
   it('nests the per-model rows under their heading', () => {
-    const out = parseCostOutput(SUBSCRIPTION_OUTPUT, undefined, LIVE_SESSION);
+    const out = parseCostOutput(SUBSCRIPTION_OUTPUT, LIVE_SESSION);
     expect(out).toContain('- **Usage by model:**\n  - `claude-opus-5`: 2.8k input');
   });
 
   it("drops the probe's own totals once the live ones are in hand", () => {
     // Both shapes carry `Total cost:`; only one of them spent anything.
-    const out = parseCostOutput(BILLING_OUTPUT, undefined, LIVE_SESSION);
+    const out = parseCostOutput(BILLING_OUTPUT, LIVE_SESSION);
     expect(out).toContain('- **Total cost:** $52.30');
     expect(out).not.toContain('$0.1234');
     expect(out).not.toContain('42 lines added');
@@ -151,13 +132,13 @@ describe('parseCostOutput', () => {
   });
 
   it('still bullets the contributor rows, which are indented the same way', () => {
-    const out = parseCostOutput(SUBSCRIPTION_OUTPUT, undefined, LIVE_SESSION);
+    const out = parseCostOutput(SUBSCRIPTION_OUTPUT, LIVE_SESSION);
     expect(out).toContain('- 70% of your usage was at >150k context');
     expect(out).toContain('- Top skills: /frontend-design:frontend-design 1%');
   });
 
   it('shows the live totals alone when the probe came back empty', () => {
-    const out = parseCostOutput('   ', undefined, LIVE_SESSION);
+    const out = parseCostOutput('   ', LIVE_SESSION);
     expect(out).toContain('- **Total cost:** $52.30');
     expect(out).not.toContain('No cost output received');
   });
@@ -166,23 +147,17 @@ describe('parseCostOutput', () => {
     const out = parseCostOutput(SUBSCRIPTION_OUTPUT);
     expect(out.split('\n')[2]).not.toBe('');
     expect(out).not.toContain('\n\n\n');
-    expect(parseCostOutput(BILLING_OUTPUT, undefined, LIVE_SESSION)).not.toContain('\n\n\n');
-    expect(parseCostOutput(SUBSCRIPTION_OUTPUT, undefined, LIVE_SESSION)).not.toContain('\n\n\n');
+    expect(parseCostOutput(BILLING_OUTPUT, LIVE_SESSION)).not.toContain('\n\n\n');
+    expect(parseCostOutput(SUBSCRIPTION_OUTPUT, LIVE_SESSION)).not.toContain('\n\n\n');
   });
 });
 
 describe('explainMissingTotals', () => {
   it('names each transient cause so a gap does not read as a broken feature', () => {
-    expect(explainMissingTotals('turn-active', 'pty')).toMatch(/mid-turn/);
-    expect(explainMissingTotals('not-ready', 'pty')).toMatch(/dialog may be waiting/);
-    expect(explainMissingTotals('no-session', 'pty')).toMatch(/send a message first/);
-    expect(explainMissingTotals('unreadable', 'pty')).toMatch(/changed its `\/cost` panel/);
+    expect(explainMissingTotals('turn-active')).toMatch(/mid-turn/);
+    expect(explainMissingTotals('not-ready')).toMatch(/dialog may be waiting/);
+    expect(explainMissingTotals('no-session')).toMatch(/send a message first/);
+    expect(explainMissingTotals('unreadable')).toMatch(/changed its `\/cost` panel/);
   });
 
-  it('stays quiet about a missing TUI in SDK mode, where there never is one', () => {
-    // Permanent and expected for that transport — saying it on every /cost is
-    // noise, not news. Every other cause still speaks up.
-    expect(explainMissingTotals('no-session', 'sdk')).toBeNull();
-    expect(explainMissingTotals('unreadable', 'sdk')).not.toBeNull();
-  });
 });

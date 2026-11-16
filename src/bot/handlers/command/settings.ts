@@ -1,5 +1,5 @@
 /**
- * Per-chat settings menus: /tts, /suggestions, /effort, /verbosity, /method and the status line.
+ * Per-chat settings menus: /tts, /suggestions, /effort, /verbosity and the status line.
  *
  * They share one shape — render an inline keyboard reflecting current state,
  * flip a setting on tap, re-render — and several need the same pty-restart
@@ -22,7 +22,7 @@ import {
 import { userPreferences } from '../../../providers/user-preferences.js';
 import { contextTokens } from '../../../providers/types.js';
 import { isPremiumModel, PREMIUM_MODEL_ICON } from '../../../claude/model-catalog.js';
-import { getActiveMethod, getPtyProvider } from '../../../providers/claude-provider.js';
+import { getPtyProvider } from '../../../providers/claude-provider.js';
 import { EntityText, joinMessages, type EntityMessage } from '../../../telegram/entities.js';
 import { replyFormatted, editCallbackMessage } from '../../../telegram/send.js';
 import { taskTracker } from '../../../telegram/task-tracker.js';
@@ -43,7 +43,7 @@ import {
   isPermissionModeId,
   parsePermissionModeArg,
   permissionModeInfo,
-  transportDefaultMode,
+  defaultPermissionMode,
   type PermissionModeId,
 } from '../../../claude/permission-mode.js';
 import {
@@ -264,7 +264,7 @@ export async function handleEffort(ctx: Context): Promise<void> {
     for (const l of EFFORT_LEVELS) {
       picker.add('• ').bold(l.label).add(` - ${l.description}\n`);
     }
-    picker.add('• ').bold('Auto').add(' - SDK default');
+    picker.add('• ').bold('Auto').add(" - Claude Code's default");
 
     // Same scoping as /model: the tap sets this bot, the confirmation offers
     // the rest. Stated here so neither scope has to be guessed at.
@@ -804,55 +804,6 @@ export async function handleVerbosityCallback(ctx: Context): Promise<void> {
   await editCallbackMessage(ctx, verbositySetText(level));
 }
 
-export async function handleMethodCommand(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const descriptions: Record<string, string> = {
-    sdk: "Use Claude Code SDK (default, recommended)",
-    pty: "Use interactive PTY session (experimental, for Max subscription)",
-  };
-
-  const currentMethod = userPreferences.getMethod(sessionKey) ?? 'sdk';
-  const availableMethods = ['sdk', 'pty'];
-
-  const keyboard = availableMethods.map((method) => {
-    const label = method === currentMethod ? `✓ ${method}` : method;
-    return [{ text: label, callback_data: `method:${method}` }];
-  });
-
-  const descriptionText = new EntityText();
-  Object.entries(descriptions).forEach(([key, value], i) => {
-    if (i > 0) descriptionText.newline();
-    descriptionText.bold(key).add(`: ${value}`);
-  });
-
-  await replyFormatted(ctx, descriptionText.build(), {
-    reply_markup: {
-      inline_keyboard: keyboard,
-    },
-  });
-}
-
-export async function handleMethodCallback(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const data = ctx.callbackQuery?.data;
-  if (!data || !data.startsWith('method:')) return;
-
-  const newMethod = data.replace('method:', '');
-
-  if (newMethod === 'sdk' || newMethod === 'pty') {
-    userPreferences.setMethod(sessionKey, newMethod);
-  }
-
-  await ctx.answerCallbackQuery();
-  await editCallbackMessage(ctx, new EntityText().add('✅ Method set to ').bold(newMethod).build());
-}
-
 export async function handleSuggestions(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
@@ -908,10 +859,8 @@ export async function handleSuggestionsCallback(ctx: Context): Promise<void> {
  * rather than making a person read two files to find out what they already
  * picked.
  */
-function describeTransportDefault(scope: SettingsScope): { label: string; why: string } {
-  const method = getActiveMethod(scope);
-  const label = permissionModeInfo(transportDefaultMode(method)).label;
-  return { label, why: method === 'pty' ? "Claude Code's own default" : 'the SDK default' };
+function describeTransportDefault(): { label: string; why: string } {
+  return { label: permissionModeInfo(defaultPermissionMode()).label, why: "Claude Code's own default" };
 }
 
 function buildPermissionModeMenu(scope: SettingsScope): {
@@ -919,7 +868,7 @@ function buildPermissionModeMenu(scope: SettingsScope): {
   keyboard: { text: string; callback_data: string }[][];
 } {
   const current = userPreferences.getPermissionMode(scope);
-  const fallback = describeTransportDefault(scope);
+  const fallback = describeTransportDefault();
 
   const keyboard = PERMISSION_MODES.map((info) => [{
     text: info.id === current ? `✓ ${info.label}` : info.label,
@@ -961,7 +910,7 @@ function permissionModeSetText(id: PermissionModeId): EntityMessage {
 
 /** Same, for the reset — which names the mode it reset *to*, not just "default". */
 function permissionModeResetText(scope: SettingsScope): EntityMessage {
-  const { label, why } = describeTransportDefault(scope);
+  const { label, why } = describeTransportDefault();
   return new EntityText()
     .add('✅ Permission mode reset to the transport default: ').bold(label).newline(2)
     .italic(why)
@@ -1013,7 +962,7 @@ export async function handlePermissionModeCallback(ctx: Context): Promise<void> 
 
   if (choice === 'default') {
     userPreferences.clearPermissionMode(sessionKey);
-    const { label } = describeTransportDefault(sessionKey);
+    const { label } = describeTransportDefault();
     await ctx.answerCallbackQuery({ text: `Default: ${label}` });
     await editCallbackMessage(ctx, permissionModeResetText(sessionKey));
     return;

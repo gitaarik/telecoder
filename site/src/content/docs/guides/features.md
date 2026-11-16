@@ -11,11 +11,10 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 
 - The real Claude Code agent with its tools (Bash, Read, Write, Edit, Glob, Grep, web search
   and the rest), running on your machine as your user
-- Two transports, switched with `/method`: the Claude Agent SDK (the default), or the real
-  `claude` CLI driven in a pseudo-terminal (PTY), where a project's `CLAUDE.md`, settings,
-  skills and slash commands work as in your terminal and its permission dialogs arrive as
+- The real `claude` CLI, driven in a pseudo-terminal: a project's `CLAUDE.md`, settings,
+  skills and slash commands work as in your terminal, and its permission dialogs arrive as
   buttons
-- Streaming replies: the answer shows while Claude writes it, on both transports
+- Streaming replies: the answer shows while Claude writes it
 - Model and effort pickers (`/model`, `/effort`)
 - `/mode` sets how much Claude asks before acting, from manual to bypass
 - `/compact`, `/context` and `/cost`, as in the CLI, and `/projectcommands` lists every slash
@@ -24,7 +23,7 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
   own `/` menu only matches the start of a name, and a mistyped command gets the likely ones
   as buttons instead of reaching Claude
 - Marketplace plugins you name in `CLAUDE_PLUGINS` come along
-- A provider router with one-tap failover to Claude Code Router when Max throttles
+- A provider router that switches to Claude Code Router when Max throttles (`/ccr`)
   ([Providers](providers.md))
 
 ## Threads and sessions
@@ -66,13 +65,13 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 ## Background and scheduled work
 
 - Background tasks and Monitor events relayed to Telegram as they happen
-- `/tasks` and `/shells` to inspect and stop what's running, with a background task's output so far in PTY mode
+- `/tasks` and `/shells` to inspect and stop what's running, with a background task's output so far
 - `/schedule` for recurring prompts (`every 5m`, `daily 9am`, or cron)
 - [Background and scheduled work](background-and-scheduled-work.md)
 
 ## Claude can reach you
 
-- MCP tools let Claude ask with buttons or polls, send files, and (in PTY mode) schedule prompts
+- MCP tools let Claude ask with buttons or polls, send files, and schedule prompts
 - Several questions at once arrive as one form: step through them, go back to change an
   answer, and nothing reaches Claude until you tap Submit, as in Claude Code's own dialog
 - Secrets stay out of the chat: you send a key, the bot deletes it and hands it to the
@@ -108,7 +107,7 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 ## Sharing and permissions
 
 - Admins, approvers and guests, and per-group contributors and spectators
-- A permission gate on every transport, a scope guard for paths, and a plain-language charter
+- A permission gate on every tool call, a scope guard for paths, and a plain-language charter
   read before a guest's message runs ([Sharing a bot](sharing.md))
 - `/allow` and `/deny` let people in or out from chat, without a restart
 - `/autoapprove` answers the gate in advance for a while, for jobs made of many guarded

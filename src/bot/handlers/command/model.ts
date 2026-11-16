@@ -192,7 +192,7 @@ function appendPremiumNote(confirmation: EntityText, model: string, provider: Pr
 }
 
 const PROVIDER_DESCRIPTIONS: Record<ProviderName, string> = {
-  claude: 'Claude Code SDK (Anthropic / Max)',
+  claude: 'Claude Code (Anthropic / Max)',
   ccr: 'Routed via Claude Code Router (alt providers)',
 };
 

@@ -1991,10 +1991,9 @@
           <div class="feature-card">
             <div class="feature-icon"><svg><use href="#i-pty"/></svg></div>
             <h3>The full CLI, not a subset</h3>
-            <p>In PTY mode TeleCoder drives the real <code>claude</code> TUI: a project's
+            <p>TeleCoder drives the real <code>claude</code> TUI: a project's
             <code>CLAUDE.md</code>, settings, skills and slash commands work as in your
-            terminal, and its permission dialogs arrive as buttons. The Agent SDK mode is the
-            lighter default.</p>
+            terminal, and its permission dialogs arrive as buttons.</p>
           </div>
           <div class="feature-card">
             <div class="feature-icon"><svg><use href="#i-page"/></svg></div>
@@ -2006,8 +2005,8 @@
           <div class="feature-card">
             <div class="feature-icon"><svg><use href="#i-failover"/></svg></div>
             <h3>It keeps going past your limit</h3>
-            <p>When Claude Max throttles mid-turn, one tap switches to a fallback provider and
-            replays the message you just sent. Swap back whenever you like with
+            <p>When Claude Max throttles, <code>/ccr</code> moves the chat to a fallback provider and
+            your next message runs there. Swap back whenever you like with
             <code>/provider</code>.</p>
           </div>
         </div>
@@ -2095,16 +2094,9 @@
             comes back as "did you mean" buttons that run it with the arguments you typed.</p>
           </div>
           <div class="feature-card" data-category="agent">
-            <div class="feature-icon"><svg><use href="#i-pty"/></svg></div>
-            <h3>SDK or the real CLI</h3>
-            <p><code>/method</code> switches between the Agent SDK and driving the actual
-            <code>claude</code> binary — the path built for Pro/Max subscriptions. Sessions and
-            forks work either way.</p>
-          </div>
-          <div class="feature-card" data-category="agent">
             <div class="feature-icon"><svg><use href="#i-stream"/></svg></div>
             <h3>Watch it work</h3>
-            <p>The reply shows while Claude writes it, in both transports. Tool status, edit diffs
+            <p>The reply shows while Claude writes it. Tool status, edit diffs
             and Claude Code's own contextual tips stream into the chat as it goes.</p>
           </div>
           <div class="feature-card" data-category="agent">
@@ -2236,9 +2228,9 @@
           <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-throttle"/></svg></div>
             <h3>It survives your usage limit</h3>
-            <p>When Claude Max throttles mid-turn, one tap switches to CCR and replays the message
-            you just sent. <code>/provider</code> moves between them any time, carrying a
-            summary across.</p>
+            <p>When Claude Max throttles, <code>/ccr</code> moves the chat to Claude Code Router
+            and your next message runs there. <code>/provider</code> moves between them any
+            time, carrying a summary across.</p>
           </div>
           <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-spend"/></svg></div>
@@ -2381,7 +2373,7 @@
             <p>A guarded pattern — <code>rm -rf</code>, <code>sudo</code>, a force-push, a
             <code>DROP TABLE</code> — pauses the tool call and posts an approval prompt only an
             admin can answer. It mentions them by name, so it lands even in a muted group. It runs
-            on the SDK and PTY transports alike, CCR and subagents included.</p>
+            on Claude and on CCR alike, subagents included.</p>
           </div>
           <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-vault"/></svg></div>
@@ -2562,8 +2554,6 @@
             <h3>It pings you when it's done</h3>
             <p>The activity card lists everything running with its elapsed time and ticks tasks off
             as they land, and its last line says whether anything is still running. Slow or failed ones re-post the card so your phone still buzzes.
-            In SDK mode each task gets a silent line of its own when it starts, saying what it is,
-            and that line turns into the result when it ends.
             The work outlives the reply: keep chatting while it runs, and <code>/cancel</code>
             stops the turn, not the tasks it started.</p>
           </div>
@@ -2580,8 +2570,7 @@
             <h3>Running work stays in sight</h3>
             <p>While tasks run, the activity card moves back to the bottom, silently, after every
             reply and after quick commands like <code>/btw</code> or <code>/cost</code>. A question
-            or a side answer can't bury it. In SDK mode a short <em>⏳ N still running</em> line
-            does the same job. During a turn, the <em>Running in background</em> line under the
+            or a side answer can't bury it. During a turn, the <em>Running in background</em> line under the
             status names every task that runs, each with the latest step it reported and its time.</p>
           </div>
           <div class="feature-card" data-category="background">
@@ -2740,8 +2729,8 @@
               <div class="step-item">
                 <span class="step-number">5</span>
                 <div class="step-content">
-                  <h4>Pick a workspace and transport</h4>
-                  <p>Still in <code>init</code>: the folder your projects are in, SDK or PTY, and
+                  <h4>Pick a workspace</h4>
+                  <p>Still in <code>init</code>: the folder your projects are in, and
                   voice if you want it. It writes <code>~/.telecoder/.env</code>
                   with just those. By hand, or from source: copy <code>.env.example</code> to
                   <code>.env</code> and set <code>TELEGRAM_BOT_TOKEN</code> and
@@ -2828,8 +2817,7 @@ CCR_AUTH_TOKEN=your_ccr_token
 CCR_AUTOSTART=true</pre>
               </div>
             </div>
-            <p>After that, a mid-turn throttle offers a one-tap switch and replays the message
-            you just sent. <code>/provider</code> picks a backend at any time and
+            <p>After that, <code>/provider</code> picks a backend at any time and
             <code>/ccr</code> toggles between the two. Full documentation lives in the
             <a href="https://github.com/musistudio/claude-code-router" target="_blank" rel="noopener">CCR
             repository</a>.</p>
@@ -2870,7 +2858,7 @@ CCR_AUTOSTART=true</pre>
                 <tr><td colspan="3" style="color: var(--brand); font-weight: 600; padding-top: 1.25rem;">Sharing</td></tr>
                 <tr>
                   <td class="var-name">ADMIN_USER_IDS</td>
-                  <td>Who may approve permission prompts and run lifecycle/transport commands (default: every allowed user)</td>
+                  <td>Who may approve permission prompts and run the lifecycle and backend commands (default: every allowed user)</td>
                   <td class="required-optional">Optional</td>
                 </tr>
                 <tr>
@@ -2916,11 +2904,6 @@ CCR_AUTOSTART=true</pre>
                 <tr>
                   <td class="var-name">CHARTER_FILE</td>
                   <td>The charter the judge reads (default: CHARTER.md in the workspace root, else a generated one)</td>
-                  <td class="required-optional">Optional</td>
-                </tr>
-                <tr>
-                  <td class="var-name">CLAUDE_METHOD_DEFAULT</td>
-                  <td>Transport for chats that haven't run /method; the permission gate runs on both (default: sdk)</td>
                   <td class="required-optional">Optional</td>
                 </tr>
                 <tr><td colspan="3" style="color: var(--brand); font-weight: 600; padding-top: 1.25rem;">Claude</td></tr>
@@ -3065,7 +3048,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/status</code>
-              <span class="command-desc">Current session info: project, topic, effort, model, provider, transport, context and cost</span>
+              <span class="command-desc">Current session info: project, topic, effort, model, provider, context and cost</span>
             </div>
             <div class="command-row">
               <code class="command-code">/projectcommands</code>
@@ -3154,20 +3137,16 @@ CCR_AUTOSTART=true</pre>
               <span class="command-desc">Switch AI provider (Claude / CCR). <strong>Admin-only</strong> when the bot has non-admin users.</span>
             </div>
             <div class="command-row">
-              <code class="command-code">/method</code>
-              <span class="command-desc">Switch Claude transport: SDK (default) or PTY (drives an interactive Claude Code session over a pseudo-terminal — experimental, intended to stay on the Pro/Max subscription after the 2026-06-15 programmatic-usage split). <strong>Admin-only</strong> when the bot has non-admin users.</span>
-            </div>
-            <div class="command-row">
               <code class="command-code">/ccr</code>
               <span class="command-desc">Toggle routing through Claude Code Router (sticky fallback when Max runs out). <strong>Admin-only</strong> when the bot has non-admin users.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/model [all]</code>
-              <span class="command-desc">Switch AI model (provider-aware). Offers every alias Claude Code's <code>--model</code> accepts — fable, opus, sonnet, haiku, opusplan, best and the fable/opus/sonnet 1M-context variants — filtered to what your installed CLI actually supports, so an alias your binary predates never reaches a turn. Pass a full model ID instead (<code>/model claude-opus-4-8</code>) to pin an exact release; unrecognised names are forwarded to the CLI as-is with a warning. Applies to the bot you typed it in; add <code>all</code> (<code>/model sonnet all</code>) or tap the button on the confirmation to set every instance at once. Works in both SDK and PTY mode; in PTY mode Claude Code restarts on your next message to pick it up, keeping the conversation. Reports the model that actually served the last turn rather than a default. Fable, the premium tier, gets a 💎 on the live status and the status line for as long as it's on.</span>
+              <span class="command-desc">Switch AI model (provider-aware). Offers every alias Claude Code's <code>--model</code> accepts — fable, opus, sonnet, haiku, opusplan, best and the fable/opus/sonnet 1M-context variants — filtered to what your installed CLI actually supports, so an alias your binary predates never reaches a turn. Pass a full model ID instead (<code>/model claude-opus-4-8</code>) to pin an exact release; unrecognised names are forwarded to the CLI as-is with a warning. Applies to the bot you typed it in; add <code>all</code> (<code>/model sonnet all</code>) or tap the button on the confirmation to set every instance at once. Claude Code restarts on your next message to pick it up, keeping the conversation. Reports the model that actually served the last turn rather than a default. Fable, the premium tier, gets a 💎 on the live status and the status line for as long as it's on.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/effort &lt;level&gt; [all]</code>
-              <span class="command-desc">Set reasoning effort (low/medium/high/xhigh/max/auto). Per bot, with the same <code>all</code> argument and one-tap fan-out as /model. Works in both SDK and PTY mode; in PTY mode Claude Code restarts on your next message to pick it up, keeping the conversation. The status line shows the current level's icon (🐇/⚖️/🧠/🔬/🚀) after each turn.</span>
+              <span class="command-desc">Set reasoning effort (low/medium/high/xhigh/max/auto). Per bot, with the same <code>all</code> argument and one-tap fan-out as /model. Claude Code restarts on your next message to pick it up, keeping the conversation. The status line shows the current level's icon (🐇/⚖️/🧠/🔬/🚀) after each turn.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/verbosity &lt;tier&gt;</code>
@@ -3175,7 +3154,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/btw &lt;question&gt;</code>
-              <span class="command-desc">Ask a side question without interrupting the current task. Works in both modes: SDK mode uses the live query's side-question channel, PTY mode answers from a read-only, non-persisted fork of the running session — so the transcript is never touched and the turn keeps going.</span>
+              <span class="command-desc">Ask a side question without interrupting the current task. It answers from a read-only, non-persisted fork of the running session, so the transcript is never touched and the turn keeps going.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/steer &lt;text&gt;</code>
@@ -3187,7 +3166,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/tasks</code>
-              <span class="command-desc">List active background work — subagents, monitors, backgrounded shells and workflows — grouped by kind, with elapsed time; tap a number to view details. Entries that have gone silent for 15 minutes are flagged <strong>⚠️</strong> — a finished task normally drops off the list, so a long-quiet one usually means its completion event never arrived; monitors are exempt, since idling until an event fires is exactly what they do. Works in both SDK and PTY mode. In PTY mode, <strong>📄 Output</strong> on a task shows what it has printed so far, as Enter on a task in Claude Code's own <code>/tasks</code> does; <strong>🔎 Ask claude</strong> types <code>/tasks</code> into the live TUI and relays Claude Code's own background view, with a button per row that opens that row's output, which also covers shells it started on its own and anything armed before the last bot restart. <strong>📍 Show live card here</strong> moves the activity card, with its log, to the bottom of the chat.</span>
+              <span class="command-desc">List active background work — subagents, monitors, backgrounded shells and workflows — grouped by kind, with elapsed time; tap a number to view details. Entries that have gone silent for 15 minutes are flagged <strong>⚠️</strong> — a finished task normally drops off the list, so a long-quiet one usually means its completion event never arrived; monitors are exempt, since idling until an event fires is exactly what they do. <strong>📄 Output</strong> on a task shows what it has printed so far, as Enter on a task in Claude Code's own <code>/tasks</code> does; <strong>🔎 Ask claude</strong> types <code>/tasks</code> into the live TUI and relays Claude Code's own background view, with a button per row that opens that row's output, which also covers shells it started on its own and anything armed before the last bot restart. <strong>📍 Show live card here</strong> moves the activity card, with its log, to the bottom of the chat.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/shells</code>
@@ -3195,7 +3174,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/mode &lt;manual|acceptEdits|plan|auto|bypass&gt;</code>
-              <span class="command-desc">How much Claude asks before acting, per chat or thread. Same modes the desktop cycles with shift+tab; buttons if you pass no argument. Default follows the transport, and the menu spells out what that resolves to — auto on PTY, accept edits on the SDK. Admin-only.</span>
+              <span class="command-desc">How much Claude asks before acting, per chat or thread. Same modes the desktop cycles with shift+tab; buttons if you pass no argument. The default is auto, Claude Code's own, and the menu says so. Admin-only.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/statusline</code>
@@ -3258,11 +3237,11 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/cost</code>
-              <span class="command-desc">Show what Claude Code's own <code>/cost</code> reports, from two sources at once. A spawned probe gives the account-wide limits view — how much of the session and weekly windows is spent and when each resets, the same text <code>/usage</code> prints — which it can answer in any mode, with no session, before a project is even open. In PTY mode your chat's live session is asked too, and the Session block is read off the panel it draws: total cost, API and wall durations, code changes, per-model token counts and the prompt-cache line. Those are the numbers a probe can never have — the cost counter belongs to the process that spent it and no session log preserves it — so when they arrive the probe's own totals are dropped rather than printed beside them. In SDK mode, where there is no panel to read, TeleCoder's per-turn tally stands in. Bypasses the queue to answer mid-turn; the Session block is the one part that waits, since reading it needs the TUI keyboard. Asks your own CLI install rather than the copy bundled with the SDK, which trails it by many releases and replies with a single sentence.</span>
+              <span class="command-desc">Show what Claude Code's own <code>/cost</code> reports, from two sources at once. A spawned probe gives the account-wide limits view — how much of the session and weekly windows is spent and when each resets, the same text <code>/usage</code> prints — which it can answer with no session, before a project is even open. Your chat's live session is asked too, and the Session block is read off the panel it draws: total cost, API and wall durations, code changes, per-model token counts and the prompt-cache line. Those are the numbers a probe can never have — the cost counter belongs to the process that spent it and no session log preserves it — so when they arrive the probe's own totals are dropped rather than printed beside them. Bypasses the queue to answer mid-turn; the Session block is the one part that waits, since reading it needs the TUI keyboard. Asks the same <code>claude</code> your chats run.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/compact</code>
-              <span class="command-desc">Compact the context window — runs native Claude Code compaction and replies with the token reduction. Works in both SDK and PTY mode; when the context is already small enough to skip, it says so instead.</span>
+              <span class="command-desc">Compact the context window — runs native Claude Code compaction and replies with the token reduction. When the context is already small enough to skip, it says so instead.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/cancel, /stop</code>
@@ -3340,7 +3319,7 @@ CCR_AUTOSTART=true</pre>
           <div class="commands-grid">
             <div class="command-row">
               <code class="command-code">telecoder init</code>
-              <span class="command-desc">Set a bot up in a few questions: checks Node and the <code>claude</code> CLI and its login, takes the bot token (hidden as you paste it) and checks it with Telegram, finds your user ID when you send the bot <code>/start</code>, then asks for the workspace, SDK or PTY, and voice. Writes a <code>.env</code> with just those, readable by you only, and the bot messages you when it's done. Run again to keep, edit or start over (the old file is backed up). <code>--token-env VAR</code>, <code>--owner-id</code>, <code>--workspace</code>, <code>--transport</code> and <code>--yes</code> answer it from a script.</span>
+              <span class="command-desc">Set a bot up in a few questions: checks Node and the <code>claude</code> CLI and its login, takes the bot token (hidden as you paste it) and checks it with Telegram, finds your user ID when you send the bot <code>/start</code>, then asks for the workspace and voice. Writes a <code>.env</code> with just those, readable by you only, and the bot messages you when it's done. Run again to keep, edit or start over (the old file is backed up). <code>--token-env VAR</code>, <code>--owner-id</code>, <code>--workspace</code> and <code>--yes</code> answer it from a script.</span>
             </div>
             <div class="command-row">
               <code class="command-code">telecoder start</code>
@@ -3418,7 +3397,7 @@ CCR_AUTOSTART=true</pre>
 
     <footer>
       <div class="footer-logo"><svg class="brand-mark" aria-hidden="true"><use href="#i-brand"/></svg> <span><span class="tele">Tele</span>Coder</span></div>
-      <p class="footer-text">Built with Claude Agent SDK and grammY · MIT licensed<br>
+      <p class="footer-text">Built on Claude Code and grammY · MIT licensed<br>
       Forked from <a href="https://github.com/NachoSEO/claudegram">Claudegram</a> by Nacho Mascort</p>
       <div class="footer-links">
         <a href="https://github.com/gitaarik/telecoder">GitHub</a>

@@ -2,13 +2,7 @@ import type { Context } from 'grammy';
 import { config } from '../config.js';
 import { claudeProvider } from './claude-provider.js';
 import { ccrProvider } from './ccr-provider.js';
-import {
-  setEffort as claudeSetEffort,
-  getEffort as claudeGetEffort,
-  clearEffort as claudeClearEffort,
-  isValidEffortLevel,
-  type EffortLevel,
-} from '../claude/agent.js';
+import { isValidEffortLevel, type EffortLevel } from '../claude/effort-level.js';
 import { userPreferences } from './user-preferences.js';
 import { isPremiumModel } from '../claude/model-catalog.js';
 import type { SettingsScope } from '../utils/session-key.js';
@@ -128,15 +122,15 @@ export { isValidEffortLevel };
 export type { EffortLevel };
 
 export function setEffort(scope: SettingsScope, effort: EffortLevel): void {
-  claudeSetEffort(scope, effort);
+  userPreferences.setEffort(scope, effort);
 }
 
 export function getEffort(scope: SettingsScope): EffortLevel | undefined {
-  return claudeGetEffort(scope);
+  return userPreferences.getEffort(scope) as EffortLevel | undefined;
 }
 
 export function clearEffort(scope: SettingsScope): void {
-  claudeClearEffort(scope);
+  userPreferences.clearEffort(scope);
 }
 
 export async function getAvailableModels(scope: SettingsScope): Promise<ModelInfo[]> {

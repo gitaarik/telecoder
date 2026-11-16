@@ -29,7 +29,7 @@ import type { Context } from 'grammy';
 import type { Message } from 'grammy/types';
 import { config } from '../config.js';
 import { readMemory, type MemoryReading } from '../utils/memory-pressure.js';
-import { getActiveMethod, getPtyProvider } from '../providers/claude-provider.js';
+import { getPtyProvider } from '../providers/claude-provider.js';
 import { endIdlePtySessions, sessionHasWork } from './pty-idle-reaper.js';
 import { closeExpiredQuestion, createPendingQuestion, questionTimeoutMs } from './ask-user.js';
 import { getAdminIds } from '../utils/admins.js';
@@ -114,11 +114,10 @@ export function formatIdle(ms: number): string {
 /**
  * Check the machine before `sessionKey`'s next turn, and ask the chat when it
  * can't be made to fit. Returns at once for a chat with a claude already
- * running, a chat on the SDK, or a guard turned off.
+ * running, or a guard turned off.
  */
 export async function guardSpawn(ctx: Context | undefined, sessionKey: string): Promise<SpawnGuardOutcome> {
   if (!isMemoryGuardEnabled()) return PROCEED;
-  if (getActiveMethod(sessionKey) !== 'pty') return PROCEED;
   const pty = getPtyProvider();
   if (pty.hasLiveSession(sessionKey)) return PROCEED;
   const starting = countStarting(sessionKey); // also drops the expired entries

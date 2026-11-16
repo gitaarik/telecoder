@@ -5,7 +5,7 @@
  *
  * The steps: check the machine (doctor's checks), decide what to do with an
  * existing .env, get and check the bot token, find the owner's id by having
- * them message the bot, pick a workspace and a transport, two optional
+ * them message the bot, pick a workspace, two optional
  * features, write the file, and have the bot say hello.
  *
  * Secrets are never printed: not the token, not the Groq key, not in errors
@@ -30,14 +30,11 @@ import {
   type TgUser,
 } from './telegram.js';
 
-export type Transport = 'sdk' | 'pty';
-
 export interface InitOptions {
   /** Name of an environment variable holding the token. Never the token itself. */
   tokenEnv?: string;
   ownerId?: string;
   workspace?: string;
-  transport?: Transport;
   /** Name of an environment variable holding a Groq API key; turns voice on. */
   groqKeyEnv?: string;
   /**
@@ -179,7 +176,7 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
   const claudeLogin = await stepEnvLogin(deps, interactive, pre.envLogin ?? []);
   for (const r of pre.nodePty) show(r);
   const ptyWorks = pre.nodePty.every((r) => r.status === 'ok');
-  if (!ptyWorks) p.say('    Only the PTY transport needs it; the default SDK transport works without.');
+  if (!ptyWorks) p.say('    TeleCoder drives Claude Code in a pty, so chats will fail until it loads.');
   p.say('');
 
   // ── 2. An existing .env ─────────────────────────────────────
@@ -224,29 +221,16 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
   const workspace = await stepWorkspace(opts, deps, interactive, editing ? existing.WORKSPACE_DIR : undefined);
   p.say('');
 
-  // ── 6. Transport ────────────────────────────────────────────
-  const currentTransport = existing.CLAUDE_METHOD_DEFAULT === 'pty' ? 'pty' : 'sdk';
-  let transport: Transport = opts.transport ?? currentTransport;
-  if (interactive && !opts.transport) {
-    transport = await p.choose('How should TeleCoder run Claude Code? (/method switches it per chat later)', [
-      { key: 'sdk', label: 'SDK: the Claude Agent SDK. Simplest, and it tracks cost per turn.' },
-      { key: 'pty', label: 'PTY: your own `claude` CLI in a terminal, its dialogs relayed to Telegram. More moving parts; needs node-pty.' },
-    ], currentTransport);
-  }
-  if (transport === 'pty' && !ptyWorks) p.say('! node-pty did not load (see above): PTY chats will fail until it does.');
-  p.say('');
-
-  // ── 7. Optional features ────────────────────────────────────
+  // ── 6. Optional features ────────────────────────────────────
   const groqKey = await stepVoice(opts, deps, interactive, editing ? existing.GROQ_API_KEY : undefined);
   const icon = await stepIcon(opts, deps, interactive, client, bot);
   p.say('');
 
-  // ── 8. Write ────────────────────────────────────────────────
+  // ── 7. Write ────────────────────────────────────────────────
   const values: Record<string, string> = {
     TELEGRAM_BOT_TOKEN: token,
     ALLOWED_USER_IDS: owner.idList,
     WORKSPACE_DIR: workspace,
-    CLAUDE_METHOD_DEFAULT: transport,
   };
   Object.assign(values, claudeLogin);
   if (groqKey) values.GROQ_API_KEY = groqKey;
@@ -255,7 +239,6 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
   p.say(`  Bot              @${bot.username} (token hidden)`);
   p.say(`  Allowed users    ${owner.idList}`);
   p.say(`  Workspace        ${workspace}`);
-  p.say(`  Transport        ${transport.toUpperCase()}`);
   for (const key of Object.keys(claudeLogin)) p.say(`  Claude login     ${key}=<hidden>`);
   p.say(`  Voice            ${groqKey ? 'on (Groq key hidden)' : 'off'}`);
   if (icon) p.say('  Bot picture      the TeleCoder icon');

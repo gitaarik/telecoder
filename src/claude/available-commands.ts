@@ -1,16 +1,14 @@
 /**
  * What slash commands and skills a working directory actually offers.
  *
- * Claude Code reports this on the SDK init message — `slash_commands` (every
- * name the CLI will accept, built-ins and plugin commands and
- * `.claude/commands/` alike) and `skills` (the subset backed by a skill, e.g.
- * `code-review`). There is no CLI flag that prints either list, and the
- * session JSONL doesn't carry them, so the init message is the only source.
- *
- * SDK-mode turns record it for free. PTY-mode sessions never produce an init
- * message, so `probeAvailableCommands` spawns a throwaway headless process to
- * fetch one. The probe runs `/usage` — a command the CLI answers locally, with
- * no model call and no cost — and we kill the process the moment init arrives.
+ * Claude Code reports this on the init message of a headless run —
+ * `slash_commands` (every name the CLI will accept, built-ins and plugin
+ * commands and `.claude/commands/` alike) and `skills` (the subset backed by a
+ * skill, e.g. `code-review`). There is no CLI flag that prints either list,
+ * and the session JSONL doesn't carry them, so `probeAvailableCommands` spawns
+ * a throwaway headless process to fetch one. The probe runs `/usage` — a
+ * command the CLI answers locally, with no model call and no cost — and we
+ * kill the process the moment init arrives.
  */
 
 import { spawn } from 'child_process';
@@ -28,12 +26,10 @@ export interface AvailableCommands {
 /**
  * Cached per (binary, working directory) rather than per session: the answer
  * depends on the project's `.claude/`, its plugins and the CLI build, none of
- * which vary between two chats pointed at the same directory — but the two
- * modes do not share a binary. SDK mode runs the bundled CLI from
- * node_modules, PTY mode runs whatever `claude` is on PATH, and their command
- * sets drift apart between releases (2.1.140 has no `/code-review`; 2.1.241
- * does). Listing one mode's commands while the other is active would name
- * commands that do not exist.
+ * which vary between two chats pointed at the same directory. The binary is
+ * part of the key because command sets drift between releases (2.1.140 has no
+ * `/code-review`; 2.1.241 does), and a snapshot from another install would
+ * name commands that do not exist here.
  */
 const cache = new Map<string, AvailableCommands>();
 
@@ -50,7 +46,7 @@ const PROBE_TIMEOUT_MS = 20_000;
 /** In-flight probes, so N concurrent /projectcommands spawn one process. */
 const inFlight = new Map<string, Promise<AvailableCommands | undefined>>();
 
-/** Record what an SDK init message reported for `workingDirectory`. */
+/** Record what a probe's init message reported for `workingDirectory`. */
 export function recordAvailableCommands(
   workingDirectory: string,
   executable: string,

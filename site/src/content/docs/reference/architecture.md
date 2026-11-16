@@ -11,7 +11,7 @@ sidebar:
 |------|------------|
 | Language and runtime | TypeScript on Node.js 22+ |
 | Telegram | [grammY](https://grammy.dev/) |
-| Claude Code transports | [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview), or the real `claude` CLI through `node-pty` and `@xterm/headless` |
+| Claude Code | The real `claude` CLI, driven through `node-pty` and read through `@xterm/headless`; the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk/overview) only for one-shot Haiku side calls (topic names, the charter judge) |
 | Agent tools | [Model Context Protocol](https://modelcontextprotocol.io/) server, for the tools that reach back into Telegram |
 | Config and scheduling | Zod, croner |
 | Tests | Vitest |
@@ -20,9 +20,9 @@ sidebar:
 ## How it fits together
 
 ```
-Telegram ⇄ grammY bot ⇄ provider router ─┬─ claude: Agent SDK ─────┐
-           auth, group roles,            ├─ claude: PTY (real CLI) ┼─▶ tools on your machine
-           batching, queueing            └─ ccr: Agent SDK ────────┘
+Telegram ⇄ grammY bot ⇄ provider router ─┬─ claude: the CLI in a pty ───┐
+           auth, group roles,            │                             ┼─▶ tools on your machine
+           batching, queueing            └─ ccr: the same, via a proxy ─┘
                 ▲
                 └── MCP server: lets the agent ask questions, send files and schedule prompts
 ```
@@ -33,7 +33,7 @@ Telegram ⇄ grammY bot ⇄ provider router ─┬─ claude: Agent SDK ──�
 | `src/index.ts`, `src/launcher.ts` | Entry points for one bot, or several in worker threads |
 | `src/config.ts` | Zod-validated environment config |
 | `src/bot/` | Bot setup, command and message handlers, middleware, group access |
-| `src/providers/` | Provider router, SDK and CCR providers, switching, per-user preferences |
+| `src/providers/` | Provider router, the Claude and CCR providers, switching, per-user preferences |
 | `src/claude/` | PTY provider and TUI parsing, session state and history, watchdog, permission gate, scope guard, charter judge, scheduler, MCP tools |
 | `src/bin/` | The MCP server process |
 | `src/telegram/` | Streaming, markdown to entities, splitting, task cards |

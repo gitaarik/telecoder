@@ -82,6 +82,10 @@ const REMOVED_SETTINGS: Array<{ name: string; stale: (value: string) => boolean;
   { name: 'MAX_LOOP_ITERATIONS', stale: (v) => v !== '5', note: '/loop was removed: Claude Code works until a task is done, and its own /loop skill reaches it now.' },
   { name: 'BOT_MODE', stale: () => true, note: 'it was removed with the botctl script: the bot runs under pm2, systemd or launchd.' },
   { name: 'TERMINAL_UI_DEFAULT', stale: (v) => !isOn(v), note: '/terminalui was removed: every turn has the live status line, and /verbosity sets how much it shows.' },
+  { name: 'CLAUDE_METHOD_DEFAULT', stale: () => true, note: 'the SDK transport was removed: every chat runs Claude Code in a pty.' },
+  { name: 'CLAUDE_SDK_LOG_LEVEL', stale: () => true, note: 'the SDK transport was removed: every chat runs Claude Code in a pty.' },
+  { name: 'CLAUDE_SDK_LOAD_USER_SETTINGS', stale: () => true, note: 'the SDK transport was removed; CLAUDE_PLUGINS and EXTRA_MCP_CONFIG bring plugins and MCP servers into the pty.' },
+  { name: 'CCR_AUTO_PROMPT_ON_THROTTLE', stale: () => true, note: 'the one-tap CCR retry went with the SDK transport: /ccr switches a throttled chat over.' },
 ];
 for (const { name, stale, note } of REMOVED_SETTINGS) {
   const value = process.env[name];

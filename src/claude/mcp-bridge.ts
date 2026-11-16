@@ -111,8 +111,8 @@ async function flushTurnProse(
 }
 
 // ── /mcp/ask_user ────────────────────────────────────────────────────
-// Long-polling IPC handler: registers a pending question in the same shared
-// ask-user registry SDK mode uses, sends a Telegram inline keyboard, and
+// Long-polling IPC handler: registers a pending question in the shared
+// ask-user registry, sends a Telegram inline keyboard, and
 // awaits the user's button tap. The existing callback-query dispatcher
 // (handling `q:<id>:<idx>` callback_data) resolves the promise so we can
 // return the chosen label to claude. Times out after QUESTION_TIMEOUT_MINUTES via
@@ -230,7 +230,7 @@ registerIpcHandler('/mcp/request_secret', async (turn, body, signal) => {
 // ── /mcp/switch_project ──────────────────────────────────────────────
 // Updates the session's working directory. PtyProvider's _getOrCreateSession
 // detects the cwd mismatch on the next turn and respawns the pty in the new
-// dir — so the switch is logically "happens on next query," same as SDK mode.
+// dir — so the switch is logically "happens on next query".
 registerIpcHandler('/mcp/switch_project', async (turn, body) => {
   const projectName = String(body.project_name ?? '').trim();
   if (!projectName) {
@@ -250,8 +250,7 @@ registerIpcHandler('/mcp/switch_project', async (turn, body) => {
 
   sessionManager.setWorkingDirectory(turn.sessionKey, targetPath);
 
-  // A new project is a new topic, as after /project and the SDK in-process
-  // switch_project tool.
+  // A new project is a new topic, as after /project.
   const { clearTopic } = await import('../bot/handlers/command.handler.js');
   clearTopic(turn.sessionKey);
 
@@ -276,9 +275,8 @@ registerIpcHandler('/mcp/create_bot', async (turn, body) => {
 
 // ── /mcp/send_file ───────────────────────────────────────────────────
 // Sends a file from the bot's filesystem to the user via Telegram, under the
-// same rules as /file (bot/file-access.ts) plus /tmp. Mirrors the SDK
-// in-process MCP tool in src/claude/mcp-tools.ts but routed through IPC so the
-// MCP subprocess can stay out of process.
+// same rules as /file (bot/file-access.ts) plus /tmp, routed through IPC so
+// the MCP subprocess can stay out of process.
 registerIpcHandler('/mcp/send_file', async (turn, body) => {
   const filePath = String(body.file_path ?? '');
   const caption = typeof body.caption === 'string' && body.caption.length > 0 ? body.caption : undefined;

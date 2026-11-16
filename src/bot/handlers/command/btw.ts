@@ -8,11 +8,10 @@
 
 import { Context } from 'grammy';
 import { sessionManager } from '../../../claude/session-manager.js';
-import { getActiveQuery } from '../../../claude/request-queue.js';
 import { askForkedSideQuestion, type SideQuestionProgress } from '../../../claude/side-question.js';
 import { messageSender } from '../../../telegram/message-sender.js';
 import { getActiveProviderName } from '../../../providers/provider-router.js';
-import { getActiveMethod } from '../../../providers/claude-provider.js';
+import { getCcrShimPath } from '../../../claude/ccr-shim.js';
 import { sanitizeError } from '../../../utils/sanitize.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 
@@ -40,52 +39,43 @@ export async function handleBtw(ctx: Context): Promise<void> {
  * context of the tap rather than of a typed command.
  */
 export async function askBtw(ctx: Context, sessionKey: string, question: string): Promise<void> {
-  // PTY mode has no SDK Query to hang askSideQuestion off — answer from a
-  // read-only fork of the live session instead. Only Claude sessions have a
-  // resumable JSONL transcript; ccr falls through to the SDK path.
-  const usesPty = getActiveProviderName(sessionKey) === 'claude'
-    && getActiveMethod(sessionKey) === 'pty';
-  if (usesPty) {
-    await handleBtwViaFork(ctx, sessionKey, question);
-    return;
-  }
-
-  const activeQuery = getActiveQuery(sessionKey);
-  if (!activeQuery) {
-    // The query object only exists while a turn is in flight — this is not a
-    // statement about whether the conversation itself exists.
+  const session = sessionManager.getSession(sessionKey);
+  if (!session?.claudeSessionId) {
     await ctx.reply(
-      'No turn is running right now, so there is nothing to ask alongside. Send your question as a regular message instead.'
+      'No conversation to ask about yet. Send a message first, then /btw can answer alongside it.'
     );
     return;
   }
 
-  // askSideQuestion exists at runtime but isn't in the TypeScript types yet
-  const queryAny = activeQuery as unknown as Record<string, unknown>;
-  if (typeof queryAny.askSideQuestion !== 'function') {
-    await ctx.reply('Side questions are not supported by the current SDK version.');
-    return;
-  }
-
-  // The SDK reports no progress for a side question, so the line just shows
-  // it's alive with a ticking elapsed — without it nothing appears until the
-  // whole answer lands.
+  const chatId = ctx.chat!.id;
   const headline = `💬 /btw — ${btwLabel(question)}`;
+
+  // Labelled ack: this sits alongside the main turn's live status message, so
+  // it has to be obvious which one belongs to the side question. It then
+  // doubles as the progress line, and finally as a one-line receipt.
   const ack = await ctx.reply(`${headline}\nasking on the side… (main task keeps running)`);
-  const progress = new BtwProgressLine(ctx, ctx.chat!.id, ack.message_id, headline);
-  const startedAt = Date.now();
+
+  const progress = new BtwProgressLine(ctx, chatId, ack.message_id, headline);
 
   try {
-    const result = await (queryAny.askSideQuestion as (q: string) => Promise<{ response: string; synthetic: boolean } | null>)(question);
-    await progress.finish(0, Date.now() - startedAt);
-    if (!result || !result.response) {
+    const result = await askForkedSideQuestion({
+      question,
+      sessionId: session.claudeSessionId,
+      cwd: session.workingDirectory,
+      // A CCR session's thinking blocks only replay through CCR.
+      executable: getActiveProviderName(sessionKey) === 'ccr' ? getCcrShimPath() : undefined,
+      onProgress: (p) => progress.update(p),
+    });
+    await progress.finish(result.toolCount ?? 0, result.elapsedMs ?? 0);
+
+    if (!result.response) {
       await ctx.reply("I don't have enough context to answer that.");
       return;
     }
     await messageSender.sendMessage(ctx, formatSideAnswer(question, result.response));
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[btw] Error:', msg);
+    console.error('[btw] Fork error:', sanitizeError(error));
     await progress.fail();
     await ctx.reply(`Failed to answer side question: ${msg}`);
   }
@@ -111,51 +101,6 @@ export function btwLabel(question: string): string {
  */
 export function formatSideAnswer(question: string, response: string): string {
   return `💬 **/btw** — _${btwLabel(question)}_\n\n${response}`;
-}
-
-/**
- * PTY-mode `/btw`: shell out to a forked, non-persisted copy of the live
- * claude session so the running turn is never interrupted or mutated.
- */
-async function handleBtwViaFork(ctx: Context, sessionKey: string, question: string): Promise<void> {
-  const session = sessionManager.getSession(sessionKey);
-  if (!session?.claudeSessionId) {
-    await ctx.reply(
-      'No conversation to ask about yet. Send a message first, then /btw can answer alongside it.'
-    );
-    return;
-  }
-
-  const chatId = ctx.chat!.id;
-  const headline = `💬 /btw — ${btwLabel(question)}`;
-
-  // Labelled ack: this sits alongside the main turn's live status message, so
-  // it has to be obvious which one belongs to the side question. It then
-  // doubles as the progress line, and finally as a one-line receipt.
-  const ack = await ctx.reply(`${headline}\nasking on the side… (main task keeps running)`);
-
-  const progress = new BtwProgressLine(ctx, chatId, ack.message_id, headline);
-
-  try {
-    const result = await askForkedSideQuestion({
-      question,
-      sessionId: session.claudeSessionId,
-      cwd: session.workingDirectory,
-      onProgress: (p) => progress.update(p),
-    });
-    await progress.finish(result.toolCount ?? 0, result.elapsedMs ?? 0);
-
-    if (!result.response) {
-      await ctx.reply("I don't have enough context to answer that.");
-      return;
-    }
-    await messageSender.sendMessage(ctx, formatSideAnswer(question, result.response));
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[btw] Fork error:', sanitizeError(error));
-    await progress.fail();
-    await ctx.reply(`Failed to answer side question: ${msg}`);
-  }
 }
 
 /** Minimum gap between /btw progress edits — Telegram rate-limits edits hard. */

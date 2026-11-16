@@ -6,20 +6,6 @@ const require = createRequire(import.meta.url);
 
 let cachedBundled: string | null | undefined;
 
-/**
- * Resolve the executable path TeleCoder would normally hand to the SDK.
- * Mirrors the precedence in `src/claude/agent.ts`:
- *   1. If CLAUDE_USE_BUNDLED_EXECUTABLE=false, use CLAUDE_EXECUTABLE_PATH.
- *   2. Else, prefer the matching-libc bundled binary.
- *   3. Fall back to CLAUDE_EXECUTABLE_PATH (or `claude` on PATH).
- */
-export function resolveActiveClaudeExecutable(): string {
-  if (!config.CLAUDE_USE_BUNDLED_EXECUTABLE) {
-    return config.CLAUDE_EXECUTABLE_PATH;
-  }
-  return resolveBundledClaudeBin() ?? config.CLAUDE_EXECUTABLE_PATH;
-}
-
 function isMuslLibc(): boolean {
   // On glibc systems, process.report.header includes glibcVersionRuntime.
   // On musl (Alpine etc.), that field is absent.
@@ -28,7 +14,9 @@ function isMuslLibc(): boolean {
 }
 
 /**
- * Resolve the bundled Claude Code binary for the current Linux libc.
+ * Resolve the bundled Claude Code binary for the current Linux libc: the
+ * `claude` the Haiku side calls run through (side-call-options.ts). The ptys
+ * spawn resolvePtyClaudeBin below instead.
  *
  * The SDK's own auto-detection (sdk.mjs `N7`) tries the musl package first
  * and only falls back when require.resolve throws. Both packages are
@@ -53,18 +41,6 @@ export function resolveBundledClaudeBin(): string | undefined {
   }
 }
 
-/**
- * The executable a given transport actually runs, so anything that inspects
- * the CLI (its command list, its version) inspects the same build the user's
- * turns go through. The two can be different installs at different versions:
- * SDK mode prefers the binary bundled in node_modules, PTY mode spawns
- * CLAUDE_BIN — the same precedence `/context` already follows.
- */
-export function resolveClaudeExecutableForMethod(method: 'sdk' | 'pty'): string {
-  return method === 'pty'
-    ? process.env.CLAUDE_BIN || config.CLAUDE_EXECUTABLE_PATH
-    : resolveActiveClaudeExecutable();
-}
 
 /**
  * The `claude` the ptys run: CLAUDE_BIN, else the CLI found on PATH with

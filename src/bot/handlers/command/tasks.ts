@@ -470,7 +470,7 @@ function explainOverlayMiss(reason: 'no-session' | 'turn-active' | 'not-ready'):
     case 'not-ready':
       return 'The Claude TUI is not at a prompt right now. Try again in a moment.';
     case 'no-session':
-      return 'No active PTY session for this chat. In SDK mode the list above is already authoritative.';
+      return 'No live Claude session for this chat.';
   }
 }
 
@@ -688,21 +688,19 @@ function renderBgList(sessionKey: string, claudePid: number | undefined, procs: 
     return {
       message: heading()
         .newline(2)
-        .italic('No active PTY session for this chat.')
-        .newline(2)
-        .add('In SDK mode, use /tasks to inspect tracked background tasks.')
+        .italic('No live Claude session for this chat.')
         .build(),
       keyboard: [],
     };
   }
   if (procs.length === 0) {
-    // Cross-pointer to /tasks when SDK-tracked tasks (agents, monitors) are
+    // Cross-pointer to /tasks when tracked tasks (agents, monitors) are
     // running but no OS shells are.
     const taskCount = getActiveTasks(sessionKey).length;
     const b = heading().newline(2).add('None running.');
     if (taskCount > 0) {
       const noun = taskCount === 1 ? 'task' : 'tasks';
-      b.newline(2).italic(`🔄 ${taskCount} SDK ${noun} still running — see /tasks.`);
+      b.newline(2).italic(`🔄 ${taskCount} ${noun} still running — see /tasks.`);
     }
     return {
       message: b.build(),

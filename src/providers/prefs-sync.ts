@@ -33,7 +33,6 @@ import {
   type EffortLevel,
   type ProviderName,
 } from './provider-router.js';
-import { userPreferences } from './user-preferences.js';
 
 /** A setting change to apply on other instances. `value: null` clears it. */
 export interface PrefsChange {
@@ -129,7 +128,6 @@ function restartPtySessionsForChat(chatId: number): number {
   let busy = 0;
   for (const sessionKey of pty.listSessionKeysForChat(chatId)) {
     if (getActiveProviderName(sessionKey) !== 'claude') continue;
-    if (userPreferences.getMethod(sessionKey) !== 'pty') continue;
     if (isInFlight(sessionKey)) {
       busy++;
       continue;

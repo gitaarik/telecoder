@@ -5,7 +5,7 @@ import {
   parsePermissionMode,
   parsePermissionModeArg,
   permissionModeInfo,
-  transportDefaultMode,
+  defaultPermissionMode,
   type ModePty,
   type PermissionModeId,
 } from '../../src/claude/permission-mode.js';
@@ -139,12 +139,6 @@ describe('ensurePermissionMode', () => {
 });
 
 describe('mode names', () => {
-  it('keeps the CLI and SDK spellings of the ask-every-time mode apart', () => {
-    const manual = permissionModeInfo('manual');
-    expect(manual.cli).toBe('manual');
-    expect(manual.sdk).toBe('default');
-  });
-
   it('resolves what someone might type', () => {
     expect(parsePermissionModeArg('plan')).toBe('plan');
     expect(parsePermissionModeArg('Accept Edits')).toBe('acceptEdits');
@@ -155,10 +149,10 @@ describe('mode names', () => {
   });
 });
 
-describe('transportDefaultMode', () => {
-  it('is auto on the pty, now that its dialogs can be answered', () => {
+describe('defaultPermissionMode', () => {
+  it("is auto, now that the pty's dialogs can be answered", () => {
     // It ran bypassed only for as long as a prompt there was a dead end.
-    expect(transportDefaultMode('pty')).toBe('auto');
+    expect(defaultPermissionMode()).toBe('auto');
   });
 
   it('keeps bypass reachable as a choice, not a default', () => {
@@ -170,14 +164,8 @@ describe('transportDefaultMode', () => {
     expect(PERMISSION_MODES.some((m) => m.id === 'bypassPermissions')).toBe(true);
   });
 
-  it('is accept-edits on the sdk, the mode that transport always ran in', () => {
-    expect(transportDefaultMode('sdk')).toBe('acceptEdits');
-  });
-
   it('only ever names a mode the table knows', () => {
     // /mode prints this through permissionModeInfo, which throws on a stranger.
-    for (const method of ['sdk', 'pty'] as const) {
-      expect(() => permissionModeInfo(transportDefaultMode(method))).not.toThrow();
-    }
+    expect(() => permissionModeInfo(defaultPermissionMode())).not.toThrow();
   });
 });

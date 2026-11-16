@@ -22,13 +22,11 @@
  * `--resume` — nothing here can append a stray turn to a live conversation,
  * and the command answers before a project is even open.
  *
- * What the probe can't have, the chat's own claude still holds. In PTY mode
- * there is a live TUI a `/cost` away from drawing exactly those totals, so we
- * ask it too and scrape the Session block off the overlay — the same trick
- * /tasks uses. That is where "Total cost", the durations, the per-model
- * breakdown and the prompt-cache line come from, and it is why the report is
- * fuller in PTY mode than in SDK mode, where the totals stay unanswerable and
- * TeleCoder's own per-turn tally stands in.
+ * What the probe can't have, the chat's own claude still holds: a live TUI a
+ * `/cost` away from drawing exactly those totals, so we ask it too and scrape
+ * the Session block off the overlay — the same trick /tasks uses. That is
+ * where "Total cost", the durations, the per-model breakdown and the
+ * prompt-cache line come from.
  *
  * Two sources, one report, no overlap: the panel's own limits view is left
  * unscraped (it scrolls off the first screenful anyway) and read from the
@@ -39,13 +37,11 @@ import { Context } from 'grammy';
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import { sessionManager } from '../../../claude/session-manager.js';
-import { config } from '../../../config.js';
-import { getSessionCost, type SessionCost } from '../../../claude/session-cost.js';
 import { scrapeCostSession, type CostSession } from '../../../claude/cost-overlay-scraper.js';
-import { getActiveMethod, getPtyProvider } from '../../../providers/claude-provider.js';
+import { getPtyProvider } from '../../../providers/claude-provider.js';
 import { messageSender } from '../../../telegram/message-sender.js';
 import { getProgressBar } from '../../../utils/format.js';
-import { resolveActiveClaudeExecutable } from '../../../utils/resolve-claude-bin.js';
+import { resolvePtyClaudeBin } from '../../../utils/resolve-claude-bin.js';
 import { sanitizeError } from '../../../utils/sanitize.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 import { getWorkspaceRoot } from '../../../utils/workspace-guard.js';
@@ -103,7 +99,6 @@ function renderSessionBlock(session: CostSession): string[] {
  */
 export function parseCostOutput(
   raw: string,
-  chatCost?: SessionCost,
   session?: CostSession | null,
 ): string {
   const trimmed = raw.trim();
@@ -221,30 +216,17 @@ export function parseCostOutput(
     if (lines[lines.length - 1] !== '') lines.push('');
     lines.push('_Totals cover this lookup only — Claude Code keeps no per-conversation cost once a turn ends._');
   }
-  if (chatCost && chatCost.turns > 0) {
-    if (lines[lines.length - 1] !== '') lines.push('');
-    const turns = chatCost.turns === 1 ? '1 turn' : `${chatCost.turns} turns`;
-    lines.push(`**This chat:** $${chatCost.usd.toFixed(4)} across ${turns} — TeleCoder's own tally, since the CLI keeps none.`);
-  }
   return lines.join('\n').trimEnd();
 }
 
 /**
- * Which CLI to ask, best first.
- *
- * Every candidate is spawned as a fresh process with nothing spent in it, so
- * the substance of the answer does not depend on which one asks. What does
- * depend on it is how much gets printed: the copy bundled with the SDK trails
- * the user's own install by many releases, and older builds reply with a
- * single sentence where current ones break every limit down with its reset
- * time. So ask the install the user maintains — the same `claude` they would
- * type `/cost` into — and keep the bundled binary as the fallback for setups
- * with no CLI on PATH at all.
+ * The CLI to ask: the one the ptys run — the same `claude` the user would type
+ * `/cost` into. Spawned fresh with nothing spent in it, so the substance of the
+ * answer does not depend on the process. A list, for runClaudeCost, which
+ * moves on from a candidate that could not be started.
  */
 function costExecutables(): string[] {
-  const preferred = process.env.CLAUDE_BIN || config.CLAUDE_EXECUTABLE_PATH;
-  const bundled = resolveActiveClaudeExecutable();
-  return preferred === bundled ? [preferred] : [preferred, bundled];
+  return [resolvePtyClaudeBin()];
 }
 
 /** A CLI that never started, as opposed to one that ran and failed. */
@@ -342,24 +324,17 @@ function resolveSpawnCwd(sessionCwd: string | undefined): string {
  * it has always carried. But saying nothing was worse than the missing
  * numbers: a blank where a Session block should be looks like the feature is
  * broken, when three of the four causes clear by themselves.
- *
- * `no-session` under SDK mode is the exception, and the only silent one — that
- * transport has no TUI to read and never will, so there is no news in saying
- * so on every `/cost`.
  */
 export function explainMissingTotals(
   reason: 'no-session' | 'turn-active' | 'not-ready' | 'unreadable',
-  method: 'sdk' | 'pty',
-): string | null {
+): string {
   switch (reason) {
     case 'turn-active':
       return "This session's totals need the TUI, which is mid-turn — ask again when it finishes.";
     case 'not-ready':
       return "This session's totals need the TUI, which isn't at its prompt — a dialog may be waiting. Ask again in a moment.";
     case 'no-session':
-      return method === 'pty'
-        ? "This chat has no live session yet, so there are no totals to read — send a message first."
-        : null;
+      return "This chat has no live session yet, so there are no totals to read — send a message first.";
     case 'unreadable':
       // The panel is a Claude Code implementation detail and can move between
       // releases. Say that plainly rather than leave a silent gap.
@@ -377,11 +352,10 @@ export function explainMissingTotals(
  */
 async function readLiveSessionTotals(
   sessionKey: string,
-  method: 'sdk' | 'pty',
 ): Promise<{ session: CostSession | null; note: string | null }> {
   const miss = (reason: 'no-session' | 'turn-active' | 'not-ready' | 'unreadable') => {
-    console.warn(`[Cost] no live session totals for ${sessionKey}: ${reason} (method=${method})`);
-    return { session: null, note: explainMissingTotals(reason, method) };
+    console.warn(`[Cost] no live session totals for ${sessionKey}: ${reason}`);
+    return { session: null, note: explainMissingTotals(reason) };
   };
 
   try {
@@ -391,7 +365,7 @@ async function readLiveSessionTotals(
     return session ? { session, note: null } : miss('unreadable');
   } catch (error) {
     console.warn('[Cost] Could not read the live /cost panel:', sanitizeError(error));
-    return { session: null, note: explainMissingTotals('unreadable', method) };
+    return { session: null, note: explainMissingTotals('unreadable') };
   }
 }
 
@@ -411,10 +385,10 @@ export async function handleCost(ctx: Context): Promise<void> {
     // into a process already running, and neither waits on the other.
     const [raw, live] = await Promise.all([
       runClaudeCost(costExecutables(), cwd),
-      readLiveSessionTotals(sessionKey, getActiveMethod(sessionKey)),
+      readLiveSessionTotals(sessionKey),
     ]);
     await typing?.catch(() => { /* chat action is best-effort */ });
-    let report = parseCostOutput(raw, getSessionCost(sessionKey), live.session);
+    let report = parseCostOutput(raw, live.session);
     if (live.note) report += `\n\n_${live.note}_`;
     await messageSender.sendMessage(ctx, report);
   } catch (error) {

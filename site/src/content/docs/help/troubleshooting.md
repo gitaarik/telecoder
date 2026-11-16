@@ -62,7 +62,7 @@ LaunchAgent runs while you're logged in.
 ## The install fails building node-pty
 
 On Linux, `npm install` compiles `node-pty`, which TeleCoder uses to drive the
-`claude` terminal app in PTY mode. It needs `python3`, `make` and a C++ compiler:
+`claude` terminal app. It needs `python3`, `make` and a C++ compiler:
 
 ```bash
 sudo apt install python3 make g++        # Debian, Ubuntu

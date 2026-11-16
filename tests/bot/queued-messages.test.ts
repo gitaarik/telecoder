@@ -65,7 +65,7 @@ const {
   armReminders,
   setQueuedDiverters,
 } = await import('../../src/bot/middleware/queued-messages.js');
-const { queueRequest, setAbortController, setActiveQuery, isProcessing } = await import('../../src/claude/request-queue.js');
+const { queueRequest, setAbortController, isProcessing } = await import('../../src/claude/request-queue.js');
 const { handleCancel } = await import('../../src/bot/handlers/command.handler.js');
 const { registerBotCommandName } = await import('../../src/claude/command-parser.js');
 const { config } = await import('../../src/config.js');
@@ -99,6 +99,14 @@ let nextMessageId: number;
 /** Held by a message of the text 'slow' before it starts its turn, like a voice note being transcribed. */
 let slowGate: Promise<void>;
 
+/**
+ * When true, a stopped turn keeps running until its `release()`: the pty takes
+ * a moment to wind down after Esc, and what happens in that moment is tested.
+ */
+let holdOnAbort = false;
+let aborts = 0;
+afterEach(() => { holdOnAbort = false; aborts = 0; });
+
 function runTurn(text: string): Promise<void> {
   started.push(text);
   const controller = new AbortController();
@@ -107,8 +115,9 @@ function runTurn(text: string): Promise<void> {
     const turn: Turn = { release: resolve, cancelled: false };
     turns.set(text, turn);
     controller.signal.addEventListener('abort', () => {
+      aborts++;
       turn.cancelled = true;
-      resolve();
+      if (!holdOnAbort) resolve();
     });
   });
 }
@@ -1147,26 +1156,6 @@ describe('/cancel', () => {
     ]);
   });
 
-  it('drops what was waiting even if the turn ends before the interrupt returns', async () => {
-    // The SDK path: the turn is over while /cancel is still awaiting interrupt(),
-    // so anything dropped only after that await would already have gone through.
-    send('first');
-    await advance();
-    send('second');
-    await advance();
-    setActiveQuery(String(CHAT), {
-      interrupt: async () => {
-        turns.get('first')!.release();
-        await new Promise((resolve) => setTimeout(resolve, 200));
-      },
-    } as never);
-
-    send('/cancel');
-    await advance();
-
-    expect(started).toEqual(['first']);
-  });
-
   it('leaves the chat free for the next message', async () => {
     send('first');
     await advance();
@@ -1440,18 +1429,17 @@ describe('sending a message in place of the turn', () => {
 
     it('stops the turn only once, however often it is tapped', async () => {
       // Leaves the turn running for now, so the second tap finds the message still waiting.
-      const interrupt = vi.fn(async () => {});
+      holdOnAbort = true;
       send('first');
       await advance();
       const second = send('second');
       await advance();
-      setActiveQuery(String(CHAT), { interrupt } as never);
 
       await tapButton(`queued:steer:${second}`, { ackId: 5000 });
       await tapButton(`queued:steer:${second}`, { ackId: 5000 });
       await advance();
 
-      expect(interrupt).toHaveBeenCalledTimes(1);
+      expect(aborts).toBe(1);
       expect(answers()).toEqual(['Stopping the turn.', 'Already stopping the turn for it.']);
       turns.get('first')!.release();
       await advance();
@@ -1463,8 +1451,8 @@ describe('sending a message in place of the turn', () => {
       await advance();
       const second = send('second');
       await advance();
-      // An interrupt that leaves the turn running, for now.
-      setActiveQuery(String(CHAT), { interrupt: async () => {} } as never);
+      // A stop that leaves the turn running, for now.
+      holdOnAbort = true;
 
       await tapButton(`queued:steer:${second}`, { ackId: 5000 });
       await tapTakeBack(second, { ackId: 5000 });
@@ -1528,9 +1516,9 @@ describe('sending a message in place of the turn', () => {
     });
 
     it('says what it is doing while the turn winds down, with only Take back', async () => {
+      holdOnAbort = true;
       send('first');
       await advance();
-      setActiveQuery(String(CHAT), { interrupt: async () => {} } as never);
 
       const id = send('/steer fix');
       await advance();

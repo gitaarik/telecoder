@@ -13,8 +13,6 @@ const stopTurn = vi.fn(async () => ({ stopped: true, dropped: 0 }));
 vi.mock('../../src/bot/middleware/queued-messages.js', () => ({ stopTurn }));
 const clearConversation = vi.fn();
 vi.mock('../../src/providers/provider-router.js', () => ({ clearConversation }));
-const releaseHeldQuery = vi.fn(() => false);
-vi.mock('../../src/claude/held-query.js', () => ({ releaseHeldQuery }));
 const clearSession = vi.fn();
 vi.mock('../../src/claude/session-manager.js', () => ({ sessionManager: { clearSession } }));
 const forgetThreadTitle = vi.fn();
@@ -57,7 +55,6 @@ describe('forgetThread', () => {
   it('stops the turn and drops everything the thread had', async () => {
     expect(await forgetThread(api, KEY, 'test')).toBe(true);
     expect(stopTurn).toHaveBeenCalledWith(api, KEY);
-    expect(releaseHeldQuery).toHaveBeenCalledWith(KEY);
     expect(clearSession).toHaveBeenCalledWith(KEY);
     expect(forgetThreadTitle).toHaveBeenCalledWith(KEY);
     expect(forgetPrefs).toHaveBeenCalledWith(KEY);

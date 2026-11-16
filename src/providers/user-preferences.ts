@@ -26,7 +26,6 @@ const userPreferencesSchema = z.object({
   // file in one shot, so a strict enum would make one stale value wipe every
   // user's saved model/effort/verbosity too.
   provider: z.enum(['claude', 'ccr']).optional().catch(undefined),
-  method: z.enum(['sdk', 'pty']).optional(),
   // The clearable settings also take null: a thread that resets one to the
   // default has to say so, or it would fall back to the chat's choice.
   model: z.string().nullable().optional(),
@@ -154,14 +153,6 @@ class UserPreferencesManager {
 
   setProvider(scope: SettingsScope, provider: 'claude' | 'ccr'): void {
     this.patch(scope, { provider });
-  }
-
-  getMethod(scope: SettingsScope): 'sdk' | 'pty' | undefined {
-    return this.get(scope, 'method');
-  }
-
-  setMethod(scope: SettingsScope, method: 'sdk' | 'pty'): void {
-    this.patch(scope, { method });
   }
 
   getModel(scope: SettingsScope): string | undefined {
