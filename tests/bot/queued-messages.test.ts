@@ -536,7 +536,12 @@ describe('setting a message aside', () => {
     expect(callsTo('editMessageText').at(-1)?.payload).toMatchObject({
       message_id: 5000,
       text: "🔔 Set aside. I'll ask when Claude is done.",
-      reply_markup: { inline_keyboard: [[{ text: '🗑 Take back', callback_data: `queued:${id}` }]] },
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '🗑 Take back', callback_data: `queued:${id}` }],
+          [{ text: '⚡ Interrupt & send', callback_data: `queued:steer:${id}` }],
+        ],
+      },
     });
     expect(turns.get('first')!.cancelled).toBe(false);
     expect(isProcessing(String(CHAT))).toBe(true);
@@ -1609,7 +1614,12 @@ describe('/later', () => {
     expect(notices(id)[0]?.payload).toMatchObject({
       text: "🔔 Set aside. I'll ask when Claude is done.",
       reply_parameters: { message_id: id, allow_sending_without_reply: true },
-      reply_markup: { inline_keyboard: [[{ text: '🗑 Take back', callback_data: `queued:${id}` }]] },
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '🗑 Take back', callback_data: `queued:${id}` }],
+          [{ text: '⚡ Interrupt & send', callback_data: `queued:steer:${id}` }],
+        ],
+      },
       disable_notification: true,
     });
     // No ack: it isn't in line, and the notice says what's happening to it.
@@ -1744,6 +1754,187 @@ describe('/later', () => {
     await tapButton(`queued:send:${id}`);
     await advance();
     expect(started).toEqual(['first', 'and rename the flag']);
+  });
+
+  describe('sent before the question', () => {
+    it('goes in place of the running turn with Interrupt & send, and nothing asks about it after', async () => {
+      send('first');
+      await advance();
+      const id = send('/later fix the typo too');
+      await advance();
+
+      await tapButton(`queued:steer:${id}`, { ackId: 5000 });
+      await advance();
+
+      expect(turns.get('first')!.cancelled).toBe(true);
+      expect(started).toEqual(['first', 'fix the typo too']);
+      expect(answers()).toEqual(['Stopping the turn.']);
+      expect(callsTo('editMessageText').at(-1)?.payload).toMatchObject({
+        message_id: 5000,
+        text: '⚡ Sent in place of the turn.',
+        reply_markup: { inline_keyboard: [] },
+      });
+
+      turns.get('fix the typo too')!.release();
+      await advance();
+      expect(remindersFor(id)).toEqual([]);
+    });
+
+    it('drops what was waiting behind the turn, as /cancel would, but nothing else set aside', async () => {
+      send('first');
+      await advance();
+      const waiting = send('second');
+      await advance();
+      const other = send('/later and rename the flag');
+      const id = send('/later fix the typo too');
+      await advance();
+
+      await tapButton(`queued:steer:${id}`, { ackId: 5002 });
+      await advance();
+
+      expect(started).toEqual(['first', 'fix the typo too']);
+      expect(edits()).toContain('🛑 Cancelled before it reached Claude.');
+      expect(acksFor(waiting)).toHaveLength(1);
+      turns.get('fix the typo too')!.release();
+      await advance();
+      expect(remindersFor(other)).toHaveLength(1);
+    });
+
+    it('says why it waits while the turn winds down, and can still be taken back then', async () => {
+      // A stop that leaves the turn running, for now.
+      holdOnAbort = true;
+      send('first');
+      await advance();
+      const id = send('/later fix the typo too');
+      await advance();
+
+      await tapButton(`queued:steer:${id}`, { ackId: 5000 });
+      await advance();
+      expect(acksFor(id).at(-1)?.payload).toMatchObject({
+        text: '⚡ Stopping the turn, then sending this.',
+        reply_markup: { inline_keyboard: [[{ text: '🗑 Take back', callback_data: `queued:${id}` }]] },
+      });
+
+      await tapTakeBack(id, { ackId: 5001 });
+      turns.get('first')!.release();
+      await advance();
+      expect(started).toEqual(['first']);
+    });
+
+    it('takes back the place in line it was set aside from', async () => {
+      send('first');
+      await advance();
+      const second = send('second');
+      await advance();
+      await tapButton(`queued:park:${second}`, { ackId: 5000 });
+
+      await tapButton(`queued:steer:${second}`, { ackId: 5000 });
+      await advance();
+
+      expect(turns.get('first')!.cancelled).toBe(true);
+      expect(started).toEqual(['first', 'second']);
+      expect(answers()).toEqual(['Set aside.', 'Stopping the turn.']);
+      expect(edits().at(-1)).toBe('⚡ Stopping the turn, then sending this.');
+      // Its notice was its ack, which comes down once it has gone out.
+      expect(callsTo('deleteMessage').map((c) => c.payload.message_id)).toEqual([5000]);
+      turns.get('second')!.release();
+      await advance();
+      expect(remindersFor(second)).toEqual([]);
+    });
+
+    it('still goes in place of the turn after a restart', async () => {
+      send('first');
+      await advance();
+      const id = send('/later fix the typo too');
+      await advance();
+
+      forgetParkedMessages();
+      initParkedMessages(bot);
+      armReminders();
+      await tapButton(`queued:steer:${id}`, { ackId: 5000 });
+      await advance();
+
+      expect(turns.get('first')!.cancelled).toBe(true);
+      expect(started).toEqual(['first', 'fix the typo too']);
+    });
+
+    it('is refused to someone else in the chat, and the turn keeps going', async () => {
+      send('first');
+      await advance();
+      const id = send('/later fix the typo too');
+      await advance();
+
+      await tapButton(`queued:steer:${id}`, { from: STRANGER, ackId: 5000 });
+      await advance();
+
+      expect(answers()).toEqual(['Only the person who sent this, or an admin, can do that.']);
+      expect(turns.get('first')!.cancelled).toBe(false);
+      turns.get('first')!.release();
+      await advance();
+      expect(remindersFor(id)).toHaveLength(1);
+      expect(started).toEqual(['first']);
+    });
+
+    it('goes at once with Send now, offered while nothing is running', async () => {
+      const id = send('/later and rename the flag');
+      await advance();
+      expect(notices(id)[0]?.payload.reply_markup).toEqual({
+        inline_keyboard: [[
+          { text: '🗑 Take back', callback_data: `queued:${id}` },
+          { text: '📤 Send now', callback_data: `queued:send:${id}` },
+        ]],
+      });
+
+      await tapButton(`queued:send:${id}`, { ackId: 5000 });
+      await advance();
+
+      expect(started).toEqual(['and rename the flag']);
+      expect(edits().at(-1)).toBe('📤 Sent.');
+      turns.get('and rename the flag')!.release();
+      await advance();
+      expect(remindersFor(id)).toEqual([]);
+    });
+
+    it('offers Interrupt & send instead, once the turn it waits for has started', async () => {
+      const id = send('/later and rename the flag');
+      await advance();
+      send('first');
+      await advance();
+
+      expect(callsTo('editMessageText').at(-1)?.payload).toMatchObject({
+        message_id: 5000,
+        text: "🔔 Set aside. I'll ask when Claude is done.",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🗑 Take back', callback_data: `queued:${id}` }],
+            [{ text: '⚡ Interrupt & send', callback_data: `queued:steer:${id}` }],
+          ],
+        },
+      });
+
+      await tapButton(`queued:steer:${id}`, { ackId: 5000 });
+      await advance();
+      expect(turns.get('first')!.cancelled).toBe(true);
+      expect(started).toEqual(['first', 'and rename the flag']);
+    });
+
+    it("offers Interrupt & send even when the turn started while the notice was on its way", async () => {
+      let open: () => void = () => {};
+      fx.sendGate = new Promise<void>((resolve) => { open = resolve; });
+      const id = send('/later and rename the flag');
+      await advance();
+      send('first');
+      await advance();
+      fx.sendGate = null;
+      open();
+      await advance();
+
+      expect(callsTo('editMessageText').at(-1)?.payload).toMatchObject({
+        message_id: 5000,
+        text: "🔔 Set aside. I'll ask when Claude is done.",
+        reply_markup: { inline_keyboard: [[{ text: '🗑 Take back', callback_data: `queued:${id}` }], [{ text: '⚡ Interrupt & send', callback_data: `queued:steer:${id}` }]] },
+      });
+    });
   });
 });
 

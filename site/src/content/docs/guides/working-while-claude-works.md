@@ -38,6 +38,11 @@ message.
 message first to change what goes out. `/later` on its own lists what's set aside.
 Set-aside messages survive `/cancel` and restarts.
 
+To send it before the question comes, use the buttons on its *🔔 Set aside* notice. While
+a turn is running, **⚡ Interrupt & send** stops the turn and sends it now, as `/steer` does.
+While nothing is running, **📤 Send now** just sends it. A message set aside with **🔔 Ask me
+after** gets the same buttons.
+
 ## Messages that have to wait
 
 A message you send while Claude is busy waits for the turn to end, and the bot says so:

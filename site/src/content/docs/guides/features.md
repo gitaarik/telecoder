@@ -60,7 +60,8 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 - `/btw` asks a side question without interrupting the running task
 - `/steer` stops the turn and sends a correction in its place; `⚡ Interrupt & send` on a
   queued message does the same
-- `/later` sets an idea aside, and once Claude is done the bot asks whether to send it
+- `/later` sets an idea aside, and once Claude is done the bot asks whether to send it;
+  `⚡ Interrupt & send` on its notice sends it in place of the running turn instead
 - Messages that have to wait say so, and can be taken back or set aside
 - Rapid split pastes are combined into one prompt
 - Predicted next-prompt buttons under each reply (`/suggestions`)

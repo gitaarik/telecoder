@@ -38,7 +38,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/effort` | Set reasoning effort (low / medium / high / xhigh / max / auto), with the same `new`, `chat` and `all` as `/model` |
 | `/btw` | Ask a side question without interrupting the running task. It answers only, without changing files |
 | `/steer <text>` | Stop the running turn and send the text in its place, as a correction; `⚡ Interrupt & send` on a queued message does the same |
-| `/later [text]` | Set an idea aside without sending it; once Claude is done, the bot asks whether to send it, with Send and Drop. Alone, lists what's set aside |
+| `/later [text]` | Set an idea aside without sending it; once Claude is done, the bot asks whether to send it, with Send and Drop. To send it sooner, its notice has `⚡ Interrupt & send` mid-turn and `📤 Send now` otherwise. Alone, lists what's set aside |
 | `/mode` | How much Claude asks before acting (manual / accept edits / plan / auto / bypass) — admin-only |
 | `/autoapprove [duration]` | Answer the permission gate's prompts in advance in this chat for a while (default `30m`, at most `4h`; a restart ends it), posting each command it lets through; `off` ends it, `status` reads it back. The most destructive commands still ask — admins and approvers |
 | `/provider` | Switch backend — Claude / CCR (shown when `CCR_ENABLED`) — admin-only |

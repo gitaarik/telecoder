@@ -60,6 +60,12 @@
  * asking, or the question would go up at once. `/later` alone lists what's set
  * aside in the chat.
  *
+ * A message set aside can still go before the question, from its notice: "Interrupt
+ * & send" while a turn runs, which it then goes in place of, and "Send now" while
+ * nothing does, since then sending it is all there is to do. One set aside from a
+ * place in line it still holds takes that place back, as if the button had been
+ * tapped on its ack. Otherwise it goes through the chain again as /steer sends one.
+ *
  * A question left unanswered while the conversation moves on would scroll out of
  * sight, so once another turn has run it's taken down and asked again below the
  * new reply, without a buzz the second time.
@@ -136,6 +142,7 @@ const STEER_COMMAND = /^\/steer(?:@\w+)?(?:\s+|$)/i;
 const STEER_USAGE = '⚡ /steer <text> stops the running turn and sends <text> in its place. '
   + 'Claude keeps what it had done, so <text> can be a correction to it.';
 const SENT = '📤 Sent.';
+const SENT_IN_PLACE = '⚡ Sent in place of the turn.';
 const DROPPED = '🗑 Dropped before it reached Claude.';
 const NOT_YOURS = 'Only the person who sent this, or an admin, can do that.';
 const ASKED_AS_BTW = '💬 Asked as /btw instead. The answer is below.';
@@ -524,6 +531,7 @@ async function remindWhereIdle(): Promise<void> {
         if (running) {
           delete message.awaitsTurn;
           saveParked();
+          void noticeTurnStarted(botRef.api, message);
         }
         continue;
       }
@@ -569,12 +577,49 @@ function stripCommand(msg: Message, command: RegExp): void {
   delete (msg as { entities?: unknown }).entities;
 }
 
+/**
+ * The buttons on the notice of a message set aside. While a turn runs it can go in
+ * place of that turn. With nothing running, sending it starts one, so it can just go.
+ */
+function setAsideKeyboard(messageId: number, turnRunning: boolean) {
+  if (!turnRunning) {
+    return {
+      inline_keyboard: [[
+        takeBackButton(messageId),
+        { text: '📤 Send now', callback_data: `${CALLBACK_PREFIX}send:${messageId}` },
+      ]],
+    };
+  }
+  // On a row of its own, as on the ack, as the one that stops something.
+  return {
+    inline_keyboard: [
+      [takeBackButton(messageId)],
+      [{ text: '⚡ Interrupt & send', callback_data: `${CALLBACK_PREFIX}steer:${messageId}` }],
+    ],
+  };
+}
+
+/**
+ * The turn a message set aside while nothing was running has started. Send now
+ * would only put it behind that turn, so the notice offers to interrupt it instead.
+ */
+async function noticeTurnStarted(api: Api, message: ParkedMessage): Promise<void> {
+  if (message.noticeId === undefined) return;
+  try {
+    await api.editMessageText(message.chatId, message.noticeId, PARKED, {
+      reply_markup: setAsideKeyboard(message.messageId, true),
+    });
+  } catch (err) {
+    console.warn('[Queued] Could not update the notice:', sanitizeError(err));
+  }
+}
+
 async function postNotice(api: Api, message: ParkedMessage, text: string): Promise<number | undefined> {
   try {
     const sent = await api.sendMessage(message.chatId, text, {
       // Answering the person who just typed it, who is looking at the chat.
       reply_parameters: { message_id: message.messageId, allow_sending_without_reply: true },
-      reply_markup: { inline_keyboard: [[takeBackButton(message.messageId)]] },
+      reply_markup: setAsideKeyboard(message.messageId, !message.awaitsTurn),
       disable_notification: true,
       ...(message.threadId !== undefined ? { message_thread_id: message.threadId } : {}),
     });
@@ -655,6 +700,8 @@ export async function handleLater(ctx: Context): Promise<void> {
   if (parked.get(key) === message && message.reminderId === undefined) {
     message.noticeId = noticeId;
     saveParked();
+    // The turn it was waiting for started while the notice was on its way.
+    if (awaitsTurn && !message.awaitsTurn) void noticeTurnStarted(ctx.api, message);
   } else {
     // Dealt with, or asked about, while the notice was on its way.
     void ctx.api.deleteMessage(keyInfo.chatId, noticeId)
@@ -858,7 +905,8 @@ async function handleParkTap(ctx: Context, key: string): Promise<void> {
 
   await ctx.answerCallbackQuery({ text: 'Set aside.' });
   try {
-    await ctx.editMessageText(PARKED, { reply_markup: { inline_keyboard: [[takeBackButton(entry.messageId)]] } });
+    // It was waiting behind something, which it can still go in place of.
+    await ctx.editMessageText(PARKED, { reply_markup: setAsideKeyboard(entry.messageId, true) });
   } catch (err) {
     console.warn('[Queued] Could not update the ack:', sanitizeError(err));
   }
@@ -904,9 +952,14 @@ async function handleBtwTap(ctx: Context, key: string): Promise<void> {
 }
 
 async function handleSteerTap(ctx: Context, key: string): Promise<void> {
+  const setAside = parked.get(key);
+  if (setAside) return steerSetAside(ctx, key, setAside);
   const entry = await claimWaiting(ctx, key);
-  if (!entry) return;
+  if (entry) await steer(ctx, entry);
+}
 
+/** Interrupt & send, on a message with its place in line. */
+async function steer(ctx: Context, entry: QueuedMessage): Promise<void> {
   // Set at once, so a second tap can't stop a turn that has already moved on to this one.
   entry.steering = true;
   // Started before anything else awaits, so what's waiting is dropped before the turn can end.
@@ -919,6 +972,47 @@ async function handleSteerTap(ctx: Context, key: string): Promise<void> {
     console.warn('[Queued] Could not update the ack:', sanitizeError(err));
   }
   await stopping;
+}
+
+/**
+ * Interrupt & send, on the notice of a message set aside. One that still holds its
+ * place behind the turn it was set aside from, whose notice is its ack, takes that
+ * place back. Otherwise it goes back through the chain, as /steer sends one, and
+ * with nothing to interrupt it simply goes.
+ */
+async function steerSetAside(ctx: Context, key: string, message: ParkedMessage): Promise<void> {
+  if (!maySettle(ctx, message.senderId)) {
+    await ctx.answerCallbackQuery({ text: NOT_YOURS, show_alert: true });
+    return;
+  }
+  // Before anything that awaits, or the question could go up meanwhile.
+  parked.delete(key);
+  saveParked();
+
+  const entry = queued.get(key);
+  if (entry?.parked && !entry.takenBack) {
+    entry.parked = false;
+    return steer(ctx, entry);
+  }
+
+  const running = turnRunning(message.sessionKey);
+  // Started first, so what's waiting is dropped before the turn can end and let it through.
+  const stopping = running ? stopTurn(ctx.api, message.sessionKey) : undefined;
+  console.log(running
+    ? `[Queued] Stopping the turn in ${message.sessionKey} for set-aside message ${message.messageId}`
+    : `[Queued] Sending set-aside message ${message.messageId} in ${message.sessionKey}, with nothing to interrupt`);
+  await ctx.answerCallbackQuery({ text: running ? 'Stopping the turn.' : 'Sent.' });
+  try {
+    await ctx.editMessageText(running ? SENT_IN_PLACE : SENT, { reply_markup: { inline_keyboard: [] } });
+  } catch (err) {
+    console.warn('[Queued] Could not update the notice:', sanitizeError(err));
+  }
+  if (stopping) {
+    await stopping;
+    // Its ack, should it have to wait for the turn to wind down, says why.
+    steered.add(key);
+  }
+  sendParked(message);
 }
 
 /**

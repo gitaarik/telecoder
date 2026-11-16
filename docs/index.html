@@ -2297,7 +2297,9 @@
             done, the bot asks below the reply whether you still want to send it, with Send and Drop
             buttons. The question waits for as long as you need, restarts included, and follows the
             conversation down: left unanswered, it's asked again below each new reply. Edit the
-            message in the meantime and the edit is what goes out.</p>
+            message in the meantime and the edit is what goes out. Changed your mind sooner? The
+            <code>🔔 Set aside</code> notice has <code>⚡ Interrupt &amp; send</code> while a turn
+            runs, and <code>📤 Send now</code> while none does.</p>
           </div>
           <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-fork"/></svg></div>
@@ -3152,7 +3154,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/later [text]</code>
-              <span class="command-desc">Set an idea aside without it reaching Claude, mid-turn or while nothing is running. Once Claude is done — or, if it was idle, once the next turn has run — the bot asks below the reply whether to send it, with Send and Drop; a question left unanswered is asked again below each new reply. Edit the message in the meantime and the edit is what goes out. On its own, lists what's set aside in the chat. Same store as <code>🔔 Ask me after</code>, so it survives restarts.</span>
+              <span class="command-desc">Set an idea aside without it reaching Claude, mid-turn or while nothing is running. Once Claude is done — or, if it was idle, once the next turn has run — the bot asks below the reply whether to send it, with Send and Drop; a question left unanswered is asked again below each new reply. Edit the message in the meantime and the edit is what goes out. To send it before the question, tap <code>⚡ Interrupt &amp; send</code> on its notice, which stops the turn and sends it in its place as /steer does, or <code>📤 Send now</code> when nothing is running. On its own, lists what's set aside in the chat. Same store as <code>🔔 Ask me after</code>, so it survives restarts.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/tasks</code>
