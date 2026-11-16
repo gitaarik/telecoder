@@ -2043,8 +2043,8 @@
             <h3><a href="https://github.com/RichardAtCT/claude-code-telegram">claude-code-telegram</a></h3>
             <p>The most popular community bot: Python, built on the SDK, with cost caps and
             webhooks.</p>
-            <p class="compare-us"><strong>TeleCoder</strong> adds the PTY mode with full CLI
-            parity, threads, forks and multiple bots.</p>
+            <p class="compare-us"><strong>TeleCoder</strong> drives the full CLI itself, and
+            adds threads, forks and multiple bots.</p>
           </div>
           <div class="feature-card compare-card">
             <p class="compare-kind">Web UI</p>
@@ -2401,14 +2401,14 @@
             <div class="feature-icon"><svg><use href="#i-guests"/></svg></div>
             <h3>Share a bot without handing over the machine</h3>
             <p><code>ADMIN_USER_IDS</code> splits your users into admins and guests. Guests use the
-            agent normally; approvals, <code>/restartbot</code> and the transport switch stay
+            agent normally; approvals, <code>/restartbot</code> and the provider switch stay
             yours, and <code>RESTRICT_TO_GROUPS</code> keeps them out of private chats.</p>
           </div>
           <div class="feature-card" data-category="reliability">
             <div class="feature-icon"><svg><use href="#i-approve"/></svg></div>
             <h3>Spread the approvals without spreading the keys</h3>
             <p><code>APPROVER_USER_IDS</code> lets a trusted guest answer a permission prompt
-            while staying a guest everywhere else — no <code>/restartbot</code>, no transport
+            while staying a guest everywhere else — no <code>/restartbot</code>, no provider
             switch. Nobody approves their own request, so the prompt still means something and
             you stop being the bottleneck for a bot several people use.</p>
           </div>

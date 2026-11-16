@@ -46,7 +46,7 @@ TeleCoder puts Claude Code inside them.
 - **More than one bot.** Run a bot per project from one process, and make a new one from
   chat with `/newbot`, without a BotFather conversation.
 - **Shareable, carefully.** Admins, guests and approvers, a permission gate on every
-  transport, a scope guard for paths, and a charter checked before a guest's message runs.
+  tool call, a scope guard for paths, and a charter checked before a guest's message runs.
 
 The full list is on the [Features](site/src/content/docs/guides/features.md) page.
 
@@ -60,7 +60,7 @@ The full list is on the [Features](site/src/content/docs/guides/features.md) pag
   you want the session you already have, on Anthropic's own UI.
 - **[claude-code-telegram](https://github.com/RichardAtCT/claude-code-telegram)** is the
   most popular community bot: Python, SDK-based, with cost caps and webhooks. TeleCoder
-  adds the PTY mode with full CLI parity, threads, forks and multiple bots.
+  drives the full CLI itself, and adds threads, forks and multiple bots.
 - **Web UIs** such as [CloudCLI](https://github.com/siteboon/claudecodeui) give you a
   browser dashboard with file trees and diffs. TeleCoder gives up the dashboard for native
   apps, notifications and voice.

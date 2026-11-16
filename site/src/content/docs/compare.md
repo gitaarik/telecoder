@@ -33,8 +33,8 @@ session you already have, on Anthropic’s own UI.
 
 [claude-code-telegram](https://github.com/RichardAtCT/claude-code-telegram) is the most
 popular community bot: Python, built on the Agent SDK, with cost caps and webhooks.
-TeleCoder adds a mode with the full CLI (your `CLAUDE.md`, skills, plugins and slash
-commands), threads, forks and multiple bots.
+TeleCoder drives the full CLI itself (your `CLAUDE.md`, skills, plugins and slash
+commands), and adds threads, forks and multiple bots.
 
 ## Web UIs
 

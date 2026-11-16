@@ -38,7 +38,6 @@ Behaviour stays the same, and tests come first where coverage is thin:
 |------|-------|
 | `src/claude/pty-provider.ts` | 2,476 |
 | `src/telegram/message-sender.ts` | 1,449 |
-| `src/claude/agent.ts` | 1,387 |
 | `src/bot/handlers/command/settings.ts` | 1,153 |
 
 ### 4. Codex alongside Claude Code (25–35 h)
@@ -48,18 +47,19 @@ at DeepSeek through a local router. Codex, on a ChatGPT plan, would be a fallbac
 own agent loop, tools and models.
 
 It gets one transport, `codex app-server` (JSON-RPC over stdio), which OpenAI documents
-for clients that handle approvals and streamed events. There is no PTY mode: the Claude
-PTY transport exists because Anthropic bills SDK use apart from the subscription, and
-Codex doesn't appear to make that split, so scraping a second TUI would buy nothing.
+for clients that handle approvals and streamed events. There is no pty: TeleCoder drives
+Claude Code's TUI because Anthropic bills Agent SDK use apart from the subscription and
+doesn't let third-party products offer claude.ai login on it, while `codex app-server` is
+OpenAI's documented path for clients, so scraping a second TUI would buy nothing.
 
 - Add a Codex provider on `codex app-server`: streamed replies, tool indicators, edit
   diffs, interrupting a turn, and usage
 - Route Codex's approval requests through the permission gate and scope guard, using the
-  Telegram prompt both Claude transports already have
+  Telegram prompt the Claude pty already has
 - Load TeleCoder's stdio MCP server (`src/bin/mcp-server.ts`) into Codex, and support
   `/model`, reasoning effort and images
-- Offer Codex in `/provider` and the throttle failover. A switch forks the conversation
-  with a summary, as switching to CCR does
+- Offer Codex in `/provider`. A switch forks the conversation with a summary, as
+  switching to CCR does
 - Give Claude-only features such as `/tree`, background tasks and plugins a clear "not on
   Codex" reply, and list what stays behind, as [`site/src/content/docs/guides/providers.md`](site/src/content/docs/guides/providers.md) does for CCR
 

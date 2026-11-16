@@ -11,7 +11,7 @@ under the [MIT license](https://github.com/gitaarik/telecoder/blob/main/LICENSE)
 
 TeleCoder began as a fork of [Claudegram](https://github.com/NachoSEO/claudegram) by
 [Nacho Mascort](https://github.com/NachoSEO), whose last commit was in March 2026. Since
-April 2026 it has been developed separately: threads, forks, PTY mode, multiple bots,
+April 2026 it has been developed separately: threads, forks, the pty behind every chat, multiple bots,
 sharing and most of what's in the [Features](guides/features.md) list came after.
 Claudegram's copyright notice stays in the license.
 

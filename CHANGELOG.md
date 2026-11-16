@@ -37,7 +37,7 @@ reasoning — the commit bodies are the long form, this is the index.
   default; the last-prompts and `claude --resume` lines stay opt-in.
 
 - **`/status` shows what a Telegram user acts on**: bot, project, topic,
-  effort, model, provider, transport, context, cost and last activity. The
+  effort, model, provider, context, cost and last activity. The
   session id is one tap away under `/statusline`'s "Show session", and the
   bot's uptime is `/botstatus`'s. Created, Working Directory and Uptime are
   gone from it.
