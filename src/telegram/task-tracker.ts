@@ -26,6 +26,13 @@ export interface TaskState {
   taskType?: string;
   workflowName?: string;
   toolUseId?: string;
+  /**
+   * Claude's own id for the task (the `bkvx2hlkb` in "moved to the background
+   * (ID: bkvx2hlkb)"). TaskStop names a task by this id and nothing else, so
+   * without it a stopped task could not be found. Known once the launching
+   * call has returned; a relay-armed task has none until then.
+   */
+  claudeTaskId?: string;
   status: TaskStatus;
   isBackgrounded: boolean;
   skipTranscript: boolean;
@@ -182,6 +189,20 @@ class TaskTracker {
     if (!task) return;
     task.lastActivityAt = at;
     pushUpdate(task, text, at);
+  }
+
+  /** Record claude's own id for a task, once the launching call has returned it. */
+  setClaudeTaskId(sessionKey: string, taskId: string, claudeTaskId: string): void {
+    const task = this.sessionTasks.get(sessionKey)?.get(taskId);
+    if (task) task.claudeTaskId = claudeTaskId;
+  }
+
+  /** The task claude knows by `claudeTaskId`, if its launching call reported it. */
+  findByClaudeTaskId(sessionKey: string, claudeTaskId: string): TaskState | undefined {
+    const tasks = this.sessionTasks.get(sessionKey);
+    if (!tasks) return undefined;
+    for (const task of tasks.values()) if (task.claudeTaskId === claudeTaskId) return task;
+    return undefined;
   }
 
   getTask(sessionKey: string, taskId: string): TaskState | undefined {

@@ -30,7 +30,7 @@ import {
 // Side-effect import: registers /mcp/* IPC handlers that bridge the standalone
 // MCP subprocess back to bot-side state (Telegram API, session topic, …).
 import './mcp-bridge.js';
-import { onAsyncToolArmed, markTurnStart, markTurnEnd, markSelfTurnInterrupted, teardown as teardownMonitorRelay, relayPushNotification, classifyAsyncTool, movedToBackground, type AsyncToolKind } from './monitor-relay.js';
+import { onAsyncToolArmed, markTurnStart, markTurnEnd, markSelfTurnInterrupted, teardown as teardownMonitorRelay, relayPushNotification, classifyAsyncTool, movedToBackground, noteClaudeTaskId, onTaskStopped, type AsyncToolKind } from './monitor-relay.js';
 import { relayUpdateBanner, scrapeUpdateBanner } from './update-banner-relay.js';
 import { gateToolCall, isPermissionGateEnabled, ALLOW_MARKER, DENY_MARKER_START, DENY_MARKER_END } from './permission-gate.js';
 import { sanitizeError } from '../utils/sanitize.js';
@@ -2583,15 +2583,32 @@ registerIpcHandler('/hook/postToolUse', (turn, body) => {
   const toolInput = (body.tool_input ?? {}) as Record<string, unknown>;
   const toolUseId = String(body.tool_use_id ?? '');
 
-  turn.onToolEnd?.();
-  fireAndForget('onToolEnd', () => turn.options.onToolEnd?.());
-
+  // Task bookkeeping first: it holds in a turn claude started itself too,
+  // where the rest of this hook has no UI to drive.
+  //
   // A Bash call that ran into claude's foreground cap carries on in the
   // background. Track it from here, dated from when it actually started.
-  if (movedToBackground(toolName, toolInput, body.tool_response)) {
+  if (!turn.selfStarted && movedToBackground(toolName, toolInput, body.tool_response)) {
     const ranForMs = Number((body.tool_response as { timedOutAfterMs?: unknown }).timedOutAfterMs) || 0;
     armAsyncTool(turn, 'bash_background', toolInput, body.tool_use_id, Date.now() - ranForMs);
   }
+  // A backgrounded Bash call's response carries claude's own id for the task,
+  // which is what a later TaskStop names it by.
+  if (toolName === 'Bash') {
+    const claudeTaskId = (body.tool_response as { backgroundTaskId?: unknown } | null | undefined)?.backgroundTaskId;
+    if (typeof claudeTaskId === 'string' && claudeTaskId && toolUseId) {
+      noteClaudeTaskId(turn.sessionKey, toolUseId, claudeTaskId);
+    }
+  }
+  // Claude stopped a task: no task-notification follows, so retire it here.
+  if (toolName === 'TaskStop') {
+    const claudeTaskId = String(toolInput.task_id ?? '');
+    if (claudeTaskId) onTaskStopped(turn.sessionKey, claudeTaskId);
+  }
+  if (turn.selfStarted) return { ok: true };
+
+  turn.onToolEnd?.();
+  fireAndForget('onToolEnd', () => turn.options.onToolEnd?.());
 
   if (toolName === 'Edit' || toolName === 'Write') {
     // Successful Edit/Write — surface the diff so the bot shows before/after.
@@ -2616,7 +2633,7 @@ registerIpcHandler('/hook/postToolUse', (turn, body) => {
     fireAndForget('onToolResult', () => turn.options.onToolResult?.(event));
   }
   return { ok: true };
-});
+}, { betweenTurns: true });
 
 registerIpcHandler('/hook/postToolUseFailure', (turn, body) => {
   const toolName = String(body.tool_name ?? 'unknown');

@@ -96,6 +96,8 @@ interface ArmedTask {
   kind: AsyncToolKind;
   description: string;
   startedAt: number;
+  /** See TaskState.claudeTaskId. */
+  claudeTaskId?: string;
 }
 
 interface TaskNotification {
@@ -332,6 +334,43 @@ export function onAsyncToolArmed(
   }
 
   noteTaskArmed(sessionKey, kind, description, toolUseId, startedAt);
+}
+
+/**
+ * The launching call has returned claude's own id for a backgrounded task
+ * (`backgroundTaskId` in a Bash response). Remember it: TaskStop names the
+ * task by that id, and the tool_use_id everything else is keyed by is not in
+ * its input.
+ */
+export function noteClaudeTaskId(sessionKey: string, toolUseId: string, claudeTaskId: string): void {
+  const armed = states.get(sessionKey)?.armedTasks.get(toolUseId);
+  if (armed) armed.claudeTaskId = claudeTaskId;
+  taskTracker.setClaudeTaskId(sessionKey, toolUseId, claudeTaskId);
+}
+
+/**
+ * Claude called TaskStop on a task. The task is killed, but claude writes no
+ * task-notification for a task it stopped itself, so the completion path
+ * never fires and the entry would stay "running" until the bot restarts, the
+ * footer saying so under every reply. Retire it here instead, as stopped.
+ *
+ * Returns false for a task this relay never armed (one claude started between
+ * turns, or before the last restart), which has nothing to retire.
+ */
+export function onTaskStopped(sessionKey: string, claudeTaskId: string): boolean {
+  const state = states.get(sessionKey);
+  if (!state) return false;
+  const entry = [...state.armedTasks].find(([, armed]) => armed.claudeTaskId === claudeTaskId);
+  if (!entry) return false;
+  const [toolUseId, armed] = entry;
+  state.armedTasks.delete(toolUseId);
+  taskTracker.remove(sessionKey, toolUseId);
+  noteTaskFinished(
+    sessionKey,
+    toolUseId,
+    { kind: armed.kind, description: armed.description, status: 'stopped', elapsedMs: Date.now() - armed.startedAt },
+  );
+  return true;
 }
 
 export function markTurnStart(sessionKey: string): void {

@@ -23,6 +23,12 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Fixed
 
+- **A background task claude stopped no longer shows as running forever.**
+  Claude writes no task-notification for a task it ends with TaskStop, and
+  that notification was the only thing that retired a task, so "🔄 Running in
+  background" stayed under every later reply until the bot restarted, and the
+  idle restart waited for it. A Bash call's response now records claude's own
+  id for the task, and TaskStop on that id retires it as stopped.
 - **`TTS_ENABLED=false` turns spoken replies off.** The setting was read
   but never checked, so a chat with `/tts` on kept getting voice replies.
   Now it stops them for every chat, `/tts` says they're off, and the

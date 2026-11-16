@@ -7,6 +7,10 @@
  *  - A Bash call that runs into claude's 10-minute foreground cap is moved to
  *    the background rather than killed. PreToolUse saw a plain call, so it was
  *    never counted while it ran on.
+ *  - A task claude stopped with TaskStop gets no task-notification, so the
+ *    completion path never ran and the entry stayed "running" until the next
+ *    bot restart, under every reply's footer. Seen 2026-11-15 on a call moved
+ *    to the background at the cap and stopped fourteen seconds later.
  *  - A claude that went down on its own (a crash, an OOM kill) never passed
  *    through _cleanupSession, so its tasks counted as running for good: the
  *    respawn reports them stopped by task id, and the relay knows them only by
@@ -115,15 +119,21 @@ function armBackgroundTask(toolUseId: string): void {
 }
 
 /** Deliver a PostToolUse hook for `toolUseId` within a turn on this session. */
-function postToolUse(toolUseId: string, toolInput: Record<string, unknown>, toolResponse: unknown): void {
+function postToolUse(
+  toolUseId: string,
+  toolInput: Record<string, unknown>,
+  toolResponse: unknown,
+  toolName = 'Bash',
+  turn: Record<string, unknown> = { sessionKey: KEY, options: {} },
+): void {
   const handler = fake.hooks.get('/hook/postToolUse');
   if (!handler) throw new Error('the provider registered no /hook/postToolUse handler');
   handler(
-    { sessionKey: KEY, options: {} },
+    turn,
     {
       session_id: SESSION_ID,
       hook_event_name: 'PostToolUse',
-      tool_name: 'Bash',
+      tool_name: toolName,
       tool_input: toolInput,
       tool_response: toolResponse,
       tool_use_id: toolUseId,
@@ -210,6 +220,46 @@ describe('a Bash call claude moves to the background', () => {
       stdout: 'all 42 cases passed', stderr: '', interrupted: false, isImage: false, noOutputExpected: false,
     });
     expect(taskTracker.getBackgroundedCount(KEY)).toBe(0);
+  });
+});
+
+describe('a background task claude stops', () => {
+  it('stops counting a call moved to the background once TaskStop names its id', () => {
+    seedLog();
+    postToolUse('toolu_13', SMOKE_TEST, MOVED_TO_BACKGROUND);
+    expect(taskTracker.getBackgroundedCount(KEY)).toBe(1);
+
+    postToolUse('toolu_14', { task_id: 'bqf7xbwkd' }, { message: 'Successfully stopped task: bqf7xbwkd' }, 'TaskStop');
+
+    expect(taskTracker.getBackgroundedCount(KEY)).toBe(0);
+    expect(_inspectCard(KEY)?.text).toContain('Backgrounded stopped: Run the full smoke test before the release (10m 0s)');
+  });
+
+  it('stops counting a run_in_background call, whose id arrives when the call returns', () => {
+    armBackgroundTask('toolu_15');
+    postToolUse('toolu_15', { command: 'npm test', run_in_background: true }, {
+      stdout: '', stderr: '', interrupted: false, isImage: false, noOutputExpected: false, backgroundTaskId: 'b7zz1',
+    });
+    expect(taskTracker.getBackgroundedCount(KEY)).toBe(1);
+
+    postToolUse('toolu_16', { task_id: 'b7zz1' }, { message: 'Successfully stopped task: b7zz1' }, 'TaskStop');
+    expect(taskTracker.getBackgroundedCount(KEY)).toBe(0);
+  });
+
+  it('retires a task stopped in a turn claude started itself, where the hook has no turn UI', () => {
+    seedLog();
+    postToolUse('toolu_17', SMOKE_TEST, MOVED_TO_BACKGROUND);
+
+    postToolUse('toolu_18', { task_id: 'bqf7xbwkd' }, {}, 'TaskStop', { sessionKey: KEY, options: {}, selfStarted: true });
+    expect(taskTracker.getBackgroundedCount(KEY)).toBe(0);
+  });
+
+  it('leaves the count alone for a TaskStop on a task it never armed', () => {
+    seedLog();
+    postToolUse('toolu_19', SMOKE_TEST, MOVED_TO_BACKGROUND);
+
+    postToolUse('toolu_20', { task_id: 'someone-elses' }, {}, 'TaskStop');
+    expect(taskTracker.getBackgroundedCount(KEY)).toBe(1);
   });
 });
 
