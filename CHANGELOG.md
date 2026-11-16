@@ -198,6 +198,12 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Fixed
 
+- **`/teleport` forks the session, as it said it did.** Its message promised
+  that Telegram and the terminal could each carry on, but the command it gave
+  was a plain `claude --resume`, which reopens the same session the chat's own
+  Claude Code still has open, with both of them writing to one log. It now
+  adds `--fork-session`: the terminal gets the conversation under a new id.
+
 - **The 🍴 Fork button is under the reply, every time.** A turn that asked a
   question and had nothing to add after the answer put the button on the
   "✅ Done" bubble above the question, where it read as a stray button rather

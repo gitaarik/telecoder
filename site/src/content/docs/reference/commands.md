@@ -29,7 +29,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/schedule <when> <prompt>` | Schedule a recurring prompt in this thread: `every 5m`, `daily 9am`, `weekdays 9:30am`, `mon,fri 17:00` or raw cron, with `--max-runs N` (default 50) and `--label "..."`. At least a minute apart, 10 per thread |
 | `/schedules` | List the scheduled prompts for this thread, including disabled ones |
 | `/unschedule <id>` | Remove a scheduled task by id |
-| `/teleport` | The `claude --resume` command to carry on this session in a terminal — admin-only |
+| `/teleport` | The `claude --resume … --fork-session` command to carry on this session in a terminal, while the chat keeps the original — admin-only |
 
 ## Agent controls
 | Command | Description |

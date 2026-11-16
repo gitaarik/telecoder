@@ -80,7 +80,7 @@ describe('/clear', () => {
 });
 
 describe('/teleport', () => {
-  it('puts the command in a pre block, quotes and all', async () => {
+  it('puts a forking resume command in a pre block, quotes and all', async () => {
     state.session = {
       workingDirectory: '/work/my app',
       conversationId: 'c1',
@@ -93,7 +93,7 @@ describe('/teleport', () => {
     expect(spans(text, opts)).toEqual(expect.arrayContaining([
       ['code', 'my app'],
       ['code', 'abcdef12...'],
-      ['pre', expect.stringMatching(/^cd "\/work\/my app" && .+ --resume abcdef12-3456$/)],
+      ['pre', expect.stringMatching(/^cd "\/work\/my app" && .+ --resume abcdef12-3456 --fork-session$/)],
     ]));
   });
 });

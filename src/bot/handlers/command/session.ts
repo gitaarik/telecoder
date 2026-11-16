@@ -374,7 +374,10 @@ export async function handleTeleport(ctx: Context): Promise<void> {
 
   const projectName = path.basename(session.workingDirectory);
   const claudeBin = config.CLAUDE_EXECUTABLE_PATH ?? 'claude';
-  const command = `cd "${session.workingDirectory}" && ${claudeBin} --resume ${session.claudeSessionId}`;
+  // --fork-session: the chat's own claude still has this session open, and a
+  // plain --resume would have two processes appending to one log. The fork
+  // starts with the whole conversation under an id of its own.
+  const command = `cd "${session.workingDirectory}" && ${claudeBin} --resume ${session.claudeSessionId} --fork-session`;
 
   const message = new EntityText()
     .add('🚀 ').bold('Teleport to Terminal')
@@ -383,7 +386,7 @@ export async function handleTeleport(ctx: Context): Promise<void> {
     .add('\n\nCopy and run in your terminal:\n\n')
     .pre(command)
     .add('\n\n')
-    .italic('Both Telegram and terminal can continue independently (forked session).')
+    .italic('The terminal gets a copy of the conversation as a new session, so this chat and the terminal can each carry on.')
     .build();
 
   await replyFormatted(ctx, message);

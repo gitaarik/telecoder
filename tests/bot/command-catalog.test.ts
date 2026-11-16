@@ -19,7 +19,7 @@ const menu: CommandMenuEntry[] = [
   { command: 'users', description: '👥 Show who can use this bot' },
   { command: 'mode', description: '🔐 How much Claude asks before acting' },
   { command: 'model', description: '🤖 Switch AI model' },
-  { command: 'teleport', description: '🚀 Move session to terminal' },
+  { command: 'teleport', description: '🚀 Continue this session in a terminal' },
   { command: 'topic', description: '💬 Set the conversation topic' },
   { command: 'commands', description: '📜 List all commands' },
 ];
