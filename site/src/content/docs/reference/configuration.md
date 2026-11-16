@@ -54,6 +54,7 @@ See [Sharing a bot](../guides/sharing.md) for how the pieces fit together.
 | `MEMORY_GUARD_REAP_IDLE_MS` | `300000` | The shorter idle window the memory guard reaps with when memory is tight (5 min). A chat reaped this way resumes from its transcript on its next message |
 | `PROMPT_SUGGESTIONS_DEFAULT` | `false` | Predicted next-prompt buttons for chats that haven't used `/suggestions` |
 | `STATUS_LINE_DEFAULT` | `true` | The status line that closes every reply, with its topic line, for chats that haven't used `/statusline`. Its last-prompts and `claude --resume` lines stay opt-in |
+| `FULL_TOOL_INPUTS` | — | Show a tool's full input in the live status message (the whole Bash command, the full path or URL) instead of a shortened one, whatever the `/verbosity` tier; unset, the tier decides, and turns it on from verbose up. Was `TERMINAL_UI_VERBOSE`, which still works |
 | `QUESTION_TIMEOUT_MINUTES` | `10` | How long a question from Claude (buttons, polls, relayed dialogs) waits before the turn carries on without an answer and the question closes |
 
 ## Group chats

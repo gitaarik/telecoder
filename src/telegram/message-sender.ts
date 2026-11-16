@@ -579,7 +579,7 @@ export class MessageSender {
     }
 
     const { chatId } = parseSessionKey(sessionKey);
-    const verbose = resolveVerbosityFlags(chatId).terminalUiVerbose;
+    const verbose = resolveVerbosityFlags(chatId).fullToolInputs;
     if (toolName === 'Bash') {
       // Show the full command in a block beneath the header (capped per the
       // verbose flag) instead of just its first line on the `→` row — a leading

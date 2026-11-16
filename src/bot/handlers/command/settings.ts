@@ -502,7 +502,7 @@ export async function handleStatusLineCallback(ctx: Context): Promise<void> {
 // Pick a verbosity tier (quiet | normal | verbose | debug) for this chat.
 // The tier sets defaults for rendering flags (usage footer, compaction
 // notice, completion ping, untruncated tool inputs). Explicit env vars
-// (CONTEXT_SHOW_USAGE, CONTEXT_NOTIFY_COMPACTION, TERMINAL_UI_VERBOSE)
+// (CONTEXT_SHOW_USAGE, CONTEXT_NOTIFY_COMPACTION, FULL_TOOL_INPUTS)
 // still win over the tier. "Default" clears the chat-specific pref so the
 // env-level VERBOSITY_DEFAULT applies.
 

@@ -18,7 +18,7 @@ import { isMainThread, parentPort } from 'worker_threads';
 import { createBot } from './bot/bot.js';
 import { resumeThreadsSetup } from './telegram/threads-setup.js';
 import { armReminders } from './bot/middleware/queued-messages.js';
-import { config, BOT_ID } from './config.js';
+import { config, BOT_ID, RENAMED_SETTINGS } from './config.js';
 import { preventSleep, allowSleep } from './utils/caffeinate.js';
 import { stopCleanup } from './telegram/deduplication.js';
 import { sessionHistory } from './claude/session-history.js';
@@ -102,6 +102,12 @@ for (const { name, stale, note } of REMOVED_SETTINGS) {
   if (value !== undefined && value !== '' && stale(value)) {
     console.warn(`[Env] ${name} is set, but ${note} The setting can go from .env.`);
   }
+}
+// Settings that took a new name still work under the old one; say so once.
+for (const [old, now] of Object.entries(RENAMED_SETTINGS)) {
+  if (!process.env[old]) continue;
+  const ignored = process.env[now] ? `, and ${now} is set too, so ${old} is ignored` : '';
+  console.warn(`[Env] ${old} is now called ${now}${ignored}. Rename it in .env.`);
 }
 
 // Log unhandled rejections — prevents silent failures where the process stays

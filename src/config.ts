@@ -269,9 +269,10 @@ const envSchema = z.object({
     .string()
     .default('true')
     .transform((val) => val.toLowerCase() === 'true'),
-  // Status-line verbose: show full commands/paths without truncation and longer session previews.
-  // When set, overrides the verbosity tier.
-  TERMINAL_UI_VERBOSE: z
+  // Show a tool's full input — the whole Bash command, the full path or URL —
+  // in the live status message instead of a shortened one. When set, overrides
+  // the verbosity tier, which turns it on from verbose up. Was TERMINAL_UI_VERBOSE.
+  FULL_TOOL_INPUTS: z
     .string()
     .default('false')
     .transform((val) => val.toLowerCase() === 'true'),
@@ -399,10 +400,29 @@ function failConfig(problems: ConfigProblem[]): never {
   exitForConfigError();
 }
 
-const parsed = envSchema.safeParse(process.env);
+/**
+ * Settings that took a new name, old → new. The old name keeps working, read
+ * only when the new one isn't set, and index.ts says once at startup to rename
+ * it in the .env.
+ */
+export const RENAMED_SETTINGS: Readonly<Record<string, string>> = {
+  TERMINAL_UI_VERBOSE: 'FULL_TOOL_INPUTS',
+};
+
+/** `env` with each renamed setting's old value under its new name, unless the new one is set. */
+export function withRenamedSettings(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out = { ...env };
+  for (const [old, now] of Object.entries(RENAMED_SETTINGS)) {
+    if (!out[now] && out[old]) out[now] = out[old];
+  }
+  return out;
+}
+
+const env = withRenamedSettings(process.env);
+const parsed = envSchema.safeParse(env);
 
 if (!parsed.success) {
-  failConfig(problemsFromIssues(parsed.error.issues, process.env));
+  failConfig(problemsFromIssues(parsed.error.issues, env));
 }
 
 /**
@@ -462,14 +482,14 @@ export type Config = typeof config;
 // honor the env value or fall back to the per-tier default; the startup name
 // sync only renames the bot when BOT_NAME was asked for.
 function isEnvSet(key: string): boolean {
-  const raw = process.env[key];
+  const raw = env[key];
   return raw !== undefined && raw !== '';
 }
 
 export const explicitFlags = {
   CONTEXT_SHOW_USAGE: isEnvSet('CONTEXT_SHOW_USAGE'),
   CONTEXT_NOTIFY_COMPACTION: isEnvSet('CONTEXT_NOTIFY_COMPACTION'),
-  TERMINAL_UI_VERBOSE: isEnvSet('TERMINAL_UI_VERBOSE'),
+  FULL_TOOL_INPUTS: isEnvSet('FULL_TOOL_INPUTS'),
   BOT_NAME: isEnvSet('BOT_NAME'),
 } as const;
 

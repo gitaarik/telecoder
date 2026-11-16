@@ -18,7 +18,7 @@ vi.mock('../../src/utils/verbosity.js', async (importOriginal) => ({
   resolveVerbosityFlags: () => ({
     showUsageFooter: true,
     notifyCompaction: true,
-    terminalUiVerbose: false,
+    fullToolInputs: false,
     sendCompletionPing: true,
     showToolResults: false,
     toolResultMaxLines: 20,

@@ -31,6 +31,13 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Changed
 
+- **`TERMINAL_UI_VERBOSE` is now `FULL_TOOL_INPUTS`.** The old name dates from
+  `/terminalui`, which is gone; what the setting still does is show a tool's
+  full input (the whole Bash command, the full path) in the live status
+  message. The old name keeps working, and a startup line says to rename it.
+  `.env.example` no longer claims it lengthens session-restore previews, which
+  it hasn't done for a while.
+
 - **`/ping` is `/botstatus` now.** Claudegram's `/ping` answered "🏓 Pong!" and
   an uptime, which `/botstatus` already shows next to the version, memory and
   Claude processes, and both answer mid-turn. `/ping` still works, as an alias,

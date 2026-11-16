@@ -56,7 +56,7 @@ export interface VerbosityFlags {
   /** Send the "⚠️ Context Compacted" and "🔄 New Agent Session" notices. */
   notifyCompaction: boolean;
   /** Render full untruncated tool inputs (paths, commands) in the status bubble. */
-  terminalUiVerbose: boolean;
+  fullToolInputs: boolean;
   /** Send the "✅ Done (1m 12s)" ping after long streaming tasks. */
   sendCompletionPing: boolean;
   /** Post a truncated preview of every tool's result (bash output, file content, ...). */
@@ -79,7 +79,7 @@ function defaultsForLevel(level: VerbosityLevel): VerbosityFlags {
       return {
         showUsageFooter: false,
         notifyCompaction: true,
-        terminalUiVerbose: false,
+        fullToolInputs: false,
         sendCompletionPing: false,
         showToolResults: false,
         toolResultMaxLines: 0,
@@ -92,7 +92,7 @@ function defaultsForLevel(level: VerbosityLevel): VerbosityFlags {
       return {
         showUsageFooter: false,
         notifyCompaction: true,
-        terminalUiVerbose: false,
+        fullToolInputs: false,
         sendCompletionPing: true,
         showToolResults: false,
         toolResultMaxLines: 0,
@@ -105,7 +105,7 @@ function defaultsForLevel(level: VerbosityLevel): VerbosityFlags {
       return {
         showUsageFooter: true,
         notifyCompaction: true,
-        terminalUiVerbose: true,
+        fullToolInputs: true,
         sendCompletionPing: true,
         showToolResults: true,
         toolResultMaxLines: 20,
@@ -118,7 +118,7 @@ function defaultsForLevel(level: VerbosityLevel): VerbosityFlags {
       return {
         showUsageFooter: true,
         notifyCompaction: true,
-        terminalUiVerbose: true,
+        fullToolInputs: true,
         sendCompletionPing: true,
         showToolResults: true,
         toolResultMaxLines: 40,
@@ -147,7 +147,7 @@ export function resolveVerbosityFlags(chatId: number): VerbosityFlags {
   return {
     showUsageFooter: explicitFlags.CONTEXT_SHOW_USAGE ? config.CONTEXT_SHOW_USAGE : tier.showUsageFooter,
     notifyCompaction: explicitFlags.CONTEXT_NOTIFY_COMPACTION ? config.CONTEXT_NOTIFY_COMPACTION : tier.notifyCompaction,
-    terminalUiVerbose: explicitFlags.TERMINAL_UI_VERBOSE ? config.TERMINAL_UI_VERBOSE : tier.terminalUiVerbose,
+    fullToolInputs: explicitFlags.FULL_TOOL_INPUTS ? config.FULL_TOOL_INPUTS : tier.fullToolInputs,
     sendCompletionPing: tier.sendCompletionPing,
     showToolResults: tier.showToolResults,
     toolResultMaxLines: tier.toolResultMaxLines,
