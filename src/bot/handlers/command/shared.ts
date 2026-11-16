@@ -19,7 +19,6 @@ import {
 import { EntityText, type EntityMessage } from '../../../telegram/entities.js';
 import { replyMarkdown } from '../../../telegram/send.js';
 import { fitsOnButton } from '../../../telegram/button-text.js';
-import { getPtyProvider } from '../../../providers/claude-provider.js';
 import { getSessionKeyFromCtx, parseSessionKey, type SettingsScope } from '../../../utils/session-key.js';
 import { formatTimeAgo } from '../../../utils/format.js';
 import { PACKAGE_ROOT } from '../../../utils/install-mode.js';
@@ -237,28 +236,6 @@ export function withBackToPrevious(
       },
     },
   };
-}
-
-/**
- * Settings that are read at PTY spawn time only take effect on a fresh spawn.
- * Clearing the conversation makes the next message respawn with the new value,
- * keeping the conversation itself intact.
- */
-export function restartPtyForSettingChange(sessionKey: string): boolean {
-  if (!needsPtyRestart(sessionKey)) return false;
-  getPtyProvider().clearConversation(sessionKey);
-  return true;
-}
-
-/**
- * Whether a spawn-time setting change would need a pty restart here —
- * the same test restartPtyForSettingChange makes, without doing it. For
- * rebuilding a confirmation whose restart already happened.
- */
-export function needsPtyRestart(_scope: SettingsScope): boolean {
-  // Every chat runs in a pty, on Claude and on CCR alike. Kept as the one
-  // test its callers ask, for the day a provider without a pty returns.
-  return true;
 }
 
 /** Note appended when a pty restart is pending. */

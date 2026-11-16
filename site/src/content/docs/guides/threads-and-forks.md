@@ -31,6 +31,34 @@ type yourself is never overwritten. Group topics keep the names you give them.
 The topic comes from a quick Haiku call on each message. Turn that off with
 `AUTO_TOPIC_HAIKU=false`, or set the topic yourself with `/topic`.
 
+## Model and effort
+
+`/model` and `/effort` reach as far as you ask. Picking from the menu, or a bare
+`/model opus`, sets the thread you're in. A word at the end reaches further:
+
+| Command | Sets |
+|---|---|
+| `/model opus` | This thread only |
+| `/model opus new` | This thread and every new thread in this chat. Threads that picked their own keep it. |
+| `/model opus chat` | Every thread in this chat, including ones that picked their own |
+| `/model opus all` | Every chat and thread on every bot (admins only) |
+
+The confirmation has buttons for each wider level, so you can try a model in one thread
+and then tap **All threads here** or **Everywhere** to keep it. `/effort` works the same
+way: `/effort high new`.
+
+A wider level clears the narrower choices under it. After `/model opus all` every thread
+is on Opus, whatever it or its forks picked before. Forks and spinoffs carry over a model
+picked in their thread, and otherwise follow the chat's.
+
+Typing `/model` in the **All** view sets the default for new threads. Telegram opens a new
+thread for anything typed there, and the confirmation offers to delete it again.
+
+Threads with a conversation open switch on their next message, keeping the conversation.
+A thread in the middle of a reply finishes it on the old model and switches afterwards.
+`/model` with no argument and `/status` say where the current model comes from: this
+thread, the chat's default, the default everywhere, or Claude Code's own default.
+
 ## Forks
 
 A fork copies the conversation up to some point into a new session. The original carries

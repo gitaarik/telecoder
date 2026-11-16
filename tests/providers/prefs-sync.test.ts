@@ -15,35 +15,18 @@ vi.mock('../../src/utils/instances.js', () => ({
   listSiblingBots: () => [{ name: 'TeleCoder 2', botId: '2' }],
 }));
 
-// The receiving half of a fleet-wide /model or /effort. Everything it touches
-// is mocked: the point is which calls it makes, and which it declines to.
-const setModel = vi.fn();
-const clearModel = vi.fn();
-const setEffort = vi.fn();
-const clearEffort = vi.fn();
+// The receiving half of a fleet-wide /model or /effort. What it touches is
+// mocked: the point is which level it applies at, and when it declines.
+const applySpawnSetting = vi.fn();
 const getActiveProviderName = vi.fn();
-const listSessionKeysForChat = vi.fn();
-const clearConversation = vi.fn();
-const isInFlight = vi.fn();
 
 vi.mock('../../src/providers/provider-router.js', () => ({
-  setModel: (...a: unknown[]) => setModel(...a),
-  clearModel: (...a: unknown[]) => clearModel(...a),
-  setEffort: (...a: unknown[]) => setEffort(...a),
-  clearEffort: (...a: unknown[]) => clearEffort(...a),
   getActiveProviderName: (...a: unknown[]) => getActiveProviderName(...a),
   isValidEffortLevel: (l: string) => ['low', 'medium', 'high', 'xhigh', 'max'].includes(l),
 }));
 
-vi.mock('../../src/providers/claude-provider.js', () => ({
-  getPtyProvider: () => ({
-    listSessionKeysForChat: (...a: unknown[]) => listSessionKeysForChat(...a),
-    clearConversation: (...a: unknown[]) => clearConversation(...a),
-  }),
-}));
-
-vi.mock('../../src/claude/in-flight-tracker.js', () => ({
-  isInFlight: (...a: unknown[]) => isInFlight(...a),
+vi.mock('../../src/providers/spawn-settings.js', () => ({
+  applySpawnSetting: (...a: unknown[]) => applySpawnSetting(...a),
 }));
 
 import {
@@ -55,37 +38,40 @@ import {
 } from '../../src/providers/prefs-sync.js';
 
 function change(over: Partial<PrefsChange> = {}): PrefsChange {
-  return { chatId: 42, setting: 'model', value: 'sonnet', provider: 'claude', ...over };
+  return { chatId: 42, setting: 'model', value: 'sonnet', provider: 'claude', level: 'all', ...over };
 }
 
 describe('applyPrefsChange', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getActiveProviderName.mockReturnValue('claude');
-    listSessionKeysForChat.mockReturnValue([]);
-    isInFlight.mockReturnValue(false);
+    applySpawnSetting.mockReturnValue({ dropped: [], restarted: [], busy: [] });
   });
 
-  it('applies a model change', () => {
+  it('applies a model change at the level it was made', () => {
     const outcome = applyPrefsChange(change());
 
     expect(outcome.status).toBe('applied');
-    expect(setModel).toHaveBeenCalledWith(42, 'sonnet');
+    expect(applySpawnSetting).toHaveBeenCalledWith(42, 'model', 'sonnet', 'all');
   });
 
   it('applies an effort change', () => {
     const outcome = applyPrefsChange(change({ setting: 'effort', value: 'high' }));
 
     expect(outcome.status).toBe('applied');
-    expect(setEffort).toHaveBeenCalledWith(42, 'high');
+    expect(applySpawnSetting).toHaveBeenCalledWith(42, 'effort', 'high', 'all');
   });
 
-  it('clears the setting when the value is null', () => {
+  it('passes a null value through as the CLI default', () => {
     applyPrefsChange(change({ setting: 'effort', value: null }));
-    applyPrefsChange(change({ setting: 'model', value: null }));
 
-    expect(clearEffort).toHaveBeenCalledWith(42);
-    expect(clearModel).toHaveBeenCalledWith(42);
+    expect(applySpawnSetting).toHaveBeenCalledWith(42, 'effort', null, 'all');
+  });
+
+  it('reads a change from an older worker, which has no level, as chat-wide', () => {
+    applyPrefsChange(change({ level: undefined }));
+
+    expect(applySpawnSetting).toHaveBeenCalledWith(42, 'model', 'sonnet', 'chat');
   });
 
   it('declines a change made against a different backend', () => {
@@ -97,38 +83,20 @@ describe('applyPrefsChange', () => {
     // would point this bot at a model it can't serve.
     expect(outcome.status).toBe('skipped');
     expect(outcome.reason).toContain('ccr');
-    expect(setModel).not.toHaveBeenCalled();
+    expect(applySpawnSetting).not.toHaveBeenCalled();
   });
 
   it('declines an effort level it does not recognise', () => {
     const outcome = applyPrefsChange(change({ setting: 'effort', value: 'turbo' }));
 
     expect(outcome.status).toBe('skipped');
-    expect(setEffort).not.toHaveBeenCalled();
+    expect(applySpawnSetting).not.toHaveBeenCalled();
   });
 
+  it('reports the sessions that switch when their turn ends', () => {
+    applySpawnSetting.mockReturnValue({ dropped: [], restarted: ['42'], busy: ['42:7'] });
 
-  it('restarts every pty session for the chat, forum topics included', () => {
-    listSessionKeysForChat.mockReturnValue(['42', '42:7']);
-
-    const outcome = applyPrefsChange(change());
-
-    expect(clearConversation).toHaveBeenCalledWith('42');
-    expect(clearConversation).toHaveBeenCalledWith('42:7');
-    expect(outcome.busy).toBe(0);
-  });
-
-  it('does not kill a session that is mid-turn, and reports it', () => {
-    listSessionKeysForChat.mockReturnValue(['42', '42:7']);
-    isInFlight.mockImplementation((key: string) => key === '42:7');
-
-    const outcome = applyPrefsChange(change());
-
-    // Nobody is watching this bot — aborting its turn to pick up a setting
-    // chosen in another chat is not a trade worth making.
-    expect(clearConversation).toHaveBeenCalledWith('42');
-    expect(clearConversation).not.toHaveBeenCalledWith('42:7');
-    expect(outcome.busy).toBe(1);
+    expect(applyPrefsChange(change()).busy).toBe(1);
   });
 });
 
@@ -222,8 +190,7 @@ describe('initPrefsSync', () => {
     isMainThread = false;
     parentPort.removeAllListeners();
     getActiveProviderName.mockReturnValue('claude');
-    listSessionKeysForChat.mockReturnValue([]);
-    isInFlight.mockReturnValue(false);
+    applySpawnSetting.mockReturnValue({ dropped: [], restarted: [], busy: [] });
   });
 
   afterEach(() => parentPort.removeAllListeners());
@@ -233,7 +200,7 @@ describe('initPrefsSync', () => {
 
     parentPort.emit('message', { type: 'prefs_apply', requestId: 'r1', change: change() });
 
-    expect(setModel).toHaveBeenCalledWith(42, 'sonnet');
+    expect(applySpawnSetting).toHaveBeenCalledWith(42, 'model', 'sonnet', 'all');
     expect(parentPort.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'prefs_apply_result', requestId: 'r1', status: 'applied' }),
     );
@@ -251,7 +218,7 @@ describe('initPrefsSync', () => {
   });
 
   it('answers rather than throwing when applying fails', () => {
-    setModel.mockImplementation(() => { throw new Error('disk full'); });
+    applySpawnSetting.mockImplementation(() => { throw new Error('disk full'); });
     initPrefsSync();
 
     parentPort.emit('message', { type: 'prefs_apply', requestId: 'r1', change: change() });
@@ -269,7 +236,7 @@ describe('initPrefsSync', () => {
     parentPort.emit('message', { type: 'prefs_apply', requestId: 'r1' });
     parentPort.emit('message', { type: 'prefs_apply', change: change() });
 
-    expect(setModel).not.toHaveBeenCalled();
+    expect(applySpawnSetting).not.toHaveBeenCalled();
     expect(parentPort.postMessage).not.toHaveBeenCalled();
   });
 

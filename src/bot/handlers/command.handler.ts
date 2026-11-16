@@ -22,6 +22,7 @@ import { buildCommandSearchMessage, searchCommands } from '../command-catalog.js
 import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
 import { replyMd, getEffortLabel, effortLevelLabel, withBackToPrevious } from './command/shared.js';
 import { getSessionTopic } from './command/topic.js';
+import { describeSource } from './command/prefs-scope.js';
 import { describeRole } from './command/access.js';
 import { requireActiveSession } from './session-guard.js';
 
@@ -101,7 +102,7 @@ export {
   handleProviderCallback,
   handleProviderSwitchCallback,
 } from './command/model.js';
-export { handlePrefsAllCallback } from './command/prefs-scope.js';
+export { handlePrefsScopeCallback } from './command/prefs-scope.js';
 
 export function parseContextOutput(raw: string): string {
   const trimmed = raw.trim();
@@ -282,7 +283,7 @@ export async function handleStatus(ctx: Context): Promise<void> {
     if (topic) field('🏷️', 'Topic').add(topic);
     else field('🏷️', 'Topic').italic('none');
     field('🎚️', 'Effort');
-    if (chosenEffort) status.add(chosenEffort).add(' ').italic('(set with /effort)');
+    if (chosenEffort) status.add(chosenEffort).add(' ').italic(`(${describeSource(sessionKey, 'effort')} with /effort)`);
     else if (cached?.effort) status.add(effortLevelLabel(cached.effort)).add(' ').italic("(Claude Code's default)");
     else status.italic("Claude Code's default — known after the first reply");
 
@@ -293,10 +294,10 @@ export async function handleStatus(ctx: Context): Promise<void> {
       status.add(name);
       if (name !== servedModel) status.add(' ').code(servedModel);
       if (provider === 'ccr') status.add(' ').italic('(routed via CCR)');
-      else if (askedModel) status.add(' ').italic(`(set with /model ${askedModel})`);
+      else if (askedModel) status.add(' ').italic(`(${describeSource(sessionKey, 'model')} with /model ${askedModel})`);
       else status.add(' ').italic("(Claude Code's default)");
     } else if (askedModel) {
-      status.code(askedModel).add(' ').italic('(set with /model, serving from the next reply)');
+      status.code(askedModel).add(' ').italic(`(${describeSource(sessionKey, 'model')}, serving from the next reply)`);
     } else {
       status.italic("Claude Code's default — known after the first reply");
     }

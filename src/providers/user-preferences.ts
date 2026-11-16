@@ -54,6 +54,31 @@ type Field = Exclude<keyof UserPreferences, 'lastUpdated'>;
 type Value<F extends Field> = Exclude<UserPreferences[F], null>;
 type ClearableField = 'model' | 'effort' | 'verbosity' | 'permissionMode';
 
+/** The settings the CLI takes as spawn flags, which can be set at every level below. */
+export type SpawnSetting = 'model' | 'effort';
+
+/**
+ * How far a /model or /effort choice reaches, narrowest first:
+ * - `thread`: this thread only, as a pin its forks inherit.
+ * - `default`: the chat's default, which new threads and every thread without
+ *   a pin of its own follow; this thread drops its pin to follow it too.
+ * - `chat`: the chat's default, with every thread's pin in the chat dropped.
+ * - `all`: the bot's default, with every pin in every chat dropped.
+ * In a chat without threads the first three are the same entry.
+ */
+export type SettingLevel = 'thread' | 'default' | 'chat' | 'all';
+
+/** Where a scope's value for a spawn setting comes from. */
+export type SettingSource = 'thread' | 'chat' | 'bot';
+
+/**
+ * The entry every chat falls back to for a spawn setting it never chose:
+ * what `/model … all` writes. Not a chat id, so it never collides with one.
+ */
+const BOT_DEFAULT_KEY = '*';
+
+const SPAWN_SETTINGS: ReadonlySet<string> = new Set<SpawnSetting>(['model', 'effort']);
+
 const PREFS_DIR = getStateDir();
 const PREFS_FILE = path.join(PREFS_DIR, `user-preferences-${BOT_ID}.json`);
 /** The single shared file every instance wrote to before preferences were per-bot. */
@@ -63,7 +88,8 @@ const LEGACY_PREFS_FILE = path.join(PREFS_DIR, 'user-preferences.json');
  * Entries are keyed by settings scope (see SettingsScope): a chat id for the
  * chat-wide value, `chatId:threadId` for one thread's. A thread reads its own
  * entry first and the chat's after, field by field, so a thread only holds the
- * settings it changed and picks up the rest from the chat.
+ * settings it changed and picks up the rest from the chat. Model and effort
+ * fall back once more, to the bot-wide entry under BOT_DEFAULT_KEY.
  */
 class UserPreferencesManager {
   private data: Record<string, UserPreferences> = {};
@@ -97,14 +123,28 @@ class UserPreferencesManager {
     writeJsonFile(PREFS_FILE, { users: { ...this.data } }, 'UserPreferences');
   }
 
-  /** The scope's own value, else the chat's; null (an explicit default) reads as unset. */
-  private get<F extends Field>(scope: SettingsScope, field: F): Value<F> | undefined {
+  /**
+   * The entries a scope reads, in order: its own, the chat's, and for the
+   * spawn settings the bot-wide default.
+   */
+  private chain(scope: SettingsScope, field: Field): string[] {
     const key = String(scope);
-    const own = this.data[key];
-    if (own && own[field] !== undefined) return (own[field] ?? undefined) as Value<F> | undefined;
     const chatKey = String(scopeChatId(scope));
-    if (chatKey === key) return undefined;
-    return (this.data[chatKey]?.[field] ?? undefined) as Value<F> | undefined;
+    const keys = chatKey === key ? [key] : [key, chatKey];
+    if (SPAWN_SETTINGS.has(field)) keys.push(BOT_DEFAULT_KEY);
+    return keys;
+  }
+
+  /** The first entry in the chain that holds the field, null included. */
+  private holder(scope: SettingsScope, field: Field): string | undefined {
+    return this.chain(scope, field).find((k) => this.data[k]?.[field] !== undefined);
+  }
+
+  /** The nearest value along the chain; null (an explicit default) reads as unset. */
+  private get<F extends Field>(scope: SettingsScope, field: F): Value<F> | undefined {
+    const k = this.holder(scope, field);
+    if (k === undefined) return undefined;
+    return (this.data[k][field] ?? undefined) as Value<F> | undefined;
   }
 
   /** Apply a field change for `scope`, stamping `lastUpdated` and persisting. */
@@ -235,6 +275,84 @@ class UserPreferencesManager {
 
   setShowPromptInStatusLine(scope: SettingsScope, enabled: boolean): void {
     this.patch(scope, { showPromptInStatusLine: enabled });
+  }
+
+  /**
+   * Which level a scope's model or effort comes from: its own pin, the chat's
+   * default, or the bot's. Undefined when nothing chose, so the CLI's own
+   * default applies. A level that chose "the CLI default" on purpose counts.
+   */
+  sourceOf(scope: SettingsScope, field: SpawnSetting): SettingSource | undefined {
+    const k = this.holder(scope, field);
+    if (k === undefined) return undefined;
+    if (k === BOT_DEFAULT_KEY) return 'bot';
+    return k === String(scopeChatId(scope)) ? 'chat' : 'thread';
+  }
+
+  /**
+   * The threads of a chat that pin `field` to something other than `value`:
+   * the ones a `default`-level change leaves alone.
+   */
+  threadsPinnedOtherThan(chatId: number, field: SpawnSetting, value: string | null): string[] {
+    const prefix = `${chatId}:`;
+    return Object.keys(this.data).filter((k) => {
+      if (!k.startsWith(prefix)) return false;
+      const v = this.data[k][field];
+      return v !== undefined && v !== value;
+    });
+  }
+
+  /**
+   * Set a model or effort at a level (see SettingLevel). `value: null` means
+   * the CLI's own default, chosen on purpose: it is stored, so it isn't read
+   * as "whatever the wider level says". At `all` there is nothing wider, so
+   * null just clears the bot-wide entry.
+   *
+   * Returns the entries whose own, different pin was dropped to follow the
+   * new value, for the confirmation to name.
+   */
+  applyLevel(scope: SettingsScope, field: SpawnSetting, value: string | null, level: SettingLevel): string[] {
+    const key = String(scope);
+    const chatKey = String(scopeChatId(scope));
+    const inThread = key !== chatKey;
+    const now = new Date().toISOString();
+    const dropped: string[] = [];
+
+    const drop = (k: string): void => {
+      const entry = this.data[k];
+      if (!entry || entry[field] === undefined) return;
+      if (entry[field] !== value) dropped.push(k);
+      delete entry[field];
+      entry.lastUpdated = now;
+    };
+    const set = (k: string, v: string | null): void => {
+      this.data[k] = { ...this.data[k], [field]: v, lastUpdated: now };
+    };
+
+    if (level === 'all') {
+      for (const k of Object.keys(this.data)) {
+        if (k !== BOT_DEFAULT_KEY) drop(k);
+      }
+      if (value !== null) set(BOT_DEFAULT_KEY, value);
+      else if (this.data[BOT_DEFAULT_KEY]) {
+        delete this.data[BOT_DEFAULT_KEY][field];
+        this.data[BOT_DEFAULT_KEY].lastUpdated = now;
+      }
+    } else if (level === 'thread' && inThread) {
+      set(key, value);
+    } else {
+      if (level === 'chat') {
+        for (const k of Object.keys(this.data)) {
+          if (k.startsWith(`${chatKey}:`)) drop(k);
+        }
+      } else if (inThread) {
+        drop(key);
+      }
+      set(chatKey, value);
+    }
+
+    this.save();
+    return dropped;
   }
 
   /**

@@ -2104,16 +2104,16 @@
             <h3>Pick the model</h3>
             <p>Switch between Fable, Opus, Sonnet and Haiku with <code>/model</code> — including
             <code>opusplan</code>, <code>best</code> and the 1M-context variants — and set reasoning
-            effort per bot. Opus by default. While Fable is on, the live status and the status line
+            effort. Until you pick, Claude Code's own default applies. While Fable is on, the live status and the status line
             carry a 💎 so it doesn't quietly eat your plan's limits after the task you picked it for.</p>
           </div>
           <div class="feature-card" data-category="agent">
             <div class="feature-icon"><svg><use href="#i-relay"/></svg></div>
-            <h3>One bot, or all of them</h3>
-            <p><code>/model</code> and <code>/effort</code> change the bot you typed them in.
-            Add <code>all</code>, or tap the button on the confirmation, and the change is relayed
-            to every instance — which then tells you which ones took it, which are on another
-            backend, and which were mid-turn.</p>
+            <h3>One thread, or all of them</h3>
+            <p><code>/model</code> and <code>/effort</code> set the thread you typed them in.
+            Add <code>new</code>, <code>chat</code> or <code>all</code>, or tap a button on the
+            confirmation, to set new threads too, every thread in the chat, or every chat on every
+            bot — which then tells you which bots took it, and which threads switch after their reply.</p>
           </div>
           <div class="feature-card" data-category="agent">
             <div class="feature-icon"><svg><use href="#i-todo"/></svg></div>
@@ -3156,12 +3156,12 @@ CCR_AUTOSTART=true</pre>
               <span class="command-desc">Toggle routing through Claude Code Router (sticky fallback when Max runs out). <strong>Admin-only</strong> when the bot has non-admin users.</span>
             </div>
             <div class="command-row">
-              <code class="command-code">/model [all]</code>
-              <span class="command-desc">Switch AI model (provider-aware). Offers every alias Claude Code's <code>--model</code> accepts — fable, opus, sonnet, haiku, opusplan, best and the fable/opus/sonnet 1M-context variants — filtered to what your installed CLI actually supports, so an alias your binary predates never reaches a turn. Pass a full model ID instead (<code>/model claude-opus-4-8</code>) to pin an exact release; unrecognised names are forwarded to the CLI as-is with a warning. Applies to the bot you typed it in; add <code>all</code> (<code>/model sonnet all</code>) or tap the button on the confirmation to set every instance at once. Claude Code restarts on your next message to pick it up, keeping the conversation. Reports the model that actually served the last turn rather than a default. Fable, the premium tier, gets a 💎 on the live status and the status line for as long as it's on.</span>
+              <code class="command-code">/model [new|chat|all]</code>
+              <span class="command-desc">Switch AI model (provider-aware). Offers every alias Claude Code's <code>--model</code> accepts — fable, opus, sonnet, haiku, opusplan, best and the fable/opus/sonnet 1M-context variants — filtered to what your installed CLI actually supports, so an alias your binary predates never reaches a turn. Pass a full model ID instead (<code>/model claude-opus-4-8</code>) to pin an exact release; unrecognised names are forwarded to the CLI as-is with a warning. Sets the thread you're in; add <code>new</code> for this thread and new ones, <code>chat</code> for every thread in the chat, or <code>all</code> for every chat on every bot (admins), or tap the matching button on the confirmation. A wider level clears the narrower picks under it, forks' included. Typed in the All view it sets the default for new threads. Idle threads restart on their next message and busy ones when their reply ends, keeping the conversation. The picker and /status say where the current model comes from. Fable, the premium tier, gets a 💎 on the live status and the status line for as long as it's on.</span>
             </div>
             <div class="command-row">
-              <code class="command-code">/effort &lt;level&gt; [all]</code>
-              <span class="command-desc">Set reasoning effort (low/medium/high/xhigh/max/auto). Per bot, with the same <code>all</code> argument and one-tap fan-out as /model. Claude Code restarts on your next message to pick it up, keeping the conversation. The status line shows the current level's icon (🐇/⚖️/🧠/🔬/🚀) after each turn.</span>
+              <code class="command-code">/effort &lt;level&gt; [new|chat|all]</code>
+              <span class="command-desc">Set reasoning effort (low/medium/high/xhigh/max/auto), for this thread or, with the same <code>new</code>, <code>chat</code> and <code>all</code> words and buttons as /model, further. Claude Code restarts on your next message to pick it up, keeping the conversation. The status line shows the current level's icon (🐇/⚖️/🧠/🔬/🚀) after each turn.</span>
             </div>
             <div class="command-row">
               <code class="command-code">/verbosity &lt;tier&gt;</code>

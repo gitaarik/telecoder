@@ -131,8 +131,8 @@ describe('/status', () => {
     reply.mockClear();
     await handleStatus({ chat: { id: chat }, message: { text: '/status' }, reply } as unknown as Context);
     const [again] = reply.mock.calls[0]! as [string];
-    expect(again).toContain('🎚️ Effort: 🚀 Max (set with /effort)');
-    expect(again).toContain('🧠 Model: 💎 Fable 5.1 claude-fable-5-1 (set with /model fable[1m])');
+    expect(again).toContain('🎚️ Effort: 🚀 Max (set for this chat with /effort)');
+    expect(again).toContain('🧠 Model: 💎 Fable 5.1 claude-fable-5-1 (set for this chat with /model fable[1m])');
     userPreferences.clearEffort(String(chat));
     userPreferences.clearModel(String(chat));
   });

@@ -61,6 +61,29 @@ export function clearInFlight(sessionKey: string): void {
   const all = readAll();
   const filtered = all.filter((e) => e.sessionKey !== sessionKey);
   if (filtered.length !== all.length) writeAll(filtered);
+
+  const after = afterTurn.get(sessionKey);
+  if (after) {
+    afterTurn.delete(sessionKey);
+    try {
+      after();
+    } catch (err) {
+      console.warn(`[InFlight] After-turn action for ${sessionKey} failed:`, err instanceof Error ? err.message : err);
+    }
+  }
+}
+
+/** One action per session, run when its running turn ends. In memory only. */
+const afterTurn = new Map<string, () => void>();
+
+/**
+ * Run `action` once the turn now running in this session ends, before the
+ * next queued message starts: for a setting change that needs a fresh claude
+ * but shouldn't cut a turn short. A later call for the same session replaces
+ * the earlier one, which only ever restarts the same pty.
+ */
+export function runAfterTurn(sessionKey: string, action: () => void): void {
+  afterTurn.set(sessionKey, action);
 }
 
 /** Read all entries and clear the file. Used at startup to surface tasks that

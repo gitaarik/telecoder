@@ -235,3 +235,117 @@ describe('userPreferences per thread', () => {
     expect(store.getModel('42:9')).toBe('opus');
   });
 });
+
+describe('userPreferences levels', () => {
+  beforeEach(() => {
+    stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'telecoder-prefs-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(stateDir, { recursive: true, force: true });
+  });
+
+  it('pins one thread at the thread level', async () => {
+    const store = await loadStore();
+    store.applyLevel('42:7', 'model', 'fable', 'thread');
+
+    expect(store.getModel('42:7')).toBe('fable');
+    expect(store.getModel('42:8')).toBeUndefined();
+    expect(store.sourceOf('42:7', 'model')).toBe('thread');
+  });
+
+  it('sets the chat default for new threads, leaving other pins alone', async () => {
+    const store = await loadStore();
+    store.applyLevel('42:7', 'model', 'fable', 'thread');
+    store.applyLevel('42:8', 'model', 'haiku', 'thread');
+
+    const dropped = store.applyLevel('42:7', 'model', 'opus', 'default');
+
+    // The thread it was typed in follows the new default…
+    expect(store.getModel('42:7')).toBe('opus');
+    expect(store.sourceOf('42:7', 'model')).toBe('chat');
+    expect(dropped).toEqual(['42:7']);
+    // …as does a thread that doesn't exist yet, while a pinned one keeps its pin.
+    expect(store.getModel('42:99')).toBe('opus');
+    expect(store.getModel('42:8')).toBe('haiku');
+    expect(store.threadsPinnedOtherThan(42, 'model', 'opus')).toEqual(['42:8']);
+  });
+
+  it('drops every pin in the chat at the chat level, and only in that chat', async () => {
+    const store = await loadStore();
+    store.applyLevel('42:7', 'model', 'fable', 'thread');
+    store.applyLevel('42:8', 'model', 'opus', 'thread');
+    store.applyLevel('43:1', 'model', 'fable', 'thread');
+
+    const dropped = store.applyLevel('42:7', 'model', 'opus', 'chat');
+
+    expect(store.getModel('42:7')).toBe('opus');
+    expect(store.getModel('42:8')).toBe('opus');
+    // Only a pin that differed counts as brought in line.
+    expect(dropped).toEqual(['42:7']);
+    expect(store.getModel('43:1')).toBe('fable');
+  });
+
+  it('sets the bot default everywhere and drops every pin', async () => {
+    const store = await loadStore();
+    store.applyLevel('42:7', 'model', 'fable', 'thread');
+    store.applyLevel(43, 'model', 'fable', 'chat');
+
+    const dropped = store.applyLevel('42:7', 'model', 'opus', 'all');
+
+    expect(dropped.sort()).toEqual(['42:7', '43']);
+    expect(store.getModel('42:7')).toBe('opus');
+    expect(store.getModel('43:5')).toBe('opus');
+    // A chat never seen before follows it too.
+    expect(store.getModel(77)).toBe('opus');
+    expect(store.sourceOf('77:1', 'model')).toBe('bot');
+
+    // It survives a reload.
+    const reloaded = await loadStore();
+    expect(reloaded.getModel('99:1')).toBe('opus');
+  });
+
+  it('keeps the bot default to model and effort', async () => {
+    const store = await loadStore();
+    store.applyLevel(42, 'effort', 'high', 'all');
+
+    expect(store.getEffort('55:1')).toBe('high');
+    expect(store.getProvider('55:1')).toBeUndefined();
+    expect(store.getVerbosity('55:1')).toBeUndefined();
+  });
+
+  it('stores a chosen CLI default, so it is not read as the wider level', async () => {
+    const store = await loadStore();
+    store.applyLevel(42, 'effort', 'high', 'all');
+    store.applyLevel('43:1', 'effort', null, 'chat');
+
+    expect(store.getEffort('43:2')).toBeUndefined();
+    expect(store.sourceOf('43:2', 'effort')).toBe('chat');
+    expect(store.getEffort('44:1')).toBe('high');
+
+    // Everywhere back to the CLI default clears the bot-wide value.
+    store.applyLevel(42, 'effort', null, 'all');
+    expect(store.getEffort('44:1')).toBeUndefined();
+    expect(store.sourceOf('44:1', 'effort')).toBeUndefined();
+  });
+
+  it('treats every level below all as the chat in a chat without threads', async () => {
+    const store = await loadStore();
+    store.applyLevel('42', 'model', 'sonnet', 'thread');
+
+    expect(store.getModel(42)).toBe('sonnet');
+    expect(store.sourceOf('42', 'model')).toBe('chat');
+  });
+
+  it('lets a fork of an unpinned thread follow the chat', async () => {
+    const store = await loadStore();
+    store.applyLevel('42:7', 'model', 'fable', 'thread');
+    store.applyLevel('42:7', 'model', 'opus', 'chat');
+
+    store.copyScope('42:7', '42:9');
+    store.applyLevel('42:1', 'model', 'sonnet', 'default');
+
+    // The fork carried no pin over, so the later default reaches it.
+    expect(store.getModel('42:9')).toBe('sonnet');
+  });
+});

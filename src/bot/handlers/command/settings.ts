@@ -12,9 +12,7 @@ import { config } from '../../../config.js';
 import { sessionManager } from '../../../claude/session-manager.js';
 import { promptsIn } from '../../../claude/fork-tree.js';
 import {
-  setEffort,
   getEffort,
-  clearEffort,
   isValidEffortLevel,
   getActiveProviderName,
   type AgentUsage,
@@ -37,7 +35,7 @@ import {
   type VerbosityLevel,
 } from '../../../utils/verbosity.js';
 import { contextHealthColor, fmtTokens, getProgressBar } from '../../../utils/format.js';
-import { getSessionKeyFromCtx, parseSessionKey, type SettingsScope } from '../../../utils/session-key.js';
+import { getSessionKeyFromCtx, type SettingsScope } from '../../../utils/session-key.js';
 import {
   PERMISSION_MODES,
   isPermissionModeId,
@@ -51,9 +49,7 @@ import {
   parseCallback,
   getEffortLabel,
   effortLevelLabel,
-  restartPtyForSettingChange,
   EFFORT_LEVELS,
-  PTY_RESTART_NOTE,
   replyFeatureDisabled,
   buildFeatureDisabledMessage,
 } from './shared.js';
@@ -61,12 +57,14 @@ import { getSessionTopic } from './topic.js';
 import { getBgProcesses } from './tasks.js';
 import {
   parseScopeArg,
-  applyToAllBots,
-  buildApplyToAllKeyboard,
-  prefsConfirmation,
-  effortResetConfirmation,
-  hasSiblings,
+  isBareLevelWord,
+  scopeSite,
+  applyAtLevel,
+  describeSource,
+  levelHelp,
+  EVERYWHERE_ADMIN_ONLY,
 } from './prefs-scope.js';
+import { resolveLevel } from './all-view.js';
 
 const OPENAI_TTS_VOICES = [
   'alloy', 'ash', 'ballad', 'coral',
@@ -241,12 +239,12 @@ export async function handleTTSCallback(ctx: Context): Promise<void> {
 export async function handleEffort(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
-  const { chatId, sessionKey } = keyInfo;
+  const { sessionKey } = keyInfo;
 
   const text = ctx.message?.text || '';
   const parsed = parseScopeArg(text.split(' ').slice(1).join(' '));
   const args = parsed.value.toLowerCase();
-  const scope = parsed.scope;
+  const site = scopeSite(ctx);
 
   if (!args) {
     const currentEffort = getEffort(sessionKey) || 'default';
@@ -261,18 +259,12 @@ export async function handleEffort(ctx: Context): Promise<void> {
 
     const picker = new EntityText()
       .add('🎯 ').bold('Effort Level').newline(2)
-      .italic(`Current: ${currentEffort}`).newline(2);
+      .italic(`Current: ${currentEffort === 'default' ? 'auto' : currentEffort}, ${describeSource(sessionKey, 'effort')}`).newline(2);
     for (const l of EFFORT_LEVELS) {
       picker.add('• ').bold(l.label).add(` - ${l.description}\n`);
     }
     picker.add('• ').bold('Auto').add(" - Claude Code's default");
-
-    // Same scoping as /model: the tap sets this bot, the confirmation offers
-    // the rest. Stated here so neither scope has to be guessed at.
-    if (hasSiblings()) {
-      picker.add('\n\nApplies to ').bold(config.BOT_NAME).add(' only — add ').code('all')
-        .add(' (').code('/effort high all').add(') or use the button afterwards to set every bot.');
-    }
+    picker.append(levelHelp('effort', 'high', site));
 
     await replyFormatted(ctx, picker.build(), {
       reply_markup: { inline_keyboard: keyboard },
@@ -280,66 +272,34 @@ export async function handleEffort(ctx: Context): Promise<void> {
     return;
   }
 
-  if (args === 'auto' || args === 'default' || args === 'reset') {
-    clearEffort(sessionKey);
-    const restarted = restartPtyForSettingChange(sessionKey);
-    const confirmation = new EntityText().append(effortResetConfirmation());
-    if (restarted) confirmation.append(PTY_RESTART_NOTE);
-    await replyWithScope(ctx, sessionKey, confirmation.build(), 'effort', null, 'auto', scope);
-    return;
-  }
-
-  // A bare `all` is a scope with no level attached — point at the form that
-  // works rather than rejecting it as an unknown level.
-  if (args === 'all' || args === 'everywhere') {
+  // A level word on its own has no effort level attached — point at the form
+  // that works rather than rejecting it as an unknown level. `default` stays
+  // the reset it always was.
+  if (args !== 'default' && isBareLevelWord(args)) {
     await replyMd(
       ctx,
-      '`all` sets every bot, but it needs a level to set them to.\n\n' +
-        'Try `/effort high all`, or /effort to pick one.',
+      `\`${args}\` says how far to apply an effort level, but it needs the level too.\n\n` +
+        `Try \`/effort high ${args}\`, or /effort to pick one.`,
     );
     return;
   }
 
-  if (!isValidEffortLevel(args)) {
+  const reset = args === 'auto' || args === 'default' || args === 'reset';
+  if (!reset && !isValidEffortLevel(args)) {
     await replyFormatted(ctx, `❌ Unknown effort level "${args}".\n\nValid: low, medium, high, xhigh, max, auto`);
     return;
   }
 
-  setEffort(sessionKey, args);
-  const restarted = restartPtyForSettingChange(sessionKey);
-  const info = EFFORT_LEVELS.find(l => l.id === args);
-  const confirmation = new EntityText().append(prefsConfirmation('effort', info?.label || args));
-  if (restarted) confirmation.append(PTY_RESTART_NOTE);
-  await replyWithScope(ctx, sessionKey, confirmation.build(), 'effort', args, args, scope);
-}
-
-/**
- * Send a settings confirmation, either fanning the change out to the other
- * bots (scope 'all') or offering to. `buttonValue` is what the fan-out button
- * carries — the same spelling the picker uses, so 'auto' rather than null.
- */
-async function replyWithScope(
-  ctx: Context,
-  sessionKey: string,
-  confirmation: EntityMessage,
-  setting: 'model' | 'effort',
-  value: string | null,
-  buttonValue: string,
-  scope: 'this' | 'all',
-): Promise<void> {
-  if (scope === 'all') {
-    const summary = await applyToAllBots({
-      chatId: parseSessionKey(sessionKey).chatId,
-      setting,
-      value,
-      provider: getActiveProviderName(sessionKey),
-    });
-    await replyFormatted(ctx, new EntityText().append(confirmation).append(summary).build());
+  const level = resolveLevel(ctx, parsed.level);
+  if (level === 'all' && !site.admin) {
+    await replyFormatted(ctx, new EntityText().add(`⛔ ${EVERYWHERE_ADMIN_ONLY}`).build());
     return;
   }
 
-  const keyboard = buildApplyToAllKeyboard(setting, buttonValue);
-  await replyFormatted(ctx, confirmation, {
+  const value = reset ? null : args;
+  const label = reset ? 'Auto (CLI default)' : EFFORT_LEVELS.find(l => l.id === args)?.label || args;
+  const { message, keyboard } = await applyAtLevel(ctx, { sessionKey, setting: 'effort', value, label, level, site });
+  await replyFormatted(ctx, message.build(), {
     ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
   });
 }
@@ -347,42 +307,26 @@ async function replyWithScope(
 export async function handleEffortCallback(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
-  const { chatId, sessionKey } = keyInfo;
+  const { sessionKey } = keyInfo;
 
   const data = ctx.callbackQuery?.data;
   if (!data || !data.startsWith('effort:')) return;
 
-  const level = data.replace('effort:', '');
-
-  if (level === 'auto') {
-    clearEffort(sessionKey);
-    const restarted = restartPtyForSettingChange(sessionKey);
-    await ctx.answerCallbackQuery({ text: 'Effort reset to auto!' });
-    const keyboard = buildApplyToAllKeyboard('effort', 'auto');
-    const confirmation = new EntityText().append(effortResetConfirmation());
-    if (restarted) confirmation.append(PTY_RESTART_NOTE);
-    await editCallbackMessage(ctx, confirmation.build(), {
-      ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
-    });
-    return;
-  }
-
-  if (!isValidEffortLevel(level)) {
+  const choice = data.replace('effort:', '');
+  if (choice !== 'auto' && !isValidEffortLevel(choice)) {
     await ctx.answerCallbackQuery({ text: 'Invalid effort level' });
     return;
   }
 
-  setEffort(sessionKey, level);
-  const restarted = restartPtyForSettingChange(sessionKey);
+  const value = choice === 'auto' ? null : choice;
+  const label = value === null ? 'Auto (CLI default)' : EFFORT_LEVELS.find(l => l.id === value)?.label || value;
+  await ctx.answerCallbackQuery({ text: value === null ? 'Effort reset to auto!' : `Effort set to ${label}!` });
 
-  const info = EFFORT_LEVELS.find(l => l.id === level);
-  const displayName = info?.label || level;
-
-  await ctx.answerCallbackQuery({ text: `Effort set to ${displayName}!` });
-  const keyboard = buildApplyToAllKeyboard('effort', level);
-  const confirmation = new EntityText().append(prefsConfirmation('effort', displayName));
-  if (restarted) confirmation.append(PTY_RESTART_NOTE);
-  await editCallbackMessage(ctx, confirmation.build(), {
+  const site = scopeSite(ctx);
+  const { message, keyboard } = await applyAtLevel(ctx, {
+    sessionKey, setting: 'effort', value, label, level: resolveLevel(ctx, undefined), site,
+  });
+  await editCallbackMessage(ctx, message.build(), {
     ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
   });
 }

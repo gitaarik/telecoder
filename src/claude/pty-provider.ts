@@ -528,6 +528,11 @@ export class PtyProvider implements Provider {
     return [...this.sessions.keys()].filter((key) => parseSessionKey(key).chatId === chatId);
   }
 
+  /** Every live session key on this bot, for a setting changed bot-wide. */
+  listSessionKeys(): string[] {
+    return [...this.sessions.keys()];
+  }
+
   /**
    * End the claudes that have sat idle for `maxIdleMs` or longer, skipping any
    * session `isBusy` vouches for. Nothing of the conversation is lost: the

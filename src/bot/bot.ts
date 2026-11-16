@@ -48,7 +48,7 @@ import {
   handleCommands,
   handleModelCommand,
   handleModelCallback,
-  handlePrefsAllCallback,
+  handlePrefsScopeCallback,
   handleProviderCommand,
   handleProviderCallback,
   handleProviderSwitchCallback,
@@ -551,8 +551,8 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
       await adminOnly(handleProviderSwitchCallback)(ctx);
     } else if (data.startsWith('provider:')) {
       await adminOnly(handleProviderCallback)(ctx);
-    } else if (data.startsWith('prefs_all:')) {
-      await handlePrefsAllCallback(ctx);
+    } else if (data.startsWith('pscope:') || data.startsWith('prefs_all:')) {
+      await handlePrefsScopeCallback(ctx);
     } else if (data.startsWith('model:')) {
       await handleModelCallback(ctx);
     } else if (data.startsWith('clear:')) {

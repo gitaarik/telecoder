@@ -14,7 +14,7 @@ import { getClaudeVersion, isAtLeast } from '../utils/claude-version.js';
 
 export const CLAUDE_MODELS: ModelInfo[] = [
   { id: 'fable', label: 'fable', description: 'Most capable — hardest, longest-running tasks' },
-  { id: 'opus', label: 'opus', description: 'Most capable of the Opus tier (default)' },
+  { id: 'opus', label: 'opus', description: 'Most capable of the Opus tier' },
   { id: 'sonnet', label: 'sonnet', description: 'Balanced' },
   { id: 'haiku', label: 'haiku', description: 'Fast & light' },
   { id: 'opusplan', label: 'opusplan', description: 'Opus while planning, Sonnet otherwise' },

@@ -15,7 +15,8 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
   skills and slash commands work as in your terminal, and its permission dialogs arrive as
   buttons
 - Streaming replies: the answer shows while Claude writes it
-- Model and effort pickers (`/model`, `/effort`)
+- Model and effort pickers (`/model`, `/effort`) for one thread, new threads, every thread
+  in a chat, or everywhere ([how](threads-and-forks.md#model-and-effort))
 - `/mode` sets how much Claude asks before acting, from manual to bypass
 - `/compact`, `/context` and `/cost`, as in the CLI, and `/projectcommands` lists every slash
   command a project has
@@ -87,7 +88,7 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 - Add, remove or change a bot in `instances.json` while the others keep running
 - Create a bot for a project from Telegram with `/newbot`, no BotFather chat needed, with
   that project as its home and the TeleCoder icon as its picture
-- Apply a setting everywhere with `/model sonnet all`
+- Apply a setting to every chat on every bot with `/model sonnet all`
 - [Setup](multiple-bots.md)
 
 ## Reliability

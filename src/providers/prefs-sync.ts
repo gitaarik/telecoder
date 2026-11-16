@@ -1,8 +1,8 @@
 /**
- * Applying one chat's model or effort choice to every bot instance at once.
+ * Applying a model or effort choice on every bot instance at once — the
+ * "everywhere" level of /model and /effort.
  *
- * Preferences are per-bot (see user-preferences.ts), which is the right default
- * — but "put all my bots on Haiku" is a real thing to want, and writing to the
+ * Preferences are per-bot (see user-preferences.ts), and writing to the
  * siblings' files behind their backs would not work: every worker holds its
  * preferences in memory and would overwrite the edit on its next save, and the
  * pty reads `--model` at spawn, so a bot with a live session would go on using
@@ -10,9 +10,9 @@
  *
  * So the change is sent, not written. The requesting worker asks the launcher
  * to relay it; each sibling applies it through the same code path as a local
- * /model, tears down the pty sessions for that chat so the next turn respawns
- * with the new flag, and reports back what it did. The requester waits for the
- * round trip so it can tell the user which bots actually took the change.
+ * change at that level, restarts the claudes it concerns, and reports back
+ * what it did. The requester waits for the round trip so it can tell the user
+ * which bots actually took the change.
  *
  * Single-instance mode has no launcher to relay through: every function here
  * degrades to "this bot only" rather than failing.
@@ -20,19 +20,10 @@
 
 import { isMainThread, parentPort } from 'worker_threads';
 import { BOT_ID } from '../config.js';
-import { isInFlight } from '../claude/in-flight-tracker.js';
 import { listSiblingBots } from '../utils/instances.js';
-import { getPtyProvider } from './claude-provider.js';
-import {
-  setModel,
-  clearModel,
-  setEffort,
-  clearEffort,
-  getActiveProviderName,
-  isValidEffortLevel,
-  type EffortLevel,
-  type ProviderName,
-} from './provider-router.js';
+import { getActiveProviderName, isValidEffortLevel, type ProviderName } from './provider-router.js';
+import { applySpawnSetting } from './spawn-settings.js';
+import type { SettingLevel } from './user-preferences.js';
 
 /** A setting change to apply on other instances. `value: null` clears it. */
 export interface PrefsChange {
@@ -45,6 +36,11 @@ export interface PrefsChange {
    * pointed at the other backend declines rather than mis-applying it.
    */
   provider: ProviderName;
+  /**
+   * How far it reaches on the sibling. Only `all` is sent today; a change
+   * without one comes from a worker older than levels, which meant the chat.
+   */
+  level?: Extract<SettingLevel, 'chat' | 'all'>;
 }
 
 /** What one sibling did with a relayed change. */
@@ -52,7 +48,7 @@ export interface PrefsApplyOutcome {
   name: string;
   status: 'applied' | 'skipped';
   reason?: string;
-  /** Sessions left running because a turn was in flight — see applyPrefsChange. */
+  /** Sessions mid-turn, which pick the change up when that turn ends. */
   busy?: number;
 }
 
@@ -82,16 +78,10 @@ export function siblingBotNames(): string[] {
 // ---------------------------------------------------------------------------
 
 /**
- * Apply a relayed change to this instance.
- *
- * Goes through provider-router rather than the preferences file directly, so
- * the in-memory caches that actually serve the next turn are updated too.
- *
- * A pty holding a session that is mid-turn is left alone: killing it would
- * abort a turn nobody in this chat asked to interrupt, and the user isn't
- * watching that bot — they're in the one they typed the command into. Those
- * sessions keep the old value until they next respawn, and the count comes
- * back so the confirmation can say so.
+ * Apply a relayed change to this instance, at the level it was made, and
+ * restart the claudes it concerns: idle ones on their next message, mid-turn
+ * ones when that turn ends. The count of the latter comes back so the
+ * confirmation can say so.
  */
 export function applyPrefsChange(change: PrefsChange): PrefsApplyOutcome {
   const { chatId } = change;
@@ -101,40 +91,12 @@ export function applyPrefsChange(change: PrefsChange): PrefsApplyOutcome {
     return { name: '', status: 'skipped', reason: `on ${active}, not ${change.provider}` };
   }
 
-  if (change.setting === 'model') {
-    if (change.value === null) clearModel(chatId);
-    else setModel(chatId, change.value);
-  } else {
-    if (change.value === null) {
-      clearEffort(chatId);
-    } else if (isValidEffortLevel(change.value)) {
-      setEffort(chatId, change.value as EffortLevel);
-    } else {
-      return { name: '', status: 'skipped', reason: `unknown effort level "${change.value}"` };
-    }
+  if (change.setting === 'effort' && change.value !== null && !isValidEffortLevel(change.value)) {
+    return { name: '', status: 'skipped', reason: `unknown effort level "${change.value}"` };
   }
 
-  return { name: '', status: 'applied', busy: restartPtySessionsForChat(chatId) };
-}
-
-/**
- * Tear down this chat's idle pty sessions so the next turn respawns with the
- * new flag. Returns how many were left running because they were mid-turn.
- * Only sessions that actually run on the pty transport count; with threads,
- * that is decided per thread, since each can have picked its own.
- */
-function restartPtySessionsForChat(chatId: number): number {
-  const pty = getPtyProvider();
-  let busy = 0;
-  for (const sessionKey of pty.listSessionKeysForChat(chatId)) {
-    if (getActiveProviderName(sessionKey) !== 'claude') continue;
-    if (isInFlight(sessionKey)) {
-      busy++;
-      continue;
-    }
-    pty.clearConversation(sessionKey);
-  }
-  return busy;
+  const outcome = applySpawnSetting(chatId, change.setting, change.value, change.level ?? 'chat');
+  return { name: '', status: 'applied', busy: outcome.busy.length };
 }
 
 // ---------------------------------------------------------------------------

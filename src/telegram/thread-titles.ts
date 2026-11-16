@@ -187,6 +187,16 @@ export function syncThreadTitle(sessionKey: string, topic: string, project?: str
   pending.set(sessionKey, { name, timer });
 }
 
+/** The thread's name as last seen or set, for naming it in a message. */
+export function threadDisplayName(sessionKey: string): string | undefined {
+  return state()[sessionKey]?.name;
+}
+
+/** Whether the thread still has the name Telegram gave it on creation from the "All" view. */
+export function hasImplicitName(sessionKey: string): boolean {
+  return state()[sessionKey]?.owner === 'implicit';
+}
+
 /** Drop what's kept about a thread that no longer exists, and any rename still waiting for it. */
 export function forgetThreadTitle(sessionKey: string): void {
   const held = pending.get(sessionKey);

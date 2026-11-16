@@ -34,8 +34,8 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 ## Agent controls
 | Command | Description |
 |---------|-------------|
-| `/model` | Switch Sonnet / Opus / Haiku — this bot, or add `all` for every instance |
-| `/effort` | Set reasoning effort (low / medium / high / xhigh / max / auto); `all` works here too |
+| `/model` | Switch Fable / Opus / Sonnet / Haiku for this thread; add `new` (new threads too), `chat` (every thread here) or `all` (every chat on every bot). [How far it reaches](../guides/threads-and-forks.md#model-and-effort) |
+| `/effort` | Set reasoning effort (low / medium / high / xhigh / max / auto), with the same `new`, `chat` and `all` as `/model` |
 | `/btw` | Ask a side question without interrupting the running task. It answers only, without changing files |
 | `/steer <text>` | Stop the running turn and send the text in its place, as a correction; `⚡ Interrupt & send` on a queued message does the same |
 | `/later [text]` | Set an idea aside without sending it; once Claude is done, the bot asks whether to send it, with Send and Drop. Alone, lists what's set aside |

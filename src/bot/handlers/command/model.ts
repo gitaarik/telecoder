@@ -8,7 +8,6 @@
 import { Context } from 'grammy';
 import { config } from '../../../config.js';
 import {
-  setModel,
   getModel,
   clearModel,
   getActiveProviderName,
@@ -22,39 +21,45 @@ import { switchProvider, switchRequiresConfirm } from '../../../providers/provid
 import { EntityText, type EntityMessage } from '../../../telegram/entities.js';
 import { replyFormatted, editCallbackMessage } from '../../../telegram/send.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
-import { replyMd, parseCallback, restartPtyForSettingChange, PTY_RESTART_NOTE } from './shared.js';
+import { userPreferences } from '../../../providers/user-preferences.js';
+import { replyMd, parseCallback } from './shared.js';
 import {
   parseScopeArg,
-  applyToAllBots,
-  buildApplyToAllKeyboard,
-  prefsConfirmation,
-  hasSiblings,
+  isBareLevelWord,
+  scopeSite,
+  applyAtLevel,
+  describeSource,
+  levelHelp,
+  EVERYWHERE_ADMIN_ONLY,
 } from './prefs-scope.js';
+import { resolveLevel } from './all-view.js';
 
 export async function handleModelCommand(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
-  const { chatId, sessionKey } = keyInfo;
+  const { sessionKey } = keyInfo;
 
   const text = ctx.message?.text || '';
   // Aliases are all lowercase, but a hand-typed full ID may not be — match
   // case-insensitively, then pass the original through so vendor-cased IDs
   // reach the CLI intact.
-  const { value: rawArg, scope } = parseScopeArg(text.split(' ').slice(1).join(' '));
+  const { value: rawArg, level: explicitLevel } = parseScopeArg(text.split(' ').slice(1).join(' '));
   const args = rawArg.toLowerCase();
 
   const providerName = getActiveProviderName(sessionKey);
   const models = await getAvailableModels(sessionKey);
   const validIds = models.map(m => m.id);
+  const site = scopeSite(ctx);
 
   if (!args) {
     const currentModel = getModel(sessionKey);
+    const asked = userPreferences.getModel(sessionKey);
 
     // Two per row — the alias list is long enough now (fable/opus/sonnet/haiku
     // plus opusplan, best and the [1m] variants) that one row each turns the
     // picker into a scroll on mobile.
     const buttons = models.map((m) => ({
-      text: m.id === currentModel ? `✓ ${m.label}` : m.label,
+      text: m.id === (asked ?? currentModel) ? `✓ ${m.label}` : m.label,
       callback_data: `model:${m.id}`,
     }));
     const keyboard: (typeof buttons)[] = [];
@@ -65,7 +70,7 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
     const picker = new EntityText()
       .add('🤖 ').bold('Select Model').add(` (${providerName})`)
       .newline(2)
-      .italic(`Current: ${currentModel}`)
+      .italic(`Current: ${currentModel}, ${describeSource(sessionKey, 'model')}`)
       .newline(2);
     models.forEach((m, i) => {
       if (i > 0) picker.newline();
@@ -73,13 +78,7 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
     });
     picker.add('\n\nOr ').code('/model <full-id>').add(' to pin an exact release, e.g. ')
       .code('claude-opus-4-8').add('.');
-
-    // Picking from the keyboard applies to this bot; the confirmation then
-    // offers the fan-out. Say so up front so nobody assumes either scope.
-    if (hasSiblings()) {
-      picker.add('\n\nApplies to ').bold(config.BOT_NAME).add(' only — add ').code('all')
-        .add(' (').code('/model sonnet all').add(') or use the button afterwards to set every bot.');
-    }
+    picker.append(levelHelp('model', 'sonnet', site));
 
     await replyFormatted(ctx, picker.build(), {
       reply_markup: {
@@ -89,14 +88,14 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
     return;
   }
 
-  // `all` on its own is a scope with no model attached. Passthrough would
+  // A level word on its own has no model attached. Passthrough would
   // otherwise take it at face value and hand the CLI `--model all`, which is
   // a confusing way to learn the argument order.
-  if (args === 'all' || args === 'everywhere') {
+  if (isBareLevelWord(args)) {
     await replyMd(
       ctx,
-      '`all` sets every bot, but it needs a model to set them to.\n\n' +
-        'Try `/model sonnet all`, or /model to pick one.',
+      `\`${args}\` says how far to apply a model, but it needs the model too.\n\n` +
+        `Try \`/model sonnet ${args}\`, or /model to pick one.`,
     );
     return;
   }
@@ -118,31 +117,23 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
     return;
   }
 
-  const chosen = known ? args : rawArg;
-  setModel(sessionKey, chosen);
-  const restarted = restartPtyForSettingChange(keyInfo.sessionKey);
-  const confirmation = new EntityText().append(prefsConfirmation('model', chosen));
-  if (restarted) confirmation.append(PTY_RESTART_NOTE);
-  appendPremiumNote(confirmation, chosen, providerName);
-  if (!known) {
-    confirmation.add(
-      "\n\n⚠️ Not a known alias — passed to the CLI as-is. If your install can't serve it, the next turn fails; /model to pick again.",
-    );
-  }
-
-  if (scope === 'all') {
-    const summary = await applyToAllBots({
-      chatId,
-      setting: 'model',
-      value: chosen,
-      provider: providerName,
-    });
-    await replyFormatted(ctx, confirmation.append(summary).build());
+  const level = resolveLevel(ctx, explicitLevel);
+  if (level === 'all' && !site.admin) {
+    await replyFormatted(ctx, new EntityText().add(`⛔ ${EVERYWHERE_ADMIN_ONLY}`).build());
     return;
   }
 
-  const keyboard = buildApplyToAllKeyboard('model', chosen);
-  await replyFormatted(ctx, confirmation.build(), {
+  const chosen = known ? args : rawArg;
+  const { message, keyboard } = await applyAtLevel(ctx, {
+    sessionKey, setting: 'model', value: chosen, label: chosen, level, site,
+  });
+  appendPremiumNote(message, chosen, providerName);
+  if (!known) {
+    message.add(
+      "\n\n⚠️ Not a known alias — passed to the CLI as-is. If your install can't serve it, the next turn fails; /model to pick again.",
+    );
+  }
+  await replyFormatted(ctx, message.build(), {
     ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
   });
 }
@@ -150,7 +141,7 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
 export async function handleModelCallback(ctx: Context): Promise<void> {
   const cb = parseCallback(ctx, 'model:');
   if (!cb) return;
-  const { chatId, sessionKey, data } = cb;
+  const { sessionKey, data } = cb;
 
   const model = data.replace('model:', '');
 
@@ -163,18 +154,16 @@ export async function handleModelCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  setModel(sessionKey, model);
-  const restarted = restartPtyForSettingChange(sessionKey);
-
   const modelInfo = models.find(m => m.id === model);
   const displayName = modelInfo?.label || model;
+  const site = scopeSite(ctx);
 
   await ctx.answerCallbackQuery({ text: `Model set to ${displayName}!` });
-  const keyboard = buildApplyToAllKeyboard('model', model);
-  const confirmation = new EntityText().append(prefsConfirmation('model', displayName));
-  if (restarted) confirmation.append(PTY_RESTART_NOTE);
-  appendPremiumNote(confirmation, model, getActiveProviderName(sessionKey));
-  await editCallbackMessage(ctx, confirmation.build(), {
+  const { message, keyboard } = await applyAtLevel(ctx, {
+    sessionKey, setting: 'model', value: model, label: displayName, level: resolveLevel(ctx, undefined), site,
+  });
+  appendPremiumNote(message, model, getActiveProviderName(sessionKey));
+  await editCallbackMessage(ctx, message.build(), {
     ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
   });
 }
