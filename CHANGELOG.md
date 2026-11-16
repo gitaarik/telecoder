@@ -74,31 +74,6 @@ reasoning — the commit bodies are the long form, this is the index.
   which flow each opened. An answer to a prompt from before a restart goes to
   Claude as a message; re-open the prompt.
 
-### Fixed
-
-- **The wizard's typed answer stays next to its question.** After a question
-  long enough to wrap, `telecoder init` parked the cursor at the right edge of
-  the screen, and the `y` or `n` typed there sat a line's width away from its
-  `[Y/n]`. readline was never told the terminal's width.
-
-- **The 🍴 Fork button is under the reply, every time.** A turn that asked a
-  question and had nothing to add after the answer put the button on the
-  "✅ Done" bubble above the question, where it read as a stray button rather
-  than the reply's fork point. It is now under the prose that went out ahead
-  of the question. And a turn Claude started itself, when a background task
-  reported back, got no button at all; its reply forks like any other now.
-
-- **Claude's send-file tool follows the same rules as `/file`.** It checked
-  only that the path was under the workspace or `/tmp`, and the scope guard
-  that prompts for a credential path watches Read and Bash, not MCP tools. So
-  a guest who asked Claude for `~/.ssh/id_rsa` got it, unless Claude happened
-  to read it first. Both routes now refuse credential and bot-state paths
-  for everyone and confine a guest to the chat's project, as `/file` has.
-
-- **A background task claude stopped no longer shows as running forever.**
-  Claude writes no task-notification for a task it ends with TaskStop, and
-  that notification was the only thing that retired a task, so "🔄 Running in
-  background" stayed under every later reply until the bot restarted, and the
 ### Removed
 
 - **`/handoff`.** It wrote the conversation to a markdown file in the project and
@@ -167,19 +142,47 @@ reasoning — the commit bodies are the long form, this is the index.
   Claudegram; it was off by default since 1.2.0, and the reply it duplicated
   already arrives in the chat in full. The `/telegraph` command and its
   per-chat toggle, `/telegraph <path>`, the `telecoder_publish_telegraph`
-  agent tool, the `--telegraph` init flags and the setting are gone. `/handoff`
-  sends its file, and the action log stays in the chat, drawn one last time
-  when the turn ends. A `.env` that still sets `TELEGRAPH_ENABLED` gets one
-  line at startup saying so.
+  agent tool, the `--telegraph` init flags and the setting are gone. The
+  action log stays in the chat, drawn one last time when the turn ends. A
+  `.env` that still sets `TELEGRAPH_ENABLED` gets one line at startup saying
+  so.
 
+### Fixed
+
+- **The 🍴 Fork button is under the reply, every time.** A turn that asked a
+  question and had nothing to add after the answer put the button on the
+  "✅ Done" bubble above the question, where it read as a stray button rather
+  than the reply's fork point. It is now under the prose that went out ahead
+  of the question. And a turn Claude started itself, when a background task
+  reported back, got no button at all; its reply forks like any other now.
+
+- **Claude's send-file tool follows the same rules as `/file`.** It checked
+  only that the path was under the workspace or `/tmp`, and the scope guard
+  that prompts for a credential path watches Read and Bash, not MCP tools. So
+  a guest who asked Claude for `~/.ssh/id_rsa` got it, unless Claude happened
+  to read it first. Both routes now refuse credential and bot-state paths
+  for everyone and confine a guest to the chat's project, as `/file` has.
+
+- **The wizard's typed answer stays next to its question.** After a question
+  long enough to wrap, `telecoder init` parked the cursor at the right edge of
+  the screen, and the `y` or `n` typed there sat a line's width away from its
+  `[Y/n]`. readline was never told the terminal's width.
+
+- **A background task claude stopped no longer shows as running forever.**
+  Claude writes no task-notification for a task it ends with TaskStop, and
+  that notification was the only thing that retired a task, so "🔄 Running in
+  background" stayed under every later reply until the bot restarted, and the
   idle restart waited for it. A Bash call's response now records claude's own
   id for the task, and TaskStop on that id retires it as stopped.
+
 - **`TTS_ENABLED=false` turns spoken replies off.** The setting was read
   but never checked, so a chat with `/tts` on kept getting voice replies.
   Now it stops them for every chat, `/tts` says they're off, and the
   command leaves the `/` menu.
+
 - **`TRANSCRIBE_ENABLED=false` turns off voice notes too**, not only
   `/transcribe`. A voice note was still downloaded and transcribed.
+
 - **`telecoder help <command>` lists the command's options.** It showed only
   the one-line summary, though the install docs pointed to it for the
   flags. `<command> --help` shows the same.
