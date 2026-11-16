@@ -36,7 +36,8 @@ The topic comes from a quick Haiku call on each message. Turn that off with
 A fork copies the conversation up to some point into a new session. The original carries
 on unchanged.
 
-- **`🍴 Fork` under a reply** forks from that reply.
+- **`🍴 Fork` under a reply** forks from that reply. Every reply ends with one, including
+  a reply to a background task that reported back between your messages.
 - **`/fork`** forks from where the conversation is now.
 
 With threads on, the fork opens straight away in a new thread named `🍴 project · topic`,

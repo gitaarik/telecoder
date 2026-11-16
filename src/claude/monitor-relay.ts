@@ -659,7 +659,11 @@ async function postReply(sessionKey: string, text: string): Promise<void> {
     // pty-provider at module scope, where every eager edge is a chance to
     // close a cycle back through it.
     const { messageSender } = await import('../telegram/message-sender.js');
-    await messageSender.sendMessage(ctx, text);
+    const lastMessageId = await messageSender.sendMessage(ctx, text);
+    // A reply like any other, so it forks like any other: the button goes
+    // under its last message, as the turn pipeline puts it under a reply of
+    // TeleCoder's.
+    await messageSender.attachForkButton(ctx, sessionKey, lastMessageId);
   } catch (err) {
     console.error('[Monitor] reply send failed:', err instanceof Error ? err.message : err);
   }

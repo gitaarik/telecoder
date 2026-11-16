@@ -70,6 +70,13 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Fixed
 
+- **The 🍴 Fork button is under the reply, every time.** A turn that asked a
+  question and had nothing to add after the answer put the button on the
+  "✅ Done" bubble above the question, where it read as a stray button rather
+  than the reply's fork point. It is now under the prose that went out ahead
+  of the question. And a turn Claude started itself, when a background task
+  reported back, got no button at all; its reply forks like any other now.
+
 - **Claude's send-file tool follows the same rules as `/file`.** It checked
   only that the path was under the workspace or `/tmp`, and the scope guard
   that prompts for a credential path watches Read and Bash, not MCP tools. So

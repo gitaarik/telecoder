@@ -41,6 +41,8 @@ const fx = vi.hoisted(() => ({
   gate: null as Promise<void> | null,
   /** Set to park the next status line until the test releases it. */
   statusGate: null as Promise<void> | null,
+  /** Every fork button attached: the session and the message it went on. */
+  forkButtons: [] as { sessionKey: string; messageId: number | null | undefined }[],
 }));
 
 vi.mock('../../src/telegram/message-sender.js', async () => {
@@ -56,6 +58,9 @@ vi.mock('../../src/telegram/message-sender.js', async () => {
         fx.replies.push({ sessionKey: getSessionKeyFromCtx(ctx)?.sessionKey, text });
         fx.chat.push(text);
         return 1;
+      },
+      attachForkButton: async (_ctx: Context, sessionKey: string, messageId: number | null | undefined) => {
+        fx.forkButtons.push({ sessionKey, messageId });
       },
     },
   };
@@ -201,6 +206,7 @@ beforeEach(() => {
   fx.chat.length = 0;
   fx.gate = null;
   fx.statusGate = null;
+  fx.forkButtons.length = 0;
   cardTexts.length = 0;
   setMonitorRelayBot(makeBot());
 });
@@ -227,6 +233,15 @@ describe('a turn claude started itself', () => {
     // Joined the way a turn of TeleCoder's is, and not a character short.
     expect(fx.replies[0]!.text).toBe(`The review is back. Checking its one finding:\n\n${LONG_ANSWER}`);
     expect(fx.replies[0]!.sessionKey).toBe(SESSION_KEY);
+  });
+
+  it('puts the fork button under its reply, as under a reply of TeleCoder\'s', async () => {
+    armAndEndTurn();
+    append(completion('toolu_01'), prose(LONG_ANSWER), TURN_CLOSED);
+
+    await vi.waitFor(() => expect(fx.replies).toHaveLength(1), WAIT);
+    // The sender stand-in posts every reply as message 1.
+    await vi.waitFor(() => expect(fx.forkButtons).toEqual([{ sessionKey: SESSION_KEY, messageId: 1 }]), WAIT);
   });
 
   it('leaves the reply off the card, which keeps the task', async () => {

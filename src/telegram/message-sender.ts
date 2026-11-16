@@ -132,6 +132,12 @@ interface StreamState {
   shown: string[];
   /** Messages the live reply overflowed into below the bubble, in order. */
   overflowIds: number[];
+  /**
+   * The last message this sender posted under the bubble during the turn —
+   * prose flushed ahead of a question, mostly. A turn that writes nothing
+   * after that puts its fork button here, not on the bubble above it.
+   */
+  lastPostId: number | null;
   /** A refresh held back by the edit throttle, due when the throttle allows. */
   flushTimer: NodeJS.Timeout | null;
   /**
@@ -357,6 +363,11 @@ export class MessageSender {
         } catch { /* give up */ }
       }
     }
+    // Posted during a turn, this is the lowest message of the turn so far:
+    // finishStreaming anchors the fork button here when nothing follows it.
+    const sessionKey = getSessionKeyFromCtx(ctx)?.sessionKey;
+    const state = sessionKey ? this.streamStates.get(sessionKey) : undefined;
+    if (state && lastMessageId !== null) state.lastPostId = lastMessageId;
     return lastMessageId;
   }
 
@@ -497,6 +508,7 @@ export class MessageSender {
       shownContent: '',
       shown: [],
       overflowIds: [],
+      lastPostId: null,
       flushTimer: null,
       liveEdits: new Set(),
       ended: false,
@@ -1242,6 +1254,12 @@ export class MessageSender {
         }
       }
     }
+
+    // Everything the turn had to say went out before a question was asked,
+    // and the answer ended it: the final text is empty, and the fork button
+    // belongs under that prose, not on the "Done" bubble above it and the
+    // question.
+    if (!finalContent.trim() && state.lastPostId !== null) lastMessageId = state.lastPostId;
 
     await this.attachForkButton(ctx, sessionKey, lastMessageId, suggestion);
     await this.sendSuggestionCard(ctx, suggestion);
