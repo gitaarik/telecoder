@@ -14,8 +14,11 @@ const fake = vi.hoisted(() => ({
   reapCalls: [] as number[],
   endedLongest: null as string | null,
   answer: null as number | null, // index tapped, or null for a timeout
+  answers: [] as (number | null | 'hold')[], // one per question when set: index, timeout, or never answered
   asked: [] as string[][],
   sent: [] as string[],
+  edited: [] as string[],
+  withdrawn: 0,
 }));
 
 vi.mock('../../src/utils/memory-pressure.js', async (importOriginal) => ({
@@ -48,16 +51,20 @@ vi.mock('../../src/claude/pty-idle-reaper.js', () => ({
 vi.mock('../../src/claude/ask-user.js', () => ({
   questionTimeoutMs: () => 600_000,
   closeExpiredQuestion: async () => {},
+  withdrawPendingQuestion: () => { fake.withdrawn++; },
   createPendingQuestion: (labels: string[]) => {
     fake.asked.push(labels);
+    const answer = fake.answers.length > 0 ? fake.answers.shift()! : fake.answer;
     return {
       id: 'abcd1234',
-      promise: Promise.resolve(fake.answer === null ? null : { index: fake.answer, label: labels[fake.answer] }),
+      promise: answer === 'hold'
+        ? new Promise(() => {})
+        : Promise.resolve(answer === null ? null : { index: answer, label: labels[answer] }),
     };
   },
 }));
 
-const { guardSpawn, allowPrewarm, buildMemoryGuardMessage, formatIdle, resolveMinAvailableMB, clearStartingClaudes, SPAWN_RESERVE_MB } = await import('../../src/claude/memory-guard.js');
+const { guardSpawn, allowPrewarm, buildMemoryGuardMessage, buildWaitingMessage, formatIdle, resolveMinAvailableMB, clearStartingClaudes, SPAWN_RESERVE_MB, WAIT_POLL_MS } = await import('../../src/claude/memory-guard.js');
 const { parseMeminfo } = await import('../../src/utils/memory-pressure.js');
 const { config } = await import('../../src/config.js');
 
@@ -71,9 +78,20 @@ function ctx() {
         fake.sent.push(text);
         return { message_id: 7, chat: { id: 37620077 } };
       },
+      editMessageText: async (_chat: number, _id: number, text: string) => {
+        fake.edited.push(text);
+        return true;
+      },
+      editMessageReplyMarkup: async () => true,
     },
   } as never;
 }
+
+const START = '▶️ Start anyway';
+const END_IDLE = '♻️ End the longest-idle claude first';
+const CHECK = '🔄 Check again';
+const WAIT = '⏳ Wait for room';
+const DROP = '✗ Drop this message';
 
 beforeEach(() => {
   fake.availableMB = [2048];
@@ -84,8 +102,11 @@ beforeEach(() => {
   fake.reapCalls = [];
   fake.endedLongest = null;
   fake.answer = null;
+  fake.answers = [];
   fake.asked = [];
   fake.sent = [];
+  fake.edited = [];
+  fake.withdrawn = 0;
   (config as { MEMORY_GUARD_MIN_AVAILABLE_MB: number | 'auto' }).MEMORY_GUARD_MIN_AVAILABLE_MB = 1024;
   (config as { MEMORY_GUARD_MAX_SWAP_USED_MB: number }).MEMORY_GUARD_MAX_SWAP_USED_MB = 0;
   (config as { MEMORY_GUARD_REAP_IDLE_MS: number }).MEMORY_GUARD_REAP_IDLE_MS = 300_000;
@@ -126,9 +147,11 @@ describe('guardSpawn', () => {
     fake.sessions = [{ sessionKey: '37620077:1', pid: 1, idleMs: 120_000, generating: true }];
     fake.answer = 0;
     expect((await guardSpawn(ctx(), KEY)).proceed).toBe(true);
-    expect(fake.asked).toEqual([['▶️ Start anyway', '✗ Drop this message']]);
+    expect(fake.asked).toEqual([[START, CHECK, WAIT, DROP]]);
     expect(fake.sent[0]).toContain('700 MB available of 7,751 MB');
     expect(fake.sent[0]).toContain('1 other Claude is running: 1 busy.');
+    // The exchange is closed by the guard, not the tap handler.
+    expect(fake.edited).toEqual([expect.stringContaining(`✅ Answered: ${START}`)]);
   });
 
   it('offers to end the longest-idle claude when one exists, and does so', async () => {
@@ -139,14 +162,14 @@ describe('guardSpawn', () => {
     ];
     fake.answer = 1;
     expect((await guardSpawn(ctx(), KEY)).proceed).toBe(true);
-    expect(fake.asked[0]).toEqual(['▶️ Start anyway', '♻️ End the longest-idle claude first', '✗ Drop this message']);
+    expect(fake.asked[0]).toEqual([START, END_IDLE, CHECK, WAIT, DROP]);
     expect(fake.endedLongest).toBe('37620077:2');
     expect(fake.sent[0]).toContain('2 other Claudes are running: 1 busy, 1 idle for 2 min.');
   });
 
   it('drops the message on "Drop" and on a timeout, and says so', async () => {
     fake.availableMB = [700];
-    fake.answer = 1;
+    fake.answer = 3;
     const dropped = await guardSpawn(ctx(), KEY);
     expect(dropped.proceed).toBe(false);
     expect(dropped.message).toContain('Dropped');
@@ -155,6 +178,61 @@ describe('guardSpawn', () => {
     const expired = await guardSpawn(ctx(), KEY);
     expect(expired.proceed).toBe(false);
     expect(expired.message).toContain('nobody answered in 10 min');
+  });
+
+  it('"Check again" re-asks over the same message with fresh numbers, and starts once it fits', async () => {
+    fake.availableMB = [700, 700, 900, 1500]; // first look, after the reap, check one, check two
+    fake.answers = [1, 1]; // Check again, twice
+    expect((await guardSpawn(ctx(), KEY)).proceed).toBe(true);
+    expect(fake.sent).toHaveLength(1);
+    expect(fake.asked).toHaveLength(2);
+    expect(fake.reapCalls).toEqual([300_000, 300_000, 300_000]);
+    expect(fake.edited[0]).toContain('900 MB available of 7,751 MB');
+    expect(fake.asked[1]).toContain(START); // the re-ask keeps the full keyboard
+    expect(fake.edited[1]).toContain('✅ Checked again: it fits now, so Claude is starting.');
+  });
+
+  it('"Wait for room" checks on a timer, reaping each time, and starts the moment it fits', async () => {
+    vi.useFakeTimers();
+    try {
+      fake.availableMB = [700, 700, 800, 1500]; // first look, after the reap, tick one, tick two
+      fake.answers = [2, 'hold']; // Wait for room; nobody taps while it waits
+      const outcome = guardSpawn(ctx(), KEY);
+      await vi.advanceTimersByTimeAsync(10); // the question is up and the wait has begun
+      expect(fake.edited[0]).toContain('Waiting for room');
+      expect(fake.edited[0]).toContain("700 MB available of 7,751 MB; this chat's Claude starts at 1,024 MB.");
+      expect(fake.asked[1]).toEqual([START, DROP]); // the buttons that stay up meanwhile
+
+      await vi.advanceTimersByTimeAsync(WAIT_POLL_MS);
+      expect(fake.edited[1]).toContain('800 MB available');
+      expect(fake.reapCalls).toHaveLength(2);
+
+      await vi.advanceTimersByTimeAsync(WAIT_POLL_MS);
+      expect((await outcome).proceed).toBe(true);
+      expect(fake.reapCalls).toHaveLength(3);
+      expect(fake.edited[2]).toContain('✅ Room came free after 1 min, so Claude is starting.');
+      expect(fake.withdrawn).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a tap while waiting still counts', async () => {
+    fake.availableMB = [700];
+    fake.answers = [2, 0]; // Wait for room, then Start anyway
+    expect((await guardSpawn(ctx(), KEY)).proceed).toBe(true);
+    expect(fake.edited.at(-1)).toContain(`✅ Answered: ${START}`);
+  });
+
+  it('a wait that runs out asks again instead of dropping, and says it waited', async () => {
+    fake.availableMB = [700];
+    fake.answers = [2, null, 3]; // Wait for room; the wait times out; Drop on the re-ask
+    const outcome = await guardSpawn(ctx(), KEY);
+    expect(outcome.proceed).toBe(false);
+    expect(fake.asked).toHaveLength(3);
+    expect(fake.edited[1]).toContain("Memory is tight");
+    expect(fake.edited[1]).toContain("Waited 10 min for room and it didn't come.");
+    expect(fake.edited[2]).toContain(`✅ Answered: ${DROP}`);
   });
 
   it('starts anyway when there is no chat to ask', async () => {
@@ -234,6 +312,19 @@ describe('the question', () => {
       timeoutMin: 10,
     });
     expect(text).toContain('1,200 MB available of 7,751 MB. 2 more Claudes were started just now and aren\'t in that figure yet.');
+  });
+
+  it('says what the wait is for, and what it needs', () => {
+    (config as { MEMORY_GUARD_MIN_AVAILABLE_MB: number | 'auto' }).MEMORY_GUARD_MIN_AVAILABLE_MB = 'auto';
+    const { text } = buildWaitingMessage({
+      mem: { totalMB: 7751, availableMB: 1500, swapTotalMB: 0, swapUsedMB: 0 },
+      starting: 1,
+      waitedMs: 150_000,
+      timeoutMin: 10,
+    });
+    expect(text).toContain("1,500 MB available of 7,751 MB; this chat's Claude starts at 2,288 MB. Waited 3 min so far.");
+    expect(text).toContain('Checked every 30 s; claudes that go idle meanwhile are ended as they pass 5 min.');
+    expect(text).toContain('Gives up in 10 min → asks again.');
   });
 
   it('formats idle times the way a person reads them', () => {

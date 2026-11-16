@@ -228,6 +228,15 @@ interface PendingEntry {
    * command is not answered by whoever asked for the command.
    */
   allowedResponderIds?: number[];
+  /**
+   * When set, the asker keeps the message: a tap only resolves the promise,
+   * and the tap handler neither stamps the answer on the message nor takes
+   * the keyboard down nor confirms the pick in a reply. For a question whose
+   * answer may be "ask me again with fresh numbers" — the memory guard's
+   * "Check again" — and so re-posts itself over the same message. The asker
+   * closes it when the exchange is over.
+   */
+  ownerCloses?: boolean;
 }
 
 /**
@@ -266,6 +275,7 @@ export function createPendingQuestion(
   timeoutMs: number = questionTimeoutMs(),
   sessionKey?: string,
   allowedResponderIds?: number[],
+  opts?: { ownerCloses?: boolean },
 ): { id: string; promise: Promise<AskUserAnswer | null> } {
   const id = crypto.randomBytes(4).toString('hex');
   let resolveFn!: (answer: AskUserAnswer | null) => void;
@@ -284,11 +294,21 @@ export function createPendingQuestion(
     optionLabels,
     sessionKey,
     ...(allowedResponderIds && allowedResponderIds.length > 0 ? { allowedResponderIds } : {}),
+    ...(opts?.ownerCloses ? { ownerCloses: true } : {}),
   });
   if (sessionKey) {
     pendingBySession.set(sessionKey, (pendingBySession.get(sessionKey) ?? 0) + 1);
   }
   return { id, promise };
+}
+
+/**
+ * Take a question back without answering it: its promise never settles, and a
+ * later tap gets the expired toast. For an asker that stopped needing the
+ * answer — the memory guard whose wait found room before anyone tapped.
+ */
+export function withdrawPendingQuestion(id: string): void {
+  clearPending(id);
 }
 
 /**
@@ -323,6 +343,11 @@ export function resolvePendingQuestion(
   }
   entry.resolve({ label, index: optionIndex });
   return 'resolved';
+}
+
+/** Whether the asker closes this question's message itself (see PendingEntry.ownerCloses). Read before resolving: resolving drops the entry. */
+export function questionOwnerCloses(id: string): boolean {
+  return pending.get(id)?.ownerCloses === true;
 }
 
 /**

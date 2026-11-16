@@ -14,6 +14,8 @@ import {
   getQuestionOptionLabel,
   hasPendingQuestionForSession,
   buildAskUserKeyboard,
+  questionOwnerCloses,
+  withdrawPendingQuestion,
 } from '../../src/claude/ask-user.js';
 
 describe('buildAskUserMessageText', () => {
@@ -341,5 +343,30 @@ describe('restricted questions', () => {
 
   it('reports expired for an unknown id regardless of responder', () => {
     expect(resolvePendingQuestion('deadbeef', 0, 7)).toBe('expired');
+  });
+});
+
+describe('a question its asker closes', () => {
+  it('is flagged for the tap handler, and only until it resolves', () => {
+    const { id } = createPendingQuestion(['A', 'B'], undefined, 'chat-o1', undefined, { ownerCloses: true });
+    expect(questionOwnerCloses(id)).toBe(true);
+    resolvePendingQuestion(id, 0);
+    expect(questionOwnerCloses(id)).toBe(false);
+    const plain = createPendingQuestion(['A', 'B'], undefined, 'chat-o1');
+    expect(questionOwnerCloses(plain.id)).toBe(false);
+    resolvePendingQuestion(plain.id, 0);
+  });
+
+  it('can be withdrawn: a later tap is expired, the flag is down, and the promise never settles', async () => {
+    vi.useFakeTimers();
+    const { id, promise } = createPendingQuestion(['A', 'B'], 1000, 'chat-o2', undefined, { ownerCloses: true });
+    let settled = false;
+    void promise.then(() => { settled = true; });
+    withdrawPendingQuestion(id);
+    expect(hasPendingQuestionForSession('chat-o2')).toBe(false);
+    expect(resolvePendingQuestion(id, 0)).toBe('expired');
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(settled).toBe(false);
+    vi.useRealTimers();
   });
 });

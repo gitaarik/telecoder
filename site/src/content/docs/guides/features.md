@@ -94,10 +94,12 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 
 - An agent watchdog that detects silent or stuck tools, with `/cancel` working during hangs
 - A memory guard: a message that would start a new `claude` on a machine short of memory
-  ends the idle claudes first, and asks before starting when that isn't enough. A claude
-  let through a moment ago counts as spent until it shows up in the kernel's figure, so two
-  threads started together can't both slip past; `/status` shows the machine's available
-  memory and the claudes running
+  ends the idle claudes first, and asks before starting when that isn't enough: start
+  anyway, end the longest-idle claude, check again, wait for room, or drop the message.
+  Waiting checks every 30 s and starts Claude the moment it fits. A claude let through a
+  moment ago counts as spent until it shows up in the kernel's figure, so two threads
+  started together can't both slip past; `/status` shows the machine's available memory
+  and the claudes running
 - `/sync` resends a reply Telegram missed
 - `/restartbot` and `/update` from chat; the background service brings the bot back
 - `/rebuildbot idle` builds once and restarts each bot as soon as it has nothing left to

@@ -48,6 +48,18 @@ reasoning — the commit bodies are the long form, this is the index.
   asking, since what's in it is yours, not the bot's. Nothing is written to a
   project any more.
 
+- **The memory guard's question can wait for room.** When memory is tight and
+  reaping the idle claudes isn't enough, the chat used to have three answers:
+  start anyway, end the longest-idle claude, or drop the message — and letting
+  it sit dropped it. Two more now: **Check again** reaps and reads the machine
+  again, and re-asks over the same message with the fresh numbers when it still
+  doesn't fit; **Wait for room** does that every 30 s and starts Claude the
+  moment it fits, with start anyway and drop still under the message meanwhile.
+  What a wait is really waiting for is the other claudes to cross the reap
+  window, so a claude that was busy when the question went up is ended as soon
+  as it has sat idle long enough. A wait that runs out asks again instead of
+  dropping: the chat said it wanted that message.
+
 - **The memory guard counts the claude it just let through.** A new `claude`
   takes its memory over its first seconds, and MemAvailable doesn't move until
   it does, so two threads started together both read the same figure and both

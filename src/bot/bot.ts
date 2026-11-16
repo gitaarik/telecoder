@@ -108,6 +108,7 @@ import {
   resolvePendingQuestion,
   getQuestionResponders,
   getQuestionOptionLabel,
+  questionOwnerCloses,
   appendAnsweredFooter,
   buildAnswerConfirmation,
 } from '../claude/ask-user.js';
@@ -146,6 +147,7 @@ async function handleAskUserCallback(ctx: Context): Promise<void> {
   // `A` `B` `C` with the full text in the message body, and "✅ Answered: A"
   // is not an answer anyone can read back later.
   const optionLabel = getQuestionOptionLabel(id, idx);
+  const ownerCloses = questionOwnerCloses(id);
   const outcome = resolvePendingQuestion(id, idx, ctx.from?.id);
   if (outcome === 'expired') {
     await ctx.answerCallbackQuery({ text: 'This question already expired.' });
@@ -171,6 +173,11 @@ async function handleAskUserCallback(ctx: Context): Promise<void> {
   }
 
   await ctx.answerCallbackQuery();
+
+  // A question its asker keeps re-posting over the same message (the memory
+  // guard's "Check again") is the asker's to mark up and close; an "Answered"
+  // footer here would race its next edit.
+  if (ownerCloses) return;
 
   const message = ctx.callbackQuery?.message as
     | { text?: string; entities?: MessageEntity[]; message_id?: number }
