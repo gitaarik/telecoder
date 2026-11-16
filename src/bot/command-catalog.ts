@@ -34,7 +34,7 @@ export function buildCommandMenu(): CommandMenuEntry[] {
     { command: 'clear', description: '🗑️ Clear conversation history' },
     { command: 'cancel', description: '⏹️ Stop the current request and drop anything queued' },
     { command: 'resume', description: '▶️ Resume a session' },
-    { command: 'botstatus', description: '🩺 Show bot process status' },
+    { command: 'botstatus', description: '🩺 Show bot process status (also /ping)' },
     { command: 'version', description: '🏷️ Show the running version and whether it is the latest' },
     { command: 'restartbot', description: '🔁 Restart the bot' },
     // An npm install has no source to rebuild; /update replaces it instead.
@@ -79,7 +79,6 @@ export function buildCommandMenu(): CommandMenuEntry[] {
     { command: 'statusline', description: '📍 Toggle per-turn status line' },
     { command: 'botname', description: '✏️ Rename the bot (admins)' },
     { command: 'topic', description: '💬 Set the conversation topic' },
-    { command: 'ping', description: '🏓 Check if bot is responsive' },
     { command: 'commands', description: '📜 List all commands' },
   ];
 }

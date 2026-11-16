@@ -41,7 +41,6 @@ import {
   handleCost,
   handleUpdate,
   handleUpdateCallback,
-  handlePing,
   handleCancel,
   handleCommands,
   handleModelCommand,
@@ -345,7 +344,7 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // This lets them interrupt, inspect, or restart even when a query is hung.
   cmd('cancel', handleCancel);
   cmd('stop', handleCancel); // alias — natural expectation for "stop the current turn"
-  cmd('ping', withRunningNote(handlePing));
+  cmd('ping', withRunningNote(handleBotStatus)); // alias — the health check people reach for first
   cmd('status', withRunningNote(handleStatus));
   cmd('version', withRunningNote(handleVersion));
   // Lifecycle and transport are admin-only: they act on every session in the

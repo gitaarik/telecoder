@@ -59,7 +59,6 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 ## Utility
 | Command | Description |
 |---------|-------------|
-| `/ping` | Health check |
 | `/context` | Show Claude context / token usage |
 | `/cost` | Show usage limits and cost as Claude Code reports them — session/weekly limits on a subscription, dollar totals on API billing |
 | `/compact` | Compact the context window, reporting the token reduction |
@@ -72,7 +71,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/users` | Who can use this bot — admins, guests, and people seen but not let in — admin-only |
 | `/allow` | Let someone in as a guest — reply to their message, or `/allow @user` — admin-only |
 | `/deny` | Remove someone admitted with `/allow` — admin-only |
-| `/botstatus` | Bot process status and the version it's running |
+| `/botstatus` | Bot process status and the version it's running. Answers straight away, even mid-turn, so it doubles as a health check (alias: `/ping`) |
 | `/version` | The running version and whether it's the latest, against the code in the checkout and the branch it tracks |
 | `/restartbot` | Restart the bot — admin-only |
 | `/rebuildbot` | Rebuild code and restart — this instance, all, or all once each is idle (`/rebuildbot idle`) — admin-only, source checkouts only |

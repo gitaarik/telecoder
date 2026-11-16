@@ -14,8 +14,8 @@ wrong. `telecoder service logs` shows what the bot itself is doing.
 Work down this list:
 
 1. **Is it running?** `telecoder service status`, or look for the process if you
-   started it another way. Send `/ping`: a running bot answers straight away, even in
-   the middle of a task.
+   started it another way. Send `/botstatus` (or `/ping`): a running bot answers straight
+   away, even in the middle of a task.
 2. **Does it know you?** If your ID isn't allowed, the bot replies *"You are not
    authorized"* with your Telegram ID. Add that ID to `ALLOWED_USER_IDS` in
    `~/.telecoder/.env` and restart. (`telecoder init` does this for you, using the

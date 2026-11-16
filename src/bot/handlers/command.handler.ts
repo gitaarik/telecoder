@@ -5,7 +5,6 @@ import { userPreferences } from '../../providers/user-preferences.js';
 import { describeModelId, isPremiumModel, PREMIUM_MODEL_ICON } from '../../claude/model-catalog.js';
 import { config } from '../../config.js';
 import { messageSender } from '../../telegram/message-sender.js';
-import { getUptimeFormatted } from '../middleware/stale-filter.js';
 import { getAvailableCommands } from '../../claude/command-parser.js';
 import { isProcessing } from '../../claude/request-queue.js';
 import { EntityText, joinMessages, trimMessage, type EntityMessage } from '../../telegram/entities.js';
@@ -328,11 +327,6 @@ export async function handleStatus(ctx: Context): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err);
     await ctx.reply(`❌ /status failed: ${msg}`).catch(() => {});
   }
-}
-
-export async function handlePing(ctx: Context): Promise<void> {
-  const uptime = getUptimeFormatted();
-  await ctx.reply(`🏓 Pong!\n\nUptime: ${uptime}`);
 }
 
 export async function handleContext(ctx: Context): Promise<void> {

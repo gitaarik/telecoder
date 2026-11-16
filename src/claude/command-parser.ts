@@ -120,13 +120,12 @@ export function getAvailableCommands(): EntityMessage {
       '• `/context` - Show Claude context usage',
       '• `/cost` - Show usage limits and cost from Claude Code',
       '• `/compact` - Compact the context window (reports the token reduction)',
-      '• `/botstatus` - Show bot process status',
+      '• `/botstatus` - Show bot process status; answers mid-turn too (alias: `/ping`)',
       '• `/version` - Show the running version and whether it\'s the latest',
       `• \`/restartbot\` - Restart the bot process${adminTag}`,
       ...(isCheckout()
         ? [`• \`/rebuildbot\` - Rebuild and restart with auto-resume; \`/rebuildbot idle\` waits for each bot to finish first${adminTag}`]
         : []),
-      '• `/ping` - Check if bot is responsive',
       '• `/cancel` - Stop the current request and drop anything queued',
       '• `/mode` - How much Claude asks before acting',
       `• \`/autoapprove [30m|off|status]\` - Let the gate approve instead of asking, for a while${approverTag}`,

@@ -31,6 +31,11 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Changed
 
+- **`/ping` is `/botstatus` now.** Claudegram's `/ping` answered "🏓 Pong!" and
+  an uptime, which `/botstatus` already shows next to the version, memory and
+  Claude processes, and both answer mid-turn. `/ping` still works, as an alias,
+  and is off the `/` menu.
+
 - **On macOS the screen can sleep while the bot runs.** The bot ran
   `caffeinate -di` from its first day, a habit from running Claudegram on a
   laptop: `-i` keeps the Mac from idle-sleeping, which the bot needs, and
