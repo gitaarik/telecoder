@@ -117,23 +117,27 @@ const install = 'npm install -g telecoder';
       <!-- How it works -->
       <section class="how wrap" aria-labelledby="how-title">
         <h2 id="how-title">How it works</h2>
-        <ol class="flow">
-          <li>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5" /><path d="M10.5 18.5h3" /></svg>
+        <p class="intro">Telegram already has fast, polished apps for phone, desktop and web. TeleCoder brings all of Claude Code into them, the same on every device.</p>
+        <div class="flow">
+          <div class="node">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3 10.5 13.5" /><path d="M21 3l-6.5 18-4-7.5L3 9.5z" /></svg>
             <h3>You, in Telegram</h3>
-            <p>Message your own bot from any Telegram app.</p>
-          </li>
-          <li>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg>
-            <h3>TeleCoder, on your machine</h3>
-            <p>Picks up your message. It runs on your computer or server, with nothing exposed to the internet.</p>
-          </li>
-          <li>
-            <svg class="brandmark" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.6 6.4 9.2 12l-5.6 5.6" class="you" /><path d="M11.2 6.4 16.8 12l-5.6 5.6" class="agent" /></svg>
-            <h3>Claude Code, with your login</h3>
-            <p>The official Claude Code does the work in your project. A Pro or Max plan works, and so does an API key.</p>
-          </li>
-        </ol>
+            <p>Message your own bot from any Telegram app, on any device.</p>
+          </div>
+          <div class="machine">
+            <span class="machine-label">Your computer or server</span>
+            <div class="node">
+              <svg class="brandmark" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.6 6.4 9.2 12l-5.6 5.6" class="you" /><path d="M11.2 6.4 16.8 12l-5.6 5.6" class="agent" /></svg>
+              <h3>TeleCoder</h3>
+              <p>Picks up your message and hands it to Claude Code. It only connects out, so nothing is exposed to the internet.</p>
+            </div>
+            <div class="node">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="16" rx="2.5" /><path d="m7 9.5 3 2.5-3 2.5M12.5 15h4.5" /></svg>
+              <h3>Claude Code, with your login</h3>
+              <p>The official Claude Code does the work in your project. A Pro or Max plan works, and so does an API key.</p>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- Setup -->
@@ -142,15 +146,17 @@ const install = 'npm install -g telecoder';
         <ol class="steps">
           <li>
             <h3>Make a bot</h3>
-            <p>Send <code>/newbot</code> to <a href="https://t.me/BotFather">@BotFather</a> and copy the token.</p>
+            <p>Send <code>/newbot</code> to <a href="https://t.me/BotFather">@BotFather</a> and copy the token it gives you.</p>
           </li>
           <li>
             <h3>Install and answer a few questions</h3>
+            <p>Paste the bot token, and pick the folder your projects are in.</p>
             <pre><code>{install}
 telecoder init</code></pre>
           </li>
           <li>
             <h3>Keep it running</h3>
+            <p>Sets TeleCoder up as a background service, so it starts at boot and restarts if it stops. The setup offers this too.</p>
             <pre><code>telecoder service install</code></pre>
           </li>
         </ol>
@@ -231,7 +237,7 @@ telecoder init</code></pre>
         <div class="panel" role="tabpanel" id="p-projects" aria-labelledby="t-projects">
           <div class="say">
             <h3>Switch projects with a tap</h3>
-            <p><code>/project</code> opens your favourites, or browse your projects folder. <code>/newproject</code> makes a new one.</p>
+            <p><code>/project</code> opens your favourites, or browse your projects folder.</p>
             <a href="/reference/commands/#session">Session commands</a>
           </div>
           <div class="tg">
@@ -755,24 +761,54 @@ telecoder init</code></pre>
     padding-block: 4.5rem;
     border-top: 1px solid var(--line);
   }
-  .flow {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 3rem;
+  .how .intro {
+    max-width: 40rem;
+    margin: -1rem 0 2.8rem;
+    font-size: 1.15rem;
+    color: var(--muted);
   }
-  .flow li {
+  .flow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    gap: 3rem;
+    align-items: start;
+  }
+  .machine {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 3rem;
+    margin-top: -1.6rem;
+    padding: 1.6rem 1.6rem 1.8rem;
+    border: 2px dashed var(--line);
+    border-radius: 16px;
+  }
+  .machine-label {
+    position: absolute;
+    top: -0.75rem;
+    left: 1.2rem;
+    padding: 0 0.5rem;
+    background: var(--bg);
+    font-size: 0.8rem;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .node {
     position: relative;
   }
-  .flow li:not(:last-child)::after {
+  .flow > .node::after,
+  .machine > .node:first-of-type::after {
     content: '';
     position: absolute;
     top: 1.35rem;
     left: 3.6rem;
     right: -2.2rem;
     border-top: 2px dashed var(--line);
+  }
+  .flow > .node::after {
+    right: -3rem;
   }
   .flow svg {
     width: 2.7rem;
@@ -814,6 +850,9 @@ telecoder init</code></pre>
   }
   .steps p {
     color: var(--muted);
+  }
+  .steps h3 + p {
+    margin-bottom: 0.2rem;
   }
   .steps pre {
     margin: 0.6rem 0 0;
@@ -964,12 +1003,16 @@ telecoder init</code></pre>
       padding-block: 2rem 4rem;
     }
     .flow,
+    .machine,
     .steps {
       grid-template-columns: 1fr;
       gap: 2rem;
     }
-    .flow li::after {
+    .flow .node::after {
       display: none;
+    }
+    .machine {
+      margin-top: 0.5rem;
     }
   }
   @media (max-width: 620px) {
