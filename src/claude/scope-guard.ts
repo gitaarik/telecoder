@@ -23,6 +23,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { config } from '../config.js';
 import { getWorkspaceRoot } from '../utils/workspace-guard.js';
+import { getUploadsRoot } from '../utils/uploads-dir.js';
 
 export type ScopeVerdict =
   | { outOfScope: false }
@@ -107,7 +108,7 @@ export function isScopeGuardEnabled(gateEnabled: boolean): boolean {
  * because every toolchain writes there and nothing durable lives there.
  */
 export function getAllowedRoots(): string[] {
-  const roots = [getWorkspaceRoot(), os.tmpdir(), '/tmp', ...config.SCOPE_ALLOWED_PATHS];
+  const roots = [getWorkspaceRoot(), os.tmpdir(), '/tmp', getUploadsRoot(), ...config.SCOPE_ALLOWED_PATHS];
   return dedupe(roots.map((r) => path.resolve(r)));
 }
 
@@ -249,6 +250,10 @@ export function isSensitivePath(absolutePath: string): boolean {
 }
 
 function isSensitive(resolved: string): boolean {
+  // The one corner of the bot's state that holds the user's own files: what
+  // they sent in the chat, saved there for Claude to read (utils/uploads-dir.ts).
+  if (within(getUploadsRoot(), resolved)) return false;
+
   const segments = resolved.split(path.sep).filter(Boolean);
   if (segments.some((s) => SENSITIVE_SEGMENTS.includes(s))) return true;
 

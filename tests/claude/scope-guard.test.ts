@@ -86,6 +86,13 @@ describe('classify', () => {
     expect(classify('/home/rik/dev/telecoder/.env.bot2', CWD, ROOTS).outOfScope).toBe(true);
   });
 
+  it('lets the files the user sent in the chat be read, alone in the state dir', () => {
+    // Not bot state, and a root of its own: it sits outside every workspace.
+    expect(classify(path.join(HOME, '.telecoder/uploads/proj/photo_1.jpg'), CWD, getAllowedRoots()).outOfScope).toBe(false);
+    expect(classify(path.join(HOME, '.telecoder/uploads-old/photo_1.jpg'), CWD, ROOTS).outOfScope).toBe(true);
+    expect(getAllowedRoots()).toContain(path.join(HOME, '.telecoder/uploads'));
+  });
+
   it('flags credential config subdirs but not ordinary config', () => {
     expect(classify(path.join(HOME, '.config/gcloud/creds.db'), CWD, ROOTS).outOfScope).toBe(true);
     expect(classify(path.join(HOME, '.config/nvim/init.lua'), CWD, ROOTS).outOfScope).toBe(true);

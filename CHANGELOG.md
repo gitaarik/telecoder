@@ -15,6 +15,15 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Changed
 
+- **Files you send are saved under `~/.telecoder/uploads/`, not in the project.**
+  A photo sent in a chat used to land in `<project>/.telecoder/uploads/`, leaving
+  a folder in every project someone had sent a picture to, with a `.gitignore`
+  of its own to keep the pictures out of commits. They now go to
+  `~/.telecoder/uploads/<project name>/`, and Claude gets the path as before.
+  It is the one part of `~/.telecoder` the scope guard lets Claude read without
+  asking, since what's in it is yours, not the bot's. Nothing is written to a
+  project any more.
+
 - **The memory guard counts the claude it just let through.** A new `claude`
   takes its memory over its first seconds, and MemAvailable doesn't move until
   it does, so two threads started together both read the same figure and both
@@ -63,6 +72,12 @@ reasoning — the commit bodies are the long form, this is the index.
   that notification was the only thing that retired a task, so "🔄 Running in
   background" stayed under every later reply until the bot restarted, and the
 ### Removed
+
+- **`/handoff`.** It wrote the conversation to a markdown file in the project and
+  sent it as a document. Claude Code's own `/export` does the same from the pty,
+  `/teleport` carries a session to a terminal, and `/fork` and `/spinoff` carry
+  it to another chat. It was also the last thing that wrote to a project's
+  `.telecoder/` folder.
 
 - **The SDK transport.** Every chat runs Claude Code in a pty now: the real
   `claude` CLI, on your own login, with your `CLAUDE.md`, skills, plugins and

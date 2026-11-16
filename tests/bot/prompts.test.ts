@@ -192,6 +192,9 @@ describe('promptLabel', () => {
     expect(promptLabel('- ok so could we refactor it')).toBe('ok so could we refactor it');
     expect(promptLabel('User uploaded an image to the project.\nSaved at: /x.png\nCaption: "this one"'))
       .toBe('📷 Image — this one');
+    // The wording since uploads moved out of the project.
+    expect(promptLabel('User sent an image.\nSaved at: /x.png\nCaption: "this one"')).toBe('📷 Image — this one');
+    expect(promptLabel('User sent a file: invoice.pdf\nSaved at: /x.pdf\nCaption: (none)')).toBe('📎 invoice.pdf');
   });
 
   it('prefers the words under a quoted reply to the quote', () => {

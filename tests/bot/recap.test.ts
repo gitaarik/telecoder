@@ -1,10 +1,8 @@
 /**
- * /recap and /handoff replay the conversation from the session log, an
+ * /recap replays the conversation from the session log, an
  * exchange at a time. What Claude Code writes around a prompt — a /compact's
  * records, a note in the user's place, the tags around a paste — is part of
- * neither side of one.
- *
- * /recap then ends the way a turn does, with the context and the status line.
+ * neither side of one. It then ends the way a turn does, with the context and the status line.
  *
  * Drives the real handlers against transcripts written under a scratch home,
  * so nothing here touches the real ~/.claude or ~/.telecoder.
@@ -25,15 +23,11 @@ vi.mock('os', async (importOriginal) => {
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'telecoder-recap-'));
 process.env.TELECODER_TEST_HOME = home;
 
-const { handleRecap, handleHandoff } = await import('../../src/bot/handlers/command/session.js');
+const { handleRecap } = await import('../../src/bot/handlers/command/session.js');
 const { sessionManager } = await import('../../src/claude/session-manager.js');
 const { sessionJsonlPath } = await import('../../src/claude/session-jsonl.js');
-const { messageSender } = await import('../../src/telegram/message-sender.js');
 const { userPreferences } = await import('../../src/providers/user-preferences.js');
 const { clearConversation } = await import('../../src/providers/provider-router.js');
-
-// No upload: the handoff file on disk is what's checked.
-vi.spyOn(messageSender, 'sendMarkdownFile').mockResolvedValue(true);
 
 afterAll(() => {
   delete process.env.TELECODER_TEST_HOME;
@@ -180,20 +174,5 @@ describe('/recap', () => {
 
       expect(reply.mock.calls.at(-1)![0]).toContain('Shipped');
     });
-  });
-});
-
-describe('/handoff', () => {
-  it('writes each exchange with only what you sent, paste lines intact', async () => {
-    const { ctx, project } = chatWithTranscript('/handoff');
-    await handleHandoff(ctx);
-    const dir = path.join(project, '.telecoder', 'handoffs');
-    const [file] = fs.readdirSync(dir);
-    const md = fs.readFileSync(path.join(dir, file!), 'utf-8');
-    const users = md.split('### User\n\n').slice(1).map((part) => part.split('\n\n### Assistant')[0]);
-    expect(users).toEqual([
-      'Plan the parser',
-      'Build log:\nall green\n\nShip it',
-    ]);
   });
 });

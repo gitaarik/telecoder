@@ -72,7 +72,6 @@ export {
   handleClear,
   handleClearCallback,
   handleRecap,
-  handleHandoff,
   handleSync,
   handleTeleport,
 } from './command/session.js';

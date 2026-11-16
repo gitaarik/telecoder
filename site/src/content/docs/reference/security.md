@@ -45,4 +45,4 @@ use. A secret you send when Claude asks for one is the exception: it goes to Tel
 message, until the bot deletes it, and from there only into the command Claude named. A Claude
 token made with `claude setup-token` doesn't go through Telegram at all. Claude Code keeps its own session transcripts in `~/.claude`. Voice and text-to-speech
 go to Groq or OpenAI, and only if you configure them. Nothing is published anywhere: a long
-reply arrives in the chat in full, and `/handoff` sends its note as a file.
+reply arrives in the chat in full.

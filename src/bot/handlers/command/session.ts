@@ -9,7 +9,6 @@
  */
 
 import { Context } from 'grammy';
-import * as fs from 'fs';
 import * as path from 'path';
 import { config } from '../../../config.js';
 import { sessionManager } from '../../../claude/session-manager.js';
@@ -39,12 +38,10 @@ import {
   letteredOptionLines,
 } from '../../../telegram/lettered-options.js';
 import {
-  getSessionTopic,
   clearTopic,
   restoreTopic,
 } from './topic.js';
 import { sendStatusLine } from './settings.js';
-import { ensureProjectDataDir } from '../../../utils/project-data-dir.js';
 
 export async function handleClear(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
@@ -299,97 +296,6 @@ export async function handleRecap(ctx: Context): Promise<void> {
   // point the context is no longer the figure last shown.
   const usage = getCachedUsage(sessionKey);
   await sendStatusLine(ctx, chatId, sessionKey, usage, exchanges[exchanges.length - 1]!.user);
-}
-
-/**
- * Dump the current session's conversation to a markdown file and deliver
- * via Telegram as a downloadable file. Useful before switching
- * projects, clearing context, or handing off to a teammate. Captures all
- * exchanges (capped at 200) plus session metadata.
- */
-export async function handleHandoff(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const session = sessionManager.getSession(sessionKey);
-  if (!session) {
-    await replyMd(ctx, '⚠️ No active session. Use `/resume` first.');
-    return;
-  }
-  if (!session.claudeSessionId) {
-    await replyMd(ctx, 'ℹ️ This session has no recorded messages yet.');
-    return;
-  }
-
-  const exchanges = readRecentExchanges(session.workingDirectory, session.claudeSessionId, 200);
-  if (exchanges.length === 0) {
-    await replyMd(ctx, 'ℹ️ No recoverable exchanges in this session.');
-    return;
-  }
-
-  const projectName = path.basename(session.workingDirectory);
-  const topic = getSessionTopic(sessionKey);
-  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-
-  const headerLines: string[] = [
-    `# Session handoff — ${projectName}`,
-    '',
-    `**Project:** \`${session.workingDirectory}\`  `,
-    `**Session id:** \`${session.claudeSessionId}\`  `,
-    `**Conversation id:** \`${session.conversationId}\`  `,
-    `**Exported:** ${new Date().toLocaleString()}  `,
-    topic ? `**Topic:** ${topic}  ` : '',
-    `**Exchanges:** ${exchanges.length}`,
-    '',
-    `Resume with: \`claude --resume ${session.claudeSessionId}\``,
-    '',
-    '---',
-    '',
-  ].filter(Boolean);
-
-  const bodyLines: string[] = [];
-  exchanges.forEach((ex, i) => {
-    bodyLines.push(`## Exchange ${i + 1}`);
-    bodyLines.push('');
-    bodyLines.push('### User');
-    bodyLines.push('');
-    bodyLines.push(unwrapPaste(ex.user));
-    bodyLines.push('');
-    bodyLines.push('### Assistant');
-    bodyLines.push('');
-    bodyLines.push(ex.assistant.trim());
-    bodyLines.push('');
-    bodyLines.push('---');
-    bodyLines.push('');
-  });
-
-  const md = [...headerLines, ...bodyLines].join('\n');
-  let outDir: string;
-  try {
-    outDir = ensureProjectDataDir(session.workingDirectory, 'handoffs');
-  } catch (err) {
-    await replyFormatted(ctx, `❌ Couldn't create handoff dir: ${err instanceof Error ? err.message : String(err)}`);
-    return;
-  }
-  const filePath = path.join(outDir, `handoff-${ts}.md`);
-  try {
-    fs.writeFileSync(filePath, md, { mode: 0o600 });
-  } catch (err) {
-    await replyFormatted(ctx, `❌ Couldn't write handoff: ${err instanceof Error ? err.message : String(err)}`);
-    return;
-  }
-
-  await replyFormatted(
-    ctx,
-    new EntityText()
-      .add('📦 ').bold('Handoff written')
-      .add(' — ').code(path.relative(session.workingDirectory, filePath))
-      .add(`\n${exchanges.length} exchange${exchanges.length === 1 ? '' : 's'} captured.`)
-      .build(),
-  );
-
-  await messageSender.sendMarkdownFile(ctx, filePath, { sendAsDocument: true });
 }
 
 /**

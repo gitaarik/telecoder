@@ -33,7 +33,7 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 - Session resume across messages, and `/resume` and `/recap` to get back to earlier
   work, including sessions started in your terminal
 - `/prompts` lists the prompts you sent, and branches from any of them
-- `/teleport` continues a session in your terminal; `/handoff` exports it as markdown
+- `/teleport` continues a session in your terminal
 - Chats carry on by themselves after a restart
 - Project-based working directories, picked with `/project`
 - [Threads and forks](threads-and-forks.md)
@@ -135,8 +135,8 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 
 ## Files and uploads
 
-- Send photos or image documents; they're saved under `.telecoder/uploads/` in the project, a
-  folder that keeps itself out of git
+- Send photos, image documents or files; they're saved under `~/.telecoder/uploads/`, outside
+  the project, and Claude gets the path
 - `/file <path>` sends you a file from the project, or ask Claude to send it. Either way,
   credential files such as `.env` and `~/.ssh` are never sent, and a guest only gets files
   from the chat's project

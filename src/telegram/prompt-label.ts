@@ -23,9 +23,11 @@ import { userTextKind } from '../claude/session-jsonl.js';
 // an `[Image #N]` chip, leaving `Saved at:` and `  1.` pointing at nothing.
 //
 // Collapse those notes back to what the upload was: kind, name, caption.
+// Both wordings are matched: the one the handlers write, and the one they
+// wrote while uploads went to the project, which old transcripts still carry.
 const UPLOAD_CHIPS = /^(?:\[(?:Image|Pasted text) #\d+(?: \+\d+ lines)?\]\s*)+/;
-const IMAGE_NOTE = 'User uploaded an image to the project.';
-const FILE_NOTE = /^User uploaded a file: (.+)$/;
+const IMAGE_NOTE = /^User (?:sent an image\.|uploaded an image to the project\.)$/;
+const FILE_NOTE = /^User (?:sent|uploaded) a file: (.+)$/;
 // The line each handler puts directly after the caption — the caption itself
 // is a user-supplied string that may run over several lines.
 const AFTER_CAPTION = /^(?:The image is attached as a vision input|Use the Read tool to read its contents)/;
@@ -52,7 +54,7 @@ export function summarizeUserPrompt(text: string): string {
   const first = lines[0]?.trim() ?? '';
 
   let label: string | undefined;
-  if (first === IMAGE_NOTE) {
+  if (IMAGE_NOTE.test(first)) {
     label = '📷 Image';
   } else {
     const named = FILE_NOTE.exec(first);

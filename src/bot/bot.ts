@@ -57,7 +57,6 @@ import {
   handleResumeCallback,
   handleRecap,
   handleSync,
-  handleHandoff,
   handlePermissions,
   handleProjectCommands,
   handleTeleport,
@@ -385,7 +384,6 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // definition includes hung or sluggish turns — gating it on sequentialize
   // would queue it behind the very turn the user wants to inspect.
   cmd('sync', handleSync);
-  cmd('handoff', handleHandoff);
   // /tree and /prompts are read-only until a button is tapped, so they answer
   // mid-turn — "what did I just ask?" comes up while a long turn runs — and the
   // buttons that switch conversations refuse while a reply is running.

@@ -52,7 +52,6 @@ export function buildCommandMenu(): CommandMenuEntry[] {
     { command: 'recap', description: '📋 Recap last messages of current session' },
     { command: 'prompts', description: '💬 List the prompts you sent, and branch from any of them' },
     { command: 'sync', description: '📨 Resend any missed reply from the session log' },
-    { command: 'handoff', description: '📦 Export the session as a markdown handoff document' },
     { command: 'schedule', description: '🔔 Schedule a recurring prompt (e.g. every 1h, daily 9am)' },
     { command: 'schedules', description: '🔔 List active scheduled tasks' },
     { command: 'unschedule', description: '🔕 Remove a scheduled task by id' },

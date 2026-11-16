@@ -16,14 +16,10 @@ import { type PhotoSize } from 'grammy/types';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
 import { requireSession } from './session-guard.js';
 import { progressCallbacks, withStreamingTurn } from '../../telegram/streaming-turn.js';
-import { ensureProjectDataDir } from '../../utils/project-data-dir.js';
+import { ensureUploadsDir } from '../../utils/uploads-dir.js';
 
 function sanitizeFileName(name: string): string {
   return path.basename(name).replace(/[^a-zA-Z0-9._-]/g, '_');
-}
-
-function ensureUploadsDir(projectDir: string): string {
-  return ensureProjectDataDir(projectDir, 'uploads');
 }
 
 function pickLargestPhoto(photoSizes: PhotoSize[]): PhotoSize {
@@ -70,13 +66,10 @@ async function handleSavedImage(
   const session = sessionManager.getSession(sessionKey);
   if (!session) return;
 
-  const relativePath = path.relative(session.workingDirectory, savedPath);
-
   const captionText = caption?.trim();
   const noteLines = [
-    'User uploaded an image to the project.',
+    'User sent an image.',
     `Saved at: ${savedPath}`,
-    `Relative path: ${relativePath}`,
     captionText ? `Caption: "${captionText}"` : 'Caption: (none)',
     'The image is attached as a vision input — you can see it directly.',
     'If the caption includes a question or request, answer it. Otherwise, describe what you see and ask if they want any analysis or edits.',
@@ -237,12 +230,10 @@ export async function handleTextDocument(ctx: Context): Promise<void> {
       throw new Error('Downloaded document is empty.');
     }
 
-    const relativePath = path.relative(session.workingDirectory, destPath);
     const caption = ctx.message?.caption?.trim();
     const noteLines = [
-      `User uploaded a file: ${document.file_name ?? originalName}`,
+      `User sent a file: ${document.file_name ?? originalName}`,
       `Saved at: ${destPath}`,
-      `Relative path: ${relativePath}`,
       caption ? `Caption: "${caption}"` : 'Caption: (none)',
       'Use the Read tool to read its contents. For PDFs use Read with `pages` for large files.',
       'If the caption asks a question, answer it based on the file. Otherwise summarize the contents and ask if they want a specific analysis.',

@@ -469,34 +469,6 @@ export class MessageSender {
     }
   }
 
-  /**
-   * Send a markdown file: as a document, or its content inline in the chat.
-   */
-  async sendMarkdownFile(
-    ctx: Context,
-    filePath: string,
-    options: { sendAsDocument?: boolean } = {}
-  ): Promise<boolean> {
-    const { sendAsDocument = false } = options;
-
-    try {
-      if (!fs.existsSync(filePath)) {
-        console.error('[Markdown] File not found:', filePath);
-        return false;
-      }
-
-      if (sendAsDocument) {
-        return await this.sendDocument(ctx, filePath, `📎 ${path.basename(filePath)}`);
-      }
-
-      await this.sendMessage(ctx, fs.readFileSync(filePath, 'utf-8'));
-      return true;
-    } catch (error) {
-      console.error('[Markdown] Failed to send:', error);
-      return false;
-    }
-  }
-
   async startStreaming(ctx: Context, prompt: string): Promise<void> {
     const keyInfo = getSessionKeyFromCtx(ctx);
     if (!keyInfo) return;

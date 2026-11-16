@@ -84,8 +84,7 @@ Only `🍴 Fork`, `/fork` and `/spinoff` open new threads.
   started in a terminal. Add words to search, or `🌐 All projects` to look wider.
 - **`/recap`** re-sends the last few exchanges in full.
 - **`/prompts`** lists your prompts, and branches from any of them.
-- **`/teleport`** gives you the `claude --resume` line to carry on in a terminal, and
-  **`/handoff`** exports the conversation as a markdown file.
+- **`/teleport`** gives you the `claude --resume` line to carry on in a terminal.
 - **`/clear`** starts fresh in the same project. The old conversation stays in `/resume`.
 
 ## Deleting a thread
