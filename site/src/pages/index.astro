@@ -120,19 +120,19 @@ const install = 'npm install -g telecoder';
         <p class="intro">Telegram already has fast, polished apps for phone, desktop and web. TeleCoder brings all of Claude Code into them, the same on every device.</p>
         <div class="flow">
           <div class="node">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3 10.5 13.5" /><path d="M21 3l-6.5 18-4-7.5L3 9.5z" /></svg>
+            <svg class="logo telegram" viewBox="0 0 24 24" aria-hidden="true"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm4.962 7.224c.1-.002.321.023.465.14a.5.5 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024q-.159.037-5.061 3.345-.72.495-1.302.48c-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789q.04-.324.893-.663 5.247-2.286 6.998-3.014c3.332-1.386 4.025-1.627 4.476-1.635" /></svg>
             <h3>You, in Telegram</h3>
-            <p>Message your own bot from any Telegram app, on any device.</p>
+            <p>Message your bot from any Telegram app, and get Claude's replies back as it works.</p>
           </div>
           <div class="machine">
             <span class="machine-label">Your computer or server</span>
             <div class="node">
               <svg class="brandmark" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.6 6.4 9.2 12l-5.6 5.6" class="you" /><path d="M11.2 6.4 16.8 12l-5.6 5.6" class="agent" /></svg>
               <h3>TeleCoder</h3>
-              <p>Picks up your message and hands it to Claude Code. It only connects out, so nothing is exposed to the internet.</p>
+              <p>Passes your messages to Claude Code and streams everything it says back to you. It only connects out, so nothing is exposed to the internet.</p>
             </div>
             <div class="node">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="16" rx="2.5" /><path d="m7 9.5 3 2.5-3 2.5M12.5 15h4.5" /></svg>
+              <svg class="logo claude" viewBox="0 0 24 24" aria-hidden="true"><path d="m4.714 15.956 4.718-2.648.079-.23-.08-.128h-.23l-.79-.048-2.695-.073-2.337-.097-2.265-.122-.57-.121-.535-.704.055-.353.48-.321.685.06 1.518.104 2.277.157 1.651.098 2.447.255h.389l.054-.158-.133-.097-.103-.098-2.356-1.596-2.55-1.688-1.336-.972-.722-.491L2 6.223l-.158-1.008.656-.722.88.06.224.061.893.686 1.906 1.476 2.49 1.833.364.304.146-.104.018-.072-.164-.274-1.354-2.446-1.445-2.49-.644-1.032-.17-.619a3 3 0 0 1-.103-.729L6.287.133 6.7 0l.995.134.42.364.619 1.415L9.735 4.14l1.555 3.03.455.898.243.832.09.255h.159V9.01l.127-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.583.28.48.685-.067.444-.286 1.851-.558 2.903-.365 1.942h.213l.243-.242.983-1.306 1.652-2.064.728-.82.85-.904.547-.431h1.032l.759 1.129-.34 1.166-1.063 1.347-.88 1.142-1.263 1.7-.79 1.36.074.11.188-.02 2.853-.606 1.542-.28 1.84-.315.832.388.09.395-.327.807-1.967.486-2.307.462-3.436.813-.043.03.049.061 1.548.146.662.036h1.62l3.018.225.79.522.473.638-.08.485-1.213.62-1.64-.389-3.825-.91-1.31-.329h-.183v.11l1.093 1.068 2.003 1.81 2.508 2.33.127.578-.321.455-.34-.049-2.204-1.657-.85-.747-1.925-1.62h-.127v.17l.443.649 2.343 3.521.122 1.08-.17.353-.607.213-.668-.122-1.372-1.924-1.415-2.168-1.141-1.943-.14.08-.674 7.254-.316.37-.728.28-.607-.461-.322-.747.322-1.476.388-1.924.316-1.53.285-1.9.17-.632-.012-.042-.14.018-1.432 1.967-2.18 2.945-1.724 1.845-.413.164-.716-.37.066-.662.401-.589 2.386-3.036 1.439-1.882.929-1.086-.006-.158h-.055L4.138 18.56l-1.13.146-.485-.456.06-.746.231-.243 1.907-1.312Z" /></svg>
               <h3>Claude Code, with your login</h3>
               <p>The official Claude Code does the work in your project. A Pro or Max plan works, and so does an API key.</p>
             </div>
@@ -155,9 +155,9 @@ const install = 'npm install -g telecoder';
 telecoder init</code></pre>
           </li>
           <li>
-            <h3>Keep it running</h3>
-            <p>Sets TeleCoder up as a background service, so it starts at boot and restarts if it stops. The setup offers this too.</p>
-            <pre><code>telecoder service install</code></pre>
+            <h3>Start it</h3>
+            <p>The setup can keep it running in the background for you. To just try it out first, start it yourself:</p>
+            <pre><code>telecoder start</code></pre>
           </li>
         </ol>
         <p class="after">Then open your bot, pick a project with <code>/project</code>, and start typing. <a href="/start/get-started/">The full guide</a> takes about ten minutes.</p>
@@ -810,6 +810,24 @@ telecoder init</code></pre>
   .flow > .node::after {
     right: -3rem;
   }
+  /* Chevrons at both ends: messages go in, replies come back */
+  .flow > .node::before,
+  .machine > .node:first-of-type::before {
+    content: '';
+    position: absolute;
+    top: calc(1.35rem - 4px);
+    left: calc(3.6rem - 1px);
+    right: calc(-2.2rem - 1px);
+    height: 10px;
+    background: var(--muted);
+    --chev-l: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 10'%3E%3Cpath d='M7 1 2 5l5 4' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    --chev-r: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 10'%3E%3Cpath d='m1 1 5 4-5 4' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    -webkit-mask: var(--chev-l) left center / 8px 10px no-repeat, var(--chev-r) right center / 8px 10px no-repeat;
+    mask: var(--chev-l) left center / 8px 10px no-repeat, var(--chev-r) right center / 8px 10px no-repeat;
+  }
+  .flow > .node::before {
+    right: calc(-3rem - 1px);
+  }
   .flow svg {
     width: 2.7rem;
     height: 2.7rem;
@@ -819,6 +837,15 @@ telecoder init</code></pre>
     stroke-width: 1.6;
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+  .flow .logo {
+    stroke: none;
+  }
+  .flow .telegram {
+    fill: #26a5e4;
+  }
+  .flow .claude {
+    fill: #d97757;
   }
   .flow p {
     color: var(--muted);
@@ -1008,7 +1035,8 @@ telecoder init</code></pre>
       grid-template-columns: 1fr;
       gap: 2rem;
     }
-    .flow .node::after {
+    .flow .node::after,
+    .flow .node::before {
       display: none;
     }
     .machine {
