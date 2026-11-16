@@ -50,6 +50,7 @@ import {
   replyMd,
   parseCallback,
   getEffortLabel,
+  effortLevelLabel,
   restartPtyForSettingChange,
   EFFORT_LEVELS,
   PTY_RESTART_NOTE,
@@ -501,7 +502,10 @@ function buildStatusLine(
   const project = sessionKey ? sessionManager.getSession(sessionKey)?.workingDirectory : undefined;
   if (project) stats.push(`📁 ${path.basename(project) || project}`);
 
-  const label = getEffortLabel(sessionKey ?? chatId);
+  // The chat's own /effort pick, else the effort the log says the reply ran
+  // at; "Auto" only while neither is known.
+  const label = getEffortLabel(sessionKey ?? chatId)
+    ?? (usage?.effort ? effortLevelLabel(usage.effort) : undefined);
   stats.push(label || '🧠 Auto');
 
   const footer = usageFooter(chatId, usage);

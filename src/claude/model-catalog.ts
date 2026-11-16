@@ -99,3 +99,20 @@ export function findModelUsageKey(
     ?? keys.find((k) => k.startsWith(model) || model.startsWith(k.replace(/\[.*\]$/, '')))
     ?? keys[0];
 }
+
+/**
+ * The name a model id reads as in a sentence: `claude-fable-5-1` is
+ * "Fable 5.1", `anthropic/claude-opus-4-5@20251101` is "Opus 4.5" and
+ * `claude-3-5-haiku-20241022` is "Haiku 3.5". Anything that isn't a Claude id
+ * — a CCR backend such as `deepseek-reasoner` — comes back as it was, since
+ * that string is the one its vendor documents.
+ */
+export function describeModelId(model: string): string {
+  const bare = model.slice(model.lastIndexOf('/') + 1).replace(/@\d{8}$/, '');
+  const m = /^claude-(?:(\d+)-(\d+)-)?([a-z]+)(?:-(\d+)(?:-(\d+))?)?(?:-\d{8})?$/.exec(bare);
+  if (!m) return model;
+  const [, oldMajor, oldMinor, family, major, minor] = m;
+  const name = family.charAt(0).toUpperCase() + family.slice(1);
+  const version = [oldMajor ?? major, oldMinor ?? minor].filter(Boolean).join('.');
+  return version ? `${name} ${version}` : name;
+}

@@ -24,6 +24,12 @@ export interface AgentUsage {
   contextWindow: number;
   numTurns: number;
   model: string;
+  /**
+   * The reasoning effort the request went out with ('low' … 'max'), read from
+   * the session log. Unset when the log has not recorded one: a chat before its
+   * first reply, or a log written by a CLI older than 2.1.316.
+   */
+  effort?: string;
 }
 
 /**

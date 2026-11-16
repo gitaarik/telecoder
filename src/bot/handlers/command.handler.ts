@@ -1,6 +1,8 @@
 import { Context } from 'grammy';
 import { sessionManager } from '../../claude/session-manager.js';
-import { getModel, getCachedUsage, getActiveProviderName } from '../../providers/provider-router.js';
+import { getCachedUsage, getActiveProviderName } from '../../providers/provider-router.js';
+import { userPreferences } from '../../providers/user-preferences.js';
+import { describeModelId, isPremiumModel, PREMIUM_MODEL_ICON } from '../../claude/model-catalog.js';
 import { config } from '../../config.js';
 import { messageSender } from '../../telegram/message-sender.js';
 import { getUptimeFormatted } from '../middleware/stale-filter.js';
@@ -18,7 +20,7 @@ import { stopTurn } from '../middleware/queued-messages.js';
 import { groupAvailableCommands, type AvailableCommands } from '../../claude/available-commands.js';
 import { buildCommandSearchMessage, searchCommands } from '../command-catalog.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
-import { replyMd, getEffortLabel, withBackToPrevious } from './command/shared.js';
+import { replyMd, getEffortLabel, effortLevelLabel, withBackToPrevious } from './command/shared.js';
 import { getSessionTopic } from './command/topic.js';
 import { describeRole } from './command/access.js';
 import { requireActiveSession } from './session-guard.js';
@@ -247,9 +249,7 @@ export async function handleStatus(ctx: Context): Promise<void> {
       return;
     }
 
-    const currentModel = getModel(sessionKey);
     const provider = getActiveProviderName(sessionKey);
-    const effortLabel = getEffortLabel(sessionKey) ?? 'Default';
     const topic = getSessionTopic(sessionKey);
 
     const projectName = path.basename(session.workingDirectory);
@@ -260,6 +260,18 @@ export async function handleStatus(ctx: Context): Promise<void> {
     // The "Provider: ccr" line below already signals the routing.
     const cached = getCachedUsage(sessionKey);
 
+    // Effort and model are what the session log says the last reply ran with,
+    // each followed by who picked it: the chat, with /effort or /model, or
+    // Claude Code. Before the first reply the log has nothing, and saying so
+    // beats a bare "Default" that could mean either.
+    const chosenEffort = getEffortLabel(sessionKey);
+    const askedModel = userPreferences.getModel(sessionKey);
+    // The cache's model falls back on the asked-for alias and then on a
+    // placeholder when the log names none; neither is a model that served.
+    const servedModel = cached?.model && cached.model !== askedModel && cached.model !== 'Claude Code default'
+      ? cached.model
+      : undefined;
+
     const status = new EntityText().add('📊 ').bold('Session Status').add('\n');
     // One `emoji *Label:* value` line; the value is added by the caller.
     const field = (emoji: string, label: string): EntityText =>
@@ -269,9 +281,25 @@ export async function handleStatus(ctx: Context): Promise<void> {
     field('📦', 'Project').add(projectName);
     if (topic) field('🏷️', 'Topic').add(topic);
     else field('🏷️', 'Topic').italic('none');
-    field('🎚️', 'Effort').add(effortLabel);
-    field('🧠', 'Model').add(currentModel);
-    if (provider === 'ccr') status.add(' ').italic('(routed via CCR)');
+    field('🎚️', 'Effort');
+    if (chosenEffort) status.add(chosenEffort).add(' ').italic('(set with /effort)');
+    else if (cached?.effort) status.add(effortLevelLabel(cached.effort)).add(' ').italic("(Claude Code's default)");
+    else status.italic("Claude Code's default — known after the first reply");
+
+    field('🧠', 'Model');
+    if (servedModel) {
+      const name = describeModelId(servedModel);
+      if (isPremiumModel(servedModel)) status.add(`${PREMIUM_MODEL_ICON} `);
+      status.add(name);
+      if (name !== servedModel) status.add(' ').code(servedModel);
+      if (provider === 'ccr') status.add(' ').italic('(routed via CCR)');
+      else if (askedModel) status.add(' ').italic(`(set with /model ${askedModel})`);
+      else status.add(' ').italic("(Claude Code's default)");
+    } else if (askedModel) {
+      status.code(askedModel).add(' ').italic('(set with /model, serving from the next reply)');
+    } else {
+      status.italic("Claude Code's default — known after the first reply");
+    }
     field('🔌', 'Provider').add(provider);
     if (cached) {
       // Cache reads and writes are most of the context, and without them this

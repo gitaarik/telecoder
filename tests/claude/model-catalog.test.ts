@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   CLAUDE_MODELS,
+  describeModelId,
   filterModelsForVersion,
   findModelUsageKey,
   isPassthroughModelId,
@@ -140,5 +141,20 @@ describe('findModelUsageKey', () => {
 
   it('falls back on the first entry', () => {
     expect(findModelUsageKey({ a: {}, b: {} }, 'c')).toBe('a');
+  });
+});
+
+describe('describeModelId', () => {
+  it('names a Claude id by family and version', () => {
+    expect(describeModelId('claude-fable-5-1')).toBe('Fable 5.1');
+    expect(describeModelId('claude-opus-4-8')).toBe('Opus 4.8');
+    expect(describeModelId('claude-sonnet-4-5-20250929')).toBe('Sonnet 4.5');
+    expect(describeModelId('claude-3-5-haiku-20241022')).toBe('Haiku 3.5');
+    expect(describeModelId('anthropic/claude-opus-4-5@20251101')).toBe('Opus 4.5');
+  });
+
+  it('leaves any other backend as its vendor names it', () => {
+    expect(describeModelId('deepseek-reasoner')).toBe('deepseek-reasoner');
+    expect(describeModelId('openrouter,google/gemini-2.5-pro')).toBe('openrouter,google/gemini-2.5-pro');
   });
 });

@@ -225,6 +225,13 @@ export interface JsonlUsageSnapshot {
   cacheReadTokens: number;
   cacheWriteTokens: number;
   model: string;
+  /**
+   * The reasoning effort the last request went out with, as the CLI logged it
+   * (`api-request` → `params.output_config.effort`): 'low', 'medium', 'high' or
+   * 'max'. Empty when the log has no request record with one, as logs written
+   * before CLI 2.1.316 don't.
+   */
+  effort: string;
   /** Number of `type:'user'` records in the log — proxy for SDK's numTurns. */
   numTurns: number;
 }
@@ -254,6 +261,11 @@ export function readLastUsageFromJsonl(workingDirectory: string, sessionId: stri
 
   let numTurns = 0;
   let lastUsage: JsonlUsageSnapshot | undefined;
+  // From the `api-request` record the CLI writes before each call: the effort
+  // and model that request went out with. /status shows the pair as what
+  // actually served the reply, with the reply's own model taking precedence.
+  let lastEffort = '';
+  let lastRequestModel = '';
 
   for (const line of lines) {
     if (!line) continue;
@@ -262,6 +274,15 @@ export function readLastUsageFromJsonl(workingDirectory: string, sessionId: stri
     catch { continue; }
 
     if (rec.type === 'user') numTurns++;
+
+    if (rec.type === 'api-request') {
+      const params = rec.params as Record<string, unknown> | undefined;
+      const outputConfig = params?.output_config as Record<string, unknown> | undefined;
+      const effort = outputConfig?.effort ?? params?.effort;
+      if (typeof effort === 'string') lastEffort = effort;
+      if (typeof params?.model === 'string') lastRequestModel = params.model;
+      continue;
+    }
 
     // Skip the synthetic API-error record: its usage is all zeros and would
     // wipe out the legitimate cumulative totals from the real assistant turn
@@ -279,6 +300,7 @@ export function readLastUsageFromJsonl(workingDirectory: string, sessionId: stri
           cacheReadTokens: 0,
           cacheWriteTokens: 0,
           model: lastUsage?.model ?? '',
+          effort: '',
           numTurns: 0,
         };
       }
@@ -295,12 +317,15 @@ export function readLastUsageFromJsonl(workingDirectory: string, sessionId: stri
       cacheReadTokens: typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : 0,
       cacheWriteTokens: typeof usage.cache_creation_input_tokens === 'number' ? usage.cache_creation_input_tokens : 0,
       model: typeof msg?.model === 'string' ? msg.model as string : '',
+      effort: '',
       numTurns: 0, // filled in after the loop
     };
   }
 
   if (!lastUsage) return undefined;
   lastUsage.numTurns = numTurns;
+  lastUsage.effort = lastEffort;
+  if (!lastUsage.model) lastUsage.model = lastRequestModel;
   return lastUsage;
 }
 

@@ -100,4 +100,54 @@ describe('/status', () => {
 
     expect(contextLine(reply)).toContain('📐 Context: 30% (300.0k/1.0M)');
   });
+
+  it('names the effort and model that served the last reply, and who picked them', async () => {
+    const chat = 402;
+    const project = path.join(home, 'project-402');
+    fs.mkdirSync(project, { recursive: true });
+    const file = sessionJsonlPath(project, 'served');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, [
+      { type: 'api-request', params: { model: 'claude-fable-5-1', output_config: { effort: 'high' } } },
+      {
+        type: 'assistant',
+        message: { role: 'assistant', model: 'claude-fable-5-1', content: [{ type: 'text', text: 'Done.' }], usage: { input_tokens: 2, output_tokens: 20 } },
+      },
+    ].map((r) => JSON.stringify(r)).join('\n') + '\n');
+    sessionManager.createSession(String(chat), project);
+    sessionManager.setClaudeSessionId(String(chat), 'served');
+    usage = undefined;
+
+    const reply = vi.fn(async (_text: string, _opts?: unknown) => ({}));
+    await handleStatus({ chat: { id: chat }, message: { text: '/status' }, reply } as unknown as Context);
+    const [text] = reply.mock.calls[0]! as [string];
+    expect(text).toContain("🎚️ Effort: 🧠 High (Claude Code's default)");
+    expect(text).toContain("🧠 Model: 💎 Fable 5.1 claude-fable-5-1 (Claude Code's default)");
+
+    // The chat's own picks are credited as such; the effort shown is still
+    // the chat's, which the next spawn applies.
+    userPreferences.setEffort(String(chat), 'max');
+    userPreferences.setModel(String(chat), 'fable[1m]');
+    reply.mockClear();
+    await handleStatus({ chat: { id: chat }, message: { text: '/status' }, reply } as unknown as Context);
+    const [again] = reply.mock.calls[0]! as [string];
+    expect(again).toContain('🎚️ Effort: 🚀 Max (set with /effort)');
+    expect(again).toContain('🧠 Model: 💎 Fable 5.1 claude-fable-5-1 (set with /model fable[1m])');
+    userPreferences.clearEffort(String(chat));
+    userPreferences.clearModel(String(chat));
+  });
+
+  it('says both are known after the first reply while the log is empty', async () => {
+    const chat = 403;
+    const project = path.join(home, 'project-403');
+    fs.mkdirSync(project, { recursive: true });
+    sessionManager.createSession(String(chat), project);
+    usage = undefined;
+
+    const reply = vi.fn(async (_text: string, _opts?: unknown) => ({}));
+    await handleStatus({ chat: { id: chat }, message: { text: '/status' }, reply } as unknown as Context);
+    const [text] = reply.mock.calls[0]! as [string];
+    expect(text).toContain("🎚️ Effort: Claude Code's default — known after the first reply");
+    expect(text).toContain("🧠 Model: Claude Code's default — known after the first reply");
+  });
 });

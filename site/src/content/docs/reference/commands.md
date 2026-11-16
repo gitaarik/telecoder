@@ -15,7 +15,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/newbot [project]` | Create a bot for a project (this chat's if none is given) without BotFather. Needs Bot Management Mode on the bot you send it to ([details](../guides/multiple-bots.md)) — admin-only |
 | `/projectcommands` | List every slash command available here — project, built-in skills, plugins — and the ones TeleCoder shadows |
 | `/clear` | Clear conversation history (project stays selected) |
-| `/status` | Current session info: project, topic, effort, model, provider, context and cost |
+| `/status` | Current session info: project, topic, the effort and model that served the last reply and whether you or Claude Code picked them, provider, context and cost |
 | `/resume [words\|id]` | Pick, search or open any Claude Code session, like Claude Code's own `/resume` |
 | `/recap [N]` | Re-read the last N exchanges of the current session (default 3), ending with the same status message as a normal turn |
 | `/prompts [N]` | List just the last N prompts you sent, without the replies (default 15, max 25) |

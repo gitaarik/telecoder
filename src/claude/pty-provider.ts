@@ -915,6 +915,7 @@ export class PtyProvider implements Provider {
       model: snapshot.model
         || userPreferences.getModel(sessionKey)
         || 'Claude Code default',
+      ...(snapshot.effort ? { effort: snapshot.effort } : {}),
     };
     this.usageCache.set(sessionKey, usage);
     return usage;
@@ -2267,9 +2268,13 @@ export class PtyProvider implements Provider {
    * the session log. Falls back to the pending preference (set but not yet
    * spawned), then to an honest placeholder — claude picks its own default and
    * we genuinely don't know which until a turn has been written.
+   *
+   * Nothing is cached before the first turn of this bot process, so after a
+   * restart the log is read for the chat's own session; that is where the
+   * model is, and /status asked about this very chat.
    */
   getModel(scope: SettingsScope): string {
-    const cached = this._findUsageForScope(scope);
+    const cached = this._findUsageForScope(scope) ?? this._refreshUsageFromJsonl(String(scope));
     if (cached?.model) return cached.model;
     return userPreferences.getModel(scope) ?? 'Claude Code default';
   }

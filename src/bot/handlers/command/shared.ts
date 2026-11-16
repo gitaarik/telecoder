@@ -94,7 +94,18 @@ export const EFFORT_LEVELS: { id: EffortLevel; label: string; description: strin
 export function getEffortLabel(scope: SettingsScope): string | undefined {
   const effort = getEffort(scope);
   if (!effort) return undefined;
-  return EFFORT_LEVELS.find((l) => l.id === effort)?.label;
+  return effortLevelLabel(effort);
+}
+
+/**
+ * The label for an effort level by name, for the one the session log reports
+ * when the chat set none itself. The CLI logs the API's four levels, so
+ * 'xhigh' never comes from there; a level this list doesn't know is shown as
+ * it was logged rather than dropped.
+ */
+export function effortLevelLabel(effort: string): string {
+  return EFFORT_LEVELS.find((l) => l.id === effort)?.label
+    ?? `🧠 ${effort.charAt(0).toUpperCase()}${effort.slice(1)}`;
 }
 
 /** Build status lines appended to project confirmation messages. */

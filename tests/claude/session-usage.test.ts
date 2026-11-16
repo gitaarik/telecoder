@@ -60,7 +60,31 @@ afterAll(() => {
   fs.rmSync(home, { recursive: true, force: true });
 });
 
+/** The record the CLI writes before each call, as 2.1.316+ logs it. */
+const apiRequest = (model: string, effort: string) => ({
+  type: 'api-request', timestamp: '2026-10-26T10:00:01.000Z', version: '2.1.325',
+  params: { model, max_tokens: 64000, output_config: { effort } },
+});
+
 describe('readLastUsageFromJsonl', () => {
+  it('reports the effort the last request went out with', () => {
+    writeLog([
+      apiRequest('claude-opus-5-5', 'max'), userPrompt('u1', 'hi'), assistant('a1', { input_tokens: 10, output_tokens: 5 }),
+      apiRequest('claude-opus-5-5', 'high'), userPrompt('u2', 'more'), assistant('a2', { input_tokens: 20, output_tokens: 5 }),
+    ]);
+    expect(readLastUsageFromJsonl(CWD, SESSION)).toMatchObject({ model: 'claude-opus-5-5', effort: 'high', inputTokens: 20 });
+  });
+
+  it('leaves the effort empty for a log without request records, and names the request model when the reply has none', () => {
+    writeLog([userPrompt('u1', 'hi'), assistant('a1', { input_tokens: 10, output_tokens: 5 })]);
+    expect(readLastUsageFromJsonl(CWD, SESSION)).toMatchObject({ effort: '' });
+
+    const reply = assistant('a2', { input_tokens: 10, output_tokens: 5 });
+    delete (reply.message as { model?: string }).model;
+    writeLog([apiRequest('claude-sonnet-5-5', 'medium'), userPrompt('u2', 'hi'), reply]);
+    expect(readLastUsageFromJsonl(CWD, SESSION)).toMatchObject({ model: 'claude-sonnet-5-5', effort: 'medium' });
+  });
+
   it('returns the last reply\'s usage', () => {
     writeLog([userPrompt('u1', 'hi'), assistant('a1', bigContext)]);
     expect(readLastUsageFromJsonl(CWD, SESSION)).toMatchObject({
