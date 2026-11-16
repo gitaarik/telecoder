@@ -1,0 +1,4 @@
+node_modules/
+out/
+# The logged-in Telegram Web profile of the demo account. Never commit it.
+.session/

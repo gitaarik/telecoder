@@ -1,0 +1,12 @@
+{
+  "name": "telecoder-demo-videos",
+  "private": true,
+  "type": "module",
+  "description": "Scripted recordings of TeleCoder for the website. Not part of the npm package.",
+  "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
+    "playwright-core": "1.64.0",
+    "ws": "^8.18.0"
+  }
+}
