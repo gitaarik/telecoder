@@ -2178,7 +2178,7 @@
             <div class="feature-icon"><svg><use href="#i-levels"/></svg></div>
             <h3>How much you see</h3>
             <p>One setting per chat, quiet through debug, controls how much each turn shows. An
-            status line closes every reply with topic, project, model, context and cost — the context stat turning 🟡 then 🔴 once it grows big enough to be worth a /clear — and can add your last five prompts.</p>
+            status line closes every reply with topic, project, model and context — the context stat turning 🟡 then 🔴 once it grows big enough to be worth a /clear — and can add your last five prompts.</p>
           </div>
           <div class="feature-card" data-category="agent">
             <div class="feature-icon"><svg><use href="#i-gauge"/></svg></div>
@@ -3051,7 +3051,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/status</code>
-              <span class="command-desc">Current session info: project, topic, the effort and model that served the last reply and whether you or Claude Code picked them, provider, context and cost</span>
+              <span class="command-desc">Current session info: project, topic, the effort and model that served the last reply and whether you or Claude Code picked them, provider and context</span>
             </div>
             <div class="command-row">
               <code class="command-code">/projectcommands</code>
@@ -3177,7 +3177,7 @@ CCR_AUTOSTART=true</pre>
             </div>
             <div class="command-row">
               <code class="command-code">/statusline</code>
-              <span class="command-desc">Toggle the status line that closes every reply (project, effort, model, context %, cost). On by default (<code>STATUS_LINE_DEFAULT</code>) and sent silently, with sub-toggles for topic, your last five prompts (a long one by its start and its end), and a copy-pasteable claude --resume command. It follows a typed message, a voice note, an upload, a command and the reply Claude writes on its own when a background task reports back; a scheduled fire gets the stats and the context bar alone</span>
+              <span class="command-desc">Toggle the status line that closes every reply (project, effort, model, context %). On by default (<code>STATUS_LINE_DEFAULT</code>) and sent silently, with sub-toggles for topic, your last five prompts (a long one by its start and its end), and a copy-pasteable claude --resume command. It follows a typed message, a voice note, an upload, a command and the reply Claude writes on its own when a background task reports back; a scheduled fire gets the stats and the context bar alone</span>
             </div>
             <div class="command-row">
               <code class="command-code">/botname [name|reset]</code>

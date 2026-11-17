@@ -48,15 +48,12 @@ const USAGE: AgentUsage = {
   outputTokens: 1_000,
   cacheReadTokens: 119_000,
   cacheWriteTokens: 0,
-  totalCostUsd: 0.1234,
-  sessionCostUsd: 0,
-  sessionCostTurns: 0,
   contextWindow: 1_000_000,
   numTurns: 3,
   model: 'claude-opus-5-5',
 };
 
-const FOOTER = '🟢 [█░░░░░░░░░] 12% context · 120.5k/1.0M · $0.1234 · 3 turns';
+const FOOTER = '🟢 [█░░░░░░░░░] 12% context · 120.5k/1.0M · 3 turns';
 
 const SESSION_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 let nextChat = 9000;
@@ -116,7 +113,7 @@ describe('the short status line', () => {
 
   it('is the stats alone in a chat that shows no footer, with the context and the cost on them', async () => {
     const [[text]] = await closing(true, 'normal', true);
-    expect(text).toBe('_📁 shop · 🧠 Auto · 🤖 opus-5-5 · 📊 12% · 💰 $0.12_');
+    expect(text).toBe('_📁 shop · 🧠 Auto · 🤖 opus-5-5 · 📊 12%_');
   });
 
   it('leaves out what the whole one shows in the same chat', async () => {

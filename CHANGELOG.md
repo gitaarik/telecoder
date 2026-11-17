@@ -351,6 +351,14 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Fixed
 
+- **The status line no longer ends in `💰 $0.00`.** The cost in the status
+  line, in the verbose usage footer and on a "Session Cost" line in `/status`
+  was a figure the SDK transport read off each reply. Claude Code writes no
+  pricing into the session log, so with every chat in a pty there was nothing
+  to fill it: the status line showed `$0.00` under every reply, the footer
+  `$0.0000`, and the `/status` line never appeared. All three are gone.
+  `/cost` is where Claude Code says what a conversation cost.
+
 - **A `!command` runs, and the permission gate checks it.** A message that
   starts with `!` is Claude Code's shell mode: the rest runs as a shell
   command, with no tool call. Through the bot it mostly didn't run, and ended

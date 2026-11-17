@@ -197,12 +197,6 @@ export async function handleStatus(ctx: Context): Promise<void> {
         ? Math.round((used / cached.contextWindow) * 100)
         : 0;
       field('📐', 'Context').add(`${pct}% (${fmtTokens(used)}/${fmtTokens(cached.contextWindow)})`);
-      // Only when something has actually been tallied: PTY mode never receives
-      // a cost figure, and a flat $0.0000 there reads as a free conversation
-      // rather than as an unanswerable question.
-      if (cached.sessionCostTurns > 0) {
-        field('💰', 'Session Cost').add(`$${cached.sessionCostUsd.toFixed(4)} (${cached.sessionCostTurns} turns)`);
-      }
     }
 
     // Only in a group, and only for a non-admin — it is the line that explains

@@ -47,9 +47,6 @@ const USAGE: AgentUsage = {
   outputTokens: 1_000,
   cacheReadTokens: 119_000,
   cacheWriteTokens: 0,
-  totalCostUsd: 0.1234,
-  sessionCostUsd: 0,
-  sessionCostTurns: 0,
   contextWindow: 1_000_000,
   numTurns: 3,
   model: 'claude-opus-5-5',
@@ -112,7 +109,7 @@ const WAIT = { timeout: 5_000, interval: 20 };
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
 
 /** The stats every status line carries, in a chat that shows no usage footer. */
-const STATS = '_📁 shop · 🧠 Auto · 🤖 opus-5-5 · 📊 12% · 💰 $0.12_';
+const STATS = '_📁 shop · 🧠 Auto · 🤖 opus-5-5 · 📊 12%_';
 
 let bot: Bot;
 let fire: FireHandler;

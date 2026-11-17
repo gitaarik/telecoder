@@ -15,7 +15,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/newbot [project]` | Create a bot for a project (this chat's if none is given) without BotFather. Needs Bot Management Mode on the bot you send it to ([details](../guides/multiple-bots.md)) — admin-only |
 | `/projectcommands` | List every slash command available here — project, built-in skills, plugins — and the ones TeleCoder shadows |
 | `/clear` | Clear conversation history (project stays selected) |
-| `/status` | Current session info: project, topic, the effort and model that served the last reply and whether you or Claude Code picked them, provider, context and cost |
+| `/status` | Current session info: project, topic, the effort and model that served the last reply and whether you or Claude Code picked them, provider and context |
 | `/resume [words\|id]` | Pick, search or open any Claude Code session, like Claude Code's own `/resume` |
 | `/recap [N]` | Re-read the last N exchanges of the current session (default 3), ending with the same status message as a normal turn |
 | `/prompts [N]` | List just the last N prompts you sent, without the replies (default 15, max 25) |
@@ -62,7 +62,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/context` | Claude Code's own `/context`: what fills the context window, by category, plus MCP tools and skills. It goes to the chat's Claude Code like a prompt, so it waits for a running turn |
 | `/cost` | Show usage limits and cost as Claude Code reports them — session/weekly limits on a subscription, dollar totals on API billing |
 | `/compact` | Compact the context window, reporting the token reduction |
-| `/statusline` | Toggle the status line that closes every reply (project, effort, model, context %, cost). On by default (`STATUS_LINE_DEFAULT`), with the topic; your last prompts and a `claude --resume` command are sub-toggles |
+| `/statusline` | Toggle the status line that closes every reply (project, effort, model, context %). On by default (`STATUS_LINE_DEFAULT`), with the topic; your last prompts and a `claude --resume` command are sub-toggles |
 | `/botname [name\|reset]` | Rename the bot in Telegram. The name is kept per bot and wins over `BOT_NAME`; `reset` goes back to it. Telegram throttles renames hard, so a refused one is reported and sent again when the cooldown ends. Alone, shows the name Telegram has and any pending cooldown — admin-only |
 | `/topic` | Set or clear the conversation topic |
 | `/tasks` | List active background tasks, with details per task, a task's output so far, and Claude Code's own `/tasks` view with a button per row |

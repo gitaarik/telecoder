@@ -250,7 +250,7 @@ function usageFooter(chatId: number, usage: AgentUsage | undefined): string | un
   const used = contextTokens(usage);
   const pct = usage.contextWindow > 0 ? Math.round((used / usage.contextWindow) * 100) : 0;
   const bar = getProgressBar(pct, contextHealthColor(used, usage.contextWindow));
-  return `${bar} ${pct}% context · ${fmtTokens(used)}/${fmtTokens(usage.contextWindow)} · $${usage.totalCostUsd.toFixed(4)} · ${usage.numTurns} turns`;
+  return `${bar} ${pct}% context · ${fmtTokens(used)}/${fmtTokens(usage.contextWindow)} · ${usage.numTurns} turns`;
 }
 
 /**
@@ -318,17 +318,14 @@ function buildStatusLine(
       else if (isPremiumModel(usage.model)) stats.push(`${PREMIUM_MODEL_ICON} ${shortened.toUpperCase()}`);
       else stats.push(`🤖 ${shortened}`);
     }
-    // The footer gives these two right below, in more detail.
-    if (!footer) {
-      if (usage.contextWindow > 0) {
-        const used = contextTokens(usage);
-        const pct = Math.round((used / usage.contextWindow) * 100);
-        // The chart while it's healthy; amber or red once it's grown big
-        // enough that a /clear or fork is worth thinking about.
-        const health = contextHealthColor(used, usage.contextWindow);
-        stats.push(`${health === '🟢' ? '📊' : health} ${pct}%`);
-      }
-      stats.push(`💰 $${usage.totalCostUsd.toFixed(2)}`);
+    // The footer gives this right below, in more detail.
+    if (!footer && usage.contextWindow > 0) {
+      const used = contextTokens(usage);
+      const pct = Math.round((used / usage.contextWindow) * 100);
+      // The chart while it's healthy; amber or red once it's grown big
+      // enough that a /clear or fork is worth thinking about.
+      const health = contextHealthColor(used, usage.contextWindow);
+      stats.push(`${health === '🟢' ? '📊' : health} ${pct}%`);
     }
   }
 

@@ -39,15 +39,12 @@ const USAGE: AgentUsage = {
   outputTokens: 1_000,
   cacheReadTokens: 119_000,
   cacheWriteTokens: 0,
-  totalCostUsd: 0.1234,
-  sessionCostUsd: 0,
-  sessionCostTurns: 0,
   contextWindow: 1_000_000,
   numTurns: 3,
   model: 'claude-opus-5-5',
 };
 
-const FOOTER = '🟢 [█░░░░░░░░░] 12% context · 120.5k/1.0M · $0.1234 · 3 turns';
+const FOOTER = '🟢 [█░░░░░░░░░] 12% context · 120.5k/1.0M · 3 turns';
 
 let nextChat = 7000;
 
@@ -77,19 +74,21 @@ describe('the message that closes a turn', () => {
     expect(marked(text, options?.entities).split('\n').at(-2)).toMatch(/^_.*_$/);
   });
 
-  it('with both on, leaves the context and the cost to the footer', async () => {
+  it('with both on, leaves the context to the footer', async () => {
     const [[text]] = await closingMessages(true, 'verbose');
     expect(text).toContain('🤖 opus-5-5');
     expect(text).not.toContain('📊');
     expect(text).not.toContain('💰');
   });
 
-  it('with only the status line on, gives the context and the cost itself', async () => {
+  it('with only the status line on, gives the context itself, and no cost', async () => {
     const sent = await closingMessages(true, 'normal');
     expect(sent).toHaveLength(1);
     const [text] = sent[0]!;
     expect(text).toContain('📊 12%');
-    expect(text).toContain('💰 $0.12');
+    // Claude Code logs no pricing, so there is no figure to show: /cost has it.
+    expect(text).not.toContain('💰');
+    expect(text).not.toContain('$');
     expect(text).not.toContain('% context');
   });
 

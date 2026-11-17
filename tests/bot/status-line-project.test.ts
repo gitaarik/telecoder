@@ -39,9 +39,6 @@ const USAGE: AgentUsage = {
   outputTokens: 1_000,
   cacheReadTokens: 119_000,
   cacheWriteTokens: 0,
-  totalCostUsd: 0.1234,
-  sessionCostUsd: 0,
-  sessionCostTurns: 0,
   contextWindow: 1_000_000,
   numTurns: 3,
   model: 'claude-opus-5-5',
@@ -77,7 +74,7 @@ describe('the project on the status line', () => {
     sessionManager.createSession(key, projectDir('telecoder'));
 
     expect(await statusLine(chatId, key, USAGE))
-      .toBe('_📁 telecoder · 🧠 Auto · 🤖 opus-5-5 · 📊 12% · 💰 $0.12_');
+      .toBe('_📁 telecoder · 🧠 Auto · 🤖 opus-5-5 · 📊 12%_');
   });
 
   it('is on the line before a turn has given it any figures', async () => {

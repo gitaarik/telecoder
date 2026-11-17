@@ -896,12 +896,12 @@ export class PtyProvider implements Provider {
    * Tail the active session's JSONL log for the most recent usage block and
    * cache it. Falls back to undefined if claude hasn't written a usage record
    * yet (very first turn, or pre-existing session without compatible records).
-   * Both cost figures are left at 0. Claude doesn't write pricing into the
-   * log, and this mode has no result message to read one off — the long-lived
-   * TUI process knows its own running total, but the only way to that number
-   * is typing `/cost` into it and scraping the screen, and on a subscription
-   * that view reports account limits with no session cost in it at all.
-   * Recomputing from a pricing table here would be brittle instead of absent.
+   * There is no cost figure in it. Claude doesn't write pricing into the log;
+   * the long-lived TUI process knows its own running total, but the only way
+   * to that number is typing `/cost` into it and scraping the screen, which
+   * is what the /cost command does, and on a subscription that view reports
+   * account limits with no session cost in it at all. Recomputing from a
+   * pricing table here would be brittle instead of absent.
    */
   private _refreshUsageFromJsonl(sessionKey: string): AgentUsage | undefined {
     const botSession = sessionManager.getSession(sessionKey);
@@ -915,9 +915,6 @@ export class PtyProvider implements Provider {
       outputTokens: snapshot.outputTokens,
       cacheReadTokens: snapshot.cacheReadTokens,
       cacheWriteTokens: snapshot.cacheWriteTokens,
-      totalCostUsd: 0,
-      sessionCostUsd: 0,
-      sessionCostTurns: 0,
       // PTY mode runs claude with the user's 1m-context entitlement (the banner
       // reads "Opus 4.8 (1M context) · Claude Max"). Hardcoding 1_000_000 is
       // a reasonable default — the bot's % calculation just needs *some* sane

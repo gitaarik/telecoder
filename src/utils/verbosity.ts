@@ -51,7 +51,7 @@ export const VERBOSITY_INFO: VerbosityLevelInfo[] = [
  * on top in {@link resolveVerbosityFlags}.
  */
 export interface VerbosityFlags {
-  /** Show the per-turn "🟢 [████░░] 30% · 5k/200k · $0.04" footer, at the bottom of the status line when that's on. */
+  /** Show the per-turn "🟢 [████░░] 30% context · 5k/200k · 12 turns" footer, at the bottom of the status line when that's on. */
   showUsageFooter: boolean;
   /** Send the "⚠️ Context Compacted" and "🔄 New Agent Session" notices. */
   notifyCompaction: boolean;

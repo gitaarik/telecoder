@@ -2,25 +2,16 @@ import type { SettingsScope } from '../utils/session-key.js';
 
 export type ProviderName = 'claude' | 'ccr';
 
+/**
+ * What the session log says about the last reply. There is no cost in it:
+ * Claude Code writes no pricing into the log, so what a conversation cost is
+ * a question for `/cost`, which asks Claude Code itself.
+ */
 export interface AgentUsage {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
-  /**
-   * What the turn that just finished cost. This is the CLI's own figure, and
-   * it covers the process that answered — which in SDK mode is one turn.
-   */
-  totalCostUsd: number;
-  /**
-   * What the conversation has cost across every turn TeleCoder has recorded,
-   * with the turn count that went into it. Claude Code cannot report this: its
-   * counter dies with each process and the session log stores no pricing, so
-   * the running total is kept here instead (see `claude/session-cost.ts`).
-   * Zero in PTY mode, which never receives a cost figure to add up.
-   */
-  sessionCostUsd: number;
-  sessionCostTurns: number;
   contextWindow: number;
   numTurns: number;
   model: string;
