@@ -6,7 +6,7 @@
  * exits on the first invalid value) so it can report every problem at once.
  * Nothing here costs money: the Claude login is checked with
  * `claude auth status`, and the Telegram token only goes over the network
- * with --live (a getMe call).
+ * with --live (a getMe call, through the proxy the bot would use).
  */
 
 import { execFile } from 'child_process';
@@ -22,6 +22,9 @@ import { parseIdList, PLACEHOLDER_USER_ID } from '../../utils/id-list.js';
 import { resolveInstances, InstancesConfigError } from '../../utils/instance-config.js';
 import { resolveBin } from '../../utils/resolve-bin.js';
 import { redactSecrets } from '../../utils/sanitize.js';
+import { unreachableHint } from '../../utils/bot-token.js';
+import { fetchThroughProxy, findProxy } from '../../utils/telegram-proxy.js';
+import { describeFetchError } from '../init/telegram.js';
 import { MIN_NODE_MAJOR } from '../../node-version-check.js';
 import { SERVICE_MANAGER_ENV } from '../../utils/exit-codes.js';
 
@@ -225,16 +228,37 @@ export async function checkNodePty(): Promise<CheckResult[]> {
   }
 }
 
-async function checkLive(token: string): Promise<CheckResult> {
+/**
+ * Ask Telegram who the token belongs to (getMe), through `proxyUrl` when the
+ * bot with this token would use a proxy. `apiRoot` is for tests.
+ */
+export async function checkLive(token: string, proxyUrl?: string, apiRoot = 'https://api.telegram.org'): Promise<CheckResult> {
+  // The message of a failed request can carry the URL, and the URL the token;
+  // a proxy URL can carry a password.
+  const scrub = (text: string) => redactSecrets(text.replaceAll(token, '<token>'));
+  const via = proxyUrl ? ` through the proxy ${scrub(proxyUrl)}` : '';
+  const unreachable = (reason: string) => warn(`Couldn't reach Telegram${via}`, scrub(reason), unreachableHint(proxyUrl));
+
+  let status: number;
+  let text: string;
   try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/getMe`, { signal: AbortSignal.timeout(10_000) });
-    const body = await res.json() as { ok?: boolean; result?: { username?: string }; description?: string };
-    if (body.ok && body.result?.username) return ok(`Telegram knows the token: @${body.result.username}`);
-    return fail('Telegram rejected the token', redactSecrets(body.description ?? `HTTP ${res.status}`));
+    const request = proxyUrl ? fetchThroughProxy(proxyUrl) : fetch;
+    const res = await request(`${apiRoot}/bot${token}/getMe`, { signal: AbortSignal.timeout(10_000) });
+    status = res.status;
+    text = await res.text();
   } catch (error) {
-    // The message of a failed fetch can carry the URL, and the URL the token.
-    return warn("Couldn't reach Telegram", redactSecrets(error instanceof Error ? error.message : String(error)).replaceAll(token, '<token>'));
+    return unreachable(describeFetchError(error));
   }
+
+  let body: { ok?: boolean; result?: { username?: string }; description?: string };
+  try {
+    body = JSON.parse(text) as typeof body;
+  } catch {
+    // A proxy's own error (a 407, an error page) or a gateway in between.
+    return unreachable(`HTTP ${status}, not a Bot API answer`);
+  }
+  if (body.ok && body.result?.username) return ok(`Telegram knows the token: @${body.result.username}${via ? ` (${via.trim()})` : ''}`);
+  return fail('Telegram rejected the token', scrub(body.description ?? `HTTP ${status}`));
 }
 
 // ── The command ────────────────────────────────────────────────
@@ -273,7 +297,8 @@ export async function runChecks(args: string[]): Promise<CheckResult[]> {
 
   // The environment wins over the file, as it does in the bot.
   const value = (key: string) => process.env[key] ?? fileEnv[key];
-  const tokens: string[] = [];
+  /** Each token to check with --live, and the proxy its bot would reach Telegram through. */
+  const tokens: Array<{ token: string; proxyUrl?: string }> = [];
 
   if (fs.existsSync(instancesPath)) {
     try {
@@ -284,7 +309,8 @@ export async function runChecks(args: string[]): Promise<CheckResult[]> {
       for (const inst of instances) {
         const r = checkToken(inst.token, instancesPath);
         if (r.status !== 'ok') results.push({ ...r, label: `${inst.name}: ${r.label}` });
-        else tokens.push(inst.token);
+        // An instance's overrides are its environment, over the launcher's own.
+        else tokens.push({ token: inst.token, proxyUrl: findProxy((key) => inst.overrides?.[key] ?? value(key))?.url });
       }
       const users = instances.map((i) => i.overrides?.ALLOWED_USER_IDS ?? value('ALLOWED_USER_IDS'));
       for (const r of new Set(users)) results.push(checkAllowedUsers(r));
@@ -296,7 +322,7 @@ export async function runChecks(args: string[]): Promise<CheckResult[]> {
     const token = value('TELEGRAM_BOT_TOKEN');
     const r = checkToken(token, envPath);
     results.push(r);
-    if (r.status === 'ok' && token) tokens.push(token);
+    if (r.status === 'ok' && token) tokens.push({ token, proxyUrl: findProxy(value)?.url });
     results.push(checkAllowedUsers(value('ALLOWED_USER_IDS')));
   }
 
@@ -312,7 +338,7 @@ export async function runChecks(args: string[]): Promise<CheckResult[]> {
   results.push(...await checkNodePty());
 
   if (live) {
-    for (const token of tokens) results.push(await checkLive(token));
+    for (const { token, proxyUrl } of tokens) results.push(await checkLive(token, proxyUrl));
   }
   return results;
 }
@@ -322,7 +348,7 @@ export function usage(): string[] {
     'Usage: telecoder doctor [--live]',
     '',
     'Checks Node, the claude CLI and its login, node-pty and your config. Writes nothing.',
-    '  --live  also check each bot token with Telegram',
+    '  --live  also check each bot token with Telegram (through the proxy, when one is set)',
   ];
 }
 

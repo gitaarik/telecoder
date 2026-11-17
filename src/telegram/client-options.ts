@@ -10,13 +10,11 @@
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import type { ApiClientOptions } from 'grammy';
 import { config } from '../config.js';
+import { findProxy } from '../utils/telegram-proxy.js';
 
 /** TELEGRAM_PROXY_URL, falling back to the usual proxy variables. */
 export function telegramProxyUrl(): string | undefined {
-  return config.TELEGRAM_PROXY_URL
-    || process.env.HTTPS_PROXY || process.env.https_proxy
-    || process.env.HTTP_PROXY || process.env.http_proxy
-    || undefined;
+  return findProxy((setting) => (setting === 'TELEGRAM_PROXY_URL' ? config.TELEGRAM_PROXY_URL : process.env[setting]))?.url;
 }
 
 export function telegramClientOptions(): ApiClientOptions {

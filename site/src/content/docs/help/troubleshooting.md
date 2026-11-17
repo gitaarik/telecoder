@@ -29,6 +29,21 @@ Work down this list:
 5. **What does the log say?** `telecoder service logs`. A login problem, a config error
    or a polling conflict each leave a clear line there; they're covered below.
 
+## Telegram can't be reached
+
+*"Couldn't reach api.telegram.org"*, from `telecoder init`, `telecoder doctor --live` or
+the bot as it starts, means the network is down or blocks Telegram. For a network that
+blocks it, set `TELEGRAM_PROXY_URL` in `~/.telecoder/.env` to an HTTP or HTTPS proxy
+(SOCKS isn't supported), and restart:
+
+```bash
+TELEGRAM_PROXY_URL=http://127.0.0.1:8080
+```
+
+`telecoder init` runs before there is a `.env`, so give it the proxy on the command line:
+`TELEGRAM_PROXY_URL=http://127.0.0.1:8080 telecoder init`. It writes it to the `.env` for
+you. When the message names a proxy, that proxy is the one that isn't answering.
+
 ## Claude isn't logged in
 
 If Claude Code on the bot's machine isn't logged in, the bot replies with how to log

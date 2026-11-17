@@ -23,6 +23,16 @@ be installed it says why instead of asking.
 
 Run it again to keep, edit or replace your setup; the old file is backed up first.
 
+On a network where Telegram is blocked, give it an HTTP or HTTPS proxy:
+
+```bash
+TELEGRAM_PROXY_URL=http://127.0.0.1:8080 telecoder init
+```
+
+The wizard reaches Telegram through it, and through `HTTPS_PROXY` or `HTTP_PROXY` when
+your shell has one of those set. It writes the proxy to the `.env` as `TELEGRAM_PROXY_URL`,
+because a service starts the bot outside your shell.
+
 For scripts, these flags answer the questions. Secrets come from environment variables, never
 from arguments, because arguments show up in `ps`:
 
@@ -50,7 +60,8 @@ Checks Node, the TeleCoder install, the config (`.env` or `instances.json`, toke
 users), the `claude` CLI and its login, and whether `node-pty` loads, and says how to fix
 what's wrong. It writes nothing. It exits 1 if something must be fixed first.
 
-- `--live`: also check each bot token with Telegram
+- `--live`: also check each bot token with Telegram, through the proxy when one is set
+  (`TELEGRAM_PROXY_URL` in [Configuration](configuration.md))
 
 ## `telecoder service`
 

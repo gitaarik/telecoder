@@ -368,6 +368,16 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Fixed
 
+- **`telecoder init` and `telecoder doctor --live` reach Telegram through the
+  proxy.** Both asked Telegram about the bot token directly, whatever
+  `TELEGRAM_PROXY_URL` or `HTTPS_PROXY` said. On a network that blocks
+  Telegram, which is what the proxy is for, the wizard stopped at the token
+  and the check reported Telegram as unreachable. Both now go through the
+  proxy the bot would use, and say so. A proxy the wizard finds in your
+  shell's environment is written to the `.env` as `TELEGRAM_PROXY_URL`,
+  because a service starts the bot without that environment. Without a proxy,
+  a failure to reach Telegram now names the setting.
+
 - **Files sent to the bot come through the proxy too.** With
   `TELEGRAM_PROXY_URL` set, or `HTTPS_PROXY` in the environment, the bot
   reached Telegram's API through the proxy but downloaded a photo, a document

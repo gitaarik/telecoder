@@ -3,7 +3,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { parse as parseEnv } from 'dotenv';
-import { runInit, parseOwnerId, OWNER_CAPTURED_REPLY, cleanToken, suggestWorkspace, type InitDeps, type InitOptions, type Preflight } from '../../src/cli/init/flow.js';
+import {
+  runInit, parseOwnerId, OWNER_CAPTURED_REPLY, cleanToken, suggestWorkspace, describeTelegramError, describeFirstCallError,
+  type InitDeps, type InitOptions, type Preflight,
+} from '../../src/cli/init/flow.js';
 import { renderEnv, updateEnvText, backupName } from '../../src/cli/init/env-file.js';
 import { AbortedError, type Prompter } from '../../src/cli/init/prompter.js';
 import {
@@ -14,6 +17,7 @@ import {
   type TgUpdate,
 } from '../../src/cli/init/telegram.js';
 import { parseInitArgs } from '../../src/cli/commands/init.js';
+import { startConnectProxy, startFakeBotApi } from '../helpers/connect-proxy.js';
 
 const GOOD = '7012345678:AAHgoodgoodgoodgoodgoodgoodgoodgood1';
 const BAD = '7012345678:AAHbadbadbadbadbadbadbadbadbadbad222';
@@ -84,7 +88,11 @@ interface FakeTelegram {
   /** Whether the bot already has a profile picture. True, so most tests don't set the icon. */
   hasPhoto: boolean;
   photoError?: Error;
-  makeClient: (token: string) => TelegramClient;
+  /** The proxy each client was made for; undefined for a direct one. */
+  proxies: Array<string | undefined>;
+  /** Thrown by getMe, as when Telegram can't be reached. */
+  getMeError?: Error;
+  makeClient: (token: string, proxyUrl?: string) => TelegramClient;
 }
 
 function fakeTelegram(): FakeTelegram {
@@ -94,9 +102,11 @@ function fakeTelegram(): FakeTelegram {
     backlog: [],
     webhook: '',
     hasPhoto: true,
-    makeClient: (token) => ({
+    proxies: [],
+    makeClient: (token, proxyUrl) => (tg.proxies.push(proxyUrl), {
       getMe: async () => {
         tg.calls.push({ method: 'getMe', token });
+        if (tg.getMeError) throw tg.getMeError;
         if (token === GOOD) return { id: 7012345678, is_bot: true, first_name: 'My Coder', username: 'my_coder_bot' };
         throw new TelegramApiError('getMe', 401, 'Unauthorized');
       },
@@ -609,6 +619,69 @@ describe('telecoder init: the bot picture', () => {
   });
 });
 
+describe('telecoder init: behind a proxy', () => {
+  const PROXY = 'http://ada:hunter2@127.0.0.1:8080';
+  const flags = { tokenEnv: 'TOKEN', ownerId: '412345678' };
+
+  it('reaches Telegram directly when no proxy is set, and writes none', async () => {
+    const { tg, result } = run([], fakeTelegram(), flags, { env: { TOKEN: GOOD } }, false);
+    expect(await result).toBe(0);
+    expect(tg.proxies).toEqual([undefined]);
+    expect(readEnv().TELEGRAM_PROXY_URL).toBeUndefined();
+  });
+
+  it('goes through the proxy in the environment and keeps it in the .env, without printing its password', async () => {
+    const { prompter, tg, result } = run([], fakeTelegram(), flags, { env: { TOKEN: GOOD, HTTPS_PROXY: PROXY } }, false);
+    expect(await result).toBe(0);
+    expect(tg.proxies).toEqual([PROXY]);
+    expect(readEnv().TELEGRAM_PROXY_URL).toBe(PROXY);
+    const said = allOutput(prompter);
+    expect(said).toContain("Reaching Telegram through the proxy http://<redacted>@127.0.0.1:8080 (HTTPS_PROXY in your shell's environment).");
+    expect(said).toContain('the proxy goes in the .env too, as TELEGRAM_PROXY_URL');
+    expect(said).toContain('  Proxy            http://<redacted>@127.0.0.1:8080');
+    expect(said).not.toContain('hunter2');
+  });
+
+  it('prefers TELEGRAM_PROXY_URL over the usual proxy variables', async () => {
+    const env = { TOKEN: GOOD, HTTPS_PROXY: 'http://127.0.0.1:1111', TELEGRAM_PROXY_URL: 'http://127.0.0.1:2222' };
+    const { tg, result } = run([], fakeTelegram(), flags, { env }, false);
+    expect(await result).toBe(0);
+    expect(tg.proxies).toEqual(['http://127.0.0.1:2222']);
+    expect(readEnv().TELEGRAM_PROXY_URL).toBe('http://127.0.0.1:2222');
+  });
+
+  it('uses the proxy of the .env being edited, and leaves the line as it is', async () => {
+    const original = `TELEGRAM_BOT_TOKEN=${GOOD}\nALLOWED_USER_IDS=111\nTELEGRAM_PROXY_URL=http://127.0.0.1:3128\n`;
+    fs.mkdirSync(path.dirname(envPath), { recursive: true });
+    fs.writeFileSync(envPath, original);
+    const { prompter, tg, result } = run(['edit', true, true, '', false, true]);
+    expect(await result).toBe(0);
+    expect(tg.proxies).toEqual(['http://127.0.0.1:3128']);
+    const said = allOutput(prompter);
+    expect(said).toContain('Reaching Telegram through the proxy http://127.0.0.1:3128 (TELEGRAM_PROXY_URL in the current .env).');
+    expect(said).not.toContain('goes in the .env too');
+    expect(fs.readFileSync(envPath, 'utf-8')).toContain('TELEGRAM_PROXY_URL=http://127.0.0.1:3128\n');
+  });
+
+  it('names the proxy setting when Telegram cannot be reached directly, and the proxy when it is the one failing', async () => {
+    const direct = fakeTelegram();
+    direct.getMeError = new TelegramNetworkError('getaddrinfo ENOTFOUND api.telegram.org');
+    const a = run([], direct, flags, { env: { TOKEN: GOOD } }, false);
+    expect(await a.result).toBe(1);
+    expect(allOutput(a.prompter)).toContain(
+      "Couldn't reach api.telegram.org (getaddrinfo ENOTFOUND api.telegram.org). Check the network connection, and try again. " +
+      'If Telegram is blocked on this network, run the wizard with TELEGRAM_PROXY_URL set to an HTTP or HTTPS proxy (e.g. http://127.0.0.1:8080).');
+    expect(fs.existsSync(envPath)).toBe(false);
+
+    const proxied = new TelegramNetworkError('connect ECONNREFUSED 127.0.0.1:8080', 'http://<redacted>@127.0.0.1:8080');
+    const said = "Couldn't reach api.telegram.org through the proxy http://<redacted>@127.0.0.1:8080 (connect ECONNREFUSED 127.0.0.1:8080). " +
+      'Check that the proxy is running and reachable, and try again.';
+    expect(describeTelegramError(proxied)).toBe(said);
+    // No point suggesting a proxy to someone whose proxy is the problem.
+    expect(describeFirstCallError(proxied)).toBe(said);
+  });
+});
+
 describe('telecoder init: non-interactive', () => {
   it('needs the token from an env var', async () => {
     const { prompter, result } = run([], fakeTelegram(), { ownerId: '412345678' }, {}, false);
@@ -714,5 +787,44 @@ describe('telegram client', () => {
       fetchImpl: async () => new Response(JSON.stringify({ ok: false, error_code: 401, description: 'Unauthorized' }), { status: 401 }),
     });
     await expect(client.getMe()).rejects.toMatchObject({ code: 401, method: 'getMe' });
+  });
+
+  describe('through a proxy', () => {
+    it('makes its calls through it, the picture upload included', async () => {
+      const api = await startFakeBotApi(GOOD);
+      const proxy = await startConnectProxy();
+      try {
+        const client = createTelegramClient(GOOD, { apiRoot: api.url, proxyUrl: proxy.url });
+        expect((await client.getMe()).username).toBe('my_coder_bot');
+        await client.setProfilePhoto(new Uint8Array([0xff, 0xd8, 0xff]), 'telecoder.jpg');
+        expect(proxy.tunnels).toEqual([new URL(api.url).host, new URL(api.url).host]);
+        expect(api.requests.map((r) => r.method)).toEqual(['getMe', 'setMyProfilePhoto']);
+        expect(api.requests[1].contentType).toMatch(/^multipart\/form-data; boundary=/);
+        // A token Telegram turns down is still Telegram's answer, not the proxy's.
+        await expect(createTelegramClient(BAD, { apiRoot: api.url, proxyUrl: proxy.url }).getMe())
+          .rejects.toMatchObject({ name: 'TelegramApiError', code: 401 });
+      } finally {
+        await proxy.close();
+        await api.close();
+      }
+    });
+
+    it('blames the proxy when it is down or answers for itself, without its password or the token', async () => {
+      const down = await createTelegramClient(GOOD, { proxyUrl: 'http://ada:hunter2@127.0.0.1:1' }).getMe().catch((e: unknown) => e);
+      expect(down).toBeInstanceOf(TelegramNetworkError);
+      expect((down as TelegramNetworkError).proxy).toBe('http://<redacted>@127.0.0.1:1');
+      expect((down as Error).message).toContain('ECONNREFUSED');
+
+      const refusing = await startConnectProxy({ refuseWith: 407 });
+      try {
+        const err = await createTelegramClient(GOOD, { proxyUrl: refusing.url }).getMe().catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(TelegramNetworkError);
+        expect((err as TelegramNetworkError).proxy).toBe(refusing.url);
+        expect((err as Error).message).toBe('HTTP 407, not a Bot API answer');
+        expect(refusing.tunnels).toEqual(['api.telegram.org:443']);
+      } finally {
+        await refusing.close();
+      }
+    });
   });
 });

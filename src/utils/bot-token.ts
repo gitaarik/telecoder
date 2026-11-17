@@ -68,14 +68,18 @@ export function describeTokenCheckFailure(err: unknown, proxyUrl?: string): Toke
     ? describeCause(err.error) ?? err.message
     : err instanceof Error ? err.message : String(err);
   const via = proxyUrl ? ` through the proxy ${redactSecrets(proxyUrl)}` : '';
-  const hint = proxyUrl
+  return {
+    message: redactSecrets(`Couldn't reach api.telegram.org${via} (${reason}). ${unreachableHint(proxyUrl)}`),
+    fatal: false,
+  };
+}
+
+/** What to try when Telegram can't be reached: the proxy if one is in use, else the network, and the setting for a proxy. */
+export function unreachableHint(proxyUrl?: string): string {
+  return proxyUrl
     ? 'Check that the proxy is running and reachable.'
     : 'Check the network connection. If Telegram is blocked on this network, set TELEGRAM_PROXY_URL ' +
       'to an HTTP or HTTPS proxy (e.g. http://127.0.0.1:8080).';
-  return {
-    message: redactSecrets(`Couldn't reach api.telegram.org${via} (${reason}). ${hint}`),
-    fatal: false,
-  };
 }
 
 /** The innermost useful reason from a fetch failure: ENOTFOUND beats "fetch failed". */

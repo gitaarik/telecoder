@@ -33,6 +33,9 @@ const USAGE = [
   '  --no-test-message    don\'t have the bot message you at the end',
   '  --yes                ask nothing: take defaults, replace an existing .env',
   '                       (backed up first), remove a webhook if one is set',
+  '',
+  'Where Telegram is blocked, set TELEGRAM_PROXY_URL (or HTTPS_PROXY) to an HTTP or',
+  'HTTPS proxy first. The wizard goes through it and writes it to the .env.',
 ];
 
 export function usage(): string[] {
@@ -88,7 +91,7 @@ export async function run(args: string[], io: CliIo): Promise<CommandResult> {
   try {
     code = await runInit(parsed.opts, {
       prompter,
-      makeClient: (token) => createTelegramClient(token, { apiRoot }),
+      makeClient: (token, proxyUrl) => createTelegramClient(token, { apiRoot, proxyUrl }),
       preflight: async () => {
         const claude = await checkClaude(claudeBin);
         return {

@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'fs';
 import * as http from 'http';
-import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import type { AddressInfo } from 'net';
 import { downloadFileSecure, isValidDownloadUrl, getTelegramFileUrl } from '../../src/utils/download.js';
+import { startConnectProxy, type TestProxy } from '../helpers/connect-proxy.js';
 
 const TOKEN = '1234567890:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsawQ';
 
@@ -87,43 +87,22 @@ describe('downloadFileSecure', () => {
   // A network that blocks Telegram reaches it through a proxy, and a file sent
   // to the bot has to come the same way as the API calls do.
   describe('through a proxy', () => {
-    let proxy: http.Server;
+    let proxy: TestProxy;
     let proxyUrl: string;
-    const tunnels: string[] = [];
 
     beforeAll(async () => {
-      proxy = http.createServer((_req, res) => {
-        res.statusCode = 405;
-        res.end();
-      });
-      // A CONNECT tunnel, as an HTTP proxy opens one.
-      proxy.on('connect', (req, client, head) => {
-        tunnels.push(req.url ?? '');
-        const [host, port] = (req.url ?? '').split(':');
-        const upstream = net.connect(Number(port), host, () => {
-          client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-          upstream.write(head);
-          upstream.pipe(client);
-          client.pipe(upstream);
-        });
-        upstream.on('error', () => client.destroy());
-        client.on('error', () => upstream.destroy());
-      });
-      await new Promise<void>((resolve) => proxy.listen(0, '127.0.0.1', resolve));
-      proxyUrl = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
+      proxy = await startConnectProxy();
+      proxyUrl = proxy.url;
     });
 
-    afterAll(async () => {
-      proxy.closeAllConnections();
-      await new Promise((resolve) => proxy.close(resolve));
-    });
+    afterAll(() => proxy.close());
 
     it('fetches the file through it', async () => {
       const dest = path.join(dir, 'proxied.txt');
       const before = hits[`/file/bot${TOKEN}/ok.txt`] ?? 0;
       await downloadFileSecure(`${base}/file/bot${TOKEN}/ok.txt`, dest, { proxyUrl });
       expect(fs.readFileSync(dest, 'utf8')).toBe('hello');
-      expect(tunnels).toEqual([new URL(base).host]);
+      expect(proxy.tunnels).toEqual([new URL(base).host]);
       expect(hits[`/file/bot${TOKEN}/ok.txt`]).toBe(before + 1);
     });
 

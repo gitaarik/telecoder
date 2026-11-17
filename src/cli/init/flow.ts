@@ -8,8 +8,13 @@
  * them message the bot, pick a workspace, two optional
  * features, write the file, and have the bot say hello.
  *
- * Secrets are never printed: not the token, not the Groq key, not in errors
- * (telegram.ts redacts those) and not in the summary before writing.
+ * Telegram is reached through the proxy the bot would use, when there is one:
+ * TELEGRAM_PROXY_URL or the usual proxy variables, from the environment or
+ * the .env being edited. One from the environment is written to the .env.
+ *
+ * Secrets are never printed: not the token, not the Groq key, not a proxy's
+ * password, not in errors (telegram.ts redacts those) and not in the summary
+ * before writing.
  */
 
 import * as fs from 'fs';
@@ -21,6 +26,7 @@ import { isWellFormedBotToken, MALFORMED_TOKEN_MESSAGE, REJECTED_TOKEN_MESSAGE }
 import { BOT_ICON_FILENAME, botIconJpeg } from '../../utils/bot-icon.js';
 import { parseIdList } from '../../utils/id-list.js';
 import { redactSecrets } from '../../utils/sanitize.js';
+import { findProxy } from '../../utils/telegram-proxy.js';
 import { backupFile, renderEnv, updateEnvText, writeEnvFile, type EnvUpdates } from './env-file.js';
 import { isAbort, type Prompter } from './prompter.js';
 import {
@@ -63,7 +69,8 @@ export interface Preflight {
 
 export interface InitDeps {
   prompter: Prompter;
-  makeClient: (token: string) => TelegramClient;
+  /** A client for `token`, through `proxyUrl` when the wizard found a proxy. */
+  makeClient: (token: string, proxyUrl?: string) => TelegramClient;
   preflight: () => Promise<Preflight>;
   envPath: string;
   /** Whether the .env's directory is TeleCoder's own (so it may be chmod 0700). */
@@ -214,8 +221,23 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
   }
   const editing = existingText !== undefined;
 
+  // The proxy the bot would use: the environment wins over the file, as it
+  // does there.
+  const proxy = findProxy((setting) => deps.env[setting] ?? existing[setting]);
+  // One that only the shell has is gone when a service starts the bot.
+  const saveProxy = proxy !== undefined && deps.env[proxy.setting] !== undefined
+    && existing.TELEGRAM_PROXY_URL !== proxy.url;
+  if (proxy) {
+    const from = deps.env[proxy.setting] !== undefined ? "your shell's environment" : 'the current .env';
+    p.say(`Reaching Telegram through the proxy ${redactSecrets(proxy.url)} (${proxy.setting} in ${from}).`);
+    if (saveProxy) {
+      p.say('    A service starts TeleCoder outside your shell, so the proxy goes in the .env too, as TELEGRAM_PROXY_URL.');
+    }
+    p.say('');
+  }
+
   // ── 3. Bot token ────────────────────────────────────────────
-  const { token, bot, client } = await stepToken(opts, deps, interactive, editing ? existing.TELEGRAM_BOT_TOKEN : undefined);
+  const { token, bot, client } = await stepToken(opts, deps, interactive, editing ? existing.TELEGRAM_BOT_TOKEN : undefined, proxy?.url);
   p.say(`Connected to @${bot.username}`);
   p.say('');
 
@@ -241,6 +263,7 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
   };
   Object.assign(values, claudeLogin);
   if (groqKey) values.GROQ_API_KEY = groqKey;
+  if (proxy && saveProxy) values.TELEGRAM_PROXY_URL = proxy.url;
 
   p.say(`About to write ${deps.envPath}:`);
   p.say(`  Bot              @${bot.username} (token hidden)`);
@@ -248,6 +271,7 @@ async function wizard(opts: InitOptions, deps: InitDeps, interactive: boolean, m
   p.say(`  Workspace        ${workspace}`);
   for (const key of Object.keys(claudeLogin)) p.say(`  Claude login     ${key}=<hidden>`);
   p.say(`  Voice            ${groqKey ? 'on (Groq key hidden)' : 'off (run telecoder init again to add it)'}`);
+  if (proxy && saveProxy) p.say(`  Proxy            ${redactSecrets(proxy.url)}`);
   if (icon) p.say('  Bot picture      the TeleCoder icon (--no-icon to skip)');
   if (interactive && !await p.confirm('Write it?', true)) throw new Stop('Nothing was written.', 1);
 
@@ -375,11 +399,12 @@ async function stepToken(
   deps: InitDeps,
   interactive: boolean,
   current: string | undefined,
+  proxyUrl: string | undefined,
 ): Promise<{ token: string; bot: TgUser; client: TelegramClient }> {
   const p = deps.prompter;
 
   const check = async (token: string) => {
-    const client = deps.makeClient(token);
+    const client = deps.makeClient(token, proxyUrl);
     const bot = await client.getMe();
     return { token, bot, client };
   };
@@ -391,7 +416,7 @@ async function stepToken(
     try {
       return await check(token);
     } catch (error) {
-      throw new Stop(describeTelegramError(error));
+      throw new Stop(describeFirstCallError(error));
     }
   }
   if (!interactive) {
@@ -404,7 +429,7 @@ async function stepToken(
       const found = await check(current);
       if (await p.confirm(`Keep the current token, for @${found.bot.username}?`, true)) return found;
     } catch (error) {
-      p.say(`The current token doesn't work: ${describeTelegramError(error)}`);
+      p.say(`The current token doesn't work: ${describeFirstCallError(error)}`);
     }
   }
 
@@ -423,7 +448,7 @@ async function stepToken(
       try {
         return await check(token);
       } catch (error) {
-        p.say(describeTelegramError(error));
+        p.say(describeFirstCallError(error));
         if (error instanceof TelegramNetworkError && await p.confirm('Try again?', true)) continue;
         break;
       }
@@ -731,7 +756,23 @@ export function describeTelegramError(error: unknown): string {
     return `Telegram said: ${error.description}`;
   }
   if (error instanceof TelegramNetworkError) {
+    if (error.proxy) {
+      return `Couldn't reach api.telegram.org through the proxy ${error.proxy} (${error.message}). ` +
+        'Check that the proxy is running and reachable, and try again.';
+    }
     return `Couldn't reach api.telegram.org (${error.message}). Check the network connection, and try again.`;
   }
   return redactSecrets(error instanceof Error ? error.message : String(error));
+}
+
+/**
+ * The same for the wizard's first call to Telegram, the token check. A
+ * network failure there may mean Telegram is blocked on this network, so it
+ * names the setting that gets around that, as the bot's own startup check does.
+ */
+export function describeFirstCallError(error: unknown): string {
+  const said = describeTelegramError(error);
+  if (!(error instanceof TelegramNetworkError) || error.proxy) return said;
+  return `${said} If Telegram is blocked on this network, run the wizard with TELEGRAM_PROXY_URL ` +
+    'set to an HTTP or HTTPS proxy (e.g. http://127.0.0.1:8080).';
 }

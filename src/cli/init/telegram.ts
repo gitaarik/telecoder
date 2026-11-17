@@ -1,5 +1,6 @@
 /**
- * The handful of Bot API calls `telecoder init` makes, over plain fetch.
+ * The handful of Bot API calls `telecoder init` makes, over plain fetch, or
+ * through a proxy when the wizard found one (utils/telegram-proxy.ts).
  *
  * Not grammY: the wizard needs a handful of methods, wants to own the long poll (so
  * Ctrl+C can cancel it), and must never let the token reach a log line — every
@@ -12,6 +13,9 @@
  */
 
 import { redactSecrets } from '../../utils/sanitize.js';
+import { fetchThroughProxy, type FetchLike } from '../../utils/telegram-proxy.js';
+
+export type { FetchLike };
 
 export const DEFAULT_API_ROOT = 'https://api.telegram.org';
 
@@ -56,7 +60,11 @@ export class TelegramApiError extends Error {
 
 /** Telegram couldn't be reached at all. The message is already redacted. */
 export class TelegramNetworkError extends Error {
-  constructor(message: string) {
+  /**
+   * @param proxy The proxy the request went through, if any, with its password
+   *   taken out: a proxy that is down is the likelier cause then.
+   */
+  constructor(message: string, readonly proxy?: string) {
     super(message);
     this.name = 'TelegramNetworkError';
   }
@@ -75,11 +83,11 @@ export interface TelegramClient {
   setProfilePhoto(jpeg: Uint8Array, filename: string): Promise<void>;
 }
 
-export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
-
+/** `proxyUrl` sends the calls through an HTTP or HTTPS proxy; `fetchImpl` replaces the transport outright (tests). */
 export function createTelegramClient(
   token: string,
-  { apiRoot = DEFAULT_API_ROOT, fetchImpl = fetch }: { apiRoot?: string; fetchImpl?: FetchLike } = {},
+  { apiRoot = DEFAULT_API_ROOT, proxyUrl, fetchImpl = proxyUrl ? fetchThroughProxy(proxyUrl) : fetch }:
+    { apiRoot?: string; proxyUrl?: string; fetchImpl?: FetchLike } = {},
 ): TelegramClient {
   const base = `${apiRoot.replace(/\/+$/, '')}/bot${token}`;
   const scrub = (text: string) => redactSecrets(text.replaceAll(token, '<token>'));
@@ -99,13 +107,16 @@ export function createTelegramClient(
       });
     } catch (error) {
       if (signal?.aborted) throw signal.reason ?? error;
-      throw new TelegramNetworkError(scrub(describeFetchError(error)));
+      throw new TelegramNetworkError(scrub(describeFetchError(error)), proxyUrl ? scrub(proxyUrl) : undefined);
     }
     let body: { ok?: boolean; result?: T; error_code?: number; description?: string };
     try {
       body = await res.json() as typeof body;
     } catch {
-      throw new TelegramApiError(method, res.status, scrub(`HTTP ${res.status}, not a Bot API answer`));
+      const what = scrub(`HTTP ${res.status}, not a Bot API answer`);
+      // Through a proxy that is the proxy talking (a 407, an error page), not Telegram.
+      if (proxyUrl) throw new TelegramNetworkError(what, scrub(proxyUrl));
+      throw new TelegramApiError(method, res.status, what);
     }
     if (!body.ok) {
       throw new TelegramApiError(method, body.error_code ?? res.status, scrub(body.description ?? `HTTP ${res.status}`));
@@ -138,7 +149,7 @@ export function createTelegramClient(
 }
 
 /** "fetch failed" says nothing; its cause (ENOTFOUND, ECONNREFUSED…) does. */
-function describeFetchError(error: unknown): string {
+export function describeFetchError(error: unknown): string {
   let current: unknown = error;
   let best = error instanceof Error ? error.message : String(error);
   for (let depth = 0; depth < 4 && current instanceof Error; depth++) {
