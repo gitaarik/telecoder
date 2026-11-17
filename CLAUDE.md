@@ -56,7 +56,7 @@ When a new contributor makes significant contributions (check `git shortlog -sn`
 ### Pre-commit Check
 Before committing, verify that the docs in `site/` are current, and that `docs/index.html` reflects ALL:
 - Feature cards for every user-facing feature
-- Command rows for every bot command in `src/bot/handlers/command.handler.ts`
+- Command rows for every bot command registered in `src/bot/bot.ts` and `src/bot/command-catalog.ts`
 - Contributor cards for every contributor with 3+ commits **whose GitHub account still
   exists** — a deleted account gives a 404 avatar and a dead link, so leave it off the
   page. The credit stays in the git history either way. Verify with

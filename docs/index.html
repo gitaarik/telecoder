@@ -3152,6 +3152,10 @@ CCR_AUTOSTART=true</pre>
               <span class="command-desc">Pick how much detail TeleCoder surfaces per turn (quiet / normal / verbose / debug). Verbose adds the per-turn usage footer (at the bottom of the status line when that's on), untruncated tool inputs, and a consolidated action log that streams live, with the turn's status line and the prompt it's working on at its bottom, and the time it last updated (in your own timezone) at both ends, next to how many of its actions are showing, moving down to a new message under your answer when Claude stops to ask you something. Debug extends the action log with longer previews (40 lines vs 20); quiet suppresses the completion ping. Per-chat — overrides VERBOSITY_DEFAULT.</span>
             </div>
             <div class="command-row">
+              <code class="command-code">!command</code>
+              <span class="command-desc">Run a shell command yourself, in Claude Code's shell mode: start a message with <code>!</code> and Claude sees the output, as in the terminal. Not a slash command, so it isn't in the <code>/</code> menu. The permission gate checks it like a tool call.</span>
+            </div>
+            <div class="command-row">
               <code class="command-code">/btw &lt;question&gt;</code>
               <span class="command-desc">Ask a side question without interrupting the current task. It answers from a read-only, non-persisted fork of the running session, so the transcript is never touched and the turn keeps going.</span>
             </div>

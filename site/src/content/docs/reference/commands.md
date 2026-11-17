@@ -44,6 +44,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/provider` | Switch backend — Claude / CCR (shown when `CCR_ENABLED`) — admin-only |
 | `/ccr` | Sticky toggle between Claude and CCR routing (shown when `CCR_ENABLED`) — admin-only |
 | `/verbosity` | Pick verbosity tier (quiet / normal / verbose / debug) |
+| `!command` | Run a shell command yourself, in Claude Code's shell mode: start a message with `!` and Claude sees the output, as in the terminal. Not a slash command, so it isn't in the `/` menu. The permission gate checks it like a tool call ([Sharing a bot](../guides/sharing.md)) |
 
 ## Files and output
 | Command | Description |
