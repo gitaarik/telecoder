@@ -19,12 +19,13 @@
  * so the live session's transcript is never touched.
  *
  * `stream-json` makes the fork narrate its own tool calls on stdout, which is
- * how `/btw` shows live progress. Nothing else is needed for that — no hooks,
- * no MCP, no IPC — because we already own the child process.
+ * how `/btw` shows live progress. Nothing of the bot's is needed for that — no
+ * hooks, no MCP server, no IPC — because we already own the child process.
  */
 
 import { execFile } from 'child_process';
 import { resolvePtyClaudeBin } from '../utils/resolve-claude-bin.js';
+import { userSetupIsolationArgs } from './pty-spawn-config.js';
 import { sessionJsonlPath } from './session-jsonl.js';
 import { config } from '../config.js';
 import * as fs from 'fs';
@@ -265,10 +266,12 @@ export async function askForkedSideQuestion(opts: {
     '-p', question,
     '--resume', sessionId,
     '--fork-session',
-    // Mirror PTY mode: project/local settings only, no user-level config.
-    '--setting-sources', 'project,local',
-    // No MCP servers — the fork must not be able to message Telegram.
-    '--strict-mcp-config',
+    // The account's own Claude Code setup, or not, as the pty it forks from
+    // has it: the same instructions, default model and plugins, and the
+    // servers those plugins' hooks send claude to. Never the bot's own MCP
+    // server, which no flag here names — the fork must not be able to message
+    // Telegram.
+    ...userSetupIsolationArgs(),
     // The fork inherits the live session's bypassed permissions so tool calls
     // resolve instead of hanging on approval; the disallow list below is what
     // actually keeps it read-only.

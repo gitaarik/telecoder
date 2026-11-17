@@ -12,8 +12,11 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 - The real Claude Code agent with its tools (Bash, Read, Write, Edit, Glob, Grep, web search
   and the rest), running on your machine as your user
 - The real `claude` CLI, driven in a pseudo-terminal: a project's `CLAUDE.md`, settings,
-  skills and slash commands work as in your terminal, and its permission dialogs arrive as
-  buttons
+  skills, slash commands and `.mcp.json` servers work as in your terminal, and its
+  permission dialogs arrive as buttons
+- Your own Claude Code setup comes along: `~/.claude` (`CLAUDE.md`, skills, commands, agents,
+  settings), your MCP servers, your plugins and your claude.ai connectors. On a bot with
+  guests it stays out ([Sharing a bot](sharing.md#your-own-claude-code-setup))
 - Streaming replies: the answer shows while Claude writes it
 - Model and effort pickers (`/model`, `/effort`) for one thread, new threads, every thread
   in a chat, or everywhere ([how](threads-and-forks.md#model-and-effort))
@@ -23,7 +26,7 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 - `/commands <words>` searches the bot's commands by name and description, where Telegram's
   own `/` menu only matches the start of a name, and a mistyped command gets the likely ones
   as buttons instead of reaching Claude
-- Marketplace plugins you name in `CLAUDE_PLUGINS` come along
+- `CLAUDE_PLUGINS` and `EXTRA_MCP_CONFIG` add plugins and MCP servers for the bot alone
 - A provider router that switches to Claude Code Router when Max throttles (`/ccr`)
   ([Providers](providers.md))
 

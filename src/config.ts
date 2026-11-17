@@ -177,18 +177,24 @@ const envSchema = z.object({
     .string()
     .default('true')
     .transform((val) => val.toLowerCase() === 'true'),
+  // Whether the pty gets the Claude Code setup of the account the bot runs as:
+  // ~/.claude (CLAUDE.md, skills, commands, agents, settings.json), its MCP
+  // servers, its plugins' servers and its claude.ai connectors. 'auto' brings
+  // it along unless the bot has guests, who would otherwise work with the
+  // owner's own instructions and connectors; 'on'/'off' force it. See
+  // loadsUserSetup in src/claude/pty-spawn-config.ts.
+  CLAUDE_USER_SETUP: z.enum(['auto', 'on', 'off']).default('auto'),
   // Path to a JSON file of extra MCP servers ({"mcpServers": {...}}) to hand the
-  // pty alongside the bot's own. Opt-in and named explicitly: the spawn passes
-  // --strict-mcp-config, which is what keeps the tool surface predictable, and
-  // the alternative to this is loading every server the user has ever
-  // configured — broken ones included. MCP servers live in ~/.claude.json
-  // rather than in settings.json, so --setting-sources cannot reach them.
+  // pty alongside the bot's own. For a server only the bot should have, and
+  // the one way to add any while the user setup stays out (CLAUDE_USER_SETUP):
+  // the spawn then passes --strict-mcp-config, and MCP servers live in
+  // ~/.claude.json rather than in settings.json.
   EXTRA_MCP_CONFIG: z.string().optional(),
   // Marketplace plugins to enable inside the agent, as the `plugin@marketplace`
-  // ids `claude plugin list` prints, comma-separated. Neither transport reads
-  // ~/.claude/settings.json, which is where `enabledPlugins` normally lives, so
-  // this is the only way a plugin you enabled in the terminal reaches a
-  // Telegram session. See src/claude/enabled-plugins.ts for why they skip it.
+  // ids `claude plugin list` prints, comma-separated. A plugin enabled in the
+  // terminal sits in ~/.claude/settings.json and comes with the user setup;
+  // this names the ones to bring while that stays out (CLAUDE_USER_SETUP), or
+  // to enable for the bot alone. See src/claude/enabled-plugins.ts.
   CLAUDE_PLUGINS: z
     .string()
     .default('')

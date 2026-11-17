@@ -13,6 +13,7 @@
 
 import { spawn } from 'child_process';
 import { sanitizeError } from '../utils/sanitize.js';
+import { loadsUserSetup, userSetupIsolationArgs } from './pty-spawn-config.js';
 
 export interface AvailableCommands {
   /** Every slash command name the CLI accepts, without the leading `/`. */
@@ -34,7 +35,10 @@ export interface AvailableCommands {
 const cache = new Map<string, AvailableCommands>();
 
 function cacheKey(executable: string, workingDirectory: string): string {
-  return `${executable}\u0000${workingDirectory}`;
+  // The user setup brings commands and skills of its own (~/.claude, plugins),
+  // and whether a chat's claude has it follows the roster, so it is part of
+  // what a snapshot is a snapshot of.
+  return `${executable}\u0000${workingDirectory}\u0000${loadsUserSetup() ? 'user' : 'project'}`;
 }
 
 /** Re-probe rather than serve a snapshot older than this. */
@@ -116,7 +120,9 @@ async function probeAvailableCommands(
 
     const child = spawn(
       executable,
-      ['-p', '/usage', '--output-format', 'stream-json', '--verbose'],
+      // With the user setup or without it, as the chats' own claude runs, so
+      // the list names what a chat can actually type.
+      ['-p', '/usage', '--output-format', 'stream-json', '--verbose', ...userSetupIsolationArgs()],
       { cwd: workingDirectory, stdio: ['ignore', 'pipe', 'ignore'] },
     );
 

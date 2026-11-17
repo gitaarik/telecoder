@@ -1,11 +1,12 @@
 /**
  * Extra MCP servers merged into the spawn config.
  *
- * The spawn passes `--strict-mcp-config`, so this file is the ONLY way another
- * server reaches the bot's agent — a `claude mcp add` entry is stored and then
- * discarded at spawn, which looks exactly like a broken server until you read
- * the flags. What matters here is that the opt-in works, that a bad file cannot
- * stop the bot starting, and that nothing can displace the bot's own tools.
+ * On a bot with guests the spawn passes `--strict-mcp-config`, and this file is
+ * then the ONLY way another server reaches the bot's agent — a `claude mcp add`
+ * entry is stored and then discarded at spawn, which looks exactly like a broken
+ * server until you read the flags. What matters here is that the opt-in works,
+ * that a bad file cannot stop the bot starting, and that nothing can displace
+ * the bot's own tools.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';

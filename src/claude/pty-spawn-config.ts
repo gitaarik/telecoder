@@ -28,6 +28,7 @@ import {
 } from './permission-gate.js';
 import { IPC_TOKEN_ENV, IPC_TOKEN_HEADER } from './ipc-server.js';
 import { enabledPluginsSetting } from './enabled-plugins.js';
+import { hasGuestUsers } from '../utils/admins.js';
 
 /** What claude is told when the PreToolUse hook gets no verdict from the bot. */
 export const GATE_UNREACHABLE_REASON = 'TeleCoder permission gate unreachable — tool blocked';
@@ -36,14 +37,54 @@ const PROVIDER_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const MCP_SERVER_JS = path.resolve(PROVIDER_DIR, '../bin/mcp-server.js');
 
 /**
+ * Does a spawn bring the Claude Code setup of the account the bot runs as?
+ *
+ * That setup is everything a terminal session on this machine starts with and
+ * a project doesn't carry: ~/.claude (CLAUDE.md, skills, commands, agents and
+ * settings.json with its permission rules, hooks, plugins and default model),
+ * the MCP servers in ~/.claude.json, the servers plugins bring and the
+ * claude.ai connectors. With it, Claude in Telegram is the Claude of the
+ * terminal. Without it the pty knows the project and what the bot hands it.
+ *
+ * It used to stay out for everyone, for two reasons that no longer need it to.
+ * `editorMode: "vim"` changed what the provider's keys do, which the pins in
+ * buildSettingsJson now answer for the one key. And every MCP server the
+ * account has would land in the context, which is what a terminal session gets
+ * too, and claude loads their tools on demand.
+ *
+ * The reason that's left is a guest. Someone admitted to a shared bot would be
+ * working with the owner's own instructions, and with connectors signed in as
+ * the owner: their documents and mail are not part of the projects that were
+ * shared. So 'auto' follows the same roster the permission gate does, and
+ * CLAUDE_USER_SETUP says otherwise in either direction.
+ */
+export function loadsUserSetup(): boolean {
+  if (config.CLAUDE_USER_SETUP === 'on') return true;
+  if (config.CLAUDE_USER_SETUP === 'off') return false;
+  return !hasGuestUsers();
+}
+
+/**
+ * The flags that keep the user setup out of a spawn, and none when it comes
+ * along. `--setting-sources` drops the user tier of settings and with it
+ * ~/.claude's instructions, skills, commands and agents. `--strict-mcp-config`
+ * limits MCP to what `--mcp-config` names: ours, and EXTRA_MCP_CONFIG's.
+ */
+export function userSetupIsolationArgs(loads: boolean = loadsUserSetup()): string[] {
+  return loads ? [] : ['--setting-sources', 'project,local', '--strict-mcp-config'];
+}
+
+/**
  * Whether this account has accepted Claude Code's bypass-permissions warning.
  *
  * The pty needs --dangerously-skip-permissions (see _applyPermissionMode), which
  * opens that warning unless the answer is already on record, and accepting it
  * records the answer in ~/.claude/settings.json. Since 2.1.314 claude doesn't
- * read that file on a launch that leaves user settings out, as ours does, so the
- * warning opened on every new pty and "Yes, I accept" could never end it: it
- * wrote a key that was already there to a file nothing was going to read.
+ * read that file on a launch that leaves user settings out, as ours does while
+ * the user setup stays out, so the warning opened on every new pty and "Yes, I
+ * accept" could never end it: it wrote a key that was already there to a file
+ * nothing was going to read. A launch that reads the file gets the same answer
+ * twice, which costs nothing.
  *
  * Copied across rather than always set, so the bot never accepts the warning for
  * an account that hasn't, and read on every spawn, so a "Yes" counts from the
@@ -76,10 +117,24 @@ function hasAcceptedBypassWarning(): boolean {
  * use them as the end-of-turn signal. UserPromptSubmit is similarly deferred.
  *
  * CLAUDE_PLUGINS rides along in the same payload. The flag tier this lands in
- * outranks project and local settings and merges with them, so naming a plugin
- * here adds it to whatever the project already enables — see enabled-plugins.ts
- * for why the user's own settings.json cannot carry it instead. The answer to
- * the bypass warning comes the same way, for the same reason.
+ * outranks user, project and local settings and merges with them, so naming a
+ * plugin here adds it to whatever those already enable (see enabled-plugins.ts).
+ * The answer to the bypass warning comes the same way.
+ *
+ * Two keys are pinned, because that tier wins and the settings below it are the
+ * user's and the project's to write. Both are about the terminal nobody is
+ * looking at, not about how Claude works:
+ *  - `editorMode`. Every key the provider writes (Esc, Ctrl+U, Enter after a
+ *    paste) was measured against the normal editor, and in vim mode Esc is
+ *    also a mode switch. This key is why user settings were once left out
+ *    altogether: prompts piled up in the editor unsent. On 2.1.325 a paste and
+ *    Enter did submit in vim mode, after an Esc too, so the pin is a
+ *    precaution for the rest. Measured there with `"vim"` in a lower tier: the
+ *    pin brings the normal editor back.
+ *  - `statusLine`. A custom one draws its rows between the input box and the
+ *    mode indicator, where tui-state.ts and permission-mode.ts count rows from
+ *    the bottom, and it can print anything, a `❯` included. An empty command
+ *    draws nothing; `null` is a settings error that opens a dialog.
  */
 export function buildSettingsJson(ipcPort: number): string {
   const curl = (eventName: string, extra = '') =>
@@ -115,6 +170,8 @@ export function buildSettingsJson(ipcPort: number): string {
   const enabledPlugins = enabledPluginsSetting();
 
   return JSON.stringify({
+    editorMode: 'normal',
+    statusLine: { type: 'command', command: '' },
     ...(enabledPlugins ? { enabledPlugins } : {}),
     ...(hasAcceptedBypassWarning() ? { skipDangerousModePermissionPrompt: true } : {}),
     hooks: {
@@ -250,11 +307,10 @@ export function buildMcpEnv(required: Record<string, string>): Record<string, st
  * Extra MCP servers to spawn beside our own, from the file EXTRA_MCP_CONFIG
  * names. `{}` when the var is unset, which is the default.
  *
- * A file rather than the user's own MCP config, because the spawn passes
- * `--strict-mcp-config`: that flag is what stops every server in
- * ~/.claude.json — auth-expired ones, failing ones, and their combined tool
- * counts — from landing in the bot's context. Naming a file keeps that
- * property and adds only what was asked for.
+ * The account's own servers come with the user setup (loadsUserSetup). This
+ * file is for a server only the bot should have, and it is the one way to add
+ * any while that setup stays out: the spawn then passes `--strict-mcp-config`,
+ * and naming a file adds only what was asked for.
  *
  * Never throws. This runs on the path that starts the agent, and a typo in an
  * optional file must not be the reason the bot does not come up; a warning on

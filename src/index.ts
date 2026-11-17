@@ -41,6 +41,7 @@ import { describeRunningBuild } from './utils/build-info.js';
 import { migrateLegacyStateDirAndLog } from './utils/state-dir-migration.js';
 import { verifyBotTokenOrExit } from './startup/verify-token.js';
 import { warnIfClaudeNotLoggedIn } from './claude/claude-auth.js';
+import { loadsUserSetup } from './claude/pty-spawn-config.js';
 import { redactSecrets, sanitizeError } from './utils/sanitize.js';
 import { startWatchServer, stopWatchServer } from './claude/pty-watch.js';
 
@@ -84,7 +85,7 @@ const REMOVED_SETTINGS: Array<{ name: string; stale: (value: string) => boolean;
   { name: 'TERMINAL_UI_DEFAULT', stale: (v) => !isOn(v), note: '/terminalui was removed: every turn has the live status line, and /verbosity sets how much it shows.' },
   { name: 'CLAUDE_METHOD_DEFAULT', stale: () => true, note: 'the SDK transport was removed: every chat runs Claude Code in a pty.' },
   { name: 'CLAUDE_SDK_LOG_LEVEL', stale: () => true, note: 'the SDK transport was removed: every chat runs Claude Code in a pty.' },
-  { name: 'CLAUDE_SDK_LOAD_USER_SETTINGS', stale: () => true, note: 'the SDK transport was removed; CLAUDE_PLUGINS and EXTRA_MCP_CONFIG bring plugins and MCP servers into the pty.' },
+  { name: 'CLAUDE_SDK_LOAD_USER_SETTINGS', stale: () => true, note: 'the SDK transport was removed: the pty brings your own Claude Code setup along unless the bot has guests (CLAUDE_USER_SETUP).' },
   { name: 'TTS_ENABLED', stale: isOn, note: 'voice replies (/tts) were removed: Claude Code answers in text.' },
   ...['TTS_PROVIDER', 'TTS_MODEL', 'TTS_VOICE', 'TTS_INSTRUCTIONS', 'TTS_SPEED', 'TTS_MAX_CHARS', 'TTS_RESPONSE_FORMAT', 'OPENAI_API_KEY']
     .map((name) => ({ name, stale: () => true, note: 'voice replies (/tts) were removed: Claude Code answers in text.' })),
@@ -163,6 +164,17 @@ async function main() {
       `📋 Allowed groups: ${config.ALLOWED_GROUP_IDS.join(', ')} ` +
       `(members default to ${config.GROUP_MEMBERS_DEFAULT})`
     );
+  }
+  // Which Claude this bot runs: the terminal's, or one that knows only the
+  // project. 'auto' follows the roster logged above, so admitting a first
+  // guest changes it, and a missing skill or MCP server is otherwise a puzzle.
+  if (loadsUserSetup()) {
+    console.log('🧰 Claude Code user setup: loaded (~/.claude, your MCP servers and connectors)');
+  } else {
+    const why = config.CLAUDE_USER_SETUP === 'off'
+      ? 'CLAUDE_USER_SETUP=off'
+      : 'this bot has guests; CLAUDE_USER_SETUP=on loads it anyway';
+    console.log(`🧰 Claude Code user setup: left out (${why})`);
   }
 
   // Scope session history to this bot instance so multi-bot setups don't cross-restore

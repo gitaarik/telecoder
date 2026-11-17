@@ -40,6 +40,8 @@ import {
   buildMcpConfigJson,
   buildMcpEnv,
   buildPtySystemPromptNote,
+  loadsUserSetup,
+  userSetupIsolationArgs,
 } from './pty-spawn-config.js';
 import { getModelsForBinary } from './model-catalog.js';
 import { scrapePromptSuggestion } from './prompt-suggestion-scraper.js';
@@ -338,6 +340,13 @@ interface PtySession {
    * turn for the other one respawns, the way a workspace change does.
    */
   executable: string;
+  /**
+   * Whether this pty was spawned with the account's own Claude Code setup
+   * (loadsUserSetup). That is decided at spawn and follows the roster, so a
+   * pty that predates the first guest is replaced at its next turn rather
+   * than left holding the owner's connectors.
+   */
+  userSetup: boolean;
   /**
    * Pre-minted UUID passed to `claude --session-id`. Used as the registry key
    * for hook event dispatch (the hook payload's `session_id` matches this).
@@ -1144,7 +1153,8 @@ export class PtyProvider implements Provider {
     const executable = options?.executableOverride ?? CLAUDE_BIN;
     const existing = this.sessions.get(sessionKey);
     if (existing) {
-      if (existing.cwd === requiredCwd && existing.executable === executable) {
+      if (existing.cwd === requiredCwd && existing.executable === executable
+        && existing.userSetup === loadsUserSetup()) {
         // Reuse the live pty so claude keeps prior turns in context.
         existing.lastUsedAt = Date.now();
         existing.onProgress = options?.onProgress;
@@ -1155,7 +1165,8 @@ export class PtyProvider implements Provider {
         }
         return existing;
       }
-      // Workspace or backend changed under us — restart cleanly.
+      // Workspace or backend changed under us, or the bot gained its first
+      // guest (or lost its last) since this pty started — restart cleanly.
       this._cleanupSession(sessionKey);
     }
 
@@ -1218,25 +1229,24 @@ export class PtyProvider implements Provider {
     // survives because the next spawn resumes the same session id.
     const effort = userPreferences.getEffort(sessionKey);
     const model = userPreferences.getModel(sessionKey);
+    const userSetup = loadsUserSetup();
 
     const args = [
       '--dangerously-skip-permissions',
       ...(resuming ? ['--resume', claudeSessionId] : ['--session-id', claudeSessionId]),
       ...(effort ? ['--effort', effort] : []),
       ...(model ? ['--model', model] : []),
-      // Exclude user-level settings. This keeps PTY mode predictable —
-      // most importantly it drops `editorMode: "vim"` which makes \r insert
-      // a newline instead of submitting (we saw prompts pile up in the
-      // multi-line buffer and never reach the model). Project + local
-      // settings still load, as does our injected --settings JSON below,
-      // which also carries the one user setting a spawn can't do without.
-      '--setting-sources', 'project,local',
+      // The account's own Claude Code setup (~/.claude, its MCP servers and
+      // connectors) comes along as it does in a terminal, unless the bot has
+      // guests: these are the flags that keep it out, or none. See
+      // loadsUserSetup.
+      ...userSetupIsolationArgs(userSetup),
+      // Our hooks, and the two settings pinned for the sake of the terminal
+      // driving (see buildSettingsJson). The flag tier outranks the others.
       '--settings', settingsJson,
-      // Spawn our standalone MCP server as a stdio subprocess. Strict mode
-      // scopes MCP to *only* what we pass here — the user's globally
-      // configured MCP servers don't load in PTY mode.
+      // Spawn our standalone MCP server as a stdio subprocess, beside
+      // whatever EXTRA_MCP_CONFIG names.
       '--mcp-config', mcpConfigJson,
-      '--strict-mcp-config',
       // Make our MCP tools discoverable to claude. Without this the tool
       // names appear in claude's deferred-tools list but claude often picks
       // WebFetch/Bash for the same task because the deferred listing has
@@ -1328,6 +1338,7 @@ export class PtyProvider implements Provider {
       xterm,
       cwd: requiredCwd,
       executable,
+      userSetup,
       claudeSessionId,
       lastChunkAt: Date.now(),
       lastUsedAt: Date.now(),

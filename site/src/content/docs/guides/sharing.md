@@ -89,6 +89,32 @@ What that buys you:
 Write the house rules in `CHARTER.md` at your workspace root — see
 [`CHARTER.example.md`](https://github.com/gitaarik/telecoder/blob/main/docs/CHARTER.example.md) for a starting point.
 
+## Your own Claude Code setup
+
+On a bot that is only yours, Claude starts as it does in your terminal: with
+`~/.claude` (your `CLAUDE.md`, skills, commands, agents and `settings.json`),
+your MCP servers, your plugins and your claude.ai connectors.
+
+On a bot with guests all of that stays out. A guest would otherwise work with
+your personal instructions, and with connectors signed in as you: your documents
+and mail are not part of the projects you shared. What a project carries itself
+still applies, so its `CLAUDE.md`, `.claude/` settings, skills and commands work
+for everyone.
+
+It follows the roster, as the permission gate does. Admitting a first guest
+takes your setup out from each conversation's next message, and the startup log
+says which way it went. To bring something along anyway:
+
+- `CLAUDE_PLUGINS` names plugins to enable, and `EXTRA_MCP_CONFIG` points at a
+  file of MCP servers. Guests get these too.
+- `CLAUDE_USER_SETUP=on` brings everything, guests or not. `off` keeps it out of
+  a bot that has none.
+
+A shared bot running as [its own Unix account](#a-real-boundary-its-own-unix-account)
+has its own `~/.claude`, with nothing of yours in it. The claude.ai connectors
+belong to the Claude account it is signed in with, though, so `on` there still
+hands those to guests.
+
 ## Admitting people from chat
 
 `ALLOWED_USER_IDS` is read once at startup, so every new person there costs an

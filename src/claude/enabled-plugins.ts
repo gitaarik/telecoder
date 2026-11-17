@@ -1,23 +1,19 @@
 /**
- * Which marketplace plugins the agent loads.
+ * Which marketplace plugins the bot enables on top of the settings claude reads.
  *
- * Claude Code keeps plugin enablement in settings.json under `enabledPlugins`,
- * and both transports deliberately decline to read the user's copy of that
- * file. The pty spawns with `--setting-sources project,local` so that
- * `editorMode: "vim"` cannot turn Enter into a newline and swallow every prompt
- * (see pty-provider.ts); the SDK defaults to `settingSources: ['project']` so
- * that a machine's worth of MCP servers cannot inflate the tool count into
- * deferral. Both are worth keeping — but `enabledPlugins` lives in the file
- * they skip, so a plugin enabled in the terminal is simply absent in Telegram,
- * and absent silently: a missing skill looks like a model that ignored it.
+ * Claude Code keeps plugin enablement in settings.json under `enabledPlugins`.
+ * A plugin enabled in the terminal sits in the user's copy of that file, which
+ * the pty reads along with the rest of the user setup — unless that setup
+ * stays out, as it does on a bot with guests (loadsUserSetup in
+ * pty-spawn-config.ts). Then a plugin enabled in the terminal is simply absent
+ * in Telegram, and absent silently: a missing skill looks like a model that
+ * ignored it.
  *
- * CLAUDE_PLUGINS names the few worth bringing across. It goes in at the *flag*
- * tier — `--settings` for the pty, `settings:` for the SDK — which sits above
- * project and local in Claude Code's precedence order and merges with them
+ * CLAUDE_PLUGINS names the ones to bring across in that case, or to enable for
+ * the bot alone. It goes in at the *flag* tier, `--settings`, which sits above
+ * the other tiers in Claude Code's precedence order and merges with them
  * key-by-key, so a project that enables its own plugins keeps them and picks
- * these up as well. Nothing else from ~/.claude/settings.json comes with it,
- * except the answer to the bypass warning, which the pty carries for itself (see
- * buildSettingsJson).
+ * these up as well.
  */
 
 import { config } from '../config.js';
