@@ -51,8 +51,10 @@ A wider level clears the narrower choices under it. After `/model opus all` ever
 is on Opus, whatever it or its forks picked before. Forks and spinoffs carry over a model
 picked in their thread, and otherwise follow the chat's.
 
-Typing `/model` in the **All** view sets the default for new threads. Telegram opens a new
-thread for anything typed there, and the confirmation offers to delete it again.
+To start one thread on another model, type `/model fable` in the **All** view. Telegram
+opens a new thread for anything typed there, and the command sets just that thread; new
+threads after it keep the default. `/model opus new` typed there sets the default instead,
+and the confirmation offers to delete the thread it opened.
 
 Threads with a conversation open switch on their next message, keeping the conversation.
 A thread in the middle of a reply finishes it on the old model and switches afterwards.

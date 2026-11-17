@@ -63,7 +63,6 @@ import {
   levelHelp,
   EVERYWHERE_ADMIN_ONLY,
 } from './prefs-scope.js';
-import { resolveLevel } from './all-view.js';
 
 function buildSuggestionsMenu(sessionKey: string) {
   const settings = getSuggestionsSettings(sessionKey);
@@ -145,7 +144,7 @@ export async function handleEffort(ctx: Context): Promise<void> {
     return;
   }
 
-  const level = resolveLevel(ctx, parsed.level);
+  const level = parsed.level ?? 'thread';
   if (level === 'all' && !site.admin) {
     await replyFormatted(ctx, new EntityText().add(`⛔ ${EVERYWHERE_ADMIN_ONLY}`).build());
     return;
@@ -179,7 +178,7 @@ export async function handleEffortCallback(ctx: Context): Promise<void> {
 
   const site = scopeSite(ctx);
   const { message, keyboard } = await applyAtLevel(ctx, {
-    sessionKey, setting: 'effort', value, label, level: resolveLevel(ctx, undefined), site,
+    sessionKey, setting: 'effort', value, label, level: 'thread', site,
   });
   await editCallbackMessage(ctx, message.build(), {
     ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),

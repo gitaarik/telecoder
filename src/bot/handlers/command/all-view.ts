@@ -3,17 +3,17 @@
  *
  * Telegram has no chat-level place to type in a private chat with threads:
  * a message sent from the "All" view opens a new thread, named "New chat",
- * and arrives inside it. So `/model opus` typed there lands in an empty
- * thread nobody meant to start, and pinning the model to that thread alone
- * would do nothing anyone wanted. A command that is the first thing in such
- * a thread can only mean "from now on", and the settings commands read it so.
+ * and arrives inside it. A bare `/model fable` there pins that thread like
+ * anywhere else, which is how to start one thread on another model while new
+ * threads keep the default. A wider level typed there (`/model opus new`)
+ * leaves the thread with nothing in it, so that confirmation offers to
+ * delete it.
  */
 
 import type { Context } from 'grammy';
 import { sessionManager } from '../../../claude/session-manager.js';
 import { hasImplicitName } from '../../../telegram/thread-titles.js';
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
-import type { SettingLevel } from '../../../providers/user-preferences.js';
 
 /**
  * Whether this update comes from a private-chat thread opened from the "All"
@@ -31,10 +31,4 @@ export function isFreshAllViewThread(ctx: Context): boolean {
 
   if (sessionManager.getSession(sessionKey)?.claudeSessionId) return false;
   return sessionManager.getSessionHistory(sessionKey, 1).length === 0;
-}
-
-/** The level a /model or /effort applies at when the command names none. */
-export function resolveLevel(ctx: Context, explicit: SettingLevel | undefined): SettingLevel {
-  if (explicit) return explicit;
-  return isFreshAllViewThread(ctx) ? 'default' : 'thread';
 }

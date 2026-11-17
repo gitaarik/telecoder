@@ -5,9 +5,9 @@
  * A bare command or a picker tap sets the thread it's in: the cheap case, and
  * the one undone by typing the command again. The wider levels are a word on
  * the command (`/model sonnet new`, `… chat`, `… all`) or a tap on the
- * confirmation, which offers each level wider than the one just applied. In
- * the "All" view, where Telegram opens a fresh thread for whatever is typed,
- * the bare command sets the chat's default instead (see all-view.ts).
+ * confirmation, which offers each level wider than the one just applied.
+ * That holds in the "All" view too, where Telegram opens a fresh thread for
+ * whatever is typed: the bare command pins that new thread (see all-view.ts).
  *
  * A wider level drops the narrower pins it covers, so one "everywhere" brings
  * every thread back in line, forks of pinned threads included. "New threads"
@@ -90,7 +90,7 @@ export function isBareLevelWord(word: string): boolean {
 export interface ScopeSite {
   /** In a thread or forum topic, rather than a chat without threads. */
   inThread: boolean;
-  /** In a fresh thread opened from the "All" view. */
+  /** In a fresh thread opened from the "All" view, with nothing in it yet. */
   allView: boolean;
   /** May set every chat. */
   admin: boolean;
@@ -111,14 +111,13 @@ function withBotName(b: EntityText): EntityText {
 }
 
 /** Where a level reaches, worded for where it was applied from. */
-function levelPhrase(level: SettingLevel, site: Pick<ScopeSite, 'inThread' | 'allView'>): string {
+function levelPhrase(level: SettingLevel, site: Pick<ScopeSite, 'inThread'>): string {
   switch (level) {
     case 'all':
       return 'everywhere';
     case 'chat':
       return 'for every thread in this chat';
     case 'default':
-      if (site.allView) return 'for new threads in this chat';
       return site.inThread ? 'for this thread and new threads in this chat' : 'in this chat';
     case 'thread':
       return site.inThread ? 'in this thread' : 'in this chat';
@@ -134,7 +133,7 @@ export function prefsConfirmation(
   setting: SpawnSetting,
   displayLabel: string,
   level: SettingLevel = 'thread',
-  site: Pick<ScopeSite, 'inThread' | 'allView'> = { inThread: true, allView: false },
+  site: Pick<ScopeSite, 'inThread'> = { inThread: true },
 ): EntityMessage {
   const what = setting === 'model' ? 'Model set to' : 'Effort set to';
   const b = new EntityText().add(`✅ ${what} `).bold(displayLabel).add(` ${levelPhrase(level, site)}`);
@@ -193,8 +192,9 @@ export function describeOutcome(
 
 /**
  * Buttons for every level wider than the one just applied that means
- * something here, plus a way to remove the empty thread the "All" view
- * opened. Undefined when there is nothing to offer.
+ * something here, plus, once a wider level was applied from the "All" view,
+ * a way to remove the empty thread it opened. Undefined when there is
+ * nothing to offer.
  */
 export function buildWidenKeyboard(
   setting: SpawnSetting,
@@ -210,8 +210,8 @@ export function buildWidenKeyboard(
     buttons.push({ text, callback_data: data });
   };
 
-  if (wider.includes('default') && site.inThread && !site.allView) offer('default', '🆕 New threads too');
-  if (wider.includes('chat') && (site.inThread || site.allView)) offer('chat', '🧵 All threads here');
+  if (wider.includes('default') && site.inThread) offer('default', '🆕 New threads too');
+  if (wider.includes('chat') && site.inThread) offer('chat', '🧵 All threads here');
   if (wider.includes('all') && site.admin) {
     const bots = siblingBotNames().length + 1;
     offer('all', bots > 1 ? `🌐 Everywhere (${bots} bots)` : '🌐 Every chat');
@@ -219,7 +219,9 @@ export function buildWidenKeyboard(
 
   const rows: { text: string; callback_data: string }[][] = [];
   for (let i = 0; i < buttons.length; i += 2) rows.push(buttons.slice(i, i + 2));
-  if (site.allView) rows.push([{ text: '🗑️ Delete this thread', callback_data: 'delthread:confirm' }]);
+  // A thread-level pick there is the thread being started on that model;
+  // anything wider left it with nothing to do.
+  if (site.allView && level !== 'thread') rows.push([{ text: '🗑️ Delete this thread', callback_data: 'delthread:confirm' }]);
   return rows.length > 0 ? rows : undefined;
 }
 
@@ -243,7 +245,7 @@ export async function applyAtLevel(
   const chatId = parseSessionKey(sessionKey).chatId;
 
   const outcome = applySpawnSetting(sessionKey, setting, value, level, sessionKey);
-  const keptPins = level === 'default' && (site.inThread || site.allView)
+  const keptPins = level === 'default' && site.inThread
     ? userPreferences.threadsPinnedOtherThan(chatId, setting, value).filter((k) => k !== sessionKey)
     : [];
 
@@ -362,9 +364,7 @@ export function describeSource(scope: SettingsScope, setting: SpawnSetting): str
 /** The picker's closing note on how far a choice reaches. */
 export function levelHelp(command: 'model' | 'effort', example: string, site: ScopeSite): EntityMessage {
   const b = new EntityText().add('\n\n');
-  if (site.allView) {
-    b.add('Picking here sets the default for new threads in this chat.');
-  } else if (site.inThread) {
+  if (site.inThread) {
     b.add('Picking sets this thread; the confirmation can widen it to new threads, every thread here');
     b.add(site.admin ? ' or everywhere.' : '.');
   } else {

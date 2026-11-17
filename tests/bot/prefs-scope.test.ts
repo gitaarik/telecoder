@@ -98,7 +98,7 @@ describe('prefsConfirmation', () => {
     expect(prefsConfirmation('model', 'opus', 'thread', THREAD).text).toBe('✅ Model set to opus in this thread');
     expect(prefsConfirmation('model', 'opus', 'default', THREAD).text)
       .toBe('✅ Model set to opus for this thread and new threads in this chat');
-    expect(prefsConfirmation('model', 'opus', 'default', ALL_VIEW).text).toBe('✅ Model set to opus for new threads in this chat');
+    expect(prefsConfirmation('model', 'opus', 'thread', ALL_VIEW).text).toBe('✅ Model set to opus in this thread');
     expect(prefsConfirmation('model', 'opus', 'chat', THREAD).text).toBe('✅ Model set to opus for every thread in this chat');
     expect(prefsConfirmation('effort', 'High', 'all', THREAD).text).toBe('✅ Effort set to High everywhere');
   });
@@ -149,7 +149,12 @@ describe('buildWidenKeyboard', () => {
     expect(labels(buildWidenKeyboard('model', 'opus', 'thread', PLAIN))).toEqual(['🌐 Every chat']);
   });
 
-  it('offers to delete the empty thread the All view opened', () => {
+  it('treats a pick in the All view as starting that thread on it', () => {
+    expect(labels(buildWidenKeyboard('model', 'fable', 'thread', ALL_VIEW)))
+      .toEqual(['🆕 New threads too', '🧵 All threads here', '🌐 Every chat']);
+  });
+
+  it('offers to delete the All view thread once a wider level left it empty', () => {
     const kb = buildWidenKeyboard('model', 'opus', 'default', ALL_VIEW)!;
     expect(labels(kb)).toEqual(['🧵 All threads here', '🌐 Every chat', '🗑️ Delete this thread']);
     expect(kb.at(-1)![0].callback_data).toBe('delthread:confirm');

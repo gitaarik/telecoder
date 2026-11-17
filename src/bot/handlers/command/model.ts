@@ -32,7 +32,6 @@ import {
   levelHelp,
   EVERYWHERE_ADMIN_ONLY,
 } from './prefs-scope.js';
-import { resolveLevel } from './all-view.js';
 
 export async function handleModelCommand(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
@@ -117,7 +116,7 @@ export async function handleModelCommand(ctx: Context): Promise<void> {
     return;
   }
 
-  const level = resolveLevel(ctx, explicitLevel);
+  const level = explicitLevel ?? 'thread';
   if (level === 'all' && !site.admin) {
     await replyFormatted(ctx, new EntityText().add(`⛔ ${EVERYWHERE_ADMIN_ONLY}`).build());
     return;
@@ -160,7 +159,7 @@ export async function handleModelCallback(ctx: Context): Promise<void> {
 
   await ctx.answerCallbackQuery({ text: `Model set to ${displayName}!` });
   const { message, keyboard } = await applyAtLevel(ctx, {
-    sessionKey, setting: 'model', value: model, label: displayName, level: resolveLevel(ctx, undefined), site,
+    sessionKey, setting: 'model', value: model, label: displayName, level: 'thread', site,
   });
   appendPremiumNote(message, model, getActiveProviderName(sessionKey));
   await editCallbackMessage(ctx, message.build(), {
