@@ -6,17 +6,11 @@ dist/
 instances.json
 *.log
 .DS_Store
-.telegraph-account.json
 .claude/
-.claudegram/
-__pycache__/
-storage_state.json
-output/
 .playwright-mcp/
 
 # Local-only dev docs (not for public repos)
 AGENTS.md
-CLAUDE_AGENT_SDK_MIGRATION_MASTER_PLAN.md
 PENDING_ACTIONS.md
 
 # Test coverage output
