@@ -18,6 +18,8 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
   settings), your MCP servers, your plugins and your claude.ai connectors. On a bot with
   guests it stays out ([Sharing a bot](sharing.md#your-own-claude-code-setup))
 - Streaming replies: the answer shows while Claude writes it
+- `!command` runs a shell command yourself, in Claude Code's shell mode: start a message
+  with `!` and Claude sees the output, as in the terminal
 - Model and effort pickers (`/model`, `/effort`) for one thread, new threads, every thread
   in a chat, or everywhere ([how](threads-and-forks.md#model-and-effort))
 - `/mode` sets how much Claude asks before acting, from manual to bypass
@@ -117,8 +119,8 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 ## Sharing and permissions
 
 - Admins, approvers and guests, and per-group contributors and spectators
-- A permission gate on every tool call, a scope guard for paths, and a plain-language charter
-  read before a guest's message runs ([Sharing a bot](sharing.md))
+- A permission gate on every tool call and every `!command`, a scope guard for paths, and a
+  plain-language charter read before a guest's message runs ([Sharing a bot](sharing.md))
 - `/allow` and `/deny` let people in or out from chat, without a restart
 - `/autoapprove` answers the gate in advance for a while, for jobs made of many guarded
   commands

@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   clearPresses,
   hasInputBox,
+  inputBoxHolds,
   inputBoxPastePlaceholders,
+  inputBoxText,
   isGenerating,
   newPastePlaceholder,
   pastePlaceholderIds,
@@ -388,6 +390,59 @@ describe('hasInputBox', () => {
  * placeholder for it, so a photo-upload prompt — eleven lines of note plus the
  * staged image path — is never on screen as the text we wrote.
  */
+describe('the input box in shell mode', () => {
+  // Copied from a live 120x40 pty on 2.1.326, after pasting `!echo LIVE_A > a.txt`
+  // and before Enter: the `!` takes the glyph's place and stands apart.
+  const shellBox = (...rows: string[]) => [
+    '● pong',
+    SEP,
+    ...rows,
+    SEP,
+    '  ! for shell mode                                                        ctrl+y to paste deleted text',
+  ].join('\n');
+
+  it('reads the command out of the box', () => {
+    const screen = shellBox('! echo LIVE_A > a.txt');
+    expect(inputBoxText(screen)).toContain('echo LIVE_A > a.txt');
+    // The prompt as we pasted it has no space after the `!`.
+    expect(inputBoxHolds(screen, '!echo LIVE_A > a.txt')).toBe(true);
+  });
+
+  it('reads a command of more than one row', () => {
+    const screen = shellBox('! echo PROBE_C > c.txt', '  echo PROBE_C2 > c2.txt');
+    expect(inputBoxHolds(screen, '!echo PROBE_C > c.txt')).toBe(true);
+  });
+
+  it('sees a collapsed paste waiting in it', () => {
+    const screen = shellBox('! [Pasted text #4 +6 lines]');
+    expect(inputBoxPastePlaceholders(screen)).toEqual([{ id: 4, lines: 6 }]);
+  });
+
+  it('does not find a command the box does not hold', () => {
+    expect(inputBoxHolds(shellBox('! echo LIVE_A > a.txt'), '!rm -rf build')).toBe(false);
+  });
+
+  it('does not take a command already run for the box', () => {
+    // The transcript draws a finished one on a `!` row too, with no rule on it.
+    const screen = [
+      '! echo LIVE_A > a.txt',
+      '  ⎿  (Bash completed with no output)',
+      SEP,
+      '❯ ',
+      SEP,
+      '  ⏵⏵ auto mode on (shift+tab to cycle)',
+    ].join('\n');
+    expect(inputBoxText(screen)).not.toContain('LIVE_A');
+    expect(inputBoxHolds(screen, '!echo LIVE_A > a.txt')).toBe(false);
+  });
+
+  it('is not a box to paste a prompt into', () => {
+    // Whatever lands in it runs as a command, so readiness says no.
+    expect(hasInputBox(shellBox('! '))).toBe(false);
+    expect(hasInputBox(shellBox('! echo LIVE_A > a.txt'))).toBe(false);
+  });
+});
+
 describe('pastePlaceholders', () => {
   it('reads the id and line count of a collapsed paste', () => {
     expect(pastePlaceholders([

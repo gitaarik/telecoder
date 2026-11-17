@@ -68,6 +68,10 @@ What that buys you:
   the pty runs, on Claude and on CCR, in every `/mode` including bypass, and it
   covers subagents' tool calls too. If it breaks while judging a call, the
   call is denied.
+- **A `!command` is checked too.** A message starting with `!` runs as a shell
+  command in Claude Code's shell mode, without Claude and without a tool call.
+  It goes through the same gate and scope guard before it runs, so a guest's
+  `!sudo …` waits for an approver like Claude's own would.
 - **Out-of-scope paths prompt too.** `cat ~/.ssh/id_rsa`, an edit to a project
   nobody was invited to, a read of this bot's own `.env` — all held. System
   paths and language toolchains stay readable without prompting, because a

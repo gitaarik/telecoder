@@ -124,6 +124,18 @@ const RULE = /^\s*─{10,}\s*$/u;
  */
 const INPUT_ROW = /^\s*(?:│\s*)?❯/u;
 const SIDE_BORDERED_INPUT = /│\s*❯/u;
+/**
+ * The box's row in shell mode. A `!` typed or pasted first flips the editor:
+ * the `❯` gives way to the `!`, drawn apart from the command (`! echo hi` for a
+ * pasted `!echo hi`), and Enter runs the command itself. Only {@link
+ * inputBoxText} reads it. {@link hasInputBox} deliberately does not: a prompt
+ * pasted into a box in this state would run as a command.
+ *
+ * Anchored at the first column, where the box draws it. The footer under the
+ * box reads `  ! for shell mode` in this state, indented, and it sits right
+ * under a rule as well.
+ */
+const SHELL_INPUT_ROW = /^!(?:\s|$)/u;
 /** Rows from the bottom that can hold the input box and its footer. */
 const INPUT_BOX_ROWS = 10;
 
@@ -333,6 +345,11 @@ export function newPastePlaceholder(
  * use. Only the opening rule is required, not the closing one, because a
  * wrapped input pushes that several rows down.
  *
+ * A box in shell mode counts, with its `!` row in the `❯` row's place. It holds
+ * a `!command` of ours between the paste and the Enter, and not reading it was
+ * how every such command longer than a word was reported as never having
+ * reached the editor, with the command sitting in the box on screen.
+ *
  * Undefined when no box is drawn at all — an overlay has replaced it, or the
  * TUI is still starting. That is not the same answer as an empty box, and a
  * caller about to send a keystroke needs to tell them apart.
@@ -343,7 +360,7 @@ export function inputBoxText(screenText: string): string | undefined {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
     if (SIDE_BORDERED_INPUT.test(line)
-      || (INPUT_ROW.test(line) && RULE.test(lines[i - 1] ?? ''))) inputRow = i;
+      || ((INPUT_ROW.test(line) || SHELL_INPUT_ROW.test(line)) && RULE.test(lines[i - 1] ?? ''))) inputRow = i;
   }
   if (inputRow === -1) return undefined;
   return lines.slice(inputRow).join('\n');

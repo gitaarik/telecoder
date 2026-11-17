@@ -22,6 +22,10 @@ import { sanitizeError } from '../utils/sanitize.js';
  * transport's (sdk-permission-gate.ts) a deny decision. Both go through
  * gateToolCall.
  *
+ * A message that starts with `!` is a command too, but not a tool call: Claude
+ * Code runs it in shell mode and raises no hook for it. Those come here before
+ * they are typed into the pty (shell-mode-gate.ts).
+ *
  * Soft by design: hooks can't override --disallowedTools deny rules, and the
  * patterns list is intentionally conservative — false positives are worse here
  * than false negatives because every prompt costs someone a button tap.
@@ -94,6 +98,11 @@ export interface GateDecision {
   block: boolean;
   /** Reason fed back to claude on block. */
   reason: string;
+  /**
+   * True when someone read the prompt and tapped Allow. Not set when no
+   * pattern matched, nor when an auto-approve window answered.
+   */
+  approvedByPerson?: true;
 }
 
 export interface GateRequest {
@@ -101,6 +110,11 @@ export interface GateRequest {
   toolName: string;
   toolInput: Record<string, unknown>;
   telegramCtx?: Context | undefined;
+  /**
+   * What the prompt names as the tool, when `toolName` would mislead whoever
+   * reads it: a command someone typed is checked as Bash, and wasn't Claude's.
+   */
+  toolLabel?: string;
 }
 
 /**
@@ -185,7 +199,7 @@ export async function evaluateToolCall(req: GateRequest): Promise<GateDecision> 
 
   const { text, entities } = buildPromptMessage({
     reason: pattern.reason,
-    toolName: req.toolName,
+    toolName: req.toolLabel ?? req.toolName,
     toolInput: req.toolInput,
     requester: describeRequester(ctx),
     responders,
@@ -238,7 +252,7 @@ export async function evaluateToolCall(req: GateRequest): Promise<GateDecision> 
         : `An approver denied: ${pattern.reason}`,
     };
   }
-  return { block: false, reason: '' };
+  return { block: false, reason: '', approvedByPerson: true };
 }
 
 /**

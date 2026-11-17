@@ -14,7 +14,8 @@ sidebar:
 - **Addressed-only** — `GROUP_REQUIRE_MENTION` keeps human conversation in a
   shared group from becoming prompts
 - **Permission gate** — dangerous Bash patterns pause for an admin's approval,
-  on Claude and on CCR alike, subagents too
+  on Claude and on CCR alike, subagents too. A `!command` sent in the chat is
+  checked the same way before it runs
 - **Scope guard** — tool calls reaching outside the shared projects, or at any
   credential path, pause too
 - **Charter judge** — guest messages are read against a charter before they run

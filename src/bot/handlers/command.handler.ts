@@ -275,7 +275,8 @@ export async function handlePermissions(ctx: Context): Promise<void> {
   line((b) => b.add('🔐 ').bold('Permission gate').add(` — ${enabled ? '✅ enabled' : '⛔️ disabled'}`));
   line();
   if (enabled) {
-    line((b) => b.add('Bash commands matching the patterns below trigger a Telegram approval prompt before claude executes them. Other tools auto-allow.'));
+    line((b) => b.add('Bash commands matching the patterns below trigger a Telegram approval prompt before they run: Claude\'s own, and a ')
+      .code('!command').add(' someone sends. Other tools auto-allow.'));
   } else {
     line((b) => b.add('Disabled. Set ').code('TELECODER_PERMISSION_PROMPTS=1').add(' and restart the bot to enable.'));
   }

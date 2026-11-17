@@ -51,9 +51,14 @@ export function getAvailableProviders(): ProviderName[] {
  * Every user-originated prompt funnels through the two exports below — typed
  * text, a transcribed voice note, a photo caption, a reply, /btw — so this is
  * the one place a hold can be applied without having to be remembered at a
- * dozen call sites. Scheduled fires call their provider directly and are
- * deliberately not re-screened: they are continuations of a prompt that was
- * already screened once.
+ * dozen call sites. A scheduled prompt comes through here as well, each time
+ * it fires.
+ *
+ * Two checks. A `!command` runs in Claude Code's shell mode without a tool
+ * call, so the permission gate's hook never sees it and it is put to the gate
+ * here (shell-mode-gate.ts). Then the charter judge reads a guest's message.
+ * A command an approver has just allowed skips the judge: they read exactly
+ * what will run, and a hold would ask them the same thing again.
  *
  * A blocked message returns as an ordinary response rather than an error, so
  * the streaming UI already in flight renders the explanation in place.
@@ -63,8 +68,15 @@ async function screened(
   message: string,
   options: { telegramCtx?: unknown } | undefined,
 ): Promise<AgentResponse | null> {
+  const ctx = options?.telegramCtx as Context | undefined;
+
+  const { screenShellCommand } = await import('../claude/shell-mode-gate.js');
+  const shell = await screenShellCommand(ctx, sessionKey, message);
+  if (!shell.proceed) return { text: shell.message, toolsUsed: [] };
+  if (shell.approved) return null;
+
   const { screenPrompt } = await import('../claude/prompt-hold.js');
-  const outcome = await screenPrompt(options?.telegramCtx as Context | undefined, sessionKey, message);
+  const outcome = await screenPrompt(ctx, sessionKey, message);
   if (outcome.proceed) return null;
   return { text: outcome.message, toolsUsed: [] };
 }
