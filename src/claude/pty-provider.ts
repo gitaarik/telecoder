@@ -2,7 +2,6 @@ import { spawn, type IPty } from 'node-pty';
 import headless from '@xterm/headless';
 import { watchData, watchRegister, watchUnregister } from './pty-watch.js';
 import * as fs from 'fs';
-import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';

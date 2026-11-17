@@ -11,7 +11,6 @@ import {
   getModel,
   clearModel,
   getActiveProviderName,
-  setActiveProvider,
   getAvailableProviders,
   getAvailableModels,
   type ProviderName,

@@ -77,7 +77,7 @@ async function handleOpen(ctx: Context, chatId: number, durationMs: number): Pro
   const existing = getWindow(chatId);
   const openerName = describeOpener(ctx);
 
-  const window = openWindow(chatId, {
+  openWindow(chatId, {
     openedBy: ctx.from?.id ?? 0,
     openedByName: openerName,
     durationMs,

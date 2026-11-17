@@ -120,7 +120,6 @@ import { registerBotCommandName } from '../claude/command-parser.js';
 import { buildCommandMenu, setCommandCatalog } from './command-catalog.js';
 import { handleCommandFixCallback, initCommandFallback } from './handlers/command-fallback.js';
 import { withRunningNote } from './handlers/running-note.js';
-import { isCheckout } from '../utils/install-mode.js';
 
 // Resolve sequentialize constraint: same-chat updates are ordered,
 // but /cancel is registered BEFORE this middleware so it bypasses it.

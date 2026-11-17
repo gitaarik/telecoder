@@ -18,9 +18,6 @@ export interface CcrRoute {
 // having to slurp megabytes when the log grows.
 const TAIL_BYTES = 32 * 1024;
 
-let cachedLatestLog: string | undefined;
-let cachedLatestLogMtime = 0;
-
 function findLatestLog(): string | undefined {
   if (!fs.existsSync(CCR_LOG_DIR)) return undefined;
   let best: { name: string; mtime: number } | undefined;
@@ -67,12 +64,6 @@ function getLastCcrRouteFromLog(): { provider: string; model: string } | undefin
   try {
     const latest = findLatestLog();
     if (!latest) return undefined;
-
-    // Quick mtime check — if the file hasn't changed since last call we
-    // could skip work, but we want freshness here, so always re-read tail.
-    const stat = fs.statSync(latest);
-    cachedLatestLog = latest;
-    cachedLatestLogMtime = stat.mtimeMs;
 
     const tail = readTail(latest, TAIL_BYTES);
     const lines = tail.split('\n');

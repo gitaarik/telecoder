@@ -369,7 +369,7 @@ async function readLiveSessionTotals(
 export async function handleCost(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
-  const { chatId, sessionKey } = keyInfo;
+  const { sessionKey } = keyInfo;
 
   // Deliberately no session guard: limits are account-wide, so the answer is
   // the same — and just as useful — in a chat that has never opened a project.

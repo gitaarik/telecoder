@@ -17,7 +17,7 @@ import { contextTokens } from '../../providers/types.js';
 import { stopTurn } from '../middleware/queued-messages.js';
 import { groupAvailableCommands, type AvailableCommands } from '../../claude/available-commands.js';
 import { buildCommandSearchMessage, searchCommands } from '../command-catalog.js';
-import { getSessionKeyFromCtx, parseSessionKey } from '../../utils/session-key.js';
+import { getSessionKeyFromCtx } from '../../utils/session-key.js';
 import { replyMd, getEffortLabel, effortLevelLabel, withBackToPrevious } from './command/shared.js';
 import { getSessionTopic } from './command/topic.js';
 import { describeSource } from './command/prefs-scope.js';
@@ -126,7 +126,6 @@ export async function handleStatus(ctx: Context): Promise<void> {
 
   try {
     const { sessionKey } = keyInfo;
-    const { chatId } = parseSessionKey(sessionKey);
 
     const session = sessionManager.getSession(sessionKey);
 

@@ -25,19 +25,14 @@ import {
   readLastAssistantTurnText,
   type RecapExchange,
 } from '../../../claude/session-jsonl.js';
-import { getSessionKeyFromCtx, parseSessionKey } from '../../../utils/session-key.js';
+import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 import {
   replyMd,
   parseCallback,
   projectStatusSuffix,
   resumeCommandMessage,
-  sessionDisplayName,
   withBackToPrevious,
 } from './shared.js';
-import {
-  buildLetteredKeyboard,
-  letteredOptionLines,
-} from '../../../telegram/lettered-options.js';
 import {
   clearTopic,
   restoreTopic,
@@ -364,7 +359,6 @@ export async function handleTerminal(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
   const { sessionKey } = keyInfo;
-  const { chatId } = parseSessionKey(sessionKey);
 
   const session = sessionManager.getSession(sessionKey);
 

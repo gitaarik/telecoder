@@ -1,5 +1,4 @@
 import { createRequire } from 'node:module';
-import { config } from '../config.js';
 import { resolveBin } from './resolve-bin.js';
 
 const require = createRequire(import.meta.url);

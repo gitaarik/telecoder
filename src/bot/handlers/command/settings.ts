@@ -45,12 +45,9 @@ import {
 } from '../../../claude/permission-mode.js';
 import {
   replyMd,
-  parseCallback,
   getEffortLabel,
   effortLevelLabel,
   EFFORT_LEVELS,
-  replyFeatureDisabled,
-  buildFeatureDisabledMessage,
 } from './shared.js';
 import { getSessionTopic } from './topic.js';
 import { getBgProcesses } from './tasks.js';

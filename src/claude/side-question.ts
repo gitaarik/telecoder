@@ -26,7 +26,6 @@ import { execFile } from 'child_process';
 import { resolvePtyClaudeBin } from '../utils/resolve-claude-bin.js';
 import { userSetupIsolationArgs } from './pty-spawn-config.js';
 import { sessionJsonlPath } from './session-jsonl.js';
-import { config } from '../config.js';
 import * as fs from 'fs';
 
 /** Same shape claude uses for session ids; also guards the execFile argv. */

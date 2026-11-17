@@ -22,7 +22,6 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { isSensitivePath } from '../claude/scope-guard.js';
-import { config } from '../config.js';
 import { isAdmin } from '../utils/admins.js';
 import { getWorkspaceRoot } from '../utils/workspace-guard.js';
 import { EntityText } from '../telegram/entities.js';

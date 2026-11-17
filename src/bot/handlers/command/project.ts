@@ -8,7 +8,6 @@
 import { Context } from 'grammy';
 import * as fs from 'fs';
 import * as path from 'path';
-import { config } from '../../../config.js';
 import { sessionManager } from '../../../claude/session-manager.js';
 import { clearConversation } from '../../../providers/provider-router.js';
 import { prewarmClaude } from '../../../claude/prewarm.js';

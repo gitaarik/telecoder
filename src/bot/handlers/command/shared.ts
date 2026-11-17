@@ -19,7 +19,7 @@ import {
 import { EntityText, type EntityMessage } from '../../../telegram/entities.js';
 import { replyMarkdown } from '../../../telegram/send.js';
 import { fitsOnButton } from '../../../telegram/button-text.js';
-import { getSessionKeyFromCtx, parseSessionKey, type SettingsScope } from '../../../utils/session-key.js';
+import { getSessionKeyFromCtx, type SettingsScope } from '../../../utils/session-key.js';
 import { formatTimeAgo } from '../../../utils/format.js';
 import { PACKAGE_ROOT } from '../../../utils/install-mode.js';
 
@@ -109,7 +109,6 @@ export function effortLevelLabel(effort: string): string {
 
 /** Build status lines appended to project confirmation messages. */
 export function projectStatusSuffix(sessionKey: string): EntityMessage {
-  const { chatId } = parseSessionKey(sessionKey);
   const model = getModel(sessionKey);
   const provider = getActiveProviderName(sessionKey);
   const session = sessionManager.getSession(sessionKey);
