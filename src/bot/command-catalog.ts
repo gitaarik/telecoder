@@ -61,7 +61,7 @@ export function buildCommandMenu(): CommandMenuEntry[] {
     { command: 'allow', description: '✅ Let someone in — reply to them, or /allow @user' },
     { command: 'deny', description: '🚫 Remove someone admitted with /allow' },
     { command: 'members', description: '👥 Show who may prompt the agent in this group' },
-    { command: 'teleport', description: '🚀 Continue this session in a terminal' },
+    { command: 'terminal', description: '💻 Continue this session in a terminal' },
     { command: 'file', description: '📎 Download a file from project' },
     { command: 'suggestions', description: '💡 Toggle predicted next-prompt buttons' },
     { command: 'model', description: '🤖 Switch AI model' },

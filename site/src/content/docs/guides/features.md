@@ -39,7 +39,7 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 - Session resume across messages, and `/resume` and `/recap` to get back to earlier
   work, including sessions started in your terminal
 - `/prompts` lists the prompts you sent, and branches from any of them
-- `/teleport` continues a session in your terminal
+- `/terminal` continues a session in your terminal
 - Chats carry on by themselves after a restart
 - Project-based working directories, picked with `/project`
 - [Threads and forks](threads-and-forks.md)

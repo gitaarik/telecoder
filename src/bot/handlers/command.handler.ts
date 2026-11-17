@@ -68,7 +68,7 @@ export {
   handleClearCallback,
   handleRecap,
   handleSync,
-  handleTeleport,
+  handleTerminal,
 } from './command/session.js';
 export { handleResume, handleResumeCallback } from './command/resume.js';
 export {

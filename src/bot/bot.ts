@@ -55,7 +55,7 @@ import {
   handleSync,
   handlePermissions,
   handleProjectCommands,
-  handleTeleport,
+  handleTerminal,
   handleFile,
   handleStatusLine,
   handleStatusLineCallback,
@@ -494,7 +494,7 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // Bot command handlers (sequentialized per chat)
   cmd('clear', handleClear);
   // Admin-only now that a group can hold contributors: repointing the bot
-  // moves everyone's session, and /teleport and /permissions reach the
+  // moves everyone's session, and /terminal and /permissions reach the
   // guardrails rather than the conversation.
   cmd('project', adminOnly(handleProject));
   // /compact is a native Claude Code slash command, not a bot command — route it
@@ -528,8 +528,10 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   cmd('accept', handleAcceptCommand);
   cmd('decline', handleDeclineCommand);
 
-  // Teleport to terminal
-  cmd('teleport', adminOnly(handleTeleport));
+  // The command line that carries a session on in a terminal. Not /teleport:
+  // that name is Claude Code's own (send a session to the cloud, or resume one
+  // from claude.ai), and a bot command of that name would keep it out of reach.
+  cmd('terminal', adminOnly(handleTerminal));
 
 
   // Callback query handler for inline keyboards

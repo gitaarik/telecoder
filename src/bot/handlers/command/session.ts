@@ -1,5 +1,5 @@
 /**
- * Session lifecycle: /clear, /recap, /handoff, /sync and /teleport, and the
+ * Session lifecycle: /clear, /recap, /handoff, /sync and /terminal, and the
  * ▶️ Continue button under a restart notice. /prompts, which branches as well
  * as lists, lives beside /tree in prompts.handler.ts.
  *
@@ -354,7 +354,13 @@ export async function handleSync(ctx: Context): Promise<void> {
   sessionManager.setLastRelayedAssistantText(sessionKey, jsonlText);
 }
 
-export async function handleTeleport(ctx: Context): Promise<void> {
+/**
+ * /terminal: the command line that carries this session on in a terminal, as
+ * a fork. It was /teleport until Claude Code had a /teleport of its own (send
+ * a session to the cloud, or resume one from claude.ai), which the bot's
+ * command of that name kept anyone from reaching.
+ */
+export async function handleTerminal(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
   if (!keyInfo) return;
   const { sessionKey } = keyInfo;
@@ -363,12 +369,12 @@ export async function handleTeleport(ctx: Context): Promise<void> {
   const session = sessionManager.getSession(sessionKey);
 
   if (!session) {
-    await replyMd(ctx, 'ℹ️ No active session to teleport.\n\nStart a conversation first with `/project <name>`.');
+    await replyMd(ctx, 'ℹ️ No active session to continue in a terminal.\n\nStart a conversation first with `/project <name>`.');
     return;
   }
 
   if (!session.claudeSessionId) {
-    await replyMd(ctx, 'ℹ️ No Claude session available yet.\n\nSend a message first to start a session, then use `/teleport`.');
+    await replyMd(ctx, 'ℹ️ No Claude session available yet.\n\nSend a message first to start a session, then use `/terminal`.');
     return;
   }
 
@@ -380,7 +386,7 @@ export async function handleTeleport(ctx: Context): Promise<void> {
   const command = `cd "${session.workingDirectory}" && ${claudeBin} --resume ${session.claudeSessionId} --fork-session`;
 
   const message = new EntityText()
-    .add('🚀 ').bold('Teleport to Terminal')
+    .add('💻 ').bold('Continue in a terminal')
     .add('\n\n').bold('Project:').add(' ').code(projectName)
     .newline().bold('Session:').add(' ').code(`${session.claudeSessionId.substring(0, 8)}...`)
     .add('\n\nCopy and run in your terminal:\n\n')

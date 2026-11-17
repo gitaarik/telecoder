@@ -95,7 +95,7 @@ export function getAvailableCommands(): EntityMessage {
         '• `/project <path>` - Set working directory',
         '• `/newbot [project]` - Create a bot for a project, named after it and starting in it',
         '• `/resume` - Pick from recent sessions to resume',
-        '• `/teleport` - Continue this session in a terminal, as a fork',
+        '• `/terminal` - Continue this session in a terminal, as a fork',
         '• `/clear` - Clear session and start fresh',
         '• `/status` - Show current session info',
         '• `/fork` - Fork current conversation to another bot',

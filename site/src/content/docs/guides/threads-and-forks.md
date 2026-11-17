@@ -115,7 +115,7 @@ Only `🍴 Fork`, `/fork` and `/spinoff` open new threads.
   started in a terminal. Add words to search, or `🌐 All projects` to look wider.
 - **`/recap`** re-sends the last few exchanges in full.
 - **`/prompts`** lists your prompts, and branches from any of them.
-- **`/teleport`** gives you the line to carry on in a terminal. It forks the session, so
+- **`/terminal`** gives you the line to carry on in a terminal. It forks the session, so
   the chat keeps going too.
 - **`/clear`** starts fresh in the same project. The old conversation stays in `/resume`.
 

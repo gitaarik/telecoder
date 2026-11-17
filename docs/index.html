@@ -2571,7 +2571,7 @@
             <div class="feature-icon"><svg><use href="#i-star"/></svg></div>
             <h3>Projects and handoff</h3>
             <p><code>/project</code> opens on your favorites for one-tap switching, or takes any
-            path on disk. <code>/teleport</code> hands the conversation to a terminal and
+            path on disk. <code>/terminal</code> hands the conversation to a terminal and
             continues in both.</p>
           </div>
           <div class="feature-card" data-category="background">
@@ -3119,7 +3119,7 @@ CCR_AUTOSTART=true</pre>
               <span class="command-desc">Remove a scheduled task by id (get the id from /schedules)</span>
             </div>
             <div class="command-row">
-              <code class="command-code">/teleport</code>
+              <code class="command-code">/terminal</code>
               <span class="command-desc">Continue this session in a terminal, as a fork</span>
             </div>
           </div>
@@ -3583,7 +3583,7 @@ CCR_AUTOSTART=true</pre>
         const sub = document.createElement('span');
         sub.className = 'msg-subtext';
         // colour comes from .msg-subtext; hardcoded white vanished on light bubbles
-        if (msg.isCode || msg.text.includes('Teleport')) {
+        if (msg.isCode) {
           const subCode = document.createElement('code');
           subCode.textContent = msg.subtext;
           sub.appendChild(subCode);

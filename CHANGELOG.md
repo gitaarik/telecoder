@@ -112,6 +112,15 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Changed
 
+- **`/teleport` is `/terminal` now.** Claude Code has a `/teleport` of its
+  own (alias `/tp`): send the session to the cloud, or resume one from
+  claude.ai. The bot's command of that name is older, a Claudegram one, and
+  does something else: it gives the `claude --resume … --fork-session` line
+  to carry on in a terminal. A bot command wins over Claude Code's of the
+  same name, so Claude Code's could not be reached from a chat. The bot's is
+  now `/terminal`, still admin-only, and `/teleport` goes to Claude Code like
+  any other of its commands.
+
 - **`/context` is Claude Code's own.** It used to be a report the bot built
   itself, a Claudegram feature: token counts and dollars from the last reply,
   or, with none cached, a second `claude -p /context` on a fork of the
@@ -280,7 +289,7 @@ reasoning — the commit bodies are the long form, this is the index.
 
 - **`/handoff`.** It wrote the conversation to a markdown file in the project and
   sent it as a document. Claude Code's own `/export` does the same from the pty,
-  `/teleport` carries a session to a terminal, and `/fork` and `/spinoff` carry
+  `/terminal` carries a session to a terminal, and `/fork` and `/spinoff` carry
   it to another chat. It was also the last thing that wrote to a project's
   `.telecoder/` folder.
 
@@ -378,8 +387,9 @@ reasoning — the commit bodies are the long form, this is the index.
   asks is `/mode`'s to say, and on a shared bot the permission gate still
   holds those commands for an approver.
 
-- **`/teleport` forks the session, as it said it did.** Its message promised
-  that Telegram and the terminal could each carry on, but the command it gave
+- **`/terminal` (`/teleport` until this release) forks the session, as it
+  said it did.** Its message promised that Telegram and the terminal could
+  each carry on, but the command it gave
   was a plain `claude --resume`, which reopens the same session the chat's own
   Claude Code still has open, with both of them writing to one log. It now
   adds `--fork-session`: the terminal gets the conversation under a new id.

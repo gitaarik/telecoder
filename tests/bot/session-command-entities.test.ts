@@ -29,7 +29,7 @@ vi.mock('../../src/bot/handlers/command/topic-store.js', () => ({
 }));
 
 const { handleTopic } = await import('../../src/bot/handlers/command/topic.js');
-const { handleClear, handleTeleport } = await import('../../src/bot/handlers/command/session.js');
+const { handleClear, handleTerminal } = await import('../../src/bot/handlers/command/session.js');
 
 function chat(command: string) {
   const reply = vi.fn(async (_text: string, _opts?: Record<string, unknown>) => ({}));
@@ -79,7 +79,7 @@ describe('/clear', () => {
   });
 });
 
-describe('/teleport', () => {
+describe('/terminal', () => {
   it('puts a forking resume command in a pre block, quotes and all', async () => {
     state.session = {
       workingDirectory: '/work/my app',
@@ -87,8 +87,8 @@ describe('/teleport', () => {
       claudeSessionId: 'abcdef12-3456',
       lastActivity: new Date(),
     };
-    const { ctx, reply } = chat('/teleport');
-    await handleTeleport(ctx);
+    const { ctx, reply } = chat('/terminal');
+    await handleTerminal(ctx);
     const [text, opts] = reply.mock.calls[0];
     expect(spans(text, opts)).toEqual(expect.arrayContaining([
       ['code', 'my app'],
