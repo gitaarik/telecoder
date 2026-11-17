@@ -180,7 +180,8 @@ const install = 'npm install -g telecoder';
 
       <!-- Examples -->
       <section class="examples wrap" aria-labelledby="examples-title">
-        <h2 id="examples-title">What you can do</h2>
+        <h2 id="examples-title">What TeleCoder adds</h2>
+        <p class="intro">Claude Code works in the chat the way it does in your terminal. On top of that, TeleCoder makes use of what Telegram is good at.</p>
         <div class="tabs" role="tablist" aria-label="Examples">
           <button role="tab" id="t-threads" aria-controls="p-threads" aria-selected="true">Threads</button>
           <button role="tab" id="t-forks" aria-controls="p-forks" aria-selected="false">Forks</button>
@@ -836,7 +837,8 @@ const install = 'npm install -g telecoder';
     padding-block: 4.5rem;
     border-top: 1px solid var(--line);
   }
-  .how .intro {
+  .how .intro,
+  .examples .intro {
     max-width: 40rem;
     margin: -1rem 0 2.8rem;
     font-size: 1.15rem;
@@ -1295,7 +1297,8 @@ const install = 'npm install -g telecoder';
     h2 {
       margin-bottom: 1.5rem;
     }
-    .how .intro {
+    .how .intro,
+    .examples .intro {
       margin: -0.5rem 0 2.25rem;
       font-size: 1.06rem;
     }
