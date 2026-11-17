@@ -1,134 +1,89 @@
-# Pty-driven Claude Code provider
+# Claude Code in a pty
 
-Status: **done, and the only transport** — since d193904 (2026-11-16) every chat runs Claude Code in a pty; the Agent SDK path, `/method` and the SDK-side CCR wrapper are gone, and CCR runs in the same pty through a shim executable (f4995e8). The notes below are the original framing from when the pty was one option of three. Provider is wired and feature-complete for the hook-driven verbose UI path (tool indicators, edit diffs, Stop-driven end-of-turn) and a standalone stdio MCP subprocess (`src/bin/mcp-server.ts`). Tools that need the bot (send_file, ask_user, set_topic, switch_project, …) reach it over a loopback HTTP IPC bridge; the rest run inline. The design notes below capture the original framing and reasoning; see git log for what shipped (`feat: wire PTY provider as /method option`, `feat: PTY mode verbose UI via hook bridge + Stop-driven end-of-turn`, `feat: standalone MCP server for PTY mode`, `feat: claudegram_set_topic MCP tool over IPC bridge`).
+Every chat runs the real `claude` CLI in a pseudo-terminal. TeleCoder types the prompt into
+Claude Code's own TUI and reads the answer back. This note says why, how the parts fit, and
+what building it taught. It began in May 2026 as a plan and was rewritten in November 2026 to
+describe what was built. The header comments of the files named below are the detailed
+reference.
 
-## Why this exists
+## Why a pty
 
-Anthropic announced (article: xda-developers.com — "Anthropic's Claude subscriptions no longer include Agent SDK and claude -p usage") that starting **2026-06-15**, programmatic usage is separated from the Pro/Max subscription:
+- **It is Claude Code, not a lookalike.** The interactive CLI brings its own login,
+  `CLAUDE.md`, settings, skills, plugins, slash commands and dialogs. Driving it means none of
+  that has to be rebuilt, or kept in step with each release.
+- **It runs on the login you already have.** A Pro or Max plan covers the interactive CLI. The
+  work started in May 2026, when Anthropic announced that Agent SDK and `claude -p` use would
+  be metered apart from the subscription, and the Agent SDK doesn't let a third-party product
+  offer claude.ai login on it.
 
-- **Still on subscription:** interactive Claude (web app, interactive CLI/TUI).
-- **Now on a separate metered pool:** Agent SDK, `claude -p`, GitHub Actions, third-party tools using these APIs.
+The price is that a TUI is not an API: a Claude Code release can move a glyph or reword a
+footer. The parts below are built to notice that and stop, not to guess.
 
-Pool sizes: Pro $20/mo, Max 5x $100/mo, Max 20x $200/mo. After the pool drains, traffic falls back to standard API rates (or pauses if API billing isn't enabled).
+The Agent SDK package is still a dependency, for small one-shot Haiku calls that run outside
+any chat: naming a conversation's topic, and the charter judge.
 
-Claudegram currently uses `@anthropic-ai/claude-agent-sdk` (see `src/claude/agent.ts`). Under the new policy it draws from the programmatic pool, not the subscription.
+## How it works
 
-**User's framing for keeping it on subscription:** Claudegram is used by a single person as a Telegram skin over Claude Code — the actual usage pattern is identical to a human typing in the interactive CLI, just over a different I/O channel. The goal of this work is to make the technical shape match that framing.
+| Part | What it does | Where |
+|------|--------------|-------|
+| Spawn | One long-lived `claude` per chat or thread, under `node-pty`, started with `--session-id` or `--resume`. An idle one is ended and resumes from its transcript on the next message | `src/claude/pty-provider.ts`, `pty-idle-reaper.ts` |
+| Screen | The pty's output goes into an `@xterm/headless` virtual terminal, so a spinner overwrites itself as it does on a real screen. Claude Code's state is read from the rendered rows | `tui-state.ts` |
+| Prompt | Typed into the input box, and checked there before Enter is pressed | `pty-provider.ts` |
+| Tool events | The `--settings` payload registers hooks (`PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `Stop`) that POST to a loopback HTTP server in the bot, with a token that reaches them through the pty's environment. They drive the live tool lines and edit diffs. `PreToolUse` is the permission gate, and fails closed | `pty-spawn-config.ts`, `ipc-server.ts`, `permission-gate.ts` |
+| End of turn | Inferred from several signals together: the `Stop` hook, a quiet pty with the input box back and no spinner, and the session log having moved | `pty-provider.ts`, `turn-end.ts` |
+| Reply text | Read from Claude Code's session log (JSONL): every assistant text block since the prompt. While the turn runs, the screen supplies the block still being written | `session-jsonl.ts`, `pty-stream.ts` |
+| Tools that reach Telegram | A stdio MCP server that `claude` starts from `--mcp-config`. Tools that need the bot, such as sending a file or asking a question, call back over the same loopback server | `src/bin/mcp-server.ts`, `mcp-bridge.ts` |
+| Dialogs | A dialog Claude Code opens is parsed from the screen and put in the chat as buttons. The tap becomes keystrokes, and no answer presses nothing | `tui-modal.ts`, `modal-relay.ts` |
+| Background work | Monitors, backgrounded shells and subagents report after the turn has ended. A relay follows the session log and posts what arrives | `monitor-relay.ts` |
+| Other models | Claude Code Router runs the same `claude` in the same pty, started through a shim script that sets CCR's environment for that one process | `ccr-shim.ts` |
+| Watching | `telecoder watch` shows a chat's screen in your terminal, read-only | `pty-watch.ts` |
 
-## The constraint
+Files without a folder are in `src/claude/`.
 
-The article doesn't spell out Anthropic's classifier, but the likely signals are:
+## What building it taught
 
-- Presence of `-p` / `--print` flag
-- `--output-format stream-json` flag (what the SDK uses)
-- TTY status of stdin/stdout
-- Some header the SDK sets on its HTTP calls
+1. **Stripping escape codes doesn't give you the screen.** Spinner frames overdraw in place,
+   so with the codes stripped every frame turns up as text. A virtual terminal applies them
+   instead, and what is left is what a person would see.
+2. **Silence alone says nothing about a turn.** A running turn redraws several times a second, and
+   a finished one sits still for as long as you like. The `❯` prompt doesn't separate the two
+   either: Claude Code draws it throughout a turn, because you can type while the model
+   works. What does track a turn is the footer's `esc to interrupt` and the live spinner
+   (`tui-state.ts`).
+3. **The reply is not on the screen.** A turn can write several `●` text blocks with tool
+   calls between them, and taking the last block drops the prose before it. The session log
+   has every block, in the Markdown the model wrote.
+4. **Wait before typing.** A prompt typed while Claude Code is still starting is eaten by
+   whatever is on screen, such as the folder-trust dialog.
+5. **Never guess at a dialog.** Enter pressed at a dialog mistaken for the input box is
+   enough to change a setting. A dialog goes to the person the chat belongs to, and one that
+   can't be parsed is shown as text with no buttons (`modal-relay.ts`).
+6. **The end of a turn is an inference.** No single signal means "Claude is finished".
+   `turn-end.ts` records the two cases where the signals mislead, each found by a live
+   session hanging.
 
-So the interactive TUI, running under a real (or pseudo-)TTY, with no programmatic flags, is the shape that should fall on the subscription side.
+Two parts of the original plan were not built: a Haiku call to extract the reply when parsing
+failed, and a corpus of recorded sessions replayed on every commit. The tests hold rows
+recorded from live ptys instead, for example in `tests/claude/tui-state.test.ts`.
 
-## Options considered
+## Reading interface facts from the CLI
 
-1. **Accept the metered pool.** Zero engineering work. For light usage, $100/mo on Max 5x may be enough. Doesn't preserve the "remote terminal" framing.
-2. **Switch to a different provider** (OpenAI, Gemini, CCR-routed others). Big rewrite. Loses Claude-specific features (Skill system, Claude Code preset, tool-use ergonomics). Sidesteps the policy entirely. CCR is already integrated as a throttle fallback (`f31cef3`).
-3. **Pty-driven interactive Claude Code.** Spawn `claude` (no `-p`) under `node-pty`, send prompts via stdin, parse rendered TUI output for the response. Matches the framing. Brittle to TUI changes. → **chosen approach.**
-4. **Self-host an open model.** Out of scope here.
+The parsing rests on facts about Claude Code's interface: the prompt and reply glyphs, footer
+and dialog wording, flags and environment variables.
 
-Decision: build pty mode as a third provider alongside SDK and CCR, with a per-chat selector. SDK and CCR stay available as fallbacks if Anthropic adds active detection later.
+- **Allowed:** reading those observable strings from the Claude Code install on the local
+  machine, and measuring them on a live pty. It is licensed software that is already running
+  here.
+- **Not allowed:** copying code or recognisable structure from it into TeleCoder, or using
+  de-obfuscated mirrors of it. Neither is needed: the interface facts are enough.
 
-## Architecture
+The first notes are in `prototypes/pty/INTERFACE_NOTES.md`. Later measurements sit in the
+comments next to the code that depends on them, with the Claude Code version and terminal
+size they were taken at.
 
-### Provider switch
+## The prototype
 
-Slot into the existing `src/providers/types.ts` abstraction (same template as the CCR provider added in `f31cef3`). A `PtyProvider` implements the same `AgentProvider` interface. Add a `/method` command alongside `/model`, persist via `userPreferences`. Likely a single selector enum (`sdk` | `ccr` | `pty`) rather than two parallel toggles.
-
-Session continuity is shareable across providers: all three ultimately spawn the same `claude` binary and read the same on-disk session files. `claude --resume <id>` works regardless of which provider started the session. Worth making this an explicit feature so users can flip between modes without losing context.
-
-### MCP tools
-
-Still needed. Telegram-facing tools (`send_file`, `ask_user`, `set_topic`) bridge the bot to Telegram, not the SDK.
-
-What changes is the **transport**:
-- SDK mode: in-process MCP via `createTeleCoderMcpServer()` (see `src/claude/mcp-tools.ts`).
-- Pty mode: MCP server must be a stdio subprocess spawned by `claude` via `--mcp-config`.
-
-Migration: extract `mcp-tools.ts` into a standalone Node bin (e.g. `bin/claudegram-mcp.js`) that the spawned `claude` process loads. The MCP subprocess needs IPC back to the main bot process to actually send Telegram messages (Unix socket or HTTP loopback on localhost). The chat/session ID gets passed per-spawn via env or `--mcp-config`, and the MCP subprocess threads it through every IPC call.
-
-This extraction would also benefit SDK mode (cleaner process boundary), so worth doing first.
-
-### Hook callbacks
-
-Today's in-process JS hooks (`UserPromptSubmit` auto-topic nudge in `src/claude/agent.ts:589-612`, `PreCompact` logger) cannot be JS callbacks under the interactive CLI. They become shell-script hooks in `.claude/settings.json`, or get dropped.
-
-For the auto-topic nudge specifically, the AUTO_TOPIC_HAIKU side-call path is already implemented and is the cleaner alternative — pty mode would just force that path on.
-
-### Event fidelity
-
-SDK mode gives structured `tool_use` / `tool_result` events. Pty mode gives rendered TUI text. The bot's terminal-style UI (tool indicators, footer status) will be lower-fidelity in pty mode. Two options:
-
-- Accept the degradation: pty mode shows a simpler streaming-text UX.
-- Backfill events from the parser: detect "Running Bash..." spinner → emit a synthetic tool_start event.
-
-Decision deferred — depends on how nice the v2 parser turns out.
-
-## Parser strategy
-
-Raw `strip-ansi` is insufficient (see prototype findings below). The v2 parser should be layered for resilience to TUI changes:
-
-1. **Render through a virtual terminal.** Use `@xterm/headless` to apply escape codes to a virtual screen instead of stripping them. Spinner frames overwrite each other on the virtual screen instead of accumulating as text. Read the final rendered state.
-2. **Cadence-based end-of-turn detection.** The most stable signal is "stdout idle for >N ms AND the input prompt glyph (`❯`) is visible at the bottom." Single-signal regexes are fragile; combine signals (idle window + prompt indicator + cursor home column + no active spinner) and require K-of-N. Survives most reshuffles.
-3. **Region-based response extraction.** ~~The `●` glyph prefixes assistant messages on the rendered screen. Extract the region between the latest `●` block and the input box. Visual changes within a region don't break region detection.~~ — In practice this proved lossy: a turn can emit multiple `●` text blocks separated by tool calls, and "the latest `●` block" only captures the final one, silently dropping any preceding prose. Current implementation reads the JSONL session log instead (`readLastAssistantTurnText` in `src/claude/session-jsonl.ts`) — same log we already tail for usage stats — and joins every assistant text block emitted since the most recent real user prompt. Region extraction remains as a fallback for the very first turn before the log file exists.
-4. **Haiku fallback.** If heuristics return something nonsensical (empty, too short, contains spinner artifacts), hand the rendered screen to Haiku with "extract the assistant's last reply." Cheap, robust, only fires on parser misses. Doubles as a regression alarm — track fallback rate per Claude Code version.
-5. **Snapshot corpus.** Maintain a dozen recorded sessions on disk. CI replays them against the parser on every commit and every Claude Code version bump. Divergence = early warning.
-
-What this won't survive: Claude Code switching to a fundamentally different paradigm (e.g. multi-pane layout). Rare event, Haiku fallback covers the gap.
-
-## Mining interface facts from the local bundle
-
-To bootstrap the parser, we need stable interface facts: assistant message glyph, prompt glyph, end-of-turn sequences, blocking-dialog text (folder trust, permission requests), flag/env semantics.
-
-Sourcing rules:
-
-- **Allowed:** grep the publicly-distributed minified bundle on the local machine (`~/.local/lib/node_modules/@anthropic-ai/claude-code/cli.js` or wherever the local install is). It's licensed code we already run. Document only observable interface strings.
-- **Disallowed:** copying code or recognizable structure into Claudegram; using DMCA'd de-obfuscated mirrors. Both raise real account-revocation risk and aren't necessary — the interface facts are enough.
-
-Output of this work goes in `prototypes/pty/INTERFACE_NOTES.md` (not yet written).
-
-## Prototype findings (2026-05-14)
-
-Prototype lives in `prototypes/pty/` (self-contained, doesn't touch main `package.json`):
-
-- `prototype.ts` — spawns `claude` with `node-pty`, waits for REPL idle, types prompt, waits for end-of-turn via idle window, dumps raw + stripped output.
-- Dependencies: `node-pty`, `strip-ansi` (v1 only — v2 will swap for `@xterm/headless`).
-
-**Validated:**
-
-- `node-pty` spawn of `claude --dangerously-skip-permissions` works.
-- Sending the prompt as `<text>\r` correctly submits to the REPL.
-- Idle-window end-of-turn detection (IDLE_MS = 1200) fires correctly — Claude responded with `PONG` and the prototype caught it within ~1-2 s.
-- `waitForIdle()` before typing is necessary to avoid the prompt being eaten by a startup dialog (e.g. folder-trust check). Default cwd to a known-trusted directory.
-
-**Open / unresolved:**
-
-- `strip-ansi` produces unusable output. Spinner animations overdraw in place; without a virtual terminal applying the escapes, every frame appears as separate text. The signal (`●PONG`) is in there but buried. → must upgrade to `@xterm/headless` for v2.
-- We **cannot validate billing** until 2026-06-15. The technical shape (interactive TUI, no `-p`, no `stream-json`) is the right shape, but Anthropic may add server-side heuristics. Keep SDK/CCR providers available as fallbacks.
-
-## Suggested next-step order when resuming
-
-1. Mine interface facts from the local bundle → `prototypes/pty/INTERFACE_NOTES.md`.
-2. Extract MCP into a subprocess + IPC scheme (benefits SDK mode too).
-3. Build v2 prototype with `@xterm/headless`, region-based extraction, Haiku fallback hook.
-4. Wire into the `AgentProvider` abstraction as `PtyProvider`.
-5. Snapshot-corpus harness + parser regression tests.
-6. `/method` switcher + persisted preference.
-7. Roll out shadow-mode (SDK in foreground, pty mode logged for comparison) before flipping the default.
-
-Step 1 is small and unblocks the parser design. Step 2 is the largest mechanical refactor. Step 3 is the gating risk — if `@xterm/headless` rendering plus region extraction doesn't produce clean output reliably, the whole plan needs a rethink.
-
-## Files touched by this work so far
-
-- `prototypes/pty/package.json`
-- `prototypes/pty/tsconfig.json`
-- `prototypes/pty/prototype.ts`
-- `docs/design/pty-provider.md` (this file)
-
-No changes to `src/` yet.
+`prototypes/pty/` is the prototype from May 2026. `prototype.ts` spawns `claude` under
+`node-pty`, types one prompt, waits for the output to go quiet and dumps it raw and stripped.
+It showed that spawning and submitting work, and that stripped output is unusable. It is
+self-contained and not part of the build.

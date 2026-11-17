@@ -55,9 +55,8 @@ export const BRANCH_MARKER_KEYBOARD = {
 
 /**
  * Status-bubble text shown while an ask_user question is waiting on a tap.
- * Replaces the spinner: the watchdog is deliberately paused during a pending
- * question, so nothing else stops the bubble animating "Thinking…" at a turn
- * that is actually parked on the user.
+ * Replaces the spinner: nothing else stops the bubble animating "Thinking…"
+ * at a turn that is actually parked on the user.
  */
 const AWAITING_ANSWER_LINE = '⏸️ Waiting for your answer — see the question below ↓';
 

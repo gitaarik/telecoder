@@ -248,9 +248,9 @@ interface PendingEntry {
 export type ResolveOutcome = 'resolved' | 'expired' | 'forbidden';
 
 const pending: Map<string, PendingEntry> = new Map();
-// Per-sessionKey pending counter — read by the agent watchdog so it can
-// pause its stale-tool/silence timeouts while we're legitimately waiting on
-// the user. Counter (not boolean) supports rare overlapping asks per session.
+// Per-sessionKey pending counter: the status bubble reads it to say the turn
+// is waiting on the user. A counter, not a boolean, for the rare overlapping
+// asks in one session.
 const pendingBySession: Map<string, number> = new Map();
 
 function clearPending(id: string): PendingEntry | undefined {
@@ -372,9 +372,8 @@ export function getQuestionResponders(id: string): number[] | undefined {
 
 /**
  * Count a wait on the user that isn't a button question, such as a secret
- * request, as one: the watchdog pauses for it and the status bubble says
- * the turn is waiting on them. Returns the call that ends the wait, which is
- * safe to make more than once.
+ * request, as one: the status bubble says the turn is waiting on them.
+ * Returns the call that ends the wait, which is safe to make more than once.
  */
 export function noteAwaitingUser(sessionKey: string): () => void {
   pendingBySession.set(sessionKey, (pendingBySession.get(sessionKey) ?? 0) + 1);
@@ -390,8 +389,8 @@ export function noteAwaitingUser(sessionKey: string): () => void {
 
 /**
  * True when there's an outstanding ask-user question for this sessionKey.
- * The agent watchdog uses this to pause its timeouts so legitimate waits
- * for a button tap don't get force-closed as a "stale tool".
+ * The status bubble uses this to say the turn is parked on the user, where
+ * it would otherwise go on animating "Thinking…".
  */
 export function hasPendingQuestionForSession(sessionKey: string): boolean {
   return (pendingBySession.get(sessionKey) ?? 0) > 0;

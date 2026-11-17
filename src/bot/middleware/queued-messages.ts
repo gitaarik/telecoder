@@ -111,7 +111,8 @@ const HOLD_POLL_MS = 500;
  * How long a message waits on a turn Claude started itself before it moves on
  * to the pty provider's readiness wait, which reports a turn that never ends
  * instead of sitting on it. Matches that wait's own patience. A turn TeleCoder
- * started has no ceiling here, because the agent watchdog already looks after it.
+ * started has no ceiling here, because CLAUDE_PTY_HARD_TIMEOUT_MS already caps
+ * it.
  */
 const OWN_TURN_CEILING_MS = 30 * 60_000;
 

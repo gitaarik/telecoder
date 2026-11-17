@@ -34,7 +34,7 @@ Telegram ⇄ grammY bot ⇄ provider router ─┬─ claude: the CLI in a pty �
 | `src/config.ts` | Zod-validated environment config |
 | `src/bot/` | Bot setup, command and message handlers, middleware, group access |
 | `src/providers/` | Provider router, the Claude and CCR providers, switching, per-user preferences |
-| `src/claude/` | PTY provider and TUI parsing, session state and history, watchdog, permission gate, scope guard, charter judge, scheduler, MCP tools |
+| `src/claude/` | PTY provider and TUI parsing, session state and history, permission gate, scope guard, charter judge, scheduler, MCP tools |
 | `src/bin/` | The MCP server process |
 | `src/telegram/` | Streaming, markdown to entities, splitting, task cards |
 | `src/startup/` | Restoring chats after a restart |
@@ -43,7 +43,7 @@ Telegram ⇄ grammY bot ⇄ provider router ─┬─ claude: the CLI in a pty �
 | `tests/` | Vitest suite, mirroring `src/` |
 | `scripts/` | Bot control and shared-bot account setup |
 | `site/` | The website and these docs (Astro + Starlight); `npm run build` there checks the Commands page against `src/bot/bot.ts` |
-| `docs/` | The old single-page website, [PTY design notes](https://github.com/gitaarik/telecoder/blob/main/docs/design/pty-provider.md), [debugging notes](https://github.com/gitaarik/telecoder/blob/main/docs/debugging/interrupted-by-user-misattribution.md), [example charter](https://github.com/gitaarik/telecoder/blob/main/docs/CHARTER.example.md) |
+| `docs/` | The old single-page website, [PTY design notes](https://github.com/gitaarik/telecoder/blob/main/docs/design/pty-provider.md), [example charter](https://github.com/gitaarik/telecoder/blob/main/docs/CHARTER.example.md) |
 | `prototypes/pty/` | The prototype that came before the PTY provider |
 
 ---

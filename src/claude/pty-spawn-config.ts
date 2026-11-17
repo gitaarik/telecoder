@@ -113,8 +113,8 @@ function hasAcceptedBypassWarning(): boolean {
  * at run time ($TELECODER_IPC_TOKEN) rather than written into this JSON: the
  * JSON is a command-line argument, which any local user can read in `ps`.
  *
- * Stop / SubagentStop are intentionally NOT registered here — Phase 2 will
- * use them as the end-of-turn signal. UserPromptSubmit is similarly deferred.
+ * Stop is registered as one of the end-of-turn signals. SubagentStop and
+ * UserPromptSubmit are not registered.
  *
  * CLAUDE_PLUGINS rides along in the same payload. The flag tier this lands in
  * outranks user, project and local settings and merges with them, so naming a

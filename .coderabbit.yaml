@@ -57,8 +57,10 @@ reviews:
         proper MarkdownV2 escaping, and .unref() on any intervals/timers.
     - path: "src/claude/**"
       instructions: |
-        Agent SDK integration. Check for: proper session lifecycle management,
-        streaming error handling, abort controller usage, and settingSources config.
+        Drives the real `claude` CLI in a pty (node-pty + @xterm/headless). Check for:
+        session lifecycle (spawn, resume, idle reaping), state read from the rendered
+        screen rather than raw output, the IPC token on every hook and MCP call, and
+        no secrets in process arguments.
     - path: "docs/**"
       instructions: |
         Check for: accessibility (ARIA attributes), security (rel="noopener noreferrer"

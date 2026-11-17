@@ -99,7 +99,8 @@ Everything TeleCoder does, by area. Commands are listed in full in [Commands](..
 
 ## Reliability
 
-- An agent watchdog that detects silent or stuck tools, with `/cancel` working during hangs
+- A turn that runs longer than two hours is ended with a "turn exceeded" error
+  (`CLAUDE_PTY_HARD_TIMEOUT_MS`), and `/cancel` stops a turn at any point
 - A memory guard: a message that would start a new `claude` on a machine short of memory
   ends the idle claudes first, and asks before starting when that isn't enough: start
   anyway, end the longest-idle claude, check again, wait for room, or drop the message.
