@@ -98,8 +98,7 @@ async function sendCompactionNotification(
     await replyFormatted(ctx, new EntityText()
       .add(`${emoji} `).bold('Context Compacted').newline(2)
       .add(`${triggerLabel} — previous context was ${fmtTokens(c.preTokens)} tokens.\n`)
-      .add('The agent now has a summarized version of your conversation.').newline(2)
-      .italic('Tip: Use /handoff before compaction to save a detailed context document.')
+      .add('The agent now has a summarized version of your conversation.')
       .build());
   } catch (err) {
     console.error('[Compaction] Failed to send notification:', err);

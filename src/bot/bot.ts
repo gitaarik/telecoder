@@ -247,7 +247,7 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   // subprocess that needs to reach us.
   await startIpcServer();
 
-  // Support HTTP/HTTPS/SOCKS proxy for Telegram API (useful in restricted networks)
+  // Support an HTTP or HTTPS proxy for the Telegram API (useful in restricted networks)
   const proxyUrl = telegramProxyUrl();
   if (proxyUrl) {
     // A proxy URL can carry a user and password.

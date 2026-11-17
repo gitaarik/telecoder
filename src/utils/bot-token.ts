@@ -71,7 +71,7 @@ export function describeTokenCheckFailure(err: unknown, proxyUrl?: string): Toke
   const hint = proxyUrl
     ? 'Check that the proxy is running and reachable.'
     : 'Check the network connection. If Telegram is blocked on this network, set TELEGRAM_PROXY_URL ' +
-      '(e.g. socks5://127.0.0.1:1080 or http://proxy:8080).';
+      'to an HTTP or HTTPS proxy (e.g. http://127.0.0.1:8080).';
   return {
     message: redactSecrets(`Couldn't reach api.telegram.org${via} (${reason}). ${hint}`),
     fatal: false,

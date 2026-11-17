@@ -360,6 +360,18 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Fixed
 
+- **The "Context Compacted" notice no longer suggests `/handoff`.** The
+  command was removed, but the notice sent when Claude Code compacts a
+  conversation by itself still ended with a tip to run it first.
+
+- **The proxy hint no longer suggests a SOCKS proxy.** When the bot can't
+  reach Telegram at startup it suggests `TELEGRAM_PROXY_URL`, and gave
+  `socks5://127.0.0.1:1080` as the example. The bot connects through an HTTP
+  or HTTPS proxy only, so that value could never work. The hint now names an
+  HTTP proxy, and the setting is in the configuration reference with what it
+  covers: the bot's requests to Telegram, not the download of files sent to
+  it.
+
 - **The status line no longer ends in `💰 $0.00`.** The cost in the status
   line, in the verbose usage footer and on a "Session Cost" line in `/status`
   was a figure the SDK transport read off each reply. Claude Code writes no
