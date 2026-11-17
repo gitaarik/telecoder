@@ -1,7 +1,7 @@
 /**
  * One live "background activity" card per session.
  *
- * PTY-mode async work (monitors, backgrounded Bash, subagents, workflows)
+ * Async work (monitors, backgrounded Bash, subagents, workflows)
  * reports in from outside any user turn, so every arm, event and completion
  * used to arrive as its own Telegram message — a monitor that fires ten times
  * produced ten messages. This module folds all of it into a single message

@@ -2,9 +2,10 @@
  * Marketplace plugins carried into the agent.
  *
  * The property that matters is that CLAUDE_PLUGINS is the *only* way one
- * arrives: both transports skip ~/.claude/settings.json, where `enabledPlugins`
- * normally lives, so a plugin enabled in the terminal is otherwise absent from
- * a Telegram session with nothing to say why. The other property that matters
+ * arrives where the user's setup stays out, as on a bot with guests: the pty
+ * then skips ~/.claude/settings.json, where `enabledPlugins` normally lives,
+ * so a plugin enabled in the terminal is otherwise absent from a Telegram
+ * session with nothing to say why. The other property that matters
  * is that carrying plugins never costs the bot its hooks — the permission gate
  * rides in the same settings payload, and a payload that lost it would fail
  * open.

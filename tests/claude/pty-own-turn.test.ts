@@ -76,7 +76,7 @@ describe('isSessionGenerating', () => {
     expect(makeProvider(AT_THE_PROMPT).provider.isSessionGenerating(KEY)).toBe(false);
   });
 
-  it('is false with no pty, which is every session in SDK mode', () => {
+  it('is false with no pty', () => {
     expect(new PtyProvider().isSessionGenerating(KEY)).toBe(false);
   });
 });

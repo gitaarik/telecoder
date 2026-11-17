@@ -12,7 +12,7 @@ import { ClaudeApiError } from '../../src/claude/pty-provider.js';
 
 describe('isClaudeAuthError', () => {
   it.each([
-    // What agent.ts throws when the SDK's query ends on the CLI's answer
+    // The CLI's own answer, wrapped in the error a failed side call throws
     // (measured against the bundled CLI with an empty HOME).
     'Claude error: Claude Code returned an error result: Not logged in · Please run /login',
     'Not logged in · Please run /login',

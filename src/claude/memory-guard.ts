@@ -1,7 +1,7 @@
 /**
  * Not starting a claude the machine has no room for.
  *
- * Every PTY chat keeps its own `claude`, a few hundred MB each, and nothing
+ * Every chat keeps its own `claude`, a few hundred MB each, and nothing
  * about a typed message says whether it will reuse one or start one. On a box
  * that is already in swap, the one that starts is the one that takes the
  * machine down — bot, every other claude and all.

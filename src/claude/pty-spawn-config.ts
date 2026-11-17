@@ -209,7 +209,7 @@ export function buildMcpToolsSystemPromptNote(): string {
     '- mcp__telecoder-tools__telecoder_cancel_schedule — remove a scheduled task by id.',
   ];
   // Async built-ins (Monitor, backgrounded Bash, Task subagent) aren't
-  // telecoder_* tools, but PTY mode wires up a relay so task-notifications
+  // telecoder_* tools, but the bot wires up a relay so task-notifications
   // that arrive after the user-turn ends still reach Telegram. Mention it so
   // the model confidently uses these tools when they're the right fit.
   tools.push('- Async built-ins (Monitor, `Bash(run_in_background=true)`, `Task`/`Agent`) — supported in TeleCoder. Task-notifications that fire between user turns are relayed to Telegram with a "📡 Monitor — ...", "⚙️ Backgrounded: ...", or "🤖 Subagent started: ..." header, paired with the actual event payload and your response. Use these freely for "watch X", "run X in background while continuing", or "delegate Y to a subagent" tasks.');

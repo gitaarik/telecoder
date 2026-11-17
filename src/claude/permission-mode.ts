@@ -25,8 +25,6 @@ export interface PermissionModeInfo {
   label: string;
   /** Claude's own one-line description of what the mode does. */
   description: string;
-  /** What `--permission-mode` accepts. */
-  cli: string;
   /**
    * The phrase the TUI prints in its indicator while this mode is on. Measured
    * against a live pty — claude draws `⏸ manual mode on · ? for shortcuts` and
@@ -41,35 +39,30 @@ export const PERMISSION_MODES: readonly PermissionModeInfo[] = [
     id: 'manual',
     label: 'Manual',
     description: 'ask before every edit',
-    cli: 'manual',
     tuiPhrase: 'manual mode',
   },
   {
     id: 'acceptEdits',
     label: 'Accept edits',
     description: 'edit freely, ask for commands',
-    cli: 'acceptEdits',
     tuiPhrase: 'accept edits',
   },
   {
     id: 'plan',
     label: 'Plan',
     description: 'research and propose, never touch files',
-    cli: 'plan',
     tuiPhrase: 'plan mode',
   },
   {
     id: 'auto',
     label: 'Auto',
     description: 'Claude decides what is safe',
-    cli: 'auto',
     tuiPhrase: 'auto mode',
   },
   {
     id: 'bypassPermissions',
     label: 'Bypass',
     description: 'never ask — what the pty ran in before auto',
-    cli: 'bypassPermissions',
     tuiPhrase: 'bypass permissions',
   },
 ];
@@ -99,9 +92,9 @@ export function defaultPermissionMode(): PermissionModeId {
 
 /**
  * Resolve what someone typed into a mode id, so `/mode plan` works alongside
- * the buttons. Accepts the id, the label, and the CLI spelling — `manual` and
- * `default` both land on manual, since which word is right depends on which
- * transport you last read about.
+ * the buttons. Accepts the id and the label. `manual` and `default` both land
+ * on manual: the TUI calls the mode manual, and Claude Code's settings and
+ * flags have called it default.
  */
 export function parsePermissionModeArg(arg: string): PermissionModeId | null {
   const norm = arg.trim().toLowerCase().replace(/[\s_-]+/g, '');
@@ -109,8 +102,7 @@ export function parsePermissionModeArg(arg: string): PermissionModeId | null {
   if (norm === 'bypass' || norm === 'yolo') return 'bypassPermissions';
   const hit = PERMISSION_MODES.find((m) =>
     norm === m.id.toLowerCase()
-    || norm === m.label.toLowerCase().replace(/[\s_-]+/g, '')
-    || norm === m.cli.toLowerCase());
+    || norm === m.label.toLowerCase().replace(/[\s_-]+/g, ''));
   return hit?.id ?? null;
 }
 

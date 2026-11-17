@@ -1,7 +1,7 @@
 /**
  * Tracks assistant prose already delivered to Telegram *during* a PTY turn.
  *
- * PTY mode has no streaming text channel. The turn's prose is scraped from
+ * A pty has no streaming text channel. The turn's prose is scraped from
  * Claude Code's JSONL log at end-of-turn (readLastAssistantTurnText) and posted
  * as one message. That is fine right up until the model stops mid-turn to ask a
  * question: everything it wrote to explain the choice is still sitting

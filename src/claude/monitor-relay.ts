@@ -17,7 +17,7 @@ import {
 import { config } from '../config.js';
 
 /**
- * PTY-mode Monitor relay. When claude calls its built-in Monitor tool, events
+ * The Monitor relay. When claude calls its built-in Monitor tool, events
  * that fire later (after our user-turn has ended) show up as new assistant
  * records appended to the session JSONL. Without this module those records
  * would never reach Telegram — the turn pipeline only forwards content

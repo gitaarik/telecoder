@@ -139,7 +139,7 @@ export function claudeSessionFileExists(workingDirectory: string, sessionId: str
 
 /**
  * Mtime (ms since epoch) of the session's JSONL log, or 0 if it doesn't exist
- * yet. Used by PTY mode as an end-of-turn signal — claude flushes a fresh
+ * yet. Used by the pty provider as an end-of-turn signal — claude flushes a fresh
  * record to the log for every assistant message, tool call, system event,
  * compaction boundary, etc., so a moving mtime is reliable evidence that
  * claude actually did work for the current prompt (the prior bullet-count
@@ -426,7 +426,7 @@ export function extractText(content: JsonlMessage['content']): string {
 
 /**
  * Return the joined text of every assistant content block emitted since the
- * most recent `type:'user'` record. PTY-mode end-of-turn extraction uses this
+ * most recent `type:'user'` record. End-of-turn extraction uses this
  * instead of scraping the xterm buffer because a single turn can produce
  * multiple `●` text blocks interleaved with tool calls — screen-scrape only
  * picks the last `●`, silently dropping the earlier blocks. Returns undefined

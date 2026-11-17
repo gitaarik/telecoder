@@ -222,7 +222,7 @@ export async function checkNodePty(): Promise<CheckResult[]> {
     const fix = process.platform === 'darwin'
       ? 'Install the Xcode command line tools (xcode-select --install), then reinstall TeleCoder.'
       : 'Install a build toolchain (e.g. apt install build-essential python3), then reinstall TeleCoder.';
-    return [fail('node-pty failed to load (the terminal mode needs it)',
+    return [fail('node-pty failed to load (Claude Code runs in it, so chats need it)',
       redactSecrets(error instanceof Error ? error.message.split('\n')[0] : String(error)),
       ...(missing.length ? [`Missing: ${missing.join(', ')}.`, fix] : ['A build toolchain is present; try reinstalling TeleCoder.']))];
   }

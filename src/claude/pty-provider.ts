@@ -914,7 +914,7 @@ export class PtyProvider implements Provider {
       outputTokens: snapshot.outputTokens,
       cacheReadTokens: snapshot.cacheReadTokens,
       cacheWriteTokens: snapshot.cacheWriteTokens,
-      // PTY mode runs claude with the user's 1m-context entitlement (the banner
+      // The bot runs claude with the user's 1m-context entitlement (the banner
       // reads "Opus 4.8 (1M context) · Claude Max"). Hardcoding 1_000_000 is
       // a reasonable default — the bot's % calculation just needs *some* sane
       // denominator.
@@ -1257,7 +1257,7 @@ export class PtyProvider implements Provider {
       // hard deny forces it to the MCP variant (or plain text).
       //
       // CronCreate / ScheduleWakeup / RemoteTrigger are also blocked: their
-      // fires land outside our session (cron in PTY mode, RemoteTrigger on
+      // fires land outside our session (cron in claude's own process, RemoteTrigger on
       // claude.ai's servers) and never reach the Telegram chat.
       // telecoder_loop / telecoder_schedule replace them and route fires
       // through the bot. Set TELECODER_ALLOW_NATIVE_SCHEDULING=1 to keep

@@ -52,7 +52,7 @@ export interface ImageAttachment {
   mediaType: string;
   /**
    * Where the caller already wrote this image, when it saved one before
-   * sending. Pty mode attaches an image by naming its path in the prompt, so a
+   * sending. The pty provider attaches an image by naming its path in the prompt, so a
    * caller that supplies the path it already named saves the provider from
    * staging a second copy — which claude would attach a second time.
    */

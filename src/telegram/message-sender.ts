@@ -158,7 +158,7 @@ interface StreamState {
   operationStartTime: number;
   rateLimitedUntil: number;
   lastRateLimitDurationMs: number;
-  // Claude Code's live spinner tip (PTY mode), mirrored under the status line.
+  // Claude Code's live spinner tip, mirrored under the status line.
   // Null when no tip is currently on screen.
   tip: string | null;
   // Action logging for verbose mode
@@ -227,7 +227,7 @@ export interface StatusBubbleView {
   elapsedMs: number;
   /** The Telegram rate-limit pause the last edit ran into, if any. */
   pausedMs?: number;
-  /** Claude Code's live spinner tip (PTY mode); null when none is on screen. */
+  /** Claude Code's live spinner tip; null when none is on screen. */
   tip: string | null;
   /** Background-task footer; null when nothing runs in the background. */
   footer: EntityMessage | null;
@@ -936,7 +936,7 @@ export class MessageSender {
   }
 
   /**
-   * Mirror Claude Code's live spinner tip (PTY mode) under the status line.
+   * Mirror Claude Code's live spinner tip under the status line.
    * Pass null to clear it. Attempts an immediate flush so the tip appears
    * promptly; the flush respects the normal edit throttle, and the periodic
    * spinner refresh picks it up otherwise.

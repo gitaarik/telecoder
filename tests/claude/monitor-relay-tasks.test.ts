@@ -152,7 +152,7 @@ describe('movedToBackground', () => {
   });
 });
 
-describe('PTY-mode task tracking', () => {
+describe('task tracking', () => {
   it('registers an armed task with the tracker', () => {
     seedLog();
     arm('subagent', 'review the diff', 'toolu_01');

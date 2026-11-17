@@ -273,7 +273,7 @@ async function main() {
   // above so the question lands below whatever they post.
   armReminders();
 
-  // Register the bot reference for the PTY-mode Monitor relay so Monitor
+  // Register the bot reference for the Monitor relay so Monitor
   // events that fire between user turns can be posted to Telegram.
   setMonitorRelayBot(bot);
 

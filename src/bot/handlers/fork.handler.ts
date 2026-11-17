@@ -948,7 +948,7 @@ export async function loadFork(
   }
   sessionManager.setClaudeSessionId(sessionKey, newSessionId);
 
-  // Sever any live process bound to the old session. In PTY mode a long-lived
+  // Sever any live process bound to the old session. A long-lived
   // `claude` process is reused as long as its cwd is unchanged (see
   // PtyProvider._getOrCreateSession) — so a same-project fork would otherwise
   // keep serving the pre-fork session and silently ignore the branch we just

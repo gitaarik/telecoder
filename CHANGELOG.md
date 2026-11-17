@@ -393,7 +393,9 @@ reasoning — the commit bodies are the long form, this is the index.
 - **The `/` menu and `/verbosity` no longer speak of a second transport.**
   `/shells` was listed as "(PTY mode)" and the debug tier as reserved for
   "SDK internals", from when a chat could run on the Agent SDK instead of in
-  a pty. Every chat runs in a pty now, so both are gone.
+  a pty. Every chat runs in a pty now, so both are gone. So are "the terminal
+  mode" in what `telecoder doctor` says when node-pty doesn't load, and "PTY
+  chat" in the configuration reference and `.env.example`.
 
 - **The "Context Compacted" notice no longer suggests `/handoff`.** The
   command was removed, but the notice sent when Claude Code compacts a

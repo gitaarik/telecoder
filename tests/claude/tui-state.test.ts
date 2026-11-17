@@ -72,7 +72,7 @@ describe('isGenerating', () => {
   });
 
   // Rows from a live 120x40 pty running claude 2.1.280. While its Stop hook
-  // runs, as at the end of every turn in PTY mode, the spinner says so.
+  // runs, as at the end of every turn, the spinner says so.
   it.each([
     '* Percolating… (12s · ↓ 1.2k tokens)',
     '✶ Improvising… (1m 3s · ↓ 56 tokens)',

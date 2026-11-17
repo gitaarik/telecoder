@@ -155,7 +155,7 @@ registerIpcHandler('/mcp/ask_user', async (turn, body) => {
   const optionLabels = options.map((o) => o.label);
   const { id, promise } = createPendingQuestion(optionLabels, undefined, turn.sessionKey);
 
-  // PTY mode holds the turn's prose in the JSONL log until end-of-turn, so
+  // The turn's prose stays in the JSONL log until end-of-turn, so
   // anything the model wrote to set up this question is still undelivered.
   // Flush it above the buttons; the provider strips it from the end-of-turn
   // text so it isn't shown twice. Imported lazily to keep this module's eager

@@ -173,7 +173,7 @@ function renderTasksList(sessionKey: string, tasks: TaskState[]): { message: Ent
     { text: '🔄 Refresh', callback_data: 'tasks:refresh' },
     { text: '🔎 Ask claude', callback_data: 'tasks:ask' },
   ]);
-  // PTY-only: the live card is how that mode shows background work.
+  // The live card is where background work shows as it runs.
   if (hasRunningTasks(sessionKey)) {
     keyboard.push([{ text: '📍 Show live card here', callback_data: 'tasks:card' }]);
   }

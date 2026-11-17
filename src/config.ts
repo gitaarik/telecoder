@@ -306,7 +306,7 @@ const envSchema = z.object({
     .string()
     .default('3600000')
     .transform((val) => parseInt(val, 10)),
-  // `telecoder watch`: serve each PTY chat's live Claude Code screen, read-only,
+  // `telecoder watch`: serve each chat's live Claude Code screen, read-only,
   // on a Unix socket in ~/.telecoder/watch that only this user can open.
   // false turns it off.
   PTY_WATCH: z
@@ -322,7 +322,7 @@ const envSchema = z.object({
     .string()
     .default('true')
     .transform((val) => val.toLowerCase() === 'true'),
-  // Memory guard. Before a typed message starts a new `claude` for a PTY chat
+  // Memory guard. Before a typed message starts a new `claude` for a chat
   // — a new chat or thread, or one whose claude was ended — the machine's
   // available memory (MemAvailable) is checked, less a few hundred MB for
   // every claude still starting up (one just let through hasn't taken its

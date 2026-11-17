@@ -477,7 +477,7 @@ describe('telecoder init: a Claude login in the environment', () => {
 });
 
 describe('telecoder init: an existing .env', () => {
-  const original = '# my notes\nTELEGRAM_BOT_TOKEN=' + GOOD + '\nALLOWED_USER_IDS=111,222\nCANCEL_ON_NEW_MESSAGE=true\nGROQ_API_KEY=gsk_old\n';
+  const original = '# my notes\nTELEGRAM_BOT_TOKEN=' + GOOD + '\nALLOWED_USER_IDS=111,222\nGROUP_REQUIRE_MENTION=false\nGROQ_API_KEY=gsk_old\n';
   beforeEach(() => {
     fs.mkdirSync(path.dirname(envPath), { recursive: true });
     fs.writeFileSync(envPath, original);
@@ -504,7 +504,7 @@ describe('telecoder init: an existing .env', () => {
     expect(prompter.asked).toContain('Keep the allowed users, 111, 222?');
     const text = fs.readFileSync(envPath, 'utf-8');
     expect(text).toContain('# my notes');
-    expect(text).toContain('CANCEL_ON_NEW_MESSAGE=true');
+    expect(text).toContain('GROUP_REQUIRE_MENTION=false');
     expect(readEnv()).toMatchObject({ ALLOWED_USER_IDS: '111,222' });
     expect(readEnv().GROQ_API_KEY).toBeUndefined();
     const backup = path.join(path.dirname(envPath), '.env.bak-20261113-142501');
@@ -517,7 +517,7 @@ describe('telecoder init: an existing .env', () => {
   it('starts over: a fresh file, the old one backed up', async () => {
     const { result } = run(['over', GOOD, '412345678', '', false, true]);
     expect(await result).toBe(0);
-    expect(fs.readFileSync(envPath, 'utf-8')).not.toContain('CANCEL_ON_NEW_MESSAGE');
+    expect(fs.readFileSync(envPath, 'utf-8')).not.toContain('GROUP_REQUIRE_MENTION');
     expect(fs.existsSync(path.join(path.dirname(envPath), '.env.bak-20261113-142501'))).toBe(true);
   });
 

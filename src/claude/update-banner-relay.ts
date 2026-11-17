@@ -7,7 +7,7 @@ import { sendMarkdown } from '../telegram/send.js';
  * notice at the top of its TUI when a newer version is available (or when
  * the auto-updater just installed one): "Update available! Run: claude update"
  * or "Successfully updated to version X. Restart to apply changes." These
- * only show during the first render of the TUI, so in PTY mode we scrape the
+ * only show during the first render of the TUI, so we scrape the
  * rendered xterm screen right after _waitForReady and forward whichever
  * banner we find to Telegram.
  *
