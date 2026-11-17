@@ -368,6 +368,13 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Fixed
 
+- **Files sent to the bot come through the proxy too.** With
+  `TELEGRAM_PROXY_URL` set, or `HTTPS_PROXY` in the environment, the bot
+  reached Telegram's API through the proxy but downloaded a photo, a document
+  or a voice note directly. On a network that blocks Telegram, which is what
+  the proxy is for, every upload failed. The download now goes through the
+  same proxy.
+
 - **The `/` menu and `/verbosity` no longer speak of a second transport.**
   `/shells` was listed as "(PTY mode)" and the debug tier as reserved for
   "SDK internals", from when a chat could run on the Agent SDK instead of in
@@ -381,9 +388,7 @@ reasoning — the commit bodies are the long form, this is the index.
   reach Telegram at startup it suggests `TELEGRAM_PROXY_URL`, and gave
   `socks5://127.0.0.1:1080` as the example. The bot connects through an HTTP
   or HTTPS proxy only, so that value could never work. The hint now names an
-  HTTP proxy, and the setting is in the configuration reference with what it
-  covers: the bot's requests to Telegram, not the download of files sent to
-  it.
+  HTTP proxy, and the setting is in the configuration reference.
 
 - **The status line no longer ends in `💰 $0.00`.** The cost in the status
   line, in the verbose usage footer and on a "Session Cost" line in `/status`

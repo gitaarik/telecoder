@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'fs';
 import * as http from 'http';
+import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import type { AddressInfo } from 'net';
@@ -81,5 +82,67 @@ describe('downloadFileSecure', () => {
 
   it('builds Telegram file URLs', () => {
     expect(getTelegramFileUrl('T', 'a/b.jpg')).toBe('https://api.telegram.org/file/botT/a/b.jpg');
+  });
+
+  // A network that blocks Telegram reaches it through a proxy, and a file sent
+  // to the bot has to come the same way as the API calls do.
+  describe('through a proxy', () => {
+    let proxy: http.Server;
+    let proxyUrl: string;
+    const tunnels: string[] = [];
+
+    beforeAll(async () => {
+      proxy = http.createServer((_req, res) => {
+        res.statusCode = 405;
+        res.end();
+      });
+      // A CONNECT tunnel, as an HTTP proxy opens one.
+      proxy.on('connect', (req, client, head) => {
+        tunnels.push(req.url ?? '');
+        const [host, port] = (req.url ?? '').split(':');
+        const upstream = net.connect(Number(port), host, () => {
+          client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+          upstream.write(head);
+          upstream.pipe(client);
+          client.pipe(upstream);
+        });
+        upstream.on('error', () => client.destroy());
+        client.on('error', () => upstream.destroy());
+      });
+      await new Promise<void>((resolve) => proxy.listen(0, '127.0.0.1', resolve));
+      proxyUrl = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
+    });
+
+    afterAll(async () => {
+      proxy.closeAllConnections();
+      await new Promise((resolve) => proxy.close(resolve));
+    });
+
+    it('fetches the file through it', async () => {
+      const dest = path.join(dir, 'proxied.txt');
+      const before = hits[`/file/bot${TOKEN}/ok.txt`] ?? 0;
+      await downloadFileSecure(`${base}/file/bot${TOKEN}/ok.txt`, dest, { proxyUrl });
+      expect(fs.readFileSync(dest, 'utf8')).toBe('hello');
+      expect(tunnels).toEqual([new URL(base).host]);
+      expect(hits[`/file/bot${TOKEN}/ok.txt`]).toBe(before + 1);
+    });
+
+    it('fails a 404 at once, without the token in the error', async () => {
+      const url = `${base}/file/bot${TOKEN}/missing-proxied.txt`;
+      const err = await downloadFileSecure(url, path.join(dir, 'missing-proxied.txt'), { proxyUrl }).catch((e: Error) => e);
+      expect((err as Error).message).toBe('Failed to download file: HTTP 404');
+      expect(hits[`/file/bot${TOKEN}/missing-proxied.txt`]).toBe(1);
+    });
+
+    it('says so when the proxy cannot be reached, without its password', async () => {
+      // Port 1 refuses at once, so this takes the three retries: six seconds.
+      const dead = 'http://user:hunter2@127.0.0.1:1';
+      const err = await downloadFileSecure(`${base}/file/bot${TOKEN}/ok.txt`, path.join(dir, 'dead.txt'), { proxyUrl: dead })
+        .catch((e: Error) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message).toMatch(/^Failed to download file: /);
+      expect((err as Error).message).not.toContain('hunter2');
+      expect((err as Error).message).not.toContain(TOKEN);
+    }, 15_000);
   });
 });

@@ -10,6 +10,7 @@ import { isDuplicate, markProcessed } from '../../telegram/deduplication.js';
 import { isStaleMessage } from '../middleware/stale-filter.js';
 import { queueRequest } from '../../claude/request-queue.js';
 import { downloadFileSecure, getTelegramFileUrl } from '../../utils/download.js';
+import { telegramProxyUrl } from '../../telegram/client-options.js';
 import { sanitizeError } from '../../utils/sanitize.js';
 import { isValidImageFile, getFileType } from '../../utils/file-type.js';
 import { type PhotoSize } from 'grammy/types';
@@ -37,7 +38,7 @@ async function downloadTelegramFile(ctx: Context, fileId: string, destPath: stri
   }
 
   const fileUrl = getTelegramFileUrl(config.TELEGRAM_BOT_TOKEN, file.file_path);
-  await downloadFileSecure(fileUrl, destPath);
+  await downloadFileSecure(fileUrl, destPath, { proxyUrl: telegramProxyUrl() });
 
   return file.file_path;
 }

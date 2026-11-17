@@ -362,8 +362,9 @@ const envSchema = z.object({
     .string()
     .default('10')
     .transform((val) => parseInt(val, 10)),
-  // HTTP or HTTPS proxy for Telegram API requests (e.g. http://127.0.0.1:8080).
-  // Not SOCKS: the client is an HttpsProxyAgent (src/telegram/client-options.ts).
+  // HTTP or HTTPS proxy for Telegram API requests and for downloading files
+  // sent to the bot (e.g. http://127.0.0.1:8080). Not SOCKS: the client is an
+  // HttpsProxyAgent (src/telegram/client-options.ts).
   TELEGRAM_PROXY_URL: z.string().optional(),
   // Completion notification (send a new message after long streaming tasks)
   NOTIFICATION_ENABLED: z.string().default('true').transform(toBool),

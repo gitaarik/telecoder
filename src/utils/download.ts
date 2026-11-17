@@ -1,7 +1,10 @@
 import * as fs from 'fs';
+import * as http from 'http';
+import * as https from 'https';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import type { ReadableStream as WebReadableStream } from 'stream/web';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import { redactSecrets } from './sanitize.js';
 
 /** Attempts per download: one try plus three retries, as curl's `--retry 3` did. */
@@ -46,28 +49,69 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function attemptDownload(fileUrl: string, destPath: string, signal: AbortSignal): Promise<void> {
-  let res: Response;
+export interface DownloadOptions {
+  /**
+   * An HTTP or HTTPS proxy to fetch through. The bot passes the one its
+   * requests to Telegram go through, so a file is fetched the way the API is
+   * reached.
+   */
+  proxyUrl?: string;
+}
+
+/** What a request came back with, whichever client made it. */
+interface Opened {
+  status: number;
+  /** Null when the response has no body. */
+  body: Readable | null;
+}
+
+async function openDirect(fileUrl: string, signal: AbortSignal): Promise<Opened> {
+  const res = await fetch(fileUrl, { signal, redirect: 'follow' });
+  return {
+    status: res.status,
+    body: res.body ? Readable.fromWeb(res.body as unknown as WebReadableStream<Uint8Array>) : null,
+  };
+}
+
+/**
+ * The same request through a proxy. Node's fetch takes no proxy agent, so
+ * this goes out over `http(s).get` with the agent the bot's own requests to
+ * Telegram use. A redirect isn't followed: Telegram's file endpoint answers
+ * with the file.
+ */
+function openThroughProxy(fileUrl: string, proxyUrl: string, signal: AbortSignal): Promise<Opened> {
+  return new Promise((resolve, reject) => {
+    const get = new URL(fileUrl).protocol === 'https:' ? https.get : http.get;
+    get(fileUrl, { agent: new HttpsProxyAgent(proxyUrl), signal }, (res) => {
+      resolve({ status: res.statusCode ?? 0, body: res });
+    }).on('error', reject);
+  });
+}
+
+async function attemptDownload(
+  fileUrl: string,
+  destPath: string,
+  signal: AbortSignal,
+  proxyUrl: string | undefined,
+): Promise<void> {
+  let res: Opened;
   try {
-    res = await fetch(fileUrl, { signal, redirect: 'follow' });
+    res = proxyUrl ? await openThroughProxy(fileUrl, proxyUrl, signal) : await openDirect(fileUrl, signal);
   } catch (error) {
-    // Network failure or timeout. The message from undici never carries the
-    // URL, but redact anyway: this is the one place the token is in play.
+    // Network failure or timeout. Neither client's message carries the URL,
+    // but redact anyway: this is the one place the token is in play, and a
+    // proxy URL can hold a password.
     const msg = error instanceof Error ? (error.cause instanceof Error ? error.cause.message : error.message) : String(error);
     throw new DownloadError(redactSecrets(msg), true);
   }
 
-  if (!res.ok || !res.body) {
-    // Drain so the connection can be reused; ignore failures doing so.
-    await res.body?.cancel().catch(() => {});
+  if (res.status < 200 || res.status >= 300 || !res.body) {
+    res.body?.destroy();
     throw new DownloadError(`HTTP ${res.status}`, isRetryableStatus(res.status));
   }
 
   try {
-    await pipeline(
-      Readable.fromWeb(res.body as unknown as WebReadableStream<Uint8Array>),
-      fs.createWriteStream(destPath),
-    );
+    await pipeline(res.body, fs.createWriteStream(destPath), { signal });
   } catch (error) {
     fs.rmSync(destPath, { force: true });
     const msg = error instanceof Error ? error.message : String(error);
@@ -76,14 +120,20 @@ async function attemptDownload(fileUrl: string, destPath: string, signal: AbortS
 }
 
 /**
- * Download a file from a URL to `destPath`.
+ * Download a file from a URL to `destPath`, through `options.proxyUrl` when
+ * one is given.
  *
- * Uses Node's own fetch, so the URL — which for Telegram files embeds the bot
- * token — never appears in a process argument list (`ps`) or in an error
- * message. Retries transient failures up to three times, two seconds apart,
- * within an overall one-minute budget; a 4xx other than 408/429 fails at once.
+ * The request is made in this process, so the URL — which for Telegram files
+ * embeds the bot token — never appears in a process argument list (`ps`) or in
+ * an error message. Retries transient failures up to three times, two seconds
+ * apart, within an overall one-minute budget; a 4xx other than 408/429 fails
+ * at once.
  */
-export async function downloadFileSecure(fileUrl: string, destPath: string): Promise<void> {
+export async function downloadFileSecure(
+  fileUrl: string,
+  destPath: string,
+  options: DownloadOptions = {},
+): Promise<void> {
   if (!isValidDownloadUrl(fileUrl)) {
     throw new Error('Invalid URL for download');
   }
@@ -95,7 +145,12 @@ export async function downloadFileSecure(fileUrl: string, destPath: string): Pro
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
     try {
-      await attemptDownload(fileUrl, destPath, AbortSignal.timeout(Math.min(ATTEMPT_TIMEOUT_MS, remaining)));
+      await attemptDownload(
+        fileUrl,
+        destPath,
+        AbortSignal.timeout(Math.min(ATTEMPT_TIMEOUT_MS, remaining)),
+        options.proxyUrl,
+      );
       return;
     } catch (error) {
       lastError = error instanceof DownloadError ? error : new DownloadError(redactSecrets(String(error)), false);

@@ -11,6 +11,7 @@ import { isStaleMessage } from '../middleware/stale-filter.js';
 import { queueRequest } from '../../claude/request-queue.js';
 import { transcribeFile } from '../../audio/transcribe.js';
 import { downloadFileSecure, getTelegramFileUrl } from '../../utils/download.js';
+import { telegramProxyUrl } from '../../telegram/client-options.js';
 import { sanitizeError, sanitizePath } from '../../utils/sanitize.js';
 import { getSessionKeyFromCtx } from '../../utils/session-key.js';
 import { requireSession } from './session-guard.js';
@@ -76,11 +77,12 @@ export async function handleVoice(ctx: Context): Promise<void> {
     }
     const fileUrl = getTelegramFileUrl(config.TELEGRAM_BOT_TOKEN, file.file_path);
 
-    // In-process fetch: the token-bearing URL never reaches a process argument list.
+    // Fetched in this process: the token-bearing URL never reaches a process
+    // argument list. Through the proxy, when the bot reaches Telegram by one.
     const ext = voice.mime_type?.includes('ogg') ? '.ogg' : '.oga';
     tempFilePath = path.join(os.tmpdir(), `telecoder_voice_${messageId}${ext}`);
 
-    await downloadFileSecure(fileUrl, tempFilePath);
+    await downloadFileSecure(fileUrl, tempFilePath, { proxyUrl: telegramProxyUrl() });
 
     const audioBuffer = fs.readFileSync(tempFilePath);
     if (!audioBuffer.length) {

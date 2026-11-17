@@ -1,9 +1,10 @@
 /**
  * How the bot reaches api.telegram.org: the proxy, if any, and the timeout.
  *
- * Shared by the bot itself and the token check that runs before it is built
- * (startup/verify-token.ts), so a bot behind a proxy checks its token through
- * that same proxy instead of failing the check on a direct connection.
+ * Shared by the bot itself, the token check that runs before it is built
+ * (startup/verify-token.ts) and the download of a file sent to the bot, so a
+ * bot behind a proxy does all three through that same proxy instead of
+ * failing on a direct connection.
  */
 
 import { HttpsProxyAgent } from 'https-proxy-agent';
