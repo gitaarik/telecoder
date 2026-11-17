@@ -29,6 +29,12 @@ export default defineConfig({
       // A handler test that picks a project must not start a real claude for
       // it. The tests of the early start itself turn it back on.
       PREWARM_CLAUDE: 'false',
+      // The memory guard off. Its floor defaults to a quarter of the machine's
+      // RAM, checked against the real MemAvailable, so on a busy machine the
+      // tests that run the assembled bot got the guard's "memory is tight"
+      // question in place of their prompt and timed out. The guard's own
+      // tests set the floor they need.
+      MEMORY_GUARD_MIN_AVAILABLE_MB: '0',
     },
     include: ['tests/**/*.test.ts'],
     coverage: {
