@@ -5,7 +5,7 @@ tableOfContents: false
 ---
 
 TeleCoder is made by [Rik Wanders](https://github.com/gitaarik). It's free and open source,
-under the [MIT license](https://github.com/gitaarik/telecoder/blob/main/LICENSE).
+under the [MIT license](https://github.com/telecoderbot/telecoder/blob/main/LICENSE).
 
 ## Where it came from
 
@@ -27,7 +27,7 @@ Thanks to everyone who contributed code, to Claudegram or to TeleCoder:
 - [tylerwince](https://github.com/tylerwince)
 - [procrypto](https://github.com/procrypto)
 
-Want to join them? See [Contributing](https://github.com/gitaarik/telecoder/blob/main/CONTRIBUTING.md).
+Want to join them? See [Contributing](https://github.com/telecoderbot/telecoder/blob/main/CONTRIBUTING.md).
 
 ## Not affiliated
 

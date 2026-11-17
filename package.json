@@ -41,10 +41,10 @@
   "homepage": "https://telecoder.dev",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/gitaarik/telecoder.git"
+    "url": "git+https://github.com/telecoderbot/telecoder.git"
   },
   "bugs": {
-    "url": "https://github.com/gitaarik/telecoder/issues"
+    "url": "https://github.com/telecoderbot/telecoder/issues"
   },
   "engines": {
     "node": ">=22"

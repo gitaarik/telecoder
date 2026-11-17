@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-All config lives in a `.env` file: `~/.telecoder/.env` for an npm install (`telecoder init` writes it; `TELECODER_HOME` and `TELECODER_ENV_PATH` [move it](cli.md#where-the-config-lives)), or the `.env` next to `package.json` in a source checkout. Several bots share it and add their own settings in `instances.json` ([Multiple bots](../guides/multiple-bots.md)). The tables below list every setting; [`.env.example`](https://github.com/gitaarik/telecoder/blob/main/.env.example) has them as an annotated file to copy from.
+All config lives in a `.env` file: `~/.telecoder/.env` for an npm install (`telecoder init` writes it; `TELECODER_HOME` and `TELECODER_ENV_PATH` [move it](cli.md#where-the-config-lives)), or the `.env` next to `package.json` in a source checkout. Several bots share it and add their own settings in `instances.json` ([Multiple bots](../guides/multiple-bots.md)). The tables below list every setting; [`.env.example`](https://github.com/telecoderbot/telecoder/blob/main/.env.example) has them as an annotated file to copy from.
 
 ## Required
 

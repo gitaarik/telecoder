@@ -91,7 +91,7 @@ What that buys you:
   they join, before they've said anything.
 
 Write the house rules in `CHARTER.md` at your workspace root — see
-[`CHARTER.example.md`](https://github.com/gitaarik/telecoder/blob/main/docs/CHARTER.example.md) for a starting point.
+[`CHARTER.example.md`](https://github.com/telecoderbot/telecoder/blob/main/docs/CHARTER.example.md) for a starting point.
 
 ## Your own Claude Code setup
 

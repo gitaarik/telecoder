@@ -88,7 +88,7 @@ second one side by side, and `--dry-run` prints the file without writing anythin
 ## From source
 
 ```bash
-git clone https://github.com/gitaarik/telecoder.git
+git clone https://github.com/telecoderbot/telecoder.git
 cd telecoder
 cp .env.example .env
 ```

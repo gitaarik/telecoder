@@ -12,7 +12,7 @@ with `/fork`.
 List the bots in an `instances.json` next to your `.env`: `~/.telecoder/instances.json`
 for an npm install, or the checkout's root when running from source. Each bot gets its token
 and any settings that differ from the shared `.env`; the annotated
-[`instances.json.example`](https://github.com/gitaarik/telecoder/blob/main/instances.json.example) (also in the npm package) shows the
+[`instances.json.example`](https://github.com/telecoderbot/telecoder/blob/main/instances.json.example) (also in the npm package) shows the
 format, including a list of tokens that becomes numbered bots.
 
 ```bash

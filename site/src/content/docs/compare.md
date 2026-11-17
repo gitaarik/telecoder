@@ -15,7 +15,7 @@ needs, and some of them combine well with TeleCoder.
 | **Made by**            | Independent, open source  | Anthropic            | Anthropic          | Community, open source |
 
 *As of November 2026. Something out of date or unfair?
-[Open an issue](https://github.com/gitaarik/telecoder/issues).*
+[Open an issue](https://github.com/telecoderbot/telecoder/issues).*
 
 ## Claude Code Channels
 

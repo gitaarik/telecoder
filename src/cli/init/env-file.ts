@@ -20,7 +20,7 @@ export const ENV_HEADER = [
   '#',
   '# Only the settings the wizard asked about are here; everything else runs on',
   '# its default. Every setting, with what it does, is listed in .env.example',
-  '# (in the package, or https://github.com/gitaarik/telecoder/blob/main/.env.example)',
+  '# (in the package, or https://github.com/telecoderbot/telecoder/blob/main/.env.example)',
   '# and in the Configuration Reference: https://telecoder.dev',
   '# Run `telecoder init` again to change these, or edit this file by hand.',
 ];

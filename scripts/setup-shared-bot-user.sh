@@ -210,7 +210,7 @@ else
   if [ -n "$REPO_SRC" ]; then
     sudo -u "$BOT_USER" git clone --quiet "$REPO_SRC" "$BOT_REPO"
   else
-    sudo -u "$BOT_USER" git clone --quiet https://github.com/gitaarik/telecoder.git "$BOT_REPO"
+    sudo -u "$BOT_USER" git clone --quiet https://github.com/telecoderbot/telecoder.git "$BOT_REPO"
   fi
   ok "cloned to $BOT_REPO"
 fi

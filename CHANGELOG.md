@@ -738,7 +738,7 @@ reasoning — the commit bodies are the long form, this is the index.
   sends the text in its place; Claude keeps the stopped prompt and what it did
   so far, so the text can refer to it. The same button sits on a `⏳ Queued`
   notice, for a message already waiting
-  ([7cb7197](https://github.com/gitaarik/telecoder/commit/7cb7197)).
+  ([7cb7197](https://github.com/telecoderbot/telecoder/commit/7cb7197)).
 - **The status line turns amber, then red, as the context grows** — the
   `📊 34%` stat looked the same at 15% as at 80%, and with the 1M window even
   80% is far past the point where turns get slower, costlier and less sharp.

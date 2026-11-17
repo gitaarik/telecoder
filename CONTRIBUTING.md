@@ -6,7 +6,7 @@ requests are welcome. See [ROADMAP.md](ROADMAP.md) for what's planned.
 ## Setup
 
 ```bash
-git clone https://github.com/gitaarik/telecoder.git
+git clone https://github.com/telecoderbot/telecoder.git
 cd telecoder
 npm install
 npm run typecheck

@@ -5,7 +5,7 @@
 **Claude Code in Telegram.** The real agent runs on your machine; you drive it from Telegram's
 native apps, with a thread per conversation, forks and the full CLI.
 
-[![CI](https://github.com/gitaarik/telecoder/actions/workflows/ci.yml/badge.svg)](https://github.com/gitaarik/telecoder/actions/workflows/ci.yml)
+[![CI](https://github.com/telecoderbot/telecoder/actions/workflows/ci.yml/badge.svg)](https://github.com/telecoderbot/telecoder/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/telecoder?color=cc785c)](https://www.npmjs.com/package/telecoder)
 [![Node](https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)

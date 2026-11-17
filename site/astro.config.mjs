@@ -14,8 +14,8 @@ export default defineConfig({
       description:
         'Claude Code in Telegram. The real agent runs on your machine; you drive it from Telegram’s native apps.',
       favicon: '/favicon.svg',
-      social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/gitaarik/telecoder' }],
-      editLink: { baseUrl: 'https://github.com/gitaarik/telecoder/edit/main/site/' },
+      social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/telecoderbot/telecoder' }],
+      editLink: { baseUrl: 'https://github.com/telecoderbot/telecoder/edit/main/site/' },
       lastUpdated: true,
       customCss: ['./src/styles/theme.css'],
       components: { SiteTitle: './src/components/SiteTitle.astro' },
@@ -42,8 +42,8 @@ export default defineConfig({
           items: [
             { label: 'Changelog', link: '/changelog/' },
             'about',
-            { label: 'Roadmap', link: 'https://github.com/gitaarik/telecoder/blob/main/ROADMAP.md' },
-            { label: 'Contributing', link: 'https://github.com/gitaarik/telecoder/blob/main/CONTRIBUTING.md' },
+            { label: 'Roadmap', link: 'https://github.com/telecoderbot/telecoder/blob/main/ROADMAP.md' },
+            { label: 'Contributing', link: 'https://github.com/telecoderbot/telecoder/blob/main/CONTRIBUTING.md' },
           ],
         },
       ],

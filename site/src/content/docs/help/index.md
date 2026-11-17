@@ -10,7 +10,7 @@ sidebar:
   `telecoder doctor`.
 - **A question about how or why?** The [FAQ](faq.md) may have it.
 - **Found a bug, or want a feature?**
-  [Open an issue on GitHub](https://github.com/gitaarik/telecoder/issues). Include the
+  [Open an issue on GitHub](https://github.com/telecoderbot/telecoder/issues). Include the
   output of `telecoder doctor` and `telecoder --version`, and the relevant lines from
   `telecoder service logs`. TeleCoder redacts tokens in its logs, but check before you
   paste.

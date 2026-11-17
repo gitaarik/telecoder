@@ -50,5 +50,5 @@ telecoder init
 ```
 
 [Get started](../start/get-started.md) takes about ten minutes. It's MIT-licensed, and the
-code is on [GitHub](https://github.com/gitaarik/telecoder). I'd like to hear what you think:
+code is on [GitHub](https://github.com/telecoderbot/telecoder). I'd like to hear what you think:
 <!-- TODO: the Telegram group link -->
