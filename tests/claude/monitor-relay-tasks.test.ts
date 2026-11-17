@@ -164,8 +164,6 @@ describe('PTY-mode task tracking', () => {
       toolUseId: 'toolu_01',
       description: 'review the diff',
       taskType: 'local_agent',
-      status: 'running',
-      isBackgrounded: true,
     });
   });
 

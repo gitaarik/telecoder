@@ -182,7 +182,7 @@ describe('a Bash call claude moves to the background', () => {
     seedLog();
     postToolUse('toolu_10', SMOKE_TEST, MOVED_TO_BACKGROUND);
 
-    const [task] = taskTracker.getBackgroundedTasks(KEY);
+    const [task] = taskTracker.getTasks(KEY);
     expect(task).toMatchObject({
       id: 'toolu_10',
       description: 'Run the full smoke test before the release',

@@ -738,7 +738,7 @@ export class MessageSender {
       elapsedMs: Date.now() - state.operationStartTime,
       pausedMs: state.lastRateLimitDurationMs > 0 ? state.lastRateLimitDurationMs : undefined,
       tip: state.tip,
-      footer: renderBackgroundFooter(taskTracker.getBackgroundedTasks(state.sessionKey)),
+      footer: renderBackgroundFooter(taskTracker.getTasks(state.sessionKey)),
       writing: Date.now() - state.contentChangedAt < WRITING_WINDOW_MS,
       premiumModel: state.premiumModel,
     };

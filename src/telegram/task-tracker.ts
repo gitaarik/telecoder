@@ -4,15 +4,10 @@
  *
  * The monitor relay (claude/monitor-relay.ts) feeds it. It records a task when
  * claude starts one and removes it when the task's notification comes back,
- * which may be turns later. Cleared with the session's relay state.
+ * which may be turns later. So a task in here is one still running in the
+ * background, and there is no status to keep. Cleared with the session's
+ * relay state.
  */
-
-/**
- * Where a task stands, in Claude Code's own words. The relay records a task as
- * running and removes it when it ends, so a tracked task is a running one;
- * the readers that count live tasks still ask for running or pending.
- */
-export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'killed' | 'stopped' | 'paused';
 
 /** What is known about a task when claude starts it. */
 export interface TaskStart {
@@ -26,8 +21,6 @@ export interface TaskStart {
   command?: string;
   toolUseId?: string;
   taskType?: string;
-  /** Whether it runs in the background. Defaults to true for a monitor only. */
-  isBackgrounded?: boolean;
   /**
    * When the task began, for one already running before it was reported: a
    * Bash call claude moved to the background had been running in the
@@ -59,8 +52,6 @@ export interface TaskState {
    * call has returned; a relay-armed task has none until then.
    */
   claudeTaskId?: string;
-  status: TaskStatus;
-  isBackgrounded: boolean;
   startedAt: number;
   /**
    * Last time the task was heard from: its start, or a monitor firing. The
@@ -91,18 +82,12 @@ class TaskTracker {
 
   /** Record a task claude has just started. */
   start(sessionKey: string, task: TaskStart): TaskState {
-    // Monitors are inherently long-running streaming subscriptions —
-    // treat them as backgrounded even if the launching tool didn't set
-    // run_in_background:true.
-    const isMonitor = task.taskType === 'monitor_mcp';
     const state: TaskState = {
       id: task.taskId,
       description: task.description,
       ...(task.command !== undefined ? { command: task.command } : {}),
       taskType: task.taskType,
       toolUseId: task.toolUseId,
-      status: 'running',
-      isBackgrounded: task.isBackgrounded ?? isMonitor,
       startedAt: task.startedAt ?? Date.now(),
       lastActivityAt: Date.now(),
     };
@@ -149,30 +134,17 @@ class TaskTracker {
     return this.sessionTasks.get(sessionKey)?.get(taskId);
   }
 
+  /**
+   * The session's tasks running in the background, oldest first. Drives
+   * `/tasks` and the streaming UI's "in background" footer.
+   */
   getTasks(sessionKey: string): TaskState[] {
     const tasks = this.sessionTasks.get(sessionKey);
     return tasks ? Array.from(tasks.values()) : [];
   }
 
-  /**
-   * Tasks currently running in the background
-   * (is_backgrounded=true, status not in a terminal state).
-   * Drives the streaming UI's "in background" footer.
-   */
-  getBackgroundedTasks(sessionKey: string): TaskState[] {
-    const tasks = this.sessionTasks.get(sessionKey);
-    if (!tasks) return [];
-    const result: TaskState[] = [];
-    for (const task of tasks.values()) {
-      if (task.isBackgrounded && (task.status === 'running' || task.status === 'pending')) {
-        result.push(task);
-      }
-    }
-    return result;
-  }
-
   getBackgroundedCount(sessionKey: string): number {
-    return this.getBackgroundedTasks(sessionKey).length;
+    return this.sessionTasks.get(sessionKey)?.size ?? 0;
   }
 
   /** Background tasks still running across every session. */
@@ -190,9 +162,7 @@ class TaskTracker {
     const tasks = this.sessionTasks.get(sessionKey);
     if (!tasks) return false;
     for (const task of tasks.values()) {
-      if (task.taskType === 'monitor_mcp' && (task.status === 'running' || task.status === 'pending')) {
-        return true;
-      }
+      if (task.taskType === 'monitor_mcp') return true;
     }
     return false;
   }

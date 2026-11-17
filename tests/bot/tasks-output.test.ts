@@ -9,8 +9,6 @@ function task(overrides: Partial<TaskState> = {}): TaskState {
   return {
     id: 'toolu_01',
     description: 'Count slowly',
-    status: 'running',
-    isBackgrounded: true,
     startedAt: Date.now(),
     lastActivityAt: Date.now(),
     taskType: 'local_bash',

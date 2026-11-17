@@ -55,7 +55,7 @@ describe('renderBackgroundFooter', () => {
 describe('taskTracker updates', () => {
   it('folds a repeated update into the one before it, and keeps three', () => {
     taskTracker.clear(KEY);
-    taskTracker.start(KEY, { taskId: 't1', description: 'Watch CI', isBackgrounded: true });
+    taskTracker.start(KEY, { taskId: 't1', description: 'Watch CI' });
     for (const job of ['lint', 'lint', 'build', 'test', 'deploy']) {
       taskTracker.noteUpdate(KEY, 't1', `${job} passed`);
     }
@@ -65,7 +65,7 @@ describe('taskTracker updates', () => {
 
   it('takes a monitor firing for a known task and ignores unknown ones', () => {
     taskTracker.clear(KEY);
-    taskTracker.start(KEY, { taskId: 'toolu_1', description: 'Watch deploy', isBackgrounded: true });
+    taskTracker.start(KEY, { taskId: 'toolu_1', description: 'Watch deploy' });
     taskTracker.noteUpdate(KEY, 'toolu_1', 'deploy finished', at(9, 30));
     taskTracker.noteUpdate(KEY, 'toolu_x', 'nobody');
     expect(taskTracker.getTask(KEY, 'toolu_1')!.updates).toEqual([{ at: at(9, 30), text: 'deploy finished' }]);

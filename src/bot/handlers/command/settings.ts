@@ -330,7 +330,7 @@ function buildStatusLine(
   // Tasks/monitors come from the task tracker; bg shells from the pty's
   // /proc children, so that count is left out when no pty is live.
   if (sessionKey) {
-    const bg = taskTracker.getBackgroundedTasks(sessionKey);
+    const bg = taskTracker.getTasks(sessionKey);
     const monitorCount = bg.filter((t) => t.taskType === 'monitor_mcp').length;
     const taskCount = bg.length - monitorCount;
     if (taskCount > 0) stats.push(`🔄 ${taskCount}`);

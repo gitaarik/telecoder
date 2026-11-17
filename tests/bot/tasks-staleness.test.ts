@@ -11,8 +11,6 @@ function task(overrides: Partial<TaskState> = {}, silentMs = 0): TaskState {
   return {
     id: 'task-1',
     description: 'do a thing',
-    status: 'running',
-    isBackgrounded: true,
     startedAt: now - silentMs,
     lastActivityAt: now - silentMs,
     ...overrides,
@@ -94,10 +92,9 @@ describe('task rendering as entities', () => {
     const { message } = _renderTaskDetail(
       task({ description: 'deploy_v2 (prod)', taskType: 'local_bash' }),
     );
-    expect(message.text).toMatch(/^💻 Shell: deploy_v2 \(prod\)\n\n• Status: running/);
-    expect(covered(message, 'bold')).toEqual(
-      expect.arrayContaining(['deploy_v2 (prod)', 'Status:', 'Type:']),
-    );
+    // A listed task is a running background one, so the view doesn't say so.
+    expect(message.text).toMatch(/^💻 Shell: deploy_v2 \(prod\)\n\n• Started: \d+s ago\n• Type: local_bash\n/);
+    expect(covered(message, 'bold')).toEqual(['deploy_v2 (prod)', 'Started:', 'Type:']);
     expect(covered(message, 'code')).toEqual(['local_bash']);
   });
 });

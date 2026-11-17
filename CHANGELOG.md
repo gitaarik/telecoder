@@ -368,6 +368,11 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Fixed
 
+- **A task's details in `/tasks` no longer say "Status: running" and
+  "Backgrounded: yes".** The list holds the tasks still running in the
+  background and nothing else, so both lines said the same for every task.
+  The view starts with when the task began.
+
 - **`telecoder init` and `telecoder doctor --live` reach Telegram through the
   proxy.** Both asked Telegram about the bot token directly, whatever
   `TELEGRAM_PROXY_URL` or `HTTPS_PROXY` said. On a network that blocks

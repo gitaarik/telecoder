@@ -105,12 +105,6 @@ function isPossiblyStale(task: TaskState): boolean {
   return Date.now() - task.lastActivityAt > STALE_AFTER_MS;
 }
 
-function getActiveTasks(sessionKey: string): TaskState[] {
-  return taskTracker.getTasks(sessionKey).filter(t =>
-    t.status === 'running' || t.status === 'pending'
-  );
-}
-
 function renderTasksList(sessionKey: string, tasks: TaskState[]): { message: EntityMessage; keyboard: { text: string; callback_data: string }[][] } {
   if (tasks.length === 0) {
     // Cross-pointer: a `Bash(run_in_background=true)` shell can outlive its
@@ -209,8 +203,6 @@ function renderTaskDetail(task: TaskState, canShowOutput = false): { message: En
   /** A `• Label: ` bullet on a line of its own; the caller appends the value. */
   const field = (label: string) => b.newline().add('• ').bold(`${label}:`).add(' ');
 
-  field('Status').add(task.status);
-  field('Backgrounded').add(task.isBackgrounded ? 'yes' : 'no');
   field('Started').add(`${formatTaskElapsed(task)} ago`);
   if (isPossiblyStale(task)) {
     field('Last update').add(`${formatTaskSilence(task)} ago ⚠️`);
@@ -246,7 +238,7 @@ export async function handleTasks(ctx: Context): Promise<void> {
     return;
   }
 
-  const tasks = getActiveTasks(keyInfo.sessionKey);
+  const tasks = taskTracker.getTasks(keyInfo.sessionKey);
   const { message, keyboard } = renderTasksList(keyInfo.sessionKey, tasks);
 
   await replyFormatted(ctx, message, { reply_markup: { inline_keyboard: keyboard } });
@@ -262,7 +254,7 @@ export async function handleTasksCallback(ctx: Context): Promise<void> {
   const { sessionKey } = keyInfo;
 
   if (data === 'tasks:refresh' || data === 'tasks:back') {
-    const tasks = getActiveTasks(sessionKey);
+    const tasks = taskTracker.getTasks(sessionKey);
     const { message, keyboard } = renderTasksList(sessionKey, tasks);
     await ctx.answerCallbackQuery().catch(() => {});
     try {
@@ -329,7 +321,7 @@ export async function handleTasksCallback(ctx: Context): Promise<void> {
     const task = taskTracker.getTask(sessionKey, taskId);
     if (!task) {
       // Task finished or was cleared between renders — go back to the list.
-      const tasks = getActiveTasks(sessionKey);
+      const tasks = taskTracker.getTasks(sessionKey);
       const { message, keyboard } = renderTasksList(sessionKey, tasks);
       await ctx.answerCallbackQuery({ text: 'Task no longer active.' }).catch(() => {});
       try {
@@ -559,7 +551,7 @@ async function showClaudeView(ctx: Context, sessionKey: string, opts: ShowClaude
       // A code block for one line of "nothing running" is noise. Worth saying
       // out loud though: claude reporting empty while the tracker shows tasks
       // means it is holding entries claude no longer knows about.
-      const tracked = getActiveTasks(sessionKey).length;
+      const tracked = taskTracker.getTasks(sessionKey).length;
       const b = claudeHeading().add('Nothing running.');
       if (tracked > 0) {
         b.newline(2).italic(`The ${tracked} tracked task(s) are unknown to claude — likely finished already.`);
@@ -677,7 +669,7 @@ function renderBgList(sessionKey: string, claudePid: number | undefined, procs: 
   if (procs.length === 0) {
     // Cross-pointer to /tasks when tracked tasks (agents, monitors) are
     // running but no OS shells are.
-    const taskCount = getActiveTasks(sessionKey).length;
+    const taskCount = taskTracker.getTasks(sessionKey).length;
     const b = heading().newline(2).add('None running.');
     if (taskCount > 0) {
       const noun = taskCount === 1 ? 'task' : 'tasks';
