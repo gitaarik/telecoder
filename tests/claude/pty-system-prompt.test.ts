@@ -27,4 +27,11 @@ describe('buildPtySystemPromptNote', () => {
 	it('names the tag claude wraps a collapsed paste in', () => {
 		expect(PASTED_MESSAGE_NOTE).toContain('<pasted_content>');
 	});
+
+	it('leaves how much to ask before acting to the permission mode', () => {
+		// The note once told claude to confirm every irreversible command with a
+		// question of its own, in bypass mode too, which overruled the mode the
+		// chat had picked with /mode. It describes tools; it sets no policy.
+		expect(buildPtySystemPromptNote()).not.toMatch(/destructive|irreversible|before running/i);
+	});
 });
