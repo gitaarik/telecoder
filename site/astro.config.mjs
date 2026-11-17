@@ -3,10 +3,11 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import { unified } from '@astrojs/markdown-remark';
 import remarkMdLinks from './src/plugins/remark-md-links.mjs';
+import remarkTableLabels from './src/plugins/remark-table-labels.mjs';
 
 export default defineConfig({
   site: 'https://telecoder.dev',
-  markdown: { processor: unified({ remarkPlugins: [remarkMdLinks] }) },
+  markdown: { processor: unified({ remarkPlugins: [remarkMdLinks, remarkTableLabels] }) },
   integrations: [
     starlight({
       title: 'TeleCoder',

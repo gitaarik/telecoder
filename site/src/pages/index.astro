@@ -36,6 +36,8 @@ const install = 'npm install -g telecoder';
     />
     <script is:inline>
       (() => {
+        // .js: the phone menu folds the nav links away only when it can open them.
+        document.documentElement.classList.add('js');
         const stored = localStorage.getItem('starlight-theme');
         const theme = stored === 'light' || stored === 'dark'
           ? stored
@@ -56,12 +58,17 @@ const install = 'npm install -g telecoder';
         <span><span class="tele">Tele</span><span class="coder">Coder</span></span>
       </a>
       <nav aria-label="Site">
-        <a href="/start/get-started/">Get started</a>
-        <a href="/guides/features/">Docs</a>
-        <a href="/compare/">Compare</a>
-        <a href="https://github.com/gitaarik/telecoder">GitHub</a>
-        <button class="theme" type="button" aria-label="Switch between light and dark">
+        <div class="site-links" id="site-links">
+          <a href="/start/get-started/">Get started</a>
+          <a href="/guides/features/">Docs</a>
+          <a href="/compare/">Compare</a>
+          <a href="https://github.com/gitaarik/telecoder">GitHub</a>
+        </div>
+        <button class="theme round" type="button" aria-label="Switch between light and dark">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6" /></svg>
+        </button>
+        <button class="menu round" type="button" aria-label="Menu" aria-expanded="false" aria-controls="site-links">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path class="bars" d="M4.5 7h15M4.5 12h15M4.5 17h15" /><path class="cross" d="m6.5 6.5 11 11m0-11-11 11" /></svg>
         </button>
       </nav>
     </header>
@@ -79,7 +86,10 @@ const install = 'npm install -g telecoder';
           </ul>
           <div class="install">
             <code><span class="prompt" aria-hidden="true">$</span> {install}</code>
-            <button type="button" class="copy" data-copy={install}>Copy</button>
+            <button type="button" class="copy" data-copy={install}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><g class="icon-copy"><rect x="8.5" y="8.5" width="11" height="11" rx="2" /><path d="M15.5 5.5V5a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 5v9A1.5 1.5 0 0 0 5 15.5h.5" /></g><path class="icon-done" d="m5 12.5 4.5 4.5L19 7.5" /></svg>
+            <span>Copy</span>
+          </button>
           </div>
           <p class="actions">
             <a class="button" href="/start/get-started/">Get started</a>
@@ -306,7 +316,10 @@ const install = 'npm install -g telecoder';
         <h2>Install and set up in a few minutes</h2>
         <div class="install">
           <code><span class="prompt" aria-hidden="true">$</span> {install}</code>
-          <button type="button" class="copy" data-copy={install}>Copy</button>
+          <button type="button" class="copy" data-copy={install}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><g class="icon-copy"><rect x="8.5" y="8.5" width="11" height="11" rx="2" /><path d="M15.5 5.5V5a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 5v9A1.5 1.5 0 0 0 5 15.5h.5" /></g><path class="icon-done" d="m5 12.5 4.5 4.5L19 7.5" /></svg>
+            <span>Copy</span>
+          </button>
         </div>
         <p class="actions">
           <a class="button" href="/start/get-started/">Get started</a>
@@ -330,10 +343,15 @@ const install = 'npm install -g telecoder';
 
     <script>
       for (const button of document.querySelectorAll<HTMLButtonElement>('[data-copy]')) {
+        const label = button.querySelector('span')!;
         button.addEventListener('click', async () => {
           await navigator.clipboard.writeText(button.dataset.copy ?? '');
-          button.textContent = 'Copied';
-          setTimeout(() => (button.textContent = 'Copy'), 1600);
+          label.textContent = 'Copied';
+          button.classList.add('done');
+          setTimeout(() => {
+            label.textContent = 'Copy';
+            button.classList.remove('done');
+          }, 1600);
         });
       }
 
@@ -341,6 +359,24 @@ const install = 'npm install -g telecoder';
         const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
         document.documentElement.dataset.theme = next;
         localStorage.setItem('starlight-theme', next);
+      });
+
+      // The phone menu: the nav links drop down under the header.
+      const top = document.querySelector<HTMLElement>('.top')!;
+      const menu = top.querySelector<HTMLButtonElement>('.menu')!;
+      const setMenu = (open: boolean) => {
+        top.classList.toggle('open', open);
+        menu.setAttribute('aria-expanded', String(open));
+      };
+      menu.addEventListener('click', () => setMenu(!top.classList.contains('open')));
+      document.addEventListener('click', (e) => {
+        if (!top.contains(e.target as Node)) setMenu(false);
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && top.classList.contains('open')) {
+          setMenu(false);
+          menu.focus();
+        }
       });
 
       // Without JavaScript every example shows, one under the other.
@@ -476,7 +512,8 @@ const install = 'npm install -g telecoder';
     stroke-linecap: round;
     stroke-linejoin: round;
   }
-  nav {
+  nav,
+  .site-links {
     display: flex;
     align-items: center;
     gap: 1.6rem;
@@ -490,23 +527,34 @@ const install = 'npm install -g telecoder';
   nav a:hover {
     color: var(--text);
   }
-  .theme {
+  .round {
     display: grid;
     place-items: center;
     width: 2.2rem;
     height: 2.2rem;
+    padding: 0;
     border: 1px solid var(--line);
     border-radius: 50%;
     background: none;
     color: var(--muted);
     cursor: pointer;
   }
-  .theme svg {
+  .round:hover {
+    color: var(--text);
+  }
+  .round svg {
     width: 1.1rem;
     fill: none;
     stroke: currentColor;
     stroke-width: 1.6;
     stroke-linecap: round;
+  }
+  .menu {
+    display: none;
+  }
+  .menu[aria-expanded='true'] .bars,
+  .menu[aria-expanded='false'] .cross {
+    display: none;
   }
 
   /* Shared pieces */
@@ -536,6 +584,9 @@ const install = 'npm install -g telecoder';
     background: var(--surface);
   }
   .install code {
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
     font-size: 1rem;
     white-space: nowrap;
   }
@@ -553,6 +604,25 @@ const install = 'npm install -g telecoder';
     color: var(--text);
     cursor: pointer;
     min-width: 5rem;
+  }
+  /* On a phone the button is just the icon; the label stays for screen readers. */
+  .copy svg {
+    display: none;
+    width: 1.15rem;
+    height: 1.15rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .copy .icon-done,
+  .copy.done .icon-copy {
+    display: none;
+  }
+  .copy.done .icon-done {
+    display: inline;
+    stroke: var(--agent);
   }
   .actions {
     display: flex;
@@ -1028,43 +1098,243 @@ const install = 'npm install -g telecoder';
     gap: 0.4rem 1.2rem;
   }
 
+  /* One column. minmax(0, …) rather than 1fr, whose minimum is the content's:
+     the unbreakable install command would widen the page past the screen. */
   @media (max-width: 960px) {
     .hero,
     .panel {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
       gap: 2.5rem;
     }
     .hero {
       padding-block: 2rem 4rem;
     }
-    .flow,
-    .machine,
     .steps {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
       gap: 2rem;
     }
-    .flow .node::after,
-    .flow .node::before {
-      display: none;
+
+    /* How it works, top to bottom: each icon left of its text, and the
+       dashed two-way connectors run down between the icons. The Telegram
+       node is indented to line its icon up with the two in the box. */
+    .flow {
+      --icon: 2.7rem;
+      --pad: 1.2rem;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 2rem;
     }
     .machine {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 2rem;
       margin-top: 0.5rem;
+      padding: 1.8rem var(--pad) 1.6rem;
+    }
+    .machine-label {
+      left: auto;
+      right: 1rem;
+    }
+    .flow > .node {
+      padding-left: calc(var(--pad) + 2px);
+    }
+    .node {
+      display: grid;
+      grid-template-columns: var(--icon) minmax(0, 1fr);
+      column-gap: 1rem;
+      align-items: start;
+    }
+    .flow svg {
+      grid-row: 1 / span 2;
+      width: var(--icon);
+      height: var(--icon);
+      margin: 0;
+    }
+    .flow p {
+      max-width: 34rem;
+    }
+    /* Telegram down to TeleCoder: past the gap, the box's border and its padding */
+    .flow > .node {
+      --x: calc(var(--pad) + 2px + var(--icon) / 2);
+      --reach: calc(2rem + 0.5rem + 2px + 1.8rem);
+    }
+    /* TeleCoder down to Claude Code: past the gap */
+    .machine > .node:first-of-type {
+      --x: calc(var(--icon) / 2);
+      --reach: 2rem;
+    }
+    .flow > .node::after,
+    .machine > .node:first-of-type::after {
+      top: calc(var(--icon) + 0.5rem);
+      bottom: calc(0.5rem - var(--reach));
+      left: calc(var(--x) - 1px);
+      right: auto;
+      border-top: 0;
+      border-left: 2px dashed var(--line);
+    }
+    .flow > .node::before,
+    .machine > .node:first-of-type::before {
+      --chev-u: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 8'%3E%3Cpath d='M1 7 5 2l4 5' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      --chev-d: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 8'%3E%3Cpath d='m1 1 4 5 4-5' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      top: calc(var(--icon) + 0.5rem - 1px);
+      bottom: calc(0.5rem - var(--reach) - 1px);
+      left: calc(var(--x) - 5px);
+      right: auto;
+      width: 10px;
+      height: auto;
+      -webkit-mask: var(--chev-u) center top / 10px 8px no-repeat, var(--chev-d) center bottom / 10px 8px no-repeat;
+      mask: var(--chev-u) center top / 10px 8px no-repeat, var(--chev-d) center bottom / 10px 8px no-repeat;
     }
   }
+
   @media (max-width: 620px) {
-    nav a:not(:first-child) {
-      display: none;
+    .wrap {
+      width: calc(100% - 2.5rem);
+    }
+
+    /* Header: the links fold into a menu */
+    .top {
+      position: relative;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      padding-block: 1rem;
     }
     nav {
-      gap: 1rem;
+      gap: 0.5rem;
+    }
+    .round {
+      width: 2.5rem;
+      height: 2.5rem;
+    }
+    .js .menu {
+      display: grid;
+    }
+    .js .site-links {
+      display: none;
+      position: absolute;
+      z-index: 10;
+      top: calc(100% - 0.25rem);
+      left: 0;
+      right: 0;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0;
+      padding: 0.4rem;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--raised);
+      box-shadow: 0 20px 50px -20px rgb(0 0 0 / 0.5);
+    }
+    .js .open .site-links {
+      display: flex;
+    }
+    .js .site-links a {
+      padding: 0.75rem 0.9rem;
+      border-radius: 9px;
+      font-size: 1.05rem;
+      color: var(--text);
+    }
+    .js .site-links a:hover {
+      background: var(--surface);
+    }
+    html:not(.js) .site-links {
+      flex-wrap: wrap;
+      gap: 0.4rem 1rem;
+    }
+
+    /* Hero */
+    .hero {
+      padding-block: 1.25rem 3rem;
+    }
+    .lede {
+      font-size: 1.125rem;
     }
     .install {
       display: flex;
-      justify-content: space-between;
-      padding-left: 0.9rem;
+      gap: 0.6rem;
+      padding: 0.35rem 0.35rem 0.35rem 0.9rem;
     }
     .install code {
+      flex: 1;
       font-size: 0.9rem;
+    }
+    .copy {
+      display: grid;
+      place-items: center;
+      flex: none;
+      width: 2.5rem;
+      height: 2.5rem;
+      min-width: 0;
+      padding: 0;
+    }
+    .copy svg {
+      display: block;
+    }
+    .copy span {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+    .msg {
+      max-width: 92%;
+    }
+    .tg-body {
+      padding: 1rem 0.75rem 1.1rem;
+    }
+
+    /* Sections: less air between them */
+    .how,
+    .setup,
+    .examples {
+      padding-block: 3rem;
+    }
+    .end {
+      padding-block: 3rem 3.5rem;
+    }
+    h2 {
+      margin-bottom: 1.5rem;
+    }
+    .how .intro {
+      margin: -0.5rem 0 2.25rem;
+      font-size: 1.06rem;
+    }
+    .tabs {
+      gap: 0.35rem;
+      margin-bottom: 1.5rem;
+    }
+    .tabs button {
+      padding: 0.4rem 0.85rem;
+      font-size: 0.9rem;
+    }
+    .panel {
+      gap: 1.75rem;
+      margin-bottom: 0;
+    }
+    .say {
+      padding-top: 0;
+    }
+    .say h3 {
+      font-size: 1.3rem;
+    }
+    footer {
+      padding-block: 1.5rem 2rem;
+    }
+    footer .links a {
+      display: inline-block;
+      padding-block: 0.3rem;
+    }
+  }
+  @media (max-width: 380px) {
+    h1 {
+      font-size: 2.5rem;
+    }
+    /* So the whole install command fits a 320px screen */
+    .install .prompt {
+      display: none;
+    }
+    .install code {
+      font-size: 0.85rem;
     }
   }
   @media (prefers-reduced-motion: reduce) {

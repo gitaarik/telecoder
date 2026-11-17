@@ -40,3 +40,56 @@
   --sl-color-gray-7: #f5f3ef;
   --sl-color-black: #fbfaf8;
 }
+
+/* Tables on a narrow screen. Side by side, a three- or five-column table
+   leaves each column a word wide or pushes the last one off screen, so below
+   32rem of content width (a phone; the desktop column with both sidebars is
+   ~40rem and keeps its tables) each row stacks into a card: the first cell as its
+   title, the others underneath, labelled with their column header where
+   that is needed (data-label, from src/plugins/remark-table-labels.mjs). */
+.sl-markdown-content {
+  container-type: inline-size;
+}
+
+@container (max-width: 32rem) {
+  .sl-markdown-content table:not(:where(.not-content *)) {
+    display: block;
+    overflow: visible;
+  }
+  .sl-markdown-content table:not(:where(.not-content *)) thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .sl-markdown-content table:not(:where(.not-content *)) :is(tbody, tr) {
+    display: block;
+    margin: 0;
+  }
+  .sl-markdown-content table:not(:where(.not-content *)) tr {
+    padding-block: 0.75rem;
+    border-bottom: 1px solid var(--sl-color-gray-5);
+  }
+  .sl-markdown-content table:not(:where(.not-content *)) tr:first-child {
+    border-top: 1px solid var(--sl-color-gray-5);
+  }
+  .sl-markdown-content table:not(:where(.not-content *)) td {
+    display: block;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .sl-markdown-content table:not(:where(.not-content *)) td + td {
+    margin-top: 0.25rem;
+  }
+  .sl-markdown-content table:not(:where(.not-content *)) td:first-child {
+    color: var(--sl-color-white);
+    font-weight: 600;
+  }
+  .sl-markdown-content table:not(:where(.not-content *)) td[data-label]::before {
+    content: attr(data-label) ': ';
+    color: var(--sl-color-gray-3);
+    font-weight: 500;
+  }
+}
