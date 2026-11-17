@@ -33,7 +33,6 @@ reviews:
 
   # Exclude local-only files and generated output from review
   path_filters:
-    - "!CLAUDE.md"
     - "!AGENTS.md"
     - "!dist/**"
     - "!node_modules/**"
@@ -53,7 +52,9 @@ reviews:
     - path: "src/telegram/**"
       instructions: |
         Focus on: Telegram API limits (4096 char messages, rate limiting on edits),
-        proper MarkdownV2 escaping, and .unref() on any intervals/timers.
+        text sent as plain text plus entities and never with a parse_mode (see
+        src/telegram/entities.ts; entity offsets are UTF-16 code units), and
+        .unref() on any intervals/timers.
     - path: "src/claude/**"
       instructions: |
         Drives the real `claude` CLI in a pty (node-pty + @xterm/headless). Check for:
@@ -66,8 +67,8 @@ reviews:
         on external links), and no hardcoded personal paths or credentials.
     - path: "scripts/**"
       instructions: |
-        Operational scripts. Check for: proper error handling, NVM path resolution,
-        and no hardcoded credentials or absolute paths.
+        Build and setup scripts. Check for: proper error handling, and no hardcoded
+        credentials or absolute paths.
 
   # Disable tools we don't need (not a Python/Go/Ruby/PHP project)
   tools:
@@ -135,8 +136,10 @@ chat:
 knowledge_base:
   code_guidelines:
     enabled: true
-    # CLAUDE.md and AGENTS.md are gitignored (local-only), so key guidance
-    # is embedded in path_instructions above instead.
+    # CLAUDE.md is tracked, and is one of the files CodeRabbit reads as
+    # guidelines by default. AGENTS.md is gitignored (local-only), so nothing
+    # in it reaches a review. The path_instructions above say what to look for
+    # in each folder.
   learnings:
     scope: "local"
   web_search:
