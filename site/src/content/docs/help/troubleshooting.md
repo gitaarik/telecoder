@@ -24,8 +24,8 @@ Work down this list:
    @mention it, unless `GROUP_REQUIRE_MENTION=false`. A group that isn't in
    `ALLOWED_GROUP_IDS` gets no reply at all, on purpose.
 4. **Is it busy?** A message sent while Claude is working waits until the turn is done.
-   `/status` shows what's running, `/btw` asks something without waiting, and `/cancel`
-   stops the turn and drops what's queued behind it.
+   `/botstatus` shows whether Claude is working on a reply, `/btw` asks something without
+   waiting, and `/cancel` stops the turn and drops what's queued behind it.
 5. **What does the log say?** `telecoder service logs`. A login problem, a config error
    or a polling conflict each leave a clear line there; they're covered below.
 

@@ -29,6 +29,87 @@ reasoning — the commit bodies are the long form, this is the index.
   from the next bot's. `--icon` replaces a picture the bot has; `--no-icon`
   leaves it alone. A picture that's already there is never replaced unasked.
 
+- **Your own Claude Code setup comes along on a bot without guests.** Claude
+  in Telegram knew the project and what the bot handed it, and nothing of the
+  account it runs as: no `~/.claude` (`CLAUDE.md`, skills, commands, agents,
+  `settings.json`), none of your MCP servers or a project's `.mcp.json`, no
+  plugin servers and no claude.ai connectors. `CLAUDE_PLUGINS` and
+  `EXTRA_MCP_CONFIG` brought single pieces back. Now the Claude of your
+  terminal is the one in Telegram. On a bot with guests the setup stays out
+  as before, since a guest would otherwise work with your instructions and
+  with connectors signed in as you; admitting a first guest takes it out from
+  each conversation's next message. `CLAUDE_USER_SETUP` is `auto` by default,
+  and `on` or `off` force it. `CLAUDE_PLUGINS` and `EXTRA_MCP_CONFIG` stay,
+  for a bot where the setup stays out or for something only the bot should
+  have.
+
+- **`/model` and `/effort` reach one thread, new threads, a whole chat, or
+  everywhere.** A `/model` in a thread pinned only that thread, and "apply to
+  all bots" set a chat-wide value that every thread with a pin of its own kept
+  shadowing, so switching back meant `/model opus` in each of them. A choice
+  now has four levels, as a word at the end or a button on the confirmation:
+  nothing for this thread only, `new` for this thread and new threads in the
+  chat, `chat` for every thread in the chat, and `all` for every chat on every
+  bot (admins only). A wider level clears the narrower choices under it. A
+  thread with a conversation open switches on its next message, and one in
+  the middle of a reply when the reply is done. A bare `/model fable` sets
+  only the thread it is typed in, in the All view too, where Telegram opens a
+  new thread for it. The picker and `/status` say where the value comes from.
+
+- **A set-aside message can be sent sooner.** The notice under a message set
+  aside with `/later`, or with Ask me after, had only Take back, so changing
+  your mind before the question came meant taking it back and typing it again.
+  It now has ⚡ Interrupt & send while a turn runs, which stops the turn and
+  sends the message in its place as `/steer` does, and 📤 Send now while
+  nothing runs.
+
+- **A memory guard before a message starts a new `claude`.** Every chat keeps
+  its own `claude`, a few hundred MB each, and on a machine already in swap
+  the one that starts next can take it down. A message that would start a new
+  one now reads the kernel's available memory first. Under the floor
+  (`MEMORY_GUARD_MIN_AVAILABLE_MB`), claudes idle for five minutes
+  (`MEMORY_GUARD_REAP_IDLE_MS`) are ended, which costs their chats a few
+  seconds of resume. Only when that still leaves too little is the chat
+  asked: start anyway, end the longest-idle claude first, or drop the
+  message. A message to a running claude never asks, and `0` turns the guard
+  off. `/botstatus` shows the machine's available memory and swap, and how
+  many claudes are running.
+
+- **`/commands <words>` searches the commands, and a mistyped command gets
+  "did you mean" buttons.** Telegram's `/` menu only matches the start of a
+  name, so `/kill` found nothing and neither did `/task`. `/commands kill`
+  searches names and descriptions. A slash command the bot doesn't have used
+  to go to Claude as a prompt; now, when it is a typo or a prefix of a bot
+  command and Claude Code's own command list doesn't know it either, the
+  likely commands come back as buttons, and a tap runs the one you meant with
+  the arguments as typed.
+
+- **`/tasks` shows a background task's output.** Claude Code's `/tasks` lets
+  you open a task and read what it has printed so far; TeleCoder's showed
+  only its details. A task now has 📄 Output, which opens that view in the
+  chat's Claude Code and relays its status, runtime, command and output. The
+  🔎 Ask claude list has a button per row that does the same, so work the bot
+  never saw start (a shell Claude backgrounded itself, anything from before a
+  restart) can be read too.
+
+- **Several questions arrive as one form.** Each question Claude asked through
+  `telecoder_ask_user` was a message of its own, and a tap on it was final.
+  Related questions (two to four) now come as one message, as Claude Code's
+  own question dialog does it: a tap records the answer and moves to the next
+  question, a numbered row goes back to any of them to change it, and nothing
+  reaches Claude until you tap Submit.
+
+- **`/deletethread`, and threads deleted by hand are let go.** Telegram tells
+  a bot nothing when a thread is deleted, so a deleted thread's session lived
+  on: its `claude` ran until the next restart, and a turn still working sent
+  its replies nowhere. `/deletethread` deletes the thread it's sent in with
+  all its messages and ends its session, mid-turn too; the conversation stays
+  in `/resume`. A thread deleted from Telegram's own menu is let go the first
+  time a send into it fails. One deleted while idle sends nothing, so an idle
+  `claude` is now ended after an hour (`CLAUDE_PTY_IDLE_TIMEOUT_MS`) and
+  resumes on the next message, never while a turn, background task or
+  background shell runs.
+
 ### Changed
 
 - **`/context` is Claude Code's own.** It used to be a report the bot built
@@ -124,6 +205,42 @@ reasoning — the commit bodies are the long form, this is the index.
   session id is one tap away under `/statusline`'s "Show session", and the
   bot's uptime is `/botstatus`'s. Created, Working Directory and Uptime are
   gone from it.
+
+- **`/status` names the effort and model that served the last reply, and who
+  picked them.** "Effort: Default" and "Model: Claude Code default" said only
+  that the chat had set neither, not what the reply ran with. Both are now
+  read from the session log, so `/status` says "High (Claude Code's default)"
+  or credits `/effort` and `/model` when the chat chose. Before the first
+  reply it says the pair is known after it. The model no longer shows as a
+  placeholder after a bot restart, and the status line under each reply shows
+  the logged effort in place of "Auto".
+
+- **`/botname` renames the bot, and the name no longer follows the project.**
+  The display name used to be rebuilt as "name — project" on every project
+  switch, resume and topic reset. Telegram throttles renames so hard that one
+  could be refused and dropped, leaving the wrong project showing for hours,
+  and the project is in the status line and the thread names anyway.
+  `/botname <name>` (admins only) now sets a fixed name, kept per bot, that
+  wins over `BOT_NAME`. A rename Telegram refuses is reported with the
+  cooldown left and sent again when it ends. `/botname reset` goes back to
+  `BOT_NAME`, and `/botname` alone shows the name Telegram has.
+  `DYNAMIC_BOT_NAME` is gone.
+
+- **The turn log says a backgrounded shell is running.** A command Claude
+  started in the background returns at once with no output, and the live log
+  drops an empty result, so it looked like a command that finished with
+  nothing to say. One moved to the background at the foreground time limit
+  looked finished with whatever it had printed so far. Both now get the line
+  Claude Code's own tool row shows, "Running in the background", pointing at
+  `/tasks` for the output so far.
+
+- **`/rebuildbot idle` also waits for background shells, topic naming and
+  thread renames.** Its idea of "nothing left to finish" was turns, queued
+  messages, self-started turns and background tasks. A shell command Claude
+  left running, the Haiku call naming a turn's topic and a thread rename
+  waiting out Telegram's cooldown slipped past it, and a restart over the
+  last two left the thread under its old name. Each now holds the restart and
+  is named in the tally.
 
 - **An answer to a ForceReply prompt is routed by the prompt's id**, not by
   phrases in its text ("Set Project Directory", "Download File", "Transcribe
@@ -233,6 +350,25 @@ reasoning — the commit bodies are the long form, this is the index.
   so.
 
 ### Fixed
+
+- **A `!command` runs, and the permission gate checks it.** A message that
+  starts with `!` is Claude Code's shell mode: the rest runs as a shell
+  command, with no tool call. Through the bot it mostly didn't run, and ended
+  in "Claude Code's input box didn't take your message", because the bot
+  didn't recognise the input box in shell mode. And what did run skipped the
+  permission gate and the scope guard, which are tool hooks: on a shared bot a
+  guest's `!sudo …` ran where Claude's own would wait for an approver. Such a
+  message now goes through the same gate before it is typed, and one that is
+  denied or left unanswered never runs. Telegram still gets Claude's reply to
+  the command, not the command's own output.
+
+- **Claude no longer asks before a destructive command when the mode says not
+  to.** The note the bot adds to Claude's system prompt told it to confirm
+  anything irreversible (`rm -rf`, `sudo`, a force-push, `DROP TABLE`) with a
+  question first, whatever the permission mode. In bypass mode that overruled
+  what the chat had picked with `/mode`. The line is gone: how much Claude
+  asks is `/mode`'s to say, and on a shared bot the permission gate still
+  holds those commands for an approver.
 
 - **`/teleport` forks the session, as it said it did.** Its message promised
   that Telegram and the terminal could each carry on, but the command it gave

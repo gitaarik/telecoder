@@ -36,9 +36,9 @@ Behaviour stays the same, and tests come first where coverage is thin:
 
 | File | Lines |
 |------|-------|
-| `src/claude/pty-provider.ts` | 2,476 |
-| `src/telegram/message-sender.ts` | 1,449 |
-| `src/bot/handlers/command/settings.ts` | 1,153 |
+| `src/claude/pty-provider.ts` | 2,654 |
+| `src/telegram/message-sender.ts` | 1,354 |
+| `src/bot/handlers/fork.handler.ts` | 1,234 |
 
 ### 4. Codex alongside Claude Code (25–35 h)
 

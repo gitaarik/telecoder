@@ -106,7 +106,7 @@ upgrades from chat. To run from a git checkout instead, see
 In active development, and used every day for my own work, including building TeleCoder
 itself. The latest release is 1.2.0, on [npm](https://www.npmjs.com/package/telecoder) and
 tagged here; the [changelog](CHANGELOG.md) lists what's in each release. The code is about
-53k lines of TypeScript, plus 31k lines of tests (175 test files, 2,238 tests), and CI runs
+51k lines of TypeScript, plus 33k lines of tests (189 test files, 2,437 tests), and CI runs
 the type check, tests and build on every push.
 
 TeleCoder is self-hosted: it runs on your machine with your own Claude account, and there is no
@@ -117,8 +117,8 @@ hosted version.
 TeleCoder began as a fork of [Claudegram](https://github.com/NachoSEO/claudegram) by
 [@NachoSEO](https://github.com/NachoSEO), MIT-licensed, whose last commit was in March 2026.
 Claudegram's copyright notice is kept in [LICENSE](LICENSE). Since April 2026 TeleCoder has
-been developed independently by [@gitaarik](https://github.com/gitaarik): 450+ commits, adding
-about 107k lines and removing 29k. The history since the fork is all in this repository, which
+been developed independently by [@gitaarik](https://github.com/gitaarik): 550+ commits, adding
+about 133k lines and removing 43k. The history since the fork is all in this repository, which
 was created in July 2026 when the project was renamed, so its GitHub creation date is later than
 its first commits.
 

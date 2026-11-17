@@ -61,7 +61,8 @@ Editing a waiting message changes what gets sent.
 
 `/cancel` (or `/stop`) stops the turn and drops the messages waiting behind it. Set-aside
 messages stay. `/botstatus` (or `/ping`) answers straight away even mid-turn, so you can
-tell a busy bot from a stuck one, and `/status` shows what's running.
+tell a busy bot from a stuck one: it shows how many `claude` processes the bot has running
+and how many are working on a reply.
 
 ## Smaller things
 
