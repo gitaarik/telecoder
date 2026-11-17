@@ -1,5 +1,5 @@
 /**
- * /model, /provider and /ccr — choosing which backend answers.
+ * /model and /ccr — choosing which backend answers.
  *
  * Kept together because the model list is provider-scoped: switching provider
  * changes what /model can offer, and both changes need the same pty restart.
@@ -179,45 +179,11 @@ function appendPremiumNote(confirmation: EntityText, model: string, provider: Pr
   );
 }
 
-const PROVIDER_DESCRIPTIONS: Record<ProviderName, string> = {
-  claude: 'Claude Code (Anthropic / Max)',
-  ccr: 'Routed via Claude Code Router (alt providers)',
-};
-
-export async function handleProviderCommand(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const providers = getAvailableProviders();
-  const active = getActiveProviderName(sessionKey);
-
-  const keyboard = providers.map((p) => {
-    const label = p === active ? `✓ ${p}` : p;
-    return [{ text: label, callback_data: `provider:${p}` }];
-  });
-
-  const picker = new EntityText()
-    .add('🔌 ').bold('Select Provider')
-    .newline(2)
-    .italic(`Current: ${active}`)
-    .newline(2);
-  providers.forEach((p, i) => {
-    if (i > 0) picker.newline();
-    picker.add('• ').bold(p).add(` - ${PROVIDER_DESCRIPTIONS[p]}`);
-  });
-
-  await replyFormatted(ctx, picker.build(), {
-    reply_markup: {
-      inline_keyboard: keyboard,
-    },
-  });
-}
-
 /**
- * Quick toggle between Claude (Max) and CCR. Designed for the common case of
- * "I'm throttled on Max, send subsequent messages through CCR instead."
- * Sticky — stays on CCR until the user toggles back.
+ * The switch between Claude (Max) and CCR: each /ccr moves the chat to the
+ * other one. Designed for the common case of "I'm throttled on Max, send
+ * subsequent messages through CCR instead." Sticky — stays on CCR until the
+ * user toggles back.
  */
 export async function handleCcrCommand(ctx: Context): Promise<void> {
   const keyInfo = getSessionKeyFromCtx(ctx);
@@ -251,54 +217,7 @@ export async function handleCcrCommand(ctx: Context): Promise<void> {
   clearModel(sessionKey);
 
   const label = next === 'ccr' ? 'CCR (routed)' : 'Claude (Max)';
-  await replyMd(ctx, `🔌 Switched provider to **${label}**.\n\n_Sticky — use /ccr again or /provider to switch back._`);
-}
-
-export async function handleProviderCallback(ctx: Context): Promise<void> {
-  const keyInfo = getSessionKeyFromCtx(ctx);
-  if (!keyInfo) return;
-  const { sessionKey } = keyInfo;
-
-  const data = ctx.callbackQuery?.data;
-  if (!data || !data.startsWith('provider:')) return;
-
-  const provider = data.replace('provider:', '') as ProviderName;
-  const providers = getAvailableProviders();
-
-  if (!providers.includes(provider)) {
-    await ctx.answerCallbackQuery({ text: 'Invalid provider' });
-    return;
-  }
-
-  if (provider === getActiveProviderName(sessionKey)) {
-    await ctx.answerCallbackQuery({ text: `Already using ${provider}` });
-    return;
-  }
-
-
-  // If a live session owned by a different backend would be abandoned, confirm
-  // first — switching starts a fresh session (sessions can't cross backends).
-  if (switchRequiresConfirm(sessionKey, provider)) {
-    await ctx.answerCallbackQuery();
-    await editCallbackMessage(ctx, buildSwitchConfirmText(sessionKey, provider), {
-      reply_markup: { inline_keyboard: buildSwitchConfirmKeyboard(provider) },
-    });
-    return;
-  }
-
-  // No live session (or already owned by target): switch transparently.
-  await switchProvider(sessionKey, provider);
-  clearModel(sessionKey); // Models differ between providers
-
-  await ctx.answerCallbackQuery({ text: `Switched to ${provider}!` });
-  await editCallbackMessage(
-    ctx,
-    new EntityText()
-      .add('✅ Provider set to ').bold(provider)
-      .newline(2)
-      .italic(MODEL_CLEARED_NOTE)
-      .build(),
-  );
+  await replyMd(ctx, `🔌 Switched provider to **${label}**.\n\n_Sticky — use /ccr again to switch back._`);
 }
 
 const MODEL_CLEARED_NOTE = 'Model selection cleared — use /model to pick a model.';

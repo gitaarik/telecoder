@@ -9,7 +9,7 @@ export interface ParsedCommand {
   model: string | null;
 }
 
-const CLAUDE_COMMANDS = ['model', 'commands', 'resume', 'provider'] as const;
+const CLAUDE_COMMANDS = ['model', 'commands', 'resume'] as const;
 type ClaudeCommand = (typeof CLAUDE_COMMANDS)[number];
 
 export function parseClaudeCommand(message: string): ParsedCommand {
@@ -85,7 +85,7 @@ export function getAvailableCommands(): EntityMessage {
         '• `/model [name]` - Show or set AI model',
         "• `/later [text]` - Set an idea aside, and be asked about it after Claude's turn",
         '• `/steer <text>` - Stop the running turn and send this in its place',
-        ...(config.CCR_ENABLED ? [`• \`/provider\` - Switch AI provider (Claude / CCR)${adminTag}`] : []),
+        ...(config.CCR_ENABLED ? [`• \`/ccr\` - Switch between Claude and CCR${adminTag}`] : []),
         '• `/commands` - Show this list',
       ],
     },

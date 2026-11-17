@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-Every command TeleCoder registers. `/commands` lists them in Telegram, and Telegram's own `/` menu shows the ones that apply to your setup (`/provider` and `/ccr` only with `CCR_ENABLED`, `/rebuildbot` only in a source checkout). *Admin-only* matters on a shared bot: see [Sharing a bot](../guides/sharing.md). With one user, you are the admin.
+Every command TeleCoder registers. `/commands` lists them in Telegram, and Telegram's own `/` menu shows the ones that apply to your setup (`/ccr` only with `CCR_ENABLED`, `/rebuildbot` only in a source checkout). *Admin-only* matters on a shared bot: see [Sharing a bot](../guides/sharing.md). With one user, you are the admin.
 
 ## Session
 | Command | Description |
@@ -41,8 +41,7 @@ Every command TeleCoder registers. `/commands` lists them in Telegram, and Teleg
 | `/later [text]` | Set an idea aside without sending it; once Claude is done, the bot asks whether to send it, with Send and Drop. To send it sooner, its notice has `⚡ Interrupt & send` mid-turn and `📤 Send now` otherwise. Alone, lists what's set aside |
 | `/mode` | How much Claude asks before acting (manual / accept edits / plan / auto / bypass) — admin-only |
 | `/autoapprove [duration]` | Answer the permission gate's prompts in advance in this chat for a while (default `30m`, at most `4h`; a restart ends it), posting each command it lets through; `off` ends it, `status` reads it back. The most destructive commands still ask — admins and approvers |
-| `/provider` | Switch backend — Claude / CCR (shown when `CCR_ENABLED`) — admin-only |
-| `/ccr` | Sticky toggle between Claude and CCR routing (shown when `CCR_ENABLED`) — admin-only |
+| `/ccr` | Switch this chat between Claude and CCR. Sticky: it stays there until you send `/ccr` again (shown when `CCR_ENABLED`) — admin-only |
 | `/verbosity` | Pick verbosity tier (quiet / normal / verbose / debug) |
 | `!command` | Run a shell command yourself, in Claude Code's shell mode: start a message with `!` and Claude sees the output, as in the terminal. Not a slash command, so it isn't in the `/` menu. The permission gate checks it like a tool call ([Sharing a bot](../guides/sharing.md)) |
 

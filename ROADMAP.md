@@ -58,8 +58,8 @@ OpenAI's documented path for clients, so scraping a second TUI would buy nothing
   Telegram prompt the Claude pty already has
 - Load TeleCoder's stdio MCP server (`src/bin/mcp-server.ts`) into Codex, and support
   `/model`, reasoning effort and images
-- Offer Codex in `/provider`. A switch forks the conversation with a summary, as
-  switching to CCR does
+- Give Codex a switch of its own, as `/ccr` is for CCR. A switch forks the
+  conversation with a summary, as switching to CCR does
 - Give Claude-only features such as `/tree`, background tasks and plugins a clear "not on
   Codex" reply, and list what stays behind, as [`site/src/content/docs/guides/providers.md`](site/src/content/docs/guides/providers.md) does for CCR
 

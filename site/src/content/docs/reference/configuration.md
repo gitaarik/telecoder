@@ -93,7 +93,7 @@ How these three fit together: [Group roles](../guides/sharing.md#group-roles).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CCR_ENABLED` | `false` | Enable `/ccr` and CCR in `/provider` |
+| `CCR_ENABLED` | `false` | Enable CCR and `/ccr`, the switch to it |
 | `CCR_BASE_URL` | `http://localhost:3456` | Where CCR's local proxy listens |
 | `CCR_AUTH_TOKEN` | — | CCR's local auth token |
 | `CCR_AUTOSTART` | `false` | Run `ccr start` when the proxy isn't reachable |

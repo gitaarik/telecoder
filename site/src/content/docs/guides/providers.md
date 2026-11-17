@@ -14,9 +14,9 @@ the bot keeps working instead of stopping.
 | `claude` | Claude Code itself: the real `claude` CLI, driven in a pseudo-terminal | on by default |
 | `ccr` | The same `claude` binary, routed through a local [Claude Code Router](https://github.com/musistudio/claude-code-router) proxy so non-Anthropic models can back it | `CCR_ENABLED=true` |
 
-`/provider` opens a picker listing the enabled backends. `/ccr` is a one-tap toggle
-between Claude and CCR for the common "I'm throttled, keep going" case. Both are
-sticky — the choice holds until you switch back.
+`/ccr` switches a chat between the two: one tap for the common "I'm throttled, keep
+going" case, and one more to go back. The choice is sticky — it holds until you
+switch again — and `/status` shows which one a chat is on.
 
 ## When Max throttles
 

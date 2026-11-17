@@ -352,7 +352,7 @@ async function resumeScanned(ctx: Context, sessionKey: string, s: ScannedSession
     notes.push(
       `This conversation ran on ${BACKEND_NAMES[owner] ?? owner} and this chat is on ${BACKEND_NAMES[provider] ?? provider}, ` +
       `which can't replay its thinking. It goes on as a new session that starts with a recap of the last exchanges. ` +
-      `To continue it as it is, switch with /provider ${owner} and resume it again.`,
+      `To continue it as it is, switch backends with /ccr and resume it again.`,
     );
   }
 

@@ -45,8 +45,6 @@ import {
   handleModelCommand,
   handleModelCallback,
   handlePrefsScopeCallback,
-  handleProviderCommand,
-  handleProviderCallback,
   handleProviderSwitchCallback,
   handleCcrCommand,
   handleResume,
@@ -514,9 +512,6 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
   cmd('model', handleModelCommand);
   cmd('effort', handleEffort);
   if (config.CCR_ENABLED) {
-    cmd('provider', adminOnly(handleProviderCommand));
-  }
-  if (config.CCR_ENABLED) {
     cmd('ccr', adminOnly(handleCcrCommand));
   }
   // Session resume commands
@@ -542,8 +537,6 @@ export async function createBot(botInfo?: UserFromGetMe): Promise<Bot> {
       await handleResumeCallback(ctx);
     } else if (data.startsWith('provider_switch:')) {
       await adminOnly(handleProviderSwitchCallback)(ctx);
-    } else if (data.startsWith('provider:')) {
-      await adminOnly(handleProviderCallback)(ctx);
     } else if (data.startsWith('pscope:') || data.startsWith('prefs_all:')) {
       await handlePrefsScopeCallback(ctx);
     } else if (data.startsWith('model:')) {

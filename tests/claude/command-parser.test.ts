@@ -48,7 +48,7 @@ describe('parseClaudeCommand', () => {
   });
 
   it('recognizes every command in the allow-list', () => {
-    for (const cmd of ['model', 'commands', 'resume', 'provider']) {
+    for (const cmd of ['model', 'commands', 'resume']) {
       expect(parseClaudeCommand(`/${cmd}`).command).toBe(cmd);
     }
   });
@@ -63,6 +63,14 @@ describe('isClaudeCommand', () => {
   it('is false for plain text and unknown commands', () => {
     expect(isClaudeCommand('hello')).toBe(false);
     expect(isClaudeCommand('/unknown')).toBe(false);
+  });
+
+  it('does not claim /provider, which the bot no longer has', () => {
+    // The message handler drops a claimed name without a reply, on the
+    // understanding that a command handler answers it. Nothing answers
+    // /provider any more, so it has to go on to Claude Code like any other.
+    expect(isClaudeCommand('/provider')).toBe(false);
+    expect(parseClaudeCommand('/provider ccr').command).toBeNull();
   });
 });
 

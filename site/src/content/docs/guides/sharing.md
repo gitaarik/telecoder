@@ -63,7 +63,7 @@ What that buys you:
 - **The gate turns itself on.** With guests present you get prompts without
   setting a second variable; `TELECODER_PERMISSION_PROMPTS=0` opts out.
 - **Lifecycle and backend are yours.** `/update`, `/restartbot`,
-  `/rebuildbot`, `/provider` and `/ccr` refuse a guest.
+  `/rebuildbot` and `/ccr` refuse a guest.
 - **The same gate on every turn.** It is a PreToolUse hook on the `claude`
   the pty runs, on Claude and on CCR, in every `/mode` including bypass, and it
   covers subagents' tool calls too. If it breaks while judging a call, the
@@ -182,7 +182,7 @@ peers who all own the box.
 
 Commands that reconfigure the bot rather than drive the conversation stay with
 admins — `/restartbot`, `/rebuildbot`, `/update`, `/mode`,
-`/provider`, `/ccr`, `/permissions`, `/terminal`, `/project`, `/newbot`,
+`/ccr`, `/permissions`, `/terminal`, `/project`, `/newbot`,
 `/users`, `/allow` and `/deny`, along with the inline buttons those
 open. A contributor drives the conversation; only an admin repoints or restarts
 the bot. `/members` is readable by anyone who can prompt.

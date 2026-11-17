@@ -2007,8 +2007,8 @@
             <div class="feature-icon"><svg><use href="#i-failover"/></svg></div>
             <h3>It keeps going past your limit</h3>
             <p>When Claude Max throttles, <code>/ccr</code> moves the chat to a fallback provider and
-            your next message runs there. Swap back whenever you like with
-            <code>/provider</code>.</p>
+            your next message runs there. Send it again to swap back whenever you
+            like.</p>
           </div>
         </div>
       </div>
@@ -2251,7 +2251,7 @@
             <div class="feature-icon"><svg><use href="#i-throttle"/></svg></div>
             <h3>It survives your usage limit</h3>
             <p>When Claude Max throttles, <code>/ccr</code> moves the chat to Claude Code Router
-            and your next message runs there. <code>/provider</code> moves between them any
+            and your next message runs there. Send it again to move back at any
             time, carrying a summary across.</p>
           </div>
           <div class="feature-card" data-category="reliability">
@@ -2842,8 +2842,8 @@ CCR_AUTH_TOKEN=your_ccr_token
 CCR_AUTOSTART=true</pre>
               </div>
             </div>
-            <p>After that, <code>/provider</code> picks a backend at any time and
-            <code>/ccr</code> toggles between the two. Full documentation lives in the
+            <p>After that, <code>/ccr</code> switches a chat between the two at any
+            time. Full documentation lives in the
             <a href="https://github.com/musistudio/claude-code-router" target="_blank" rel="noopener">CCR
             repository</a>.</p>
             <div class="config-note">
@@ -3131,10 +3131,6 @@ CCR_AUTOSTART=true</pre>
             Agent Modes
           </h3>
           <div class="commands-grid">
-            <div class="command-row">
-              <code class="command-code">/provider</code>
-              <span class="command-desc">Switch AI provider (Claude / CCR). <strong>Admin-only</strong> when the bot has non-admin users.</span>
-            </div>
             <div class="command-row">
               <code class="command-code">/ccr</code>
               <span class="command-desc">Toggle routing through Claude Code Router (sticky fallback when Max runs out). <strong>Admin-only</strong> when the bot has non-admin users.</span>

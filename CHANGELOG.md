@@ -260,6 +260,14 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Removed
 
+- **`/provider`.** It opened a picker of backends, from Claudegram's days of
+  several. Two are left, Claude and CCR, and `/ccr` already switches a chat
+  between them in one tap, with the same confirmation before a live session is
+  left behind and the same summary carried over. `/ccr` is now the one switch,
+  and `/status` shows which backend a chat is on. Without `CCR_ENABLED` a typed
+  `/provider` used to be dropped without a reply; it now goes to Claude Code
+  like any other command the bot doesn't own.
+
 - **`CANCEL_ON_NEW_MESSAGE`.** Claudegram's switch to have every new message
   stop the running turn. In Claude Code a message sent mid-turn waits its
   turn, and TeleCoder already has the per-message choice: `/steer`, or

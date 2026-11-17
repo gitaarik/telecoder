@@ -87,9 +87,7 @@ export {
 export {
   handleModelCommand,
   handleModelCallback,
-  handleProviderCommand,
   handleCcrCommand,
-  handleProviderCallback,
   handleProviderSwitchCallback,
 } from './command/model.js';
 export { handlePrefsScopeCallback } from './command/prefs-scope.js';
