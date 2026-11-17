@@ -53,19 +53,19 @@ describe('renderBackgroundFooter', () => {
 });
 
 describe('taskTracker updates', () => {
-  it('records progress as tool · activity, folds repeats, and keeps three', () => {
+  it('folds a repeated update into the one before it, and keeps three', () => {
     taskTracker.clear(KEY);
-    taskTracker.handleEvent(KEY, { type: 'started', taskId: 't1', description: 'Explore', isBackgrounded: true });
-    for (const file of ['a.ts', 'a.ts', 'b.ts', 'c.ts', 'd.ts']) {
-      taskTracker.handleEvent(KEY, { type: 'progress', taskId: 't1', description: `Reading ${file}`, lastToolName: 'Read' });
+    taskTracker.start(KEY, { taskId: 't1', description: 'Watch CI', isBackgrounded: true });
+    for (const job of ['lint', 'lint', 'build', 'test', 'deploy']) {
+      taskTracker.noteUpdate(KEY, 't1', `${job} passed`);
     }
     expect(taskTracker.getTask(KEY, 't1')!.updates!.map((u) => u.text))
-      .toEqual(['Read · Reading b.ts', 'Read · Reading c.ts', 'Read · Reading d.ts']);
+      .toEqual(['build passed', 'test passed', 'deploy passed']);
   });
 
-  it('takes a PTY monitor firing for a known task and ignores unknown ones', () => {
+  it('takes a monitor firing for a known task and ignores unknown ones', () => {
     taskTracker.clear(KEY);
-    taskTracker.handleEvent(KEY, { type: 'started', taskId: 'toolu_1', description: 'Watch deploy', isBackgrounded: true });
+    taskTracker.start(KEY, { taskId: 'toolu_1', description: 'Watch deploy', isBackgrounded: true });
     taskTracker.noteUpdate(KEY, 'toolu_1', 'deploy finished', at(9, 30));
     taskTracker.noteUpdate(KEY, 'toolu_x', 'nobody');
     expect(taskTracker.getTask(KEY, 'toolu_1')!.updates).toEqual([{ at: at(9, 30), text: 'deploy finished' }]);

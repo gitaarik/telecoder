@@ -50,11 +50,8 @@ export function contextHealthColor(used: number, contextWindow: number): '🟢' 
 }
 
 /**
- * One-line manual `/compact` confirmation with the token reduction.
- *
- * Shared by both providers: the PTY provider reads the numbers back out of the
- * session JSONL, the SDK provider gets them on the `compact_boundary` message.
- * Same command, same wording, whichever transport ran it.
+ * One-line manual `/compact` confirmation with the token reduction, which the
+ * provider reads back out of the session JSONL.
  */
 export function formatCompactionConfirmation(c: { preTokens: number; postTokens?: number }): string {
   const before = fmtTokens(c.preTokens);

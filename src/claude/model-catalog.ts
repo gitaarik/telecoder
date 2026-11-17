@@ -2,8 +2,8 @@
  * The `--model` aliases Claude Code accepts, shared by every provider that
  * ultimately spawns the CLI.
  *
- * Both PTY and SDK mode hand the alias to a `claude` binary (`--model <alias>`),
- * so the list belongs to the CLI, not to us — mirror `claude --help` here when
+ * The alias is handed to a `claude` binary as it is (`--model <alias>`), so
+ * the list belongs to the CLI, not to us — mirror `claude --help` here when
  * upstream adds one. Aliases outside the CLI's own set are treated as literal
  * API model names, which means a wrong entry fails at request time rather than
  * at spawn.

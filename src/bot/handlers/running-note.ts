@@ -4,8 +4,8 @@
  * A turn closes with the status line, which counts what runs. A command's
  * answer doesn't, and lands below whatever said a task was running, so after
  * a /btw or a /cost the chat reads as if nothing is going on. Under such an
- * answer the background card comes down again (PTY); without one, in SDK
- * mode, a line says how many tasks run.
+ * answer the background card comes down again; without a card, a line says
+ * how many tasks run.
  */
 
 import type { Context } from 'grammy';

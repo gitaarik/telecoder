@@ -10,7 +10,7 @@
  */
 
 import type { Context } from 'grammy';
-import type { ToolResultEvent, EditDiffEvent, TaskEvent } from '../providers/types.js';
+import type { ToolResultEvent, EditDiffEvent } from '../providers/types.js';
 import { setAbortController } from '../claude/request-queue.js';
 import { resolveVerbosityFlags } from '../utils/verbosity.js';
 import { messageSender } from './message-sender.js';
@@ -61,8 +61,7 @@ export function progressCallbacks(ctx: Context) {
 
 /**
  * Per-tool telemetry on top of `progressCallbacks`, for the `sendToAgent`
- * paths that surface the running tool in the stream header and relay
- * sub-agent output.
+ * paths that surface the running tool in the stream header.
  */
 export function toolCallbacks(ctx: Context, sessionKey: string) {
   return {
@@ -72,8 +71,6 @@ export function toolCallbacks(ctx: Context, sessionKey: string) {
     onToolEnd: () => {
       messageSender.clearToolOperation(sessionKey);
     },
-    onTaskEvent: (event: TaskEvent) => messageSender.notifyTaskEvent(ctx, sessionKey, event),
-    onSubTurnResponse: (text: string) => messageSender.postSubTurnResponse(ctx, text),
   };
 }
 

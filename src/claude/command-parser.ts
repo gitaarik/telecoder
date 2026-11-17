@@ -58,9 +58,7 @@ export function stripCommandBotMention(text: string): string {
 
 /**
  * True if `text` is the native Claude Code `/compact` slash command (optionally
- * with a `@BotName` mention or trailing custom-instructions argument). Single
- * source of truth shared by the SDK interceptor (agent.ts) and the PTY provider
- * so both agree on what counts as a manual compaction request.
+ * with a `@BotName` mention or trailing custom-instructions argument).
  */
 export function isNativeCompactCommand(text: string): boolean {
   return /^\/compact(?:@\w+)?(?:\s|$)/.test(text.trim());

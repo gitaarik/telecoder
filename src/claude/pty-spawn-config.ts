@@ -212,8 +212,8 @@ export function buildMcpToolsSystemPromptNote(): string {
   // telecoder_* tools, but PTY mode wires up a relay so task-notifications
   // that arrive after the user-turn ends still reach Telegram. Mention it so
   // the model confidently uses these tools when they're the right fit.
-  tools.push('- Async built-ins (Monitor, `Bash(run_in_background=true)`, `Task`/`Agent`) — supported in TeleCoder PTY mode. Task-notifications that fire between user turns are relayed to Telegram with a "📡 Monitor — ...", "⚙️ Backgrounded: ...", or "🤖 Subagent started: ..." header, paired with the actual event payload and your response. Use these freely for "watch X", "run X in background while continuing", or "delegate Y to a subagent" tasks.');
-  tools.push('- PushNotification (built-in) — supported in TeleCoder PTY mode. The message text is relayed to Telegram as "🔔 <message>". Use the normal rules: only when the user might have walked away and there\'s something they\'d act on now.');
+  tools.push('- Async built-ins (Monitor, `Bash(run_in_background=true)`, `Task`/`Agent`) — supported in TeleCoder. Task-notifications that fire between user turns are relayed to Telegram with a "📡 Monitor — ...", "⚙️ Backgrounded: ...", or "🤖 Subagent started: ..." header, paired with the actual event payload and your response. Use these freely for "watch X", "run X in background while continuing", or "delegate Y to a subagent" tasks.');
+  tools.push('- PushNotification (built-in) — supported in TeleCoder. The message text is relayed to Telegram as "🔔 <message>". Use the normal rules: only when the user might have walked away and there\'s something they\'d act on now.');
   tools.push('- For scheduled/recurring tasks, prefer telecoder_loop / telecoder_schedule over the built-in CronCreate / ScheduleWakeup / RemoteTrigger — those don\'t reach back into Telegram.');
   tools.push('- mcp__telecoder-tools__telecoder_set_topic — update the conversation topic shown in the status line and as the thread\'s name. Call proactively when the topic of work shifts. Empty string clears it. Keep topics 1-4 words.');
   return [

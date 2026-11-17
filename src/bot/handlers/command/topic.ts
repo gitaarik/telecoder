@@ -2,10 +2,9 @@
  * The /topic command.
  *
  * The topic state itself lives in `topic-store.ts`, which stays below the
- * provider layer so `agent.ts` and `mcp-tools.ts` can read and set the topic
- * without closing an import cycle. This module adds the Telegram command
- * surface on top and re-exports the store so the command barrel's public API
- * is unchanged.
+ * provider layer so code under it can read and set the topic without closing
+ * an import cycle. This module adds the Telegram command surface on top and
+ * re-exports the store so the command barrel's public API is unchanged.
  */
 
 import { Context } from 'grammy';

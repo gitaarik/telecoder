@@ -1,12 +1,11 @@
 /**
  * Everything posted to the chat *after* a turn's main response: the catch-up
- * relay that recovers prose the extractors dropped, the context-visibility
- * notices (compaction, new-agent-session), and the status line that comes
- * last. The usage footer isn't a message of its own: it goes out at the bottom
- * of the status line, see `sendStatusLine`.
+ * relay that recovers prose the extractors dropped, the compaction notice,
+ * and the status line that comes last. The usage footer isn't a message of its
+ * own: it goes out at the bottom of the status line, see `sendStatusLine`.
  *
- * Each notice consults the chat's verbosity settings itself, and the status
- * line the chat's /statusline ones, so callers fire them unconditionally via
+ * The notice consults the chat's verbosity settings itself, and the status
+ * line the chat's /statusline ones, so callers fire both unconditionally via
  * `closeTurn`.
  */
 
@@ -105,49 +104,12 @@ async function sendCompactionNotification(
   }
 }
 
-async function sendSessionInitNotification(
-  ctx: Context,
-  sessionKey: string,
-  sessionInit: { model: string; sessionId: string } | undefined,
-): Promise<void> {
-  if (!sessionInit) return;
-  const chatId = ctx.chat?.id;
-  if (chatId === undefined) return;
-  if (!resolveVerbosityFlags(chatId).notifyCompaction) return;
-  const previousSessionId = sessionManager.getSession(sessionKey)?.claudeSessionId;
-  if (previousSessionId && sessionInit.sessionId !== previousSessionId) {
-    await replyFormatted(ctx, new EntityText()
-      .add('🔄 ').bold('New Agent Session').newline(2)
-      .add('A new agent session has started (previous context may be summarized).\n')
-      .add('Model: ').code(sessionInit.model).newline(2)
-      .italic('The agent may not remember earlier details. Consider sharing context.')
-      .build());
-  }
-}
-
 /**
- * The context-visibility notices every finished turn posts, in the order the
- * user expects to read them. Each one decides for itself whether the chat's
- * verbosity settings want it, so callers just fire both.
- */
-export async function sendTurnNotifications(
-  ctx: Context,
-  sessionKey: string,
-  response: {
-    compaction?: { trigger: 'manual' | 'auto'; preTokens: number };
-    sessionInit?: { model: string; sessionId: string };
-  },
-): Promise<void> {
-  await sendCompactionNotification(ctx, response.compaction);
-  await sendSessionInitNotification(ctx, sessionKey, response.sessionInit);
-}
-
-/**
- * What closes a turn, however it started: the context notices, then the status
- * line. A typed message, a voice note, an upload and a scheduled fire all end
- * here. Each used to write its own ending, and only the
- * typed message's had the status line, so a turn started any other way left
- * the chat on the tail of its reply with nothing to say where things stood.
+ * What closes a turn, however it started: the compaction notice, then the
+ * status line. A typed message, a voice note, an upload and a scheduled fire
+ * all end here. Each used to write its own ending, and only the typed
+ * message's had the status line, so a turn started any other way left the
+ * chat on the tail of its reply with nothing to say where things stood.
  *
  * `prompt` is what the turn was sent, for a session whose log has no prompts
  * for the status line to list.
@@ -155,11 +117,11 @@ export async function sendTurnNotifications(
 export async function closeTurn(
   ctx: Context,
   sessionKey: string,
-  response: Pick<AgentResponse, 'usage' | 'compaction' | 'sessionInit'>,
+  response: Pick<AgentResponse, 'usage' | 'compaction'>,
   prompt: string,
   options?: StatusLineOptions,
 ): Promise<void> {
-  await sendTurnNotifications(ctx, sessionKey, response);
+  await sendCompactionNotification(ctx, response.compaction);
   const chatId = ctx.chat?.id;
   if (chatId === undefined) return;
   // Not every response carries a usage: a cancelled turn's doesn't. The line

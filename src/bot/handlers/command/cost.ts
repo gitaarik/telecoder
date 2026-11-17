@@ -88,14 +88,11 @@ function renderSessionBlock(session: CostSession): string[] {
 /**
  * Render `claude -p /cost` output as Telegram markdown.
  *
- * `chatCost` is TeleCoder's own running tally for this conversation, used in
- * SDK mode where nothing else can answer what the chat has spent.
- *
  * `session` is the Session block off the live TUI's `/cost` panel — the real
- * totals for this conversation, present only in PTY mode. When we have it, the
- * probe's own `Total ...` rows are dropped rather than printed alongside: they
- * belong to the process that ran the lookup, and two contradicting sets of
- * totals in one message is worse than the one true set.
+ * totals for this conversation, when there is a live pty to ask. When we have
+ * it, the probe's own `Total ...` rows are dropped rather than printed
+ * alongside: they belong to the process that ran the lookup, and two
+ * contradicting sets of totals in one message is worse than the one true set.
  */
 export function parseCostOutput(
   raw: string,
@@ -345,7 +342,7 @@ export function explainMissingTotals(
 /**
  * The chat's own totals, read off the live TUI's `/cost` panel.
  *
- * PTY-only, and best-effort in every failure it can meet: no live session, a
+ * Best-effort in every failure it can meet: no live session, a
  * turn holding the keyboard, a panel whose layout has moved on. None is worth
  * failing the command over — but each is worth naming, in the log for us and
  * in the report for whoever is looking at the gap.

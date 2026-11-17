@@ -20,11 +20,11 @@ export function imageExtension(mediaType: string): string {
  * Make every attachment reachable from the prompt text — exactly once.
  *
  * Claude turns an image path it finds in a pasted prompt into an `[Image #N]`
- * chip and takes the path back out of the text. That is how a pty-mode upload
- * gets the same vision semantics as sdk mode, and it needs no Read tool. But
- * it fires once per distinct file, so staging a second copy of a picture the
- * caller had already saved attached the same image twice: double the image
- * tokens, and a note left reading "Saved at:" with nothing after it.
+ * chip and takes the path back out of the text. That is how an upload reaches
+ * the model as an image, and it needs no Read tool. But it fires once per
+ * distinct file, so staging a second copy of a picture the caller had already
+ * saved attached the same image twice: double the image tokens, and a note
+ * left reading "Saved at:" with nothing after it.
  *
  * So an image the caller already wrote to disk and named in the prompt needs
  * nothing from us. Only an attachment with no on-disk copy is staged to /tmp,

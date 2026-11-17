@@ -5,7 +5,7 @@ import { taskTracker, type TaskState } from '../../src/telegram/task-tracker.js'
 const SESSION_KEY = 'staleness-test';
 const STALE_AFTER_MS = 15 * 60 * 1000;
 
-/** A running task whose last SDK event landed `silentMs` ago. */
+/** A running task last heard from `silentMs` ago. */
 function task(overrides: Partial<TaskState> = {}, silentMs = 0): TaskState {
   const now = Date.now();
   return {
@@ -13,7 +13,6 @@ function task(overrides: Partial<TaskState> = {}, silentMs = 0): TaskState {
     description: 'do a thing',
     status: 'running',
     isBackgrounded: true,
-    skipTranscript: false,
     startedAt: now - silentMs,
     lastActivityAt: now - silentMs,
     ...overrides,
@@ -91,20 +90,15 @@ describe('task rendering as entities', () => {
     expect(covered(message, 'italic')).toContain('Tap a number to view details.');
   });
 
-  it('renders the detail view with bold labels, code values and a quoted summary', () => {
+  it('renders the detail view with bold labels and code values', () => {
     const { message } = _renderTaskDetail(
-      task({
-        description: 'deploy_v2 (prod)',
-        taskType: 'local_bash',
-        lastProgress: { lastToolName: 'Bash', summary: 'step 1. done!' },
-      } as Partial<TaskState>),
+      task({ description: 'deploy_v2 (prod)', taskType: 'local_bash' }),
     );
     expect(message.text).toMatch(/^💻 Shell: deploy_v2 \(prod\)\n\n• Status: running/);
     expect(covered(message, 'bold')).toEqual(
-      expect.arrayContaining(['deploy_v2 (prod)', 'Status:', 'Type:', 'Last tool:', 'Latest progress:']),
+      expect.arrayContaining(['deploy_v2 (prod)', 'Status:', 'Type:']),
     );
-    expect(covered(message, 'code')).toEqual(['local_bash', 'Bash']);
-    expect(covered(message, 'blockquote')).toEqual(['step 1. done!']);
+    expect(covered(message, 'code')).toEqual(['local_bash']);
   });
 });
 
@@ -112,50 +106,26 @@ describe('lastActivityAt wiring', () => {
   beforeEach(() => taskTracker.clear(SESSION_KEY));
 
   it('is set when a task starts', () => {
-    const state = taskTracker.handleEvent(SESSION_KEY, {
-      type: 'started',
+    const state = taskTracker.start(SESSION_KEY, {
       taskId: 't1',
       description: 'agent',
       taskType: 'local_agent',
     });
-    expect(state?.lastActivityAt).toBeGreaterThan(0);
-    expect(_isPossiblyStale(state!)).toBe(false);
+    expect(state.lastActivityAt).toBeGreaterThan(0);
+    expect(_isPossiblyStale(state)).toBe(false);
   });
 
   // The whole point: a task that keeps reporting must never be flagged.
-  it('is refreshed by a progress event, clearing staleness', () => {
-    const started = taskTracker.handleEvent(SESSION_KEY, {
-      type: 'started',
+  it('is refreshed by an update, clearing staleness', () => {
+    const started = taskTracker.start(SESSION_KEY, {
       taskId: 't2',
       description: 'agent',
       taskType: 'local_agent',
-    })!;
+    });
     started.lastActivityAt = Date.now() - (STALE_AFTER_MS + 60_000);
     expect(_isPossiblyStale(started)).toBe(true);
 
-    const after = taskTracker.handleEvent(SESSION_KEY, {
-      type: 'progress',
-      taskId: 't2',
-      description: 'still working',
-      lastToolName: 'Bash',
-    })!;
-    expect(_isPossiblyStale(after)).toBe(false);
-  });
-
-  it('is refreshed by a status update', () => {
-    const started = taskTracker.handleEvent(SESSION_KEY, {
-      type: 'started',
-      taskId: 't3',
-      description: 'agent',
-      taskType: 'local_agent',
-    })!;
-    started.lastActivityAt = Date.now() - (STALE_AFTER_MS + 60_000);
-
-    const after = taskTracker.handleEvent(SESSION_KEY, {
-      type: 'updated',
-      taskId: 't3',
-      status: 'running',
-    })!;
-    expect(_isPossiblyStale(after)).toBe(false);
+    taskTracker.noteUpdate(SESSION_KEY, 't2', 'still working');
+    expect(_isPossiblyStale(taskTracker.getTask(SESSION_KEY, 't2')!)).toBe(false);
   });
 });

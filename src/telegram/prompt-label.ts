@@ -1,5 +1,5 @@
 /**
- * A prompt as TeleCoder shows it back: in /prompts, /recap and /handoff, on
+ * A prompt as TeleCoder shows it back: in /prompts and /recap, on
  * the branches /tree draws, in the status line under an answer, and at the
  * bottom of the live action log.
  *

@@ -17,10 +17,9 @@ import { sanitizeError } from '../utils/sanitize.js';
  * (destructive bash patterns, force-pushes, DROP TABLE, etc.) trigger a Telegram
  * approval prompt before executing. On approve, the hook returns the allow
  * marker and claude proceeds; on deny or timeout, claude sees a tool-blocked
- * error. The PTY transport's hook returns the markers (consumed by the shell
- * wrapper in pty-spawn-config.ts, which blocks on anything else too); the SDK
- * transport's (sdk-permission-gate.ts) a deny decision. Both go through
- * gateToolCall.
+ * error. The markers are consumed by the shell wrapper in
+ * pty-spawn-config.ts, which blocks on anything else too. The hook's handler
+ * goes through gateToolCall.
  *
  * A message that starts with `!` is a command too, but not a tool call: Claude
  * Code runs it in shell mode and raises no hook for it. Those come here before
@@ -256,9 +255,7 @@ export async function evaluateToolCall(req: GateRequest): Promise<GateDecision> 
 }
 
 /**
- * The gate as a transport's PreToolUse hook calls it: the PTY's IPC handler
- * and the SDK's in-process hook both go through here, so the two can't drift
- * apart in what they check or how they fail.
+ * The gate as the PreToolUse hook's IPC handler calls it.
  *
  * Fails closed. A gate that let a call through because it broke while judging
  * it would be no gate on exactly the calls it exists for.

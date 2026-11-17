@@ -311,7 +311,7 @@ function buildStatusLine(
   if (usage) {
     if (usage.model) {
       const shortened = shortenModelName(usage.model);
-      // The SDK alias doesn't reflect CCR's actual backend; tag accordingly.
+      // The alias doesn't reflect CCR's actual backend; tag accordingly.
       // A premium model swaps the robot for a badge, so it stands out of the
       // row rather than reading as one more stat.
       if (provider === 'ccr') stats.push(`🤖 ${shortened} · CCR`);
@@ -330,8 +330,8 @@ function buildStatusLine(
   }
 
   // Activity counters — only rendered when non-zero so quiet turns stay quiet.
-  // Tasks/monitors come from the SDK-side tracker; bg shells from the PTY
-  // session's /proc children, so the count auto-falls-back to 0 in SDK mode.
+  // Tasks/monitors come from the task tracker; bg shells from the pty's
+  // /proc children, so that count is left out when no pty is live.
   if (sessionKey) {
     const bg = taskTracker.getBackgroundedTasks(sessionKey);
     const monitorCount = bg.filter((t) => t.taskType === 'monitor_mcp').length;

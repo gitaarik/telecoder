@@ -9,10 +9,9 @@
  *          /plugin install frontend-design@claude-plugins-official
  *
  * These tips are bundled into the CLI (with client-side relevance + per-session
- * cooldown logic) and never surface through the SDK event stream — they exist
- * only in the live render. In PTY mode we already feed that render into an
- * @xterm/headless buffer, so we can pull the tip back out and mirror it in the
- * Telegram status indicator, exactly as Claude Code shows it.
+ * cooldown logic) and exist only in the live render. We already feed that
+ * render into an @xterm/headless buffer, so we can pull the tip back out and
+ * mirror it in the Telegram status indicator, exactly as Claude Code shows it.
  *
  * Detection: the spinner tip is rendered with a `⎿` tree connector preceding
  * `Tip:`. That connector is the discriminator that distinguishes it from the

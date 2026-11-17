@@ -3,8 +3,6 @@
  * conversation can't go on in its own session — a provider switch, or a
  * /resume of a session another backend wrote — and the next turn has to start
  * a fresh one. It carries no thinking blocks, so any backend can take it.
- *
- * Its own module so both the SDK agent and the PTY provider can take from it.
  */
 
 import { BoundedMap } from '../utils/bounded-map.js';

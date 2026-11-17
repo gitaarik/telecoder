@@ -368,6 +368,11 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Fixed
 
+- **The `/` menu and `/verbosity` no longer speak of a second transport.**
+  `/shells` was listed as "(PTY mode)" and the debug tier as reserved for
+  "SDK internals", from when a chat could run on the Agent SDK instead of in
+  a pty. Every chat runs in a pty now, so both are gone.
+
 - **The "Context Compacted" notice no longer suggests `/handoff`.** The
   command was removed, but the notice sent when Claude Code compacts a
   conversation by itself still ended with a tip to run it first.

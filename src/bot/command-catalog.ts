@@ -71,7 +71,7 @@ export function buildCommandMenu(): CommandMenuEntry[] {
     { command: 'later', description: '🔔 Set an idea aside for after the turn' },
     { command: 'steer', description: '⚡ Stop the turn and send this instead' },
     { command: 'tasks', description: '🔄 List active background tasks' },
-    { command: 'shells', description: '🔍 List & kill background shells (PTY mode)' },
+    { command: 'shells', description: '🔍 List & kill background shells' },
     ...(config.CCR_ENABLED ? [{ command: 'ccr', description: '🔌 Switch between Claude and CCR (alt providers)' }] : []),
     { command: 'mode', description: '🔐 How much Claude asks before acting' },
     { command: 'autoapprove', description: '⚡ Approve guarded commands for a while' },
@@ -208,7 +208,7 @@ export function searchCommands(
   const terms = plainWords(query.replace(/^\//, ''));
   if (terms.length === 0) return [];
   // Spelling tolerance is for when nothing matches as typed; next to a real
-  // match it only adds noise (`model` would drag in `mode` and "PTY mode").
+  // match it only adds noise (`model` would drag in `mode`).
   return rank(terms, entries, false) ?? rank(terms, entries, true) ?? [];
 }
 

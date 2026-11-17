@@ -113,7 +113,7 @@ export function resolveSendablePath(
   return inTmp.ok ? inTmp : { ...inTmp, root };
 }
 
-/** What the tool tells claude for each refusal; the shared wording for both transports. */
+/** What the tool tells claude for each refusal. */
 export function sendableRefusalMessage(reason: ShareableRefusal, raw: string, root: string): string {
   const shown = path.basename(raw.trim()) || raw.trim();
   switch (reason) {

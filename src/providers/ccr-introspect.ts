@@ -145,7 +145,7 @@ function parseRoute(spec: string | undefined): { provider: string; model: string
  *
  * Returns undefined when neither source is available (CCR down, logs off,
  * unreachable proxy). Callers should treat undefined as "show CCR tag but
- * keep the SDK alias as the model name".
+ * keep the alias as the model name".
  */
 export async function getCcrRoute(): Promise<CcrRoute | undefined> {
   const fromLog = getLastCcrRouteFromLog();

@@ -2,7 +2,7 @@
  * /tasks and /shells — inspecting what the agent is running.
  *
  * Grouped because both are read-only views over live process state with the
- * same list/detail inline-keyboard shape: /tasks over the SDK task tracker,
+ * same list/detail inline-keyboard shape: /tasks over the task tracker,
  * /shells over the pty's real child processes.
  */
 
@@ -29,7 +29,7 @@ import {
 import { getSessionKeyFromCtx } from '../../../utils/session-key.js';
 
 // ---------------------------------------------------------------------------
-// /tasks — list and inspect SDK background tasks
+// /tasks — list and inspect background tasks
 // ---------------------------------------------------------------------------
 
 interface TaskGroup {
@@ -77,7 +77,7 @@ function formatDuration(ms: number): string {
 }
 
 function formatTaskElapsed(task: TaskState): string {
-  return formatDuration((task.endedAt ?? Date.now()) - task.startedAt);
+  return formatDuration(Date.now() - task.startedAt);
 }
 
 function formatTaskSilence(task: TaskState): string {
@@ -85,10 +85,10 @@ function formatTaskSilence(task: TaskState): string {
 }
 
 /**
- * How long a task may go without any SDK event before /tasks flags it as
- * probably-finished. A completion `notification` removes the entry outright,
- * so an entry still listed after a long silence usually means that event
- * never arrived (restart mid-task, dropped notification).
+ * How long a task may go unheard from before /tasks flags it as
+ * probably-finished. The notification that ends a task removes the entry
+ * outright, so an entry still listed after a long silence usually means that
+ * notification never arrived (restart mid-task, dropped notification).
  *
  * Deliberately generous: this only annotates, never hides, but a false
  * positive on a slow-but-live agent is still noise.
@@ -113,7 +113,7 @@ function getActiveTasks(sessionKey: string): TaskState[] {
 
 function renderTasksList(sessionKey: string, tasks: TaskState[]): { message: EntityMessage; keyboard: { text: string; callback_data: string }[][] } {
   if (tasks.length === 0) {
-    // Cross-pointer: a `Bash(run_in_background=true)` shell can outlive its SDK
+    // Cross-pointer: a `Bash(run_in_background=true)` shell can outlive its
     // task entry (npm release scripts, deploys), so the statusline's 🔍 counter
     // may show > 0 while /tasks is empty. Surface that here so users know
     // where to look next.
@@ -189,8 +189,8 @@ function renderTasksList(sessionKey: string, tasks: TaskState[]): { message: Ent
 
 /**
  * `canShowOutput`: there is a live pty to ask, so the detail offers the task's
- * output (see "📄 Output" below). Without one — SDK mode — the output only
- * exists in the completion event, which the relay posts when it lands.
+ * output (see "📄 Output" below). Without one, the output only arrives with
+ * the task's notification, which the relay posts when it lands.
  */
 function renderTaskDetail(task: TaskState, canShowOutput = false): { message: EntityMessage; keyboard: { text: string; callback_data: string }[][] } {
   const groupHint = (() => {
@@ -217,22 +217,6 @@ function renderTaskDetail(task: TaskState, canShowOutput = false): { message: En
   }
   if (task.taskType) {
     field('Type').code(task.taskType);
-  }
-  if (task.lastProgress?.lastToolName) {
-    field('Last tool').code(task.lastProgress.lastToolName);
-  }
-  if (task.lastProgress?.usage) {
-    const u = task.lastProgress.usage;
-    field('Tokens').add(`${u.totalTokens} · `).bold('Tool uses:').add(` ${u.toolUses}`);
-  }
-  if (task.lastProgress?.summary) {
-    const summary = task.lastProgress.summary.length > 300
-      ? task.lastProgress.summary.substring(0, 297) + '...'
-      : task.lastProgress.summary;
-    b.newline(2).bold('Latest progress:').newline().quote(summary);
-  }
-  if (task.error) {
-    b.newline(2).add(`⚠️ ${task.error}`);
   }
   if (!canShowOutput && task.taskType !== 'monitor_mcp') {
     b.newline(2).italic('Its output arrives with the result when it finishes.');
@@ -394,9 +378,6 @@ export const _renderClaudeDetail = renderClaudeDetail;
  * and Enter on a row shows the task's output. So "Ask claude" relays the list
  * with a button per row, and "📄 Output" on a tracked task finds its row and
  * opens it.
- *
- * PTY-only — there is no TUI to drive in SDK mode, where the tracker is fed
- * from the event stream and is already authoritative.
  */
 
 type ClaudeView =
@@ -632,7 +613,7 @@ async function handleAskClaude(ctx: Context, sessionKey: string): Promise<void> 
 
 // ── /shells ─────────────────────────────────────────────────────
 // List OS-level child processes of the chat's PTY claude session and offer
-// a one-tap SIGTERM. Complements /tasks (which only sees SDK-tracked tasks)
+// a one-tap SIGTERM. Complements /tasks (which only sees tracked tasks)
 // and rescues `Bash(run_in_background=true)` shells whose stop condition
 // will never fire.
 

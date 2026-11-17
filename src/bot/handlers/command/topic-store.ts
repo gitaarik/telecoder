@@ -6,12 +6,10 @@
  * switches, /clear, and resume all touch it. It shows in the status line and
  * names the thread; the bot's display name is static (see `/botname`).
  *
- * This module is deliberately kept below the provider layer: `agent.ts` and
- * `mcp-tools.ts` both need to read and set the topic, and importing it from
- * the command barrel closed an import cycle (barrel -> command/shared.ts ->
- * claude-provider -> sdk-provider -> agent -> back to the barrel). Nothing
- * here may import `./shared.js` or anything under `providers/`. The /topic
- * *command* lives in `topic.ts`, which is free to.
+ * This module is deliberately kept below the provider layer, so that code
+ * under it can read and set the topic without closing an import cycle through
+ * the command barrel. Nothing here may import `./shared.js` or anything under
+ * `providers/`. The /topic *command* lives in `topic.ts`, which is free to.
  */
 
 import * as path from 'path';

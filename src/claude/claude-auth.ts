@@ -1,16 +1,12 @@
 /**
  * Recognising "Claude Code isn't logged in", and saying so in the chat.
  *
- * On a machine where nobody has signed in, the bundled CLI answers every
- * prompt with `Not logged in · Please run /login`. Over the SDK that arrives as
- * an error result, and the query then throws "Claude Code returned an error
- * result: Not logged in · Please run /login" — which reached the chat as
- * `❌ Error: Claude error: Claude Code returned an error result: …`, telling the
- * person on their phone to run a command they can't. Over the PTY a fresh
- * install never gets that far: the interactive CLI opens its first-run
- * onboarding (theme picker, then "Select login method"), which is no place to
- * relay to a chat — signing in wants a browser on, or a terminal at, the bot's
- * machine.
+ * On a machine where nobody has signed in, the CLI answers every prompt with
+ * `Not logged in · Please run /login`, which relayed as it is tells the person
+ * on their phone to run a command they can't. A fresh install doesn't even
+ * get that far: the interactive CLI opens its first-run onboarding (theme
+ * picker, then "Select login method"), which is no place to relay to a chat —
+ * signing in wants a browser on, or a terminal at, the bot's machine.
  *
  * Kept free of config imports so tests can call it directly.
  */

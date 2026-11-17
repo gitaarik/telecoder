@@ -113,7 +113,7 @@ describe('sessionHasWork', () => {
 
   it('is true while a background task is still running', () => {
     expect(sessionHasWork(KEY, 4242)).toBe(false);
-    taskTracker.handleEvent(KEY, { type: 'started', taskId: 't1', description: 'watch logs', taskType: 'local_bash', isBackgrounded: true });
+    taskTracker.start(KEY, { taskId: 't1', description: 'watch logs', taskType: 'local_bash', isBackgrounded: true });
     expect(sessionHasWork(KEY, 4242)).toBe(true);
   });
 });

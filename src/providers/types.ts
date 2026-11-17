@@ -36,7 +36,6 @@ export interface AgentResponse {
   toolsUsed: string[];
   usage?: AgentUsage;
   compaction?: { trigger: 'manual' | 'auto'; preTokens: number };
-  sessionInit?: { model: string; sessionId: string };
   /**
    * Speculative next-prompt suggestion scraped from claude's TUI ghost text
    * at end-of-turn. Only populated when the chat has /suggestions enabled
@@ -60,77 +59,6 @@ export interface ImageAttachment {
   path?: string;
 }
 
-/**
- * 'paused' arrives on task_updated since agent SDK 0.3. A paused task isn't in
- * flight — the SDK's own definition of in-flight work is running/pending — so
- * the checks that count live tasks leave it out until it reports running again.
- */
-export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'killed' | 'stopped' | 'paused';
-
-export interface TaskUsage {
-  totalTokens: number;
-  toolUses: number;
-  durationMs: number;
-}
-
-export interface TaskStartedEvent {
-  type: 'started';
-  taskId: string;
-  description: string;
-  /**
-   * For a backgrounded shell, the command it runs. The description is what
-   * the model called it; claude's own `/tasks` list shows the command, so
-   * this is what finds the task's row there.
-   */
-  command?: string;
-  toolUseId?: string;
-  taskType?: string;
-  workflowName?: string;
-  skipTranscript?: boolean;
-  /**
-   * True when the launching tool input had `run_in_background: true`.
-   * Tasks born backgrounded never emit a task_updated patch for this field,
-   * so we have to derive it at task_started time.
-   */
-  isBackgrounded?: boolean;
-  /**
-   * When the task began, for one already running before it was reported: a
-   * Bash call claude moved to the background had been running in the
-   * foreground until then. Defaults to the time of the event.
-   */
-  startedAt?: number;
-}
-
-export interface TaskProgressEvent {
-  type: 'progress';
-  taskId: string;
-  description: string;
-  lastToolName?: string;
-  summary?: string;
-  usage?: TaskUsage;
-}
-
-export interface TaskUpdatedEvent {
-  type: 'updated';
-  taskId: string;
-  status?: TaskStatus;
-  description?: string;
-  isBackgrounded?: boolean;
-  error?: string;
-  endTime?: number;
-}
-
-export interface TaskNotificationEvent {
-  type: 'notification';
-  taskId: string;
-  status: 'completed' | 'failed' | 'stopped';
-  outputFile: string;
-  summary: string;
-  usage?: TaskUsage;
-}
-
-export type TaskEvent = TaskStartedEvent | TaskProgressEvent | TaskUpdatedEvent | TaskNotificationEvent;
-
 export interface ToolResultEvent {
   toolUseId: string;
   /** Tool name (e.g. "Bash", "Read") if known from the matching tool_use block. */
@@ -139,7 +67,7 @@ export interface ToolResultEvent {
   input?: Record<string, unknown>;
   /** Best-effort string extraction of the tool result content. */
   content: string;
-  /** True when the SDK marked the result as an error. */
+  /** True when the tool call failed. */
   isError: boolean;
 }
 
@@ -161,28 +89,15 @@ export interface EditDiffEvent {
 export interface AgentOptions {
   onProgress?: (text: string) => void;
   /**
-   * Called when Claude Code's live spinner tip changes (PTY mode only). The
-   * tip text is scraped from the rendered TUI and mirrored under the Telegram
-   * status indicator; null clears it when no tip is on screen. SDK-backed
-   * providers don't render a TUI, so they never invoke this.
+   * Called when Claude Code's live spinner tip changes. The tip text is
+   * scraped from the rendered TUI and mirrored under the Telegram status
+   * indicator; null clears it when no tip is on screen.
    */
   onTip?: (tip: string | null) => void;
   onToolStart?: (toolName: string, input?: Record<string, unknown>) => void;
   onToolEnd?: () => void;
-  /** Lifecycle events for SDK background tasks (task_started/progress/updated/notification) */
-  onTaskEvent?: (event: TaskEvent) => void | Promise<void>;
   /**
-   * Called when the model produces text in an SDK-driven sub-turn while
-   * a backgrounded task was launched in this query (e.g. Monitor event
-   * echoes, post-task_notification commentary). The bot surfaces this as
-   * a separate Telegram message instead of editing it into the main
-   * streaming bubble — otherwise post-stream commentary would land at
-   * the top of the chat (overwriting the user-facing reply) instead of
-   * chronologically at the bottom.
-   */
-  onSubTurnResponse?: (text: string) => void | Promise<void>;
-  /**
-   * Called when the SDK reports a tool_result for a tool the agent just used.
+   * Called with the result of a tool the agent just used.
    * The bot surfaces a truncated preview when verbosity is verbose or higher.
    */
   onToolResult?: (event: ToolResultEvent) => void | Promise<void>;

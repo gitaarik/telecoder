@@ -93,14 +93,19 @@ describe('fork button anchor', () => {
     const chat = fakeChat(302);
     await sender.startStreaming(chat.ctx, 'hi');
     vi.advanceTimersByTime(2000);
-    // A sub-agent's reply, posted as the turn runs: the bubble becomes a
-    // pointer and the reply is sent again under it.
-    await sender.postSubTurnResponse(chat.ctx, 'What the sub-agent found.');
+    // A tool's output, posted as the turn runs: the bubble becomes a pointer
+    // and the reply is sent again under it.
+    await sender.postToolResult(
+      chat.ctx,
+      { toolUseId: 'toolu_1', toolName: 'Bash', content: 'ok', isError: false },
+      20,
+      2000,
+    );
 
     await sender.finishStreaming(chat.ctx, TWO_PARTS);
 
     const ids = await chat.posted();
-    expect(ids).toHaveLength(4); // bubble, sub-agent reply, two parts
+    expect(ids).toHaveLength(4); // bubble, tool output, two parts
     expect(chat.forkButtonsOn()).toEqual([ids[3]]);
   });
 

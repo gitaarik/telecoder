@@ -296,7 +296,7 @@ function pasteLineCount(prompt: string): number {
 
 /**
  * Idle + prompt-visible safety net for prompts that produce no JSONL activity.
- * Most prompts (model turns, /compact, /clear, /handoff, …) write at least one
+ * Most prompts (model turns, /compact, /clear, …) write at least one
  * record to the session log, so the JSONL-mtime gate resolves them cleanly.
  * Slash commands like /cost or /config emit purely TUI output without touching
  * the log; without this fallback those would hang until MAX_TURN_MS. 5s of
@@ -519,8 +519,8 @@ export class PtyProvider implements Provider {
   private closing = false;
   /**
    * Last-known usage per sessionKey, refreshed at end-of-turn from claude's
-   * on-disk JSONL log. Surfaced via getCachedUsage so the status line and
-   * per-turn usage chips light up the same as SDK mode.
+   * on-disk JSONL log. Surfaced via getCachedUsage for the status line and
+   * the usage footer.
    */
   private usageCache = new Map<string, AgentUsage>();
 
@@ -1252,10 +1252,10 @@ export class PtyProvider implements Provider {
       '--append-system-prompt', buildPtySystemPromptNote(),
       // Hard-disable claude's built-in AskUserQuestion. The headless xterm has
       // no real user to type a response, so an AskUserQuestion call freezes
-      // the turn until MAX_TURN_MS fires (~30 min). The system-prompt note
-      // already steers claude toward telecoder_ask_user, but the model still
-      // reaches for the built-in sometimes mid-turn — a hard deny forces it
-      // to the MCP variant (or plain text).
+      // the turn until MAX_TURN_MS fires (two hours by default). The
+      // system-prompt note already steers claude toward telecoder_ask_user,
+      // but the model still reaches for the built-in sometimes mid-turn — a
+      // hard deny forces it to the MCP variant (or plain text).
       //
       // CronCreate / ScheduleWakeup / RemoteTrigger are also blocked: their
       // fires land outside our session (cron in PTY mode, RemoteTrigger on
@@ -1438,7 +1438,7 @@ export class PtyProvider implements Provider {
     // we just wait for a brief settle. Otherwise fall back to the idle path:
     // pty quiet for IDLE_MS, the input prompt is back on screen, AND claude
     // has either written something to the JSONL log since we submitted
-    // (model turns, /compact, /handoff, /clear all do) or we've waited
+    // (model turns, /compact, /clear all do) or we've waited
     // NO_JSONL_FALLBACK_MS to cover purely-TUI slash commands like /cost.
     // The JSONL-mtime gate replaces an older bullet-count check that hung
     // indefinitely on /compact because compaction renders no `●` glyph.
@@ -2332,9 +2332,7 @@ export class PtyProvider implements Provider {
   }
 
   async getAvailableModels(_scope: SettingsScope): Promise<ModelInfo[]> {
-    // The aliases CLAUDE_BIN accepts for --model, minus any it predates. SDK
-    // mode asks the same question of its own binary, so the two lists agree
-    // whenever both point at the same install.
+    // The aliases CLAUDE_BIN accepts for --model, minus any it predates.
     return getModelsForBinary(CLAUDE_BIN);
   }
 }
@@ -2342,9 +2340,9 @@ export class PtyProvider implements Provider {
 // ---- Hook → AgentOptions callback bridge ------------------------------------
 //
 // The handlers below run inside the IPC server when claude-spawned hook curls
-// reach us. They translate hook payloads into the SDK-shaped callbacks the bot
-// already implements (onToolStart / onToolEnd / onToolResult / onEditDiff), so
-// PTY mode lights up the same verbose UI as SDK mode.
+// reach us. They translate hook payloads into the callbacks the bot
+// implements (onToolStart / onToolEnd / onToolResult / onEditDiff), which
+// drive the verbose UI.
 //
 // Callbacks are fire-and-forget — the hook command blocks claude until the
 // HTTP POST returns, so we ack fast and let the bot's Telegram calls run on
@@ -2372,15 +2370,15 @@ function fireAndForget(label: string, fn: (() => Promise<unknown> | unknown) | u
 /**
  * Pick the model-facing string out of a hook payload's `tool_response`.
  *
- * SDK mode delivers tool results as the *serialized* form the model sees
- * (Read → just the file content, Bash → stdout+stderr text). Hook payloads
- * instead give us claude's internal structured object:
+ * The model sees a tool result in its *serialized* form (Read → just the file
+ * content, Bash → stdout+stderr text). Hook payloads instead give us claude's
+ * internal structured object:
  *   Read → { type: 'text', file: { filePath, content } }
  *   Bash → { stdout, stderr, exit_code, … }
  *
- * We unwrap the common shapes so PTY mode renders tool results the same way
- * SDK mode does. Unknown shapes fall back to a JSON dump — better than
- * nothing for diagnostics, even if it's ugly.
+ * We unwrap the common shapes so the chat shows what the model saw. Unknown
+ * shapes fall back to a JSON dump — better than nothing for diagnostics, even
+ * if it's ugly.
  */
 /**
  * Join an MCP-style content array (`[{type:'text',text:'...'}, ...]`) into a
@@ -2545,8 +2543,7 @@ registerIpcHandler('/hook/preToolUse', async (turn, body) => {
   // tools matching a dangerous pattern, blocks the call and waits for Telegram
   // approval. Decision returned as a marker string the shell wrapper parses:
   // the deny marker exits 2 (claude code's "block this tool" signal), the
-  // allow marker exits 0, and anything else blocks too. gateToolCall is shared
-  // with the SDK transport's hook (sdk-permission-gate.ts).
+  // allow marker exits 0, and anything else blocks too.
   if (isPermissionGateEnabled()) {
     const ctx = (turn.options as { telegramCtx?: Context }).telegramCtx;
     const decision = await gateToolCall({

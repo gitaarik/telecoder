@@ -11,7 +11,6 @@ function task(overrides: Partial<TaskState> = {}): TaskState {
     description: 'Count slowly',
     status: 'running',
     isBackgrounded: true,
-    skipTranscript: false,
     startedAt: Date.now(),
     lastActivityAt: Date.now(),
     taskType: 'local_bash',

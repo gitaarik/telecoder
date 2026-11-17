@@ -42,7 +42,7 @@ export const VERBOSITY_INFO: VerbosityLevelInfo[] = [
   {
     id: 'debug',
     label: '🐛 Debug',
-    description: 'Verbose mode with extended limits: longer tool result previews (40 lines) and diffs (50 lines) in the consolidated action log. The log stays in the chat at the end of the turn. Reserved for upcoming thinking blocks, hook events, and SDK internals.',
+    description: 'Verbose mode with extended limits: longer tool result previews (40 lines) and diffs (50 lines) in the consolidated action log. The log stays in the chat at the end of the turn. Reserved for upcoming thinking blocks and hook events.',
   },
 ];
 
@@ -53,7 +53,7 @@ export const VERBOSITY_INFO: VerbosityLevelInfo[] = [
 export interface VerbosityFlags {
   /** Show the per-turn "🟢 [████░░] 30% context · 5k/200k · 12 turns" footer, at the bottom of the status line when that's on. */
   showUsageFooter: boolean;
-  /** Send the "⚠️ Context Compacted" and "🔄 New Agent Session" notices. */
+  /** Send the "⚠️ Context Compacted" notice. */
   notifyCompaction: boolean;
   /** Render full untruncated tool inputs (paths, commands) in the status bubble. */
   fullToolInputs: boolean;

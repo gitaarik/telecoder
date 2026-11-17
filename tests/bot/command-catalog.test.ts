@@ -13,7 +13,7 @@ import {
 const menu: CommandMenuEntry[] = [
   { command: 'status', description: '📊 Show current session status' },
   { command: 'tasks', description: '🔄 List active background tasks' },
-  { command: 'shells', description: '🔍 List & kill background shells (PTY mode)' },
+  { command: 'shells', description: '🔍 List & kill background shells' },
   { command: 'schedule', description: '🔔 Schedule a recurring prompt (e.g. every 1h, daily 9am)' },
   { command: 'schedules', description: '🔔 List active scheduled tasks' },
   { command: 'users', description: '👥 Show who can use this bot' },
@@ -128,7 +128,7 @@ describe('messages', () => {
   it('lists the suggestions as tappable commands', () => {
     const msg = buildUnknownCommandMessage('shel', suggestCommands('shel', names, menu));
     expect(msg.text).toContain("/shel isn't a command here");
-    expect(msg.text).toContain('/shells — 🔍 List & kill background shells (PTY mode)');
+    expect(msg.text).toContain('/shells — 🔍 List & kill background shells');
   });
 
   it('says when a search finds nothing', () => {

@@ -1,5 +1,5 @@
 /**
- * Session lifecycle: /clear, /recap, /handoff, /sync and /terminal, and the
+ * Session lifecycle: /clear, /recap, /sync and /terminal, and the
  * ▶️ Continue button under a restart notice. /prompts, which branches as well
  * as lists, lives beside /tree in prompts.handler.ts.
  *

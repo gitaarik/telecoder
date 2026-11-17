@@ -248,7 +248,7 @@ export interface JsonlUsageSnapshot {
    * before CLI 2.1.316 don't.
    */
   effort: string;
-  /** Number of `type:'user'` records in the log — proxy for SDK's numTurns. */
+  /** Number of `type:'user'` records in the log. */
   numTurns: number;
 }
 
@@ -380,9 +380,9 @@ function compactionInfo(rec: Record<string, unknown>): CompactionInfo | undefine
  * Return the most recent `compact_boundary` record from a session log, or
  * undefined if the log has none. Claude Code appends one of these whenever the
  * context is compacted — manually (`/compact`) or automatically near the limit
- * — but renders no `●` glyph for it, so PTY-mode screen scraping can't see that
- * a compaction happened. Reading it back from the JSONL lets the PTY provider
- * surface the same "Context Compacted" feedback the SDK path already gives.
+ * — but renders no `●` glyph for it, so screen scraping can't see that a
+ * compaction happened. Reading it back from the JSONL is how the provider
+ * knows to send the "Context Compacted" notice.
  *
  * On-disk shape (Claude Code 2.1.x):
  *   {"type":"system","subtype":"compact_boundary",

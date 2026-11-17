@@ -1,11 +1,10 @@
 /**
- * PTY-mode side questions for `/btw`.
+ * Side questions for `/btw`.
  *
- * SDK mode answers side questions through the live `Query` object's
- * `askSideQuestion()`. PTY mode has no such handle — the conversation lives
- * inside a real `claude` CLI process driven through a pseudo-terminal, and
- * typing into it mid-turn would just queue a normal prompt (i.e. interrupt the
- * task, which is exactly what `/btw` promises not to do).
+ * The conversation lives inside a real `claude` CLI process driven through a
+ * pseudo-terminal, and typing into it mid-turn would just queue a normal
+ * prompt (i.e. interrupt the task, which is exactly what `/btw` promises not
+ * to do).
  *
  * Instead we answer from a throwaway fork of the live session:
  *

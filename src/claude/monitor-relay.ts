@@ -38,9 +38,8 @@ import { config } from '../config.js';
  * State is per-sessionKey and torn down with the session. No persistence:
  * if the bot restarts, the user has to re-arm any monitors they want.
  *
- * This module is also the PTY-mode feed for `taskTracker`. The SDK path gets
- * task lifecycle from `onTaskEvent` (src/claude/agent.ts), which the PTY
- * provider never emits — so without this, /tasks and the streaming footer's
+ * This module is also what feeds `taskTracker`. Nothing else tells the bot a
+ * task started or ended — so without this, /tasks and the streaming footer's
  * 🔄/📡 counters would read "nothing running" while monitors and subagents
  * were live. The arm/terminal-notification pair already tracked here for
  * message editing is exactly that lifecycle, so it drives both.
@@ -210,8 +209,8 @@ export function setMonitorRelayBot(bot: Bot): void {
 export type AsyncToolKind = 'monitor' | 'bash_background' | 'subagent' | 'workflow';
 
 /**
- * Kind → the `taskType` string /tasks groups on. Keeps the PTY-mode buckets
- * identical to the SDK-mode ones so the command renders the same either way.
+ * Kind → the `taskType` string /tasks groups on: Claude Code's own names for
+ * the kinds of task.
  */
 const TASK_TYPE_BY_KIND: Record<AsyncToolKind, string> = {
   monitor: 'monitor_mcp',
@@ -319,8 +318,7 @@ export function onAsyncToolArmed(
       description,
       startedAt,
     });
-    taskTracker.handleEvent(sessionKey, {
-      type: 'started',
+    taskTracker.start(sessionKey, {
       taskId: toolUseId,
       toolUseId,
       description,
@@ -476,9 +474,9 @@ export function teardown(sessionKey: string): void {
   void sendReply(state);
   states.delete(sessionKey);
   clearCard(sessionKey);
-  // This relay owns the PTY-side tracker entries, and teardown is PTY-only
-  // (_cleanupSession is its sole caller). Drop them with the session so a
-  // respawned one doesn't inherit tasks that died with the old process.
+  // This relay owns the tracker entries (_cleanupSession is teardown's sole
+  // caller). Drop them with the session so a respawned one doesn't inherit
+  // tasks that died with the old process.
   taskTracker.clear(sessionKey);
 }
 
@@ -730,9 +728,9 @@ function handleTerminalNotification(
   const armed = state.armedTasks.get(notif.toolUseId);
   if (!armed) return false;
   state.armedTasks.delete(notif.toolUseId);
-  // Retire the tracker entry before any chat I/O, mirroring the SDK path's
-  // remove-after-notification. /tasks filters to running/pending, so dropping
-  // it outright is equivalent to recording a terminal status.
+  // Retire the tracker entry before any chat I/O. /tasks filters to
+  // running/pending, so dropping it outright is equivalent to recording a
+  // terminal status.
   taskTracker.remove(state.sessionKey, notif.toolUseId);
 
   const elapsedMs = Date.now() - armed.startedAt;

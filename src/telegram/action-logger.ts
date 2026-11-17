@@ -21,9 +21,7 @@ import { GrammyError, type Api, type Context } from 'grammy';
 import { EntityText, type EntityMessage } from './entities.js';
 import { promptLabel, cutLabel } from './prompt-label.js';
 import { getToolIcon, extractToolDetail, elideToolOutput, stripAnsi } from './terminal-renderer.js';
-import { editFormatted } from './send.js';
 import type { ToolResultEvent, EditDiffEvent } from '../providers/types.js';
-import type { TaskState } from './task-tracker.js';
 import { getSessionKeyFromCtx } from '../utils/session-key.js';
 
 // Constants
@@ -76,7 +74,7 @@ function liveLogPrompt(prompt: string): string | undefined {
 export interface ActionEntry {
   id: string;
   timestamp: number;
-  type: 'tool_result' | 'edit_diff' | 'monitor_event' | 'task_completion';
+  type: 'tool_result' | 'edit_diff';
   icon: string;
   title: string;
   /** Optional subtitle line rendered between title and content (e.g. `$ ls -la`). Not truncated by the per-entry content cap. */
@@ -262,83 +260,6 @@ export class ActionLogger {
       title: `${event.toolName} ${fileLabel}`,
       content: lines.join('\n'),
       status: 'completed'
-    };
-
-    state.entries.push(entry);
-    await this.requestDraw(state);
-  }
-
-  /**
-   * Add a monitor event to the action log
-   */
-  async addMonitorEvent(
-    sessionKey: string,
-    task: TaskState,
-    eventText: string
-  ): Promise<void> {
-    const state = this.logStates.get(sessionKey);
-    if (!state || task.skipTranscript) return;
-
-    const cleaned = stripAnsi(eventText);
-    const truncated = cleaned.length > 500
-      ? cleaned.substring(0, 497) + '...'
-      : cleaned;
-
-    const entry: ActionEntry = {
-      id: `monitor-${Date.now()}-${Math.random()}`,
-      timestamp: Date.now(),
-      type: 'monitor_event',
-      icon: '📡',
-      title: 'Monitor event',
-      content: truncated,
-      status: 'completed'
-    };
-
-    state.entries.push(entry);
-    await this.requestDraw(state);
-  }
-
-  /**
-   * Add a task completion to the action log
-   */
-  async addTaskCompletion(
-    sessionKey: string,
-    task: TaskState
-  ): Promise<void> {
-    const state = this.logStates.get(sessionKey);
-    if (!state || task.skipTranscript || !task.isBackgrounded) return;
-
-    const isMonitor = task.taskType === 'monitor_mcp';
-    const statusIcon = task.status === 'completed'
-      ? (isMonitor ? '📡' : '✅')
-      : task.status === 'stopped' ? '🛑' : '❌';
-
-    const verb = task.status === 'completed'
-      ? (isMonitor ? 'stream ended' : 'completed')
-      : task.status === 'stopped' ? 'stopped' : 'failed';
-
-    const elapsedMs = (task.endedAt ?? Date.now()) - task.startedAt;
-    const seconds = Math.round(elapsedMs / 1000);
-    const duration = seconds >= 60
-      ? `${Math.floor(seconds / 60)}m ${seconds % 60}s`
-      : `${seconds}s`;
-
-    const description = task.description.length > 100
-      ? task.description.substring(0, 97) + '...'
-      : task.description;
-
-    const title = isMonitor
-      ? `Monitor "${description}" ${verb} after ${duration}`
-      : `Background task "${description}" ${verb} in ${duration}`;
-
-    const entry: ActionEntry = {
-      id: `task-${Date.now()}-${Math.random()}`,
-      timestamp: Date.now(),
-      type: 'task_completion',
-      icon: statusIcon,
-      title,
-      content: task.error,
-      status: task.status === 'completed' ? 'completed' : 'error'
     };
 
     state.entries.push(entry);

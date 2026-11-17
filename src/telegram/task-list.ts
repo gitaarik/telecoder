@@ -5,8 +5,8 @@
  * it, TaskList and TaskGet read it. None of their inputs carries the whole list
  * (TodoWrite, which they replaced, sent the complete array on every call), so
  * the list is read from where Claude Code stores it: one JSON file per task in
- * `~/.claude/tasks/<session id>/`. That works the same for both transports, and
- * it is also what lets a restored session show the list it left off with.
+ * `~/.claude/tasks/<session id>/`. That is also what lets a restored session
+ * show the list it left off with.
  *
  * The rendering copies the CLI's own task panel (2.1.322, the component that
  * draws `N tasks (X done, Y in progress, Z open)`):
@@ -184,8 +184,8 @@ export function renderSessionTaskList(claudeSessionId: string): EntityMessage | 
 
 // After a TaskCreate/TaskUpdate starts, look at the files this long after —
 // again and again while nothing has changed, since the write lands some time
-// after the tool starts and the SDK transport's tool-end signal is not sent
-// for every call. A list that renders the same costs a directory read.
+// after the tool starts and a tool-end signal can't be counted on for every
+// call. A list that renders the same costs a directory read.
 const DIRTY_RECHECK_MS = [300, 1000, 2500, 5000];
 // A file caught mid-write is read again after this long, this many times;
 // after that it is taken to be broken for good and left out.

@@ -139,10 +139,9 @@ export type AskUserArgs =
   | { form?: undefined; question: string; options: LetteredOption[] };
 
 /**
- * Sort a call's arguments into a form or a single question — the one place
- * both transports decide, so they agree. `questions` wins when given; a
- * one-entry `questions` is just a single question. The string is the error
- * the model reads.
+ * Sort a call's arguments into a form or a single question. `questions` wins
+ * when given; a one-entry `questions` is just a single question. The string
+ * is the error the model reads.
  */
 export function resolveAskUserArgs(raw: {
   question?: unknown;

@@ -1,20 +1,18 @@
 /**
  * The permission mode a chat runs claude in.
  *
- * Claude Code's modes differ in how much it asks before acting, and until now
- * this bot had no say in it: the SDK transport hard-coded `acceptEdits` and
- * the pty spawned with `--dangerously-skip-permissions`, so every chat on
- * every project ran at whatever those two happened to be.
+ * Claude Code's modes differ in how much it asks before acting, and this bot
+ * used to have no say in it: the pty spawned with
+ * `--dangerously-skip-permissions`, so every chat on every project ran in
+ * bypass.
  *
  * The five modes below are claude's own, described in its own words from the
  * shift+tab lesson text. Only the first four are offered as choices a person
  * cycles through; bypass is here because it is what the pty has always
  * launched in, and a chat that leaves it needs a way back.
  *
- * Two names for one thing, which is the trap this table exists to close: the
- * CLI flag spells the ask-every-time mode `manual` and the SDK spells it
- * `default`, and each rejects the other's word. Anything crossing into either
- * transport goes through `cli` or `sdk` here, never through the id.
+ * `cli` is the word `--permission-mode` takes for a mode. Anything handed to
+ * the pty goes through it, never through the id.
  */
 
 import { tailLines } from './tui-state.js';

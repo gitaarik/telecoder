@@ -27,7 +27,7 @@ Total code changes:    42 lines added, 7 lines removed
 Usage by model:
     claude-opus-5:  15.0k input, 2.1k output, 1.5m cache read`;
 
-/** What the live TUI's `/cost` panel yields — PTY mode only. */
+/** What the live TUI's `/cost` panel yields. */
 const LIVE_SESSION: CostSession = {
   rows: [
     { label: 'Total cost', value: '$52.30', nested: false },

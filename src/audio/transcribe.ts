@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { config } from '../config.js';
-import { downloadFileSecure, getTelegramFileUrl } from '../utils/download.js';
 
 const GROQ_WHISPER_ENDPOINT = 'https://api.groq.com/openai/v1/audio/transcriptions';
 const GROQ_WHISPER_MODEL = 'whisper-large-v3-turbo';

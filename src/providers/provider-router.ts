@@ -23,7 +23,7 @@ function getProvider(scope: SettingsScope): Provider {
   return claudeProvider;
 }
 
-// --- Public API (identical signatures to agent.ts) ---
+// --- Public API ---
 
 /**
  * The backend a chat or thread runs on. Read straight from the preferences,
@@ -129,7 +129,7 @@ export function getCachedUsage(sessionKey: string): AgentUsage | undefined {
   return getProvider(sessionKey).getCachedUsage(sessionKey);
 }
 
-// Effort is Claude-specific; re-export directly from agent.ts
+// Effort is Claude-specific; re-exported from claude/effort-level.ts
 export { isValidEffortLevel };
 export type { EffortLevel };
 

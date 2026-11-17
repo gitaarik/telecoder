@@ -15,10 +15,10 @@ import {
   stripAnsi,
   TOOL_ICONS,
 } from './terminal-renderer.js';
-import { taskTracker, type TaskState } from './task-tracker.js';
+import { taskTracker } from './task-tracker.js';
 import { taskListDisplay } from './task-list.js';
 import { EntityText, clip, plain, type EntityMessage } from './entities.js';
-import type { TaskEvent, ToolResultEvent, EditDiffEvent } from '../providers/types.js';
+import type { ToolResultEvent, EditDiffEvent } from '../providers/types.js';
 import { getSessionKeyFromCtx, parseSessionKey } from '../utils/session-key.js';
 import { resolveVerbosityFlags } from '../utils/verbosity.js';
 import { actionLogger, type StatusSource } from './action-logger.js';
@@ -194,25 +194,6 @@ const STREAMING_INDICATOR = '✍️ Writing…';
  */
 function premiumBadge(model: string | undefined): string {
   return model ? ` · ${PREMIUM_MODEL_ICON} ${model}` : '';
-}
-const MONITOR_TASK_TYPE = 'monitor_mcp';
-
-/**
- * How a background task is named in its start line and the completion that
- * replaces it, by the SDK's task_type. The same icons as the PTY card's.
- */
-function taskKind(taskType: string | undefined): { icon: string; label: string } {
-  switch (taskType) {
-    case MONITOR_TASK_TYPE: return { icon: '📡', label: 'Monitor' };
-    case 'local_bash': return { icon: '⚙️', label: 'Command' };
-    case 'local_agent': return { icon: '🤖', label: 'Subagent' };
-    case 'local_workflow': return { icon: '📋', label: 'Workflow' };
-    default: return { icon: '⚙️', label: 'Task' };
-  }
-}
-
-function shortDescription(description: string): string {
-  return description.length > 100 ? description.substring(0, 97) + '...' : description;
 }
 
 // `mcp__telecoder-tools__telecoder_send_file` → `telecoder_send_file`
@@ -609,84 +590,6 @@ export class MessageSender {
   }
 
   /**
-   * Apply an SDK task lifecycle event. Updates the per-session task tracker,
-   * posts a line when a backgrounded task starts (edited in place when it
-   * ends), surfaces Monitor events as their own chat messages, and refreshes
-   * the streaming UI footer.
-   */
-  async notifyTaskEvent(ctx: Context, sessionKey: string, event: TaskEvent): Promise<void> {
-    const wasBackgrounded = event.type === 'updated'
-      ? taskTracker.getTask(sessionKey, event.taskId)?.isBackgrounded
-      : undefined;
-    const state = taskTracker.handleEvent(sessionKey, event);
-    const isMonitor = state?.taskType === MONITOR_TASK_TYPE;
-
-    if (event.type === 'started' && state?.isBackgrounded) {
-      await this.postTaskStarted(ctx, state);
-    } else if (event.type === 'updated' && state?.isBackgrounded && wasBackgrounded === false
-      && state.status === 'running') {
-      // A shell moved to the background partway through says so only here.
-      await this.postTaskStarted(ctx, state);
-    } else if (event.type === 'progress' && state && isMonitor) {
-      const eventText = event.summary ?? event.description;
-      if (eventText) await this.postMonitorEvent(ctx, state, eventText);
-    } else if (event.type === 'notification' && state) {
-      await this.postTaskCompletion(ctx, state);
-      taskTracker.remove(sessionKey, event.taskId);
-    }
-
-    const streamState = this.streamStates.get(sessionKey);
-    if (streamState) {
-      streamState.spinnerIndex += 1;
-      this.flushLive(ctx, streamState).catch(() => {});
-    }
-  }
-
-  /**
-   * Say in the chat what just started in the background, rather than leave it
-   * to the footer's count. Silent: the user is in the chat, mid-turn. The
-   * line is kept by id so the completion can replace it.
-   */
-  private async postTaskStarted(ctx: Context, task: TaskState): Promise<void> {
-    if (task.skipTranscript || task.armedMessageId !== undefined) return;
-    const { icon, label } = taskKind(task.taskType);
-    const description = shortDescription(task.description);
-    const text = task.taskType === MONITOR_TASK_TYPE
-      ? `${icon} ${label} "${description}" armed`
-      : `${icon} ${label} "${description}" running in background`;
-    try {
-      const posted = await replyFormatted(ctx, text, { disable_notification: true });
-      task.armedMessageId = posted.message_id;
-      this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
-    } catch (error) {
-      console.error('[Task] Failed to post task start:', error instanceof Error ? error.message : error);
-    }
-  }
-
-  private async postMonitorEvent(ctx: Context, task: TaskState, eventText: string): Promise<void> {
-    if (task.skipTranscript) return;
-
-    // Use action logging if enabled
-    const keyInfo = getSessionKeyFromCtx(ctx);
-    const sessionKey = keyInfo?.sessionKey;
-    if (sessionKey && actionLogger.isActive(sessionKey)) {
-      await actionLogger.addMonitorEvent(sessionKey, task, eventText);
-      return;
-    }
-
-    // Fall back to original behavior
-    const truncated = eventText.length > 1000
-      ? eventText.substring(0, 997) + '...'
-      : eventText;
-    try {
-      await replyFormatted(ctx, `📡 Monitor event: ${truncated}`);
-      this.noteInterveningPost(sessionKey);
-    } catch (error) {
-      console.error('[Task] Failed to post monitor event:', error instanceof Error ? error.message : error);
-    }
-  }
-
-  /**
    * Post the "🔔 Scheduled: …" header that precedes a scheduled-task fire.
    * The scheduled prompt itself is then enqueued through the normal turn
    * pipeline; this header just makes the unprompted message obvious so the
@@ -703,18 +606,6 @@ export class MessageSender {
     } catch (error) {
       console.error('[Schedule] Failed to post scheduled header:', error instanceof Error ? error.message : error);
     }
-    this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
-  }
-
-  /**
-   * Post the model's text response from an SDK-driven sub-turn (monitor
-   * event echoes, post-task_notification commentary) as its own Telegram
-   * message, its markdown rendered as for any reply.
-   */
-  async postSubTurnResponse(ctx: Context, text: string): Promise<void> {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    await this.sendParts(ctx, formatMarkdown(trimmed, config.MAX_MESSAGE_LENGTH));
     this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
   }
 
@@ -740,7 +631,7 @@ export class MessageSender {
       // ended and the log was collapsed and cleaned up (5s after finishStream),
       // and initializing here would start a *second*, live-looking action log
       // below the collapsed summary. Stragglers post as their own message
-      // instead, matching what postMonitorEvent already does.
+      // instead.
       const stream = this.streamStates.get(sessionKey);
       if (!stream) {
         console.debug(`[ActionLog] Straggler for ${sessionKey} after log cleanup — posting directly instead of opening a new log`);
@@ -835,80 +726,6 @@ export class MessageSender {
       this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
     } catch (err) {
       console.error('[EditDiff] Failed to post:', err instanceof Error ? err.message : err);
-    }
-  }
-
-  private async postTaskCompletion(ctx: Context, task: TaskState): Promise<void> {
-    // Skip ambient/housekeeping tasks and foreground subagents — only
-    // backgrounded tasks deserve a separate notification message.
-    if (task.skipTranscript) return;
-    if (!task.isBackgrounded) return;
-
-    // Without a start line to replace, an action log takes the completion.
-    // With one, the start line is where it goes, so it can't sit on
-    // "running" after the task ended.
-    const keyInfo = getSessionKeyFromCtx(ctx);
-    const sessionKey = keyInfo?.sessionKey;
-    if (task.armedMessageId === undefined && sessionKey && actionLogger.isActive(sessionKey)) {
-      await actionLogger.addTaskCompletion(sessionKey, task);
-      return;
-    }
-
-    const isMonitor = task.taskType === MONITOR_TASK_TYPE;
-    const { label } = taskKind(task.taskType);
-
-    const statusIcon = task.status === 'completed'
-      ? (isMonitor ? '📡' : '✅')
-      : task.status === 'stopped' ? '🛑' : '❌';
-    const verb = task.status === 'completed'
-      ? (isMonitor ? 'stream ended' : 'completed')
-      : task.status === 'stopped' ? 'stopped' : 'failed';
-
-    const elapsedMs = (task.endedAt ?? Date.now()) - task.startedAt;
-    const seconds = Math.round(elapsedMs / 1000);
-    const duration = seconds >= 60
-      ? `${Math.floor(seconds / 60)}m ${seconds % 60}s`
-      : `${seconds}s`;
-
-    const description = shortDescription(task.description);
-
-    // Single-line format matching Claude Code's TUI:
-    //   ✅ Subagent "<description>" completed in 54s
-    //   📡 Monitor "<description>" stream ended after 12s
-    const body = isMonitor
-      ? `${statusIcon} Monitor "${description}" ${verb} after ${duration}`
-      : `${statusIcon} ${label} "${description}" ${verb} in ${duration}`;
-    const text = task.error ? `${body}\n⚠️ ${task.error}` : body;
-
-    // If we still know the armed-message id, edit it in place so the chat
-    // doesn't keep showing a stale "armed" line. Only post a fresh message
-    // (which triggers a Telegram notification and lands at the bottom of the
-    // chat) when the task ran long enough that the user likely walked away —
-    // matching sendCompletionNotification's threshold — or when there's an
-    // error the user needs to see.
-    const chatId = ctx.chat?.id;
-    const longRunning = elapsedMs >= config.NOTIFICATION_THRESHOLD_SECONDS * 1000;
-    const shouldEdit = task.armedMessageId !== undefined && chatId !== undefined;
-    const shouldPostFresh = !shouldEdit || longRunning || !!task.error;
-
-    if (shouldEdit) {
-      try {
-        await editFormatted(ctx.api, chatId!, task.armedMessageId!, text);
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        // "message is not modified" is benign; anything else still leaves the
-        // fresh post below to tell the user, when posting is called for.
-        if (!/not modified/i.test(msg)) console.error('[Task] Failed to edit armed message:', msg);
-      }
-    }
-
-    if (!shouldPostFresh) return;
-
-    try {
-      await replyFormatted(ctx, text);
-      this.noteInterveningPost(getSessionKeyFromCtx(ctx)?.sessionKey);
-    } catch (error) {
-      console.error('[Task] Failed to post completion message:', error instanceof Error ? error.message : error);
     }
   }
 

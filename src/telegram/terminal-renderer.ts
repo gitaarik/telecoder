@@ -35,7 +35,7 @@ export const TOOL_ICONS: Record<string, string> = {
   // Notebook
   NotebookEdit: '📓',
 
-  // TeleCoder MCP tools — keys are the SDK-reported full names so
+  // TeleCoder MCP tools — keys are the full names Claude Code reports so
   // updateToolOperation/getToolIcon match without any extra normalization.
   'mcp__telecoder-tools__telecoder_ask_user': '❓',
   'mcp__telecoder-tools__telecoder_set_topic': '🏷️',

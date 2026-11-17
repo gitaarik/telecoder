@@ -1,13 +1,40 @@
 /**
- * Tracks Claude Agent SDK background tasks per session.
+ * Tracks the work each session has running in the background: monitors,
+ * backgrounded shells, subagents and workflows.
  *
- * Tasks survive across streaming turns: a task started in turn 1 may emit
- * its `task_notification` in turn 2 or later (e.g. when the model calls
- * `TaskOutput` to wait for completion). Cleared explicitly via clear() on
- * /reset or session teardown.
+ * The monitor relay (claude/monitor-relay.ts) feeds it. It records a task when
+ * claude starts one and removes it when the task's notification comes back,
+ * which may be turns later. Cleared with the session's relay state.
  */
 
-import type { TaskEvent, TaskStatus, TaskUsage } from '../providers/types.js';
+/**
+ * Where a task stands, in Claude Code's own words. The relay records a task as
+ * running and removes it when it ends, so a tracked task is a running one;
+ * the readers that count live tasks still ask for running or pending.
+ */
+export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'killed' | 'stopped' | 'paused';
+
+/** What is known about a task when claude starts it. */
+export interface TaskStart {
+  taskId: string;
+  description: string;
+  /**
+   * For a backgrounded shell, the command it runs. The description is what
+   * the model called it; claude's own `/tasks` list shows the command, so
+   * this is what finds the task's row there.
+   */
+  command?: string;
+  toolUseId?: string;
+  taskType?: string;
+  /** Whether it runs in the background. Defaults to true for a monitor only. */
+  isBackgrounded?: boolean;
+  /**
+   * When the task began, for one already running before it was reported: a
+   * Bash call claude moved to the background had been running in the
+   * foreground until then. Defaults to now.
+   */
+  startedAt?: number;
+}
 
 /** One timed line of what a task is doing, for the running-in-background footer. */
 export interface TaskUpdate {
@@ -21,10 +48,9 @@ const MAX_TASK_UPDATES = 3;
 export interface TaskState {
   id: string;
   description: string;
-  /** A backgrounded shell's command; see TaskStartedEvent.command. */
+  /** A backgrounded shell's command; see TaskStart.command. */
   command?: string;
   taskType?: string;
-  workflowName?: string;
   toolUseId?: string;
   /**
    * Claude's own id for the task (the `bkvx2hlkb` in "moved to the background
@@ -35,33 +61,20 @@ export interface TaskState {
   claudeTaskId?: string;
   status: TaskStatus;
   isBackgrounded: boolean;
-  skipTranscript: boolean;
   startedAt: number;
   /**
-   * Last time the SDK said anything about this task — start, progress, or a
-   * status change. Completion arrives as a `notification`, which removes the
-   * entry outright (see notifyTaskEvent), so a long-silent entry is usually
-   * one whose notification never landed: a restart mid-task, or a dropped
-   * event. /tasks flags those instead of hiding them.
+   * Last time the task was heard from: its start, or a monitor firing. The
+   * notification that ends a task removes the entry outright, so a
+   * long-silent entry is usually one whose notification never landed: a
+   * restart mid-task, or a dropped event. /tasks flags those instead of
+   * hiding them.
    */
   lastActivityAt: number;
-  endedAt?: number;
-  lastProgress?: { summary?: string; lastToolName?: string; usage?: TaskUsage };
   /**
-   * The latest things the task reported doing, oldest first, capped at
-   * MAX_TASK_UPDATES: SDK progress events, and in PTY mode monitor firings.
+   * The latest things the task reported, oldest first, capped at
+   * MAX_TASK_UPDATES: a monitor's firings.
    */
   updates?: TaskUpdate[];
-  outputFile?: string;
-  finalSummary?: string;
-  error?: string;
-  /**
-   * message_id of the chat message announcing the task started ("📡 Monitor
-   * armed", "⚙️ Backgrounded", "🤖 Subagent started"). When the task finishes,
-   * completion handlers edit this message in place so the chat doesn't keep
-   * showing a stale "in progress" line.
-   */
-  armedMessageId?: number;
 }
 
 class TaskTracker {
@@ -76,95 +89,25 @@ class TaskTracker {
     return tasks;
   }
 
-  /**
-   * Apply an SDK task event to the per-session task map.
-   * Returns the resulting TaskState (or undefined if the event referenced
-   * an unknown task on a non-started subtype).
-   */
-  handleEvent(sessionKey: string, event: TaskEvent): TaskState | undefined {
-    const tasks = this.getOrCreateMap(sessionKey);
-
-    switch (event.type) {
-      case 'started': {
-        // Monitors are inherently long-running streaming subscriptions —
-        // treat them as backgrounded even if the launching tool didn't set
-        // run_in_background:true.
-        const isMonitor = event.taskType === 'monitor_mcp';
-        const state: TaskState = {
-          id: event.taskId,
-          description: event.description,
-          ...(event.command !== undefined ? { command: event.command } : {}),
-          taskType: event.taskType,
-          workflowName: event.workflowName,
-          toolUseId: event.toolUseId,
-          status: 'running',
-          isBackgrounded: event.isBackgrounded ?? isMonitor,
-          skipTranscript: event.skipTranscript ?? false,
-          startedAt: event.startedAt ?? Date.now(),
-          lastActivityAt: Date.now(),
-        };
-        tasks.set(event.taskId, state);
-        return state;
-      }
-      case 'progress': {
-        const existing = tasks.get(event.taskId);
-        if (!existing) return undefined;
-        // Note: event.description on progress events conveys the *current
-        // activity*, not the task's description — keep the original.
-        existing.lastActivityAt = Date.now();
-        existing.lastProgress = {
-          summary: event.summary,
-          lastToolName: event.lastToolName,
-          usage: event.usage,
-        };
-        const text = existing.taskType === 'monitor_mcp'
-          ? event.summary ?? event.description
-          : [event.lastToolName, event.description].filter(Boolean).join(' · ');
-        if (text) pushUpdate(existing, text);
-        return existing;
-      }
-      case 'updated': {
-        const existing = tasks.get(event.taskId);
-        if (!existing) return undefined;
-        existing.lastActivityAt = Date.now();
-        if (event.status) existing.status = event.status;
-        if (event.isBackgrounded !== undefined) existing.isBackgrounded = event.isBackgrounded;
-        if (event.error !== undefined) existing.error = event.error;
-        if (event.endTime !== undefined) existing.endedAt = event.endTime;
-        return existing;
-      }
-      case 'notification': {
-        const existing = tasks.get(event.taskId);
-        if (!existing) {
-          // Notification for an unknown task — synthesise a minimal record
-          const synthetic: TaskState = {
-            id: event.taskId,
-            description: '(unknown task)',
-            status: event.status,
-            isBackgrounded: false,
-            skipTranscript: false,
-            startedAt: Date.now(),
-            lastActivityAt: Date.now(),
-            endedAt: Date.now(),
-            outputFile: event.outputFile,
-            finalSummary: event.summary,
-          };
-          tasks.set(event.taskId, synthetic);
-          return synthetic;
-        }
-        existing.status = event.status;
-        existing.outputFile = event.outputFile;
-        existing.finalSummary = event.summary;
-        existing.endedAt = existing.endedAt ?? Date.now();
-        if (event.usage) {
-          existing.lastProgress = {
-            ...existing.lastProgress,
-            usage: event.usage,
-          };
-        }
-        return existing;
-      }
-    }
+  /** Record a task claude has just started. */
+  start(sessionKey: string, task: TaskStart): TaskState {
+    // Monitors are inherently long-running streaming subscriptions —
+    // treat them as backgrounded even if the launching tool didn't set
+    // run_in_background:true.
+    const isMonitor = task.taskType === 'monitor_mcp';
+    const state: TaskState = {
+      id: task.taskId,
+      description: task.description,
+      ...(task.command !== undefined ? { command: task.command } : {}),
+      taskType: task.taskType,
+      toolUseId: task.toolUseId,
+      status: 'running',
+      isBackgrounded: task.isBackgrounded ?? isMonitor,
+      startedAt: task.startedAt ?? Date.now(),
+      lastActivityAt: Date.now(),
+    };
+    this.getOrCreateMap(sessionKey).set(task.taskId, state);
+    return state;
   }
 
   /**
@@ -180,10 +123,7 @@ class TaskTracker {
     }
   }
 
-  /**
-   * Record something a task did that arrived outside an SDK progress event:
-   * a PTY monitor firing. Unknown tasks are ignored.
-   */
+  /** Record something a task reported: a monitor firing. Unknown tasks are ignored. */
   noteUpdate(sessionKey: string, taskId: string, text: string, at = Date.now()): void {
     const task = this.sessionTasks.get(sessionKey)?.get(taskId);
     if (!task) return;
@@ -243,9 +183,8 @@ class TaskTracker {
   }
 
   /**
-   * True when at least one Monitor task is currently running. Used to detect
-   * SDK sub-turns that are triggered by monitor events so the bot can surface
-   * the model's echoed event line as its own Telegram message.
+   * True when at least one Monitor task is currently running. The idle reaper
+   * asks: a pty with a monitor armed isn't idle, however quiet it is.
    */
   hasActiveMonitor(sessionKey: string): boolean {
     const tasks = this.sessionTasks.get(sessionKey);
