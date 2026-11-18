@@ -1022,6 +1022,34 @@ function endsTurn(rec: JsonlRecord): boolean {
 }
 
 /**
+ * Whether the log has the end of the turn running in it: its last
+ * conversation record closes a turn (see endsTurn). Claude Code writes an
+ * assistant message's records only once the whole message is in, so while a
+ * reply is still being written the log ends on the prompt, or on the turn's
+ * last tool result. A log that can't be read answers true, since there is
+ * nothing in it to wait for.
+ */
+export function readTurnEnded(workingDirectory: string, sessionId: string): boolean {
+  let raw: string;
+  try { raw = fs.readFileSync(sessionJsonlPath(workingDirectory, sessionId), 'utf-8'); }
+  catch { return true; }
+  return turnEndedIn(raw);
+}
+
+/** {@link readTurnEnded} over a transcript already in hand. */
+export function turnEndedIn(raw: string): boolean {
+  const lines = raw.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].trim()) continue;
+    let rec: JsonlRecord;
+    try { rec = JSON.parse(lines[i]) as JsonlRecord; }
+    catch { continue; }
+    if (rec.type === 'user' || rec.type === 'assistant') return endsTurn(rec);
+  }
+  return true;
+}
+
+/**
  * A transcript whose last turn is still running, as a fork that leaves that
  * turn out but knows it's under way: everything up to the last turn that
  * ended, then what opened the running one (the prompt, or a background task

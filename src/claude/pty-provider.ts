@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import { sessionManager } from './session-manager.js';
-import { claudeSessionFileExists, describeLogTail, hasForeignThinkingSignatures, sessionJsonlPath, readCommandReply, readLastApiErrorFromJsonl, readLastAssistantTurnText, readLastCompactionFromJsonl, readLastUsageFromJsonl, readLastUserPromptMarker, sessionJsonlMtimeMs, sessionJsonlSize, type CompactionInfo, type UserPromptMarker } from './session-jsonl.js';
+import { claudeSessionFileExists, describeLogTail, hasForeignThinkingSignatures, sessionJsonlPath, readCommandReply, readLastApiErrorFromJsonl, readLastAssistantTurnText, readLastCompactionFromJsonl, readLastUsageFromJsonl, readLastUserPromptMarker, readTurnEnded, sessionJsonlMtimeMs, sessionJsonlSize, type CompactionInfo, type UserPromptMarker } from './session-jsonl.js';
 import { clearDeliveredProse, getDeliveredProse, stripDeliveredPrefix } from './turn-prose.js';
 import { PtyTurnStream, TurnProseReader } from './pty-stream.js';
 import { isNativeCompactCommand } from './command-parser.js';
@@ -120,6 +120,16 @@ const IDLE_MS = 1200;
  * sometimes capture a half-rendered screen. 200ms is enough in practice.
  */
 const POST_STOP_SETTLE_MS = 200;
+
+/**
+ * How long the pty has to stay quiet before a turn ends without Stop, when the
+ * session log doesn't show the turn's end either. Stop comes within a moment
+ * of claude writing its reply, so a turn that runs its course never waits this
+ * out. It bounds the wait for a Stop hook that was lost: the hook is a curl
+ * call fired and forgotten. Too short, and a pause in the middle of a reply
+ * ends the turn before the reply is written.
+ */
+const STOP_WAIT_MS = 15_000;
 
 /**
  * How often a running turn's live prose is brought up to date (pty-stream.ts).
@@ -1479,6 +1489,9 @@ export class PtyProvider implements Provider {
       stillGenerating,
       claudeProducedSomething,
       resumingAfterDialog,
+      stopWaitOver: sinceLast >= STOP_WAIT_MS,
+      // A slash command fires no Stop and writes no end to the log.
+      turnEndedInLog: () => session.submittedSlashCommand || readTurnEnded(session.cwd, session.claudeSessionId),
     });
 
     // A count that outlived its Stop is a lost hook, not a live tool. Say so:
@@ -1510,7 +1523,7 @@ export class PtyProvider implements Provider {
       // and would otherwise spin this check every 50ms for the whole window.
       const wait = hold === 'resuming'
         ? DIALOG_RESUME_POLL_MS
-        : hold === 'tools'
+        : hold === 'tools' || hold === 'stop'
           ? idleMs
           : Math.min(idleRemaining, fallbackRemaining);
       session.idleTimer = setTimeout(() => this._checkEndOfTurn(session), wait);

@@ -93,6 +93,13 @@ export interface EndOfTurnSignals {
   claudeProducedSomething: boolean;
   /** A dialog was answered and claude has not shown itself since. */
   resumingAfterDialog: boolean;
+  /** The pty has been quiet long enough to stop waiting for a Stop that may have been lost. */
+  stopWaitOver: boolean;
+  /**
+   * The session log has the turn's end. Asked last, and only once everything
+   * else says finished, because it reads the log.
+   */
+  turnEndedInLog: () => boolean;
 }
 
 /** Why a turn cannot end yet. Null means it may. */
@@ -103,6 +110,8 @@ export type TurnHold =
   | 'resuming'
   /** Claude still looks busy: output, spinner, or no input box. */
   | 'working'
+  /** The screen says finished, but neither Stop nor the session log does yet. */
+  | 'stop'
   | null;
 
 /**
@@ -125,6 +134,15 @@ export type TurnHold =
  * like telecoder_ask_user long-polls for a button tap and the pty is silent
  * by design for as long as it waits, which is otherwise indistinguishable
  * from a finished turn.
+ *
+ * Nor is a screen that says finished proof of it. Claude can pause for a
+ * second or two in the middle of writing a reply with no spinner in the rows
+ * the check reads, and the reply reaches the log only once the whole message
+ * is in. A turn on claude 2.1.311 was ended that way 0.2s before claude wrote
+ * its reply and fired Stop: the log held the prompt and nothing after it, the
+ * chat got an empty "Done", and the answer was never sent. So without Stop,
+ * the log has to show the turn's end too, and only a long quiet — a Stop hook
+ * lost on its way — ends a turn that has neither.
  */
 export function turnHold(s: EndOfTurnSignals): TurnHold {
   // Stop is authoritative. All it waits for is the screen to settle.
@@ -136,5 +154,8 @@ export function turnHold(s: EndOfTurnSignals): TurnHold {
   }
   // Everything says finished, which is also how the moment after a dialog is
   // answered looks. That one is not finished.
-  return s.resumingAfterDialog ? 'resuming' : null;
+  if (s.resumingAfterDialog) return 'resuming';
+  // And how a pause in the middle of a reply looks.
+  if (!s.stopWaitOver && !s.turnEndedInLog()) return 'stop';
+  return null;
 }

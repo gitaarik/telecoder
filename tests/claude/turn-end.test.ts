@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { dialogResumeState, turnHold, type EndOfTurnSignals } from '../../src/claude/turn-end.js';
 
 const GRACE = 15_000;
@@ -96,6 +96,8 @@ function done(overrides: Partial<EndOfTurnSignals> = {}): EndOfTurnSignals {
     stillGenerating: false,
     claudeProducedSomething: true,
     resumingAfterDialog: false,
+    stopWaitOver: false,
+    turnEndedInLog: () => true,
     ...overrides,
   };
 }
@@ -144,6 +146,30 @@ describe('turnHold', () => {
     // Ordering matters only for the reason reported, but the reason drives
     // how soon the next check runs.
     expect(turnHold(done({ inflightTools: 1, resumingAfterDialog: true }))).toBe('tools');
+  });
+
+  it('holds for Stop while the log does not have the turn\'s end', () => {
+    // A pause in the middle of a reply: the screen says finished, the log
+    // still ends on the prompt, and Stop has not fired.
+    expect(turnHold(done({ turnEndedInLog: () => false }))).toBe('stop');
+  });
+
+  it('ends a turn that has neither once the wait for Stop is over', () => {
+    expect(turnHold(done({ turnEndedInLog: () => false, stopWaitOver: true }))).toBeNull();
+  });
+
+  it('lets Stop end the turn whatever the log says', () => {
+    expect(turnHold(done({ stopReceived: true, turnEndedInLog: () => false }))).toBeNull();
+  });
+
+  it('reads the log only once everything else says finished', () => {
+    const turnEndedInLog = vi.fn(() => true);
+    turnHold(done({ isIdle: false, turnEndedInLog }));
+    turnHold(done({ inflightTools: 1, turnEndedInLog }));
+    turnHold(done({ stopReceived: true, turnEndedInLog }));
+    turnHold(done({ resumingAfterDialog: true, turnEndedInLog }));
+    turnHold(done({ stopWaitOver: true, turnEndedInLog }));
+    expect(turnEndedInLog).not.toHaveBeenCalled();
   });
 
   it.each([

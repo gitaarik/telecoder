@@ -368,6 +368,13 @@ reasoning — the commit bodies are the long form, this is the index.
 
 ### Fixed
 
+- **A pause in the middle of a reply no longer ends the turn.** Claude can
+  stop for a second or two while writing an answer, with no spinner on
+  screen, and the bot took that for the end. It sent an empty "Done" a
+  moment before Claude finished, and the answer never reached the chat.
+  Without Claude's Stop signal, a turn now ends only once the session log
+  shows it over, or after 15 seconds of quiet when that signal was lost.
+
 - **A task's details in `/tasks` no longer say "Status: running" and
   "Backgrounded: yes".** The list holds the tasks still running in the
   background and nothing else, so both lines said the same for every task.
